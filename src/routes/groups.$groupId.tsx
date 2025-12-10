@@ -458,7 +458,7 @@ function ChatPage() {
           <div className="flex-1 flex items-center justify-center z-0">
             <div className="bg-[#FFF5C4] text-gray-800 text-[12.5px] p-3 rounded-lg shadow-sm text-center max-w-xs leading-relaxed select-none">
               <span className="text-yellow-600 mr-1">🔒</span>
-              Messages are end-to-end encrypted. No one outside of this chat, not even CharmChain, can read or listen to them.
+              Messages are end-to-end encrypted. No one outside of this chat, not even MetaChain, can read or listen to them.
             </div>
           </div>
         )}

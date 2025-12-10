@@ -1,7 +1,7 @@
 import { MDS } from '@minima-global/mds';
 import { ExtendedProfile, CommunityProfileService } from './community-profile.service';
 
-const COMMUNITY_TOPIC = 'charmchain_community_v1';
+const COMMUNITY_TOPIC = 'metachain_community_v1';
 
 // Message types for community protocol
 export type CommunityMessage =

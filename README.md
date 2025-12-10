@@ -1,48 +1,34 @@
-# ✨ ChatCharm — Decentralized Compliments on Minima  
+# MetaChain
 
-**Charmchain** is a decentralized social DApp built on the **Minima blockchain**.  
-It allows users to send **short anonymous compliments** — called *charms* — to others nearby, fully **peer-to-peer**, **private**, and **rewarded**.  
+MetaChain is a fully decentralized messaging app with an integrated token economy, built on the Minima blockchain.[web:4][web:7] Every chat and payment is peer‑to‑peer, end‑to‑end encrypted, and routed without central servers, so users keep full control of their data and keys.[web:4][web:7]
 
-> “A blockchain for charm, kindness, and connection.”  
+MetaChain lets people communicate, pay, and run rewarded campaigns in a single, censorship‑resistant network where users get paid for their attention instead of being tracked by platforms.[web:4][web:9]
 
----
+## Key features
 
-## 💫 Key Features
+- **Decentralized private chats** – 1:1, groups and channels over pure P2P, with E2E encryption and no central fallback.[web:7][web:9]  
+- **Granular privacy profiles** – per‑field visibility (public, close contacts, personal contacts) for identity data.  
+- **Instant P2P payments** – send and receive tokens directly inside chats as a natural part of the conversation.  
+- **Charms** – positive messages combined with token micropayments to encourage constructive interactions.  
+- **Open Posts** – a decentralized public board to publish services, offers and announcements visible to the whole network.  
+- **Reward Campaigns** – creators run ad campaigns that appear in chats; users earn tokens for viewing and interacting.  
+- **Transparent 7% fee model** – campaigns pay a flat 7% fee, with 6% funding MetaChain and 1–2% optionally shared with partners.
 
-- 💌 **Anonymous compliments:** Send or receive *charms* that brighten someone’s day.  
-- 🔐 **True decentralization:** Messages travel directly between users via Minima’s node-to-node communication — no servers, no data mining.  
-- 💰 **Token-based interactions:** Sending or unlocking a *charm* uses the `$CHARM` token.  
-- 🎨 **Mood-based avatars:** Express how you feel without showing photos — just vibes.  
-- 📍 **Optional proximity:** Connect with nearby users through Minima’s decentralized layer.  
+## Why Minima
 
----
+MetaChain is built on Minima, a mobile‑first, DePIN‑oriented layer‑1 blockchain where every device can run a full node.[web:4][web:7][web:9] This architecture provides strong censorship resistance, quantum‑resistant encryption and true decentralization without relying on heavy infrastructure or centralized validators.[web:4][web:7]
 
-## 🪙 Tokenomics
+## Project status
 
-| Parameter | Details |
-|------------|----------|
-| **Token name** | `$CHARM` |
-| **Total supply** | 1,000,000 CHARM |
-| **Blockchain** | Minima |
-| **Utility** | Used to send, unlock, and reward charms |
+MetaChain is currently under active development as a MiniDapp on the Minima network.[web:4][web:14] The core P2P messaging architecture and token integration are defined, and the MVP roadmap targets a first public beta aligned with Minima’s mobile‑node ecosystem.[web:4][web:7][web:14]
 
-### 💎 Distribution
-- **40%** → Community rewards & user incentives  
-- **25%** → Team & development  
-- **20%** → Ecosystem & partnerships  
-- **10%** → Treasury & sustainability  
-- **5%** → Marketing & airdrops  
+## High‑level architecture
 
-Each *charm* sent requires a small `$CHARM` fee, creating a micro-economy of appreciation.
+- Minima layer‑1 blockchain for consensus, token issuance and on‑chain accounting.[web:4][web:7][web:9]  
+- P2P messaging layer for chats, charms and Open Posts, running directly between nodes.  
+- Reward Campaigns engine that allocates campaign budgets, tracks impressions/interactions, and distributes token rewards.  
+- Client app exposing profiles, chats, payments, Open Posts and campaign management in a unified UX.
 
----
+## License
 
-## ⚙️ Tech Stack
-
-- **Frontend:** React + Vite + TailwindCSS  
-- **Backend / Network:** Minima Smart Contracts + P2P messaging  
-- **Integration:** MiniDapp framework  
-- **Storage:** On-chain metadata + optional off-chain cache  
-
----
-
+MIT License

@@ -1,6 +1,6 @@
 import { UserProfile } from './discovery.service';
 
-const DB_NAME = 'charmchain_discovery';
+const DB_NAME = 'metachain_discovery';
 const DB_VERSION = 1;
 const PROFILES_STORE = 'profiles';
 const USERNAME_INDEX = 'username_index';

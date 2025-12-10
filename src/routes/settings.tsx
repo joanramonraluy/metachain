@@ -884,8 +884,8 @@ function Settings() {
                     </h3>
                     <p className={`text-sm ${writeMode ? 'text-green-600' : 'text-yellow-600'}`}>
                       {writeMode
-                        ? 'CharmChain has full permission to send messages and tokens.'
-                        : 'CharmChain needs your approval for every transaction.'}
+                        ? 'MetaChain has full permission to send messages and tokens.'
+                        : 'MetaChain needs your approval for every transaction.'}
                     </p>
                   </div>
                 </div>
@@ -898,7 +898,7 @@ function Settings() {
                     <ol className="list-decimal list-inside text-sm text-gray-600 space-y-2 pl-2">
                       <li>Go to <strong>Minima</strong> main screen</li>
                       <li>Open <strong>MiniDapps</strong></li>
-                      <li>Find <strong>CharmChain</strong></li>
+                      <li>Find <strong>MetaChain</strong></li>
                       <li>Click the <strong>lock icon</strong> / permissions</li>
                       <li>Select <strong>Write Mode</strong></li>
                     </ol>

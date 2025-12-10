@@ -745,7 +745,7 @@ class MinimaService {
 
         // Check if the message is for our application (case-insensitive)
         const app = maximaData.application.toLowerCase();
-        if (app === "charmchain" || app === "charmchain-group") {
+        if (app === "metachain" || app === "metachain-group") {
             const from = maximaData.from;
             let datastr = maximaData.data;
 
@@ -760,7 +760,7 @@ class MinimaService {
                 const json = JSON.parse(datastr) as any;
 
                 // Check if this is a group message (by app name OR content)
-                if (app === "charmchain-group" || (json.messageType && json.groupId)) {
+                if (app === "metachain-group" || (json.messageType && json.groupId)) {
                     console.log("👥 [MAXIMA] Group message detected:", json.messageType);
                     // Import dynamically to avoid circular dependency
                     import('./group.service').then(({ groupService }) => {
@@ -788,7 +788,7 @@ class MinimaService {
                 if (json.type === "ping") {
                     console.log("📡 [MAXIMA] Ping received from", from, "- sending Pong");
                     // Send Pong response
-                    this.sendPong(from).catch(err => console.error("❌ [CharmChain] Failed to send Pong:", err));
+                    this.sendPong(from).catch(err => console.error("❌ [MetaChain] Failed to send Pong:", err));
                     // Notify listeners (optional, but good for debugging)
                     this.newMessageCallbacks.forEach((cb) => cb({ ...json, type: 'ping' }));
                     return;
@@ -803,7 +803,7 @@ class MinimaService {
                 }
 
                 // Normal message
-                console.log("✅ [CharmChain] Missatge rebut (guardat per Service Worker):", json.message);
+                console.log("✅ [MetaChain] Missatge rebut (guardat per Service Worker):", json.message);
 
                 // DB insertion and Delivery Receipt are handled by Service Worker
                 // We only need to notify the UI
@@ -811,11 +811,11 @@ class MinimaService {
                 // Notify UI to refresh
                 this.newMessageCallbacks.forEach((cb) => cb(json));
             } catch (err) {
-                console.error("❌ [CharmChain] Error processant missatge:", err);
-                console.error("❌ [CharmChain] Data rebuda:", datastr);
+                console.error("❌ [MetaChain] Error processant missatge:", err);
+                console.error("❌ [MetaChain] Data rebuda:", datastr);
             }
         } else {
-            console.log(`ℹ️ [MAXIMA] Message from application "${maximaData.application}" (not CharmChain)`);
+            console.log(`ℹ️ [MAXIMA] Message from application "${maximaData.application}" (not MetaChain)`);
         }
     }
 
@@ -853,14 +853,14 @@ class MinimaService {
             const jsonStr = JSON.stringify(payload);
             const hexData = "0x" + this.utf8ToHex(jsonStr).toUpperCase();
 
-            console.log("📤 [CharmChain] Sending message to:", toPublicKey, payload);
-            console.log("🔢 [CharmChain] Hex data:", hexData);
+            console.log("📤 [MetaChain] Sending message to:", toPublicKey, payload);
+            console.log("🔢 [MetaChain] Hex data:", hexData);
 
             const response = await MDS.cmd.maxima({
                 params: {
                     action: "send",
                     publickey: toPublicKey, // Use publickey for 0x... keys
-                    application: "charmchain", // Lowercase to match package.json
+                    application: "metachain", // Lowercase to match package.json
                     data: hexData,
                     poll: false,  // Send immediately instead of queuing
                 } as any,
@@ -882,7 +882,7 @@ class MinimaService {
             if (isPending) {
                 console.warn("⚠️ [MDS] Command is pending approval (Read Mode). Saving with 'pending' state.");
             } else {
-                console.log("✅ [CharmChain] Message sent successfully");
+                console.log("✅ [MetaChain] Message sent successfully");
             }
 
             // Only insert a new message if we're not updating an existing one
@@ -898,12 +898,12 @@ class MinimaService {
                     amount, // Include amount for charm messages
                 });
             } else {
-                console.log(`ℹ️ [CharmChain] Skipping message insertion - updating existing message with timestamp ${existingTimestamp}`);
+                console.log(`ℹ️ [MetaChain] Skipping message insertion - updating existing message with timestamp ${existingTimestamp}`);
             }
 
             return response;
         } catch (err) {
-            console.error("❌ [CharmChain] Error enviant missatge:", err);
+            console.error("❌ [MetaChain] Error enviant missatge:", err);
             throw err;
         }
     }
@@ -951,9 +951,9 @@ class MinimaService {
        SEND INVITATION VIA MAXSOLO
     ---------------------------------------------------------------------------- */
     async sendInvitation(publickey: string, senderName: string): Promise<void> {
-        const inviteMessage = `${senderName} wants to connect with you on CharmChain!
+        const inviteMessage = `${senderName} wants to connect with you on MetaChain!
 
-CharmChain is a secure messaging Dapp on Minima where you can send messages, charms, and tokens.
+MetaChain is a secure messaging Dapp on Minima where you can send messages, charms, and tokens.
 
 Install it from the MiniDapp Store to start chatting!`;
 
@@ -977,7 +977,7 @@ Install it from the MiniDapp Store to start chatting!`;
                 params: {
                     action: "send",
                     publickey: publickey,
-                    application: "maxsolo", // Send to MaxSolo instead of CharmChain
+                    application: "maxsolo", // Send to MaxSolo instead of MetaChain
                     data: hexData,
                     poll: false,
                 } as any,
@@ -1091,11 +1091,11 @@ Install it from the MiniDapp Store to start chatting!`;
 
         // Get confirmed transaction history from blockchain
         const confirmedTxs = await this.getMyTransactionHistory();
-        console.log(`🔍 [Cleanup] Found ${confirmedTxs.size} confirmed CharmChain transactions in blockchain`);
+        console.log(`🔍 [Cleanup] Found ${confirmedTxs.size} confirmed MetaChain transactions in blockchain`);
 
         // Get pending transactions from mempool
         const pendingTxs = await this.getMyPendingTransactions();
-        console.log(`🔍 [Cleanup] Found ${pendingTxs.size} pending CharmChain transactions in mempool`);
+        console.log(`🔍 [Cleanup] Found ${pendingTxs.size} pending MetaChain transactions in mempool`);
 
         let cleanedCount = 0;
 
@@ -1444,7 +1444,7 @@ Install it from the MiniDapp Store to start chatting!`;
     }
 
     /**
-     * Get transaction history from blockchain for CharmChain transactions
+     * Get transaction history from blockchain for MetaChain transactions
      * Returns a map of MESSAGE_TIMESTAMP -> { txpowid, timestamp } for quick lookup
      */
     async getMyTransactionHistory(): Promise<Map<string, { txpowid: string, timestamp: number }>> {
@@ -1478,19 +1478,19 @@ Install it from the MiniDapp Store to start chatting!`;
                 return new Map();
             }
 
-            // Build map of MESSAGE_TIMESTAMP -> { txpowid, timestamp } for CharmChain transactions
+            // Build map of MESSAGE_TIMESTAMP -> { txpowid, timestamp } for MetaChain transactions
             const historyMap = new Map<string, { txpowid: string, timestamp: number }>();
             const txpows = Array.isArray(txpowResponse.response) ? txpowResponse.response : [txpowResponse.response];
 
             for (const txpow of txpows) {
                 try {
-                    // Check if this is a CharmChain transaction
+                    // Check if this is a MetaChain transaction
                     const state = txpow.body?.txn?.state;
 
                     if (state && Array.isArray(state) && state.length >= 2) {
                         const charmChainId = state[1]?.data;
 
-                        // CharmChain identifier is 204 (0xCC)
+                        // MetaChain identifier is 204 (0xCC)
                         if (charmChainId === '204') {
                             const stateId = state[0]?.data; // MESSAGE_TIMESTAMP
                             const txpowid = txpow.txpowid;
@@ -1498,7 +1498,7 @@ Install it from the MiniDapp Store to start chatting!`;
 
                             if (stateId && txpowid) {
                                 historyMap.set(stateId, { txpowid, timestamp });
-                                console.log(`✅ [TxHistory] Found CharmChain tx: ${stateId} -> ${txpowid} (Time: ${timestamp})`);
+                                console.log(`✅ [TxHistory] Found MetaChain tx: ${stateId} -> ${txpowid} (Time: ${timestamp})`);
                             }
                         }
                     }
@@ -1507,7 +1507,7 @@ Install it from the MiniDapp Store to start chatting!`;
                 }
             }
 
-            console.log(`✅ [TxHistory] Found ${historyMap.size} CharmChain transaction(s) in blockchain`);
+            console.log(`✅ [TxHistory] Found ${historyMap.size} MetaChain transaction(s) in blockchain`);
             return historyMap;
 
         } catch (err) {
@@ -1550,7 +1550,7 @@ Install it from the MiniDapp Store to start chatting!`;
                 return new Map();
             }
 
-            // Build map of MESSAGE_TIMESTAMP -> txpowid for PENDING CharmChain transactions
+            // Build map of MESSAGE_TIMESTAMP -> txpowid for PENDING MetaChain transactions
             const pendingMap = new Map<string, string>();
             const txpows = Array.isArray(txpowResponse.response) ? txpowResponse.response : [txpowResponse.response];
 
@@ -1560,20 +1560,20 @@ Install it from the MiniDapp Store to start chatting!`;
                     const isInBlock = txpow.isblock || txpow.inblock;
 
                     if (!isInBlock) {
-                        // Check if this is a CharmChain transaction
+                        // Check if this is a MetaChain transaction
                         const state = txpow.body?.txn?.state;
 
                         if (state && Array.isArray(state) && state.length >= 2) {
                             const charmChainId = state[1]?.data;
 
-                            // CharmChain identifier is 204 (0xCC)
+                            // MetaChain identifier is 204 (0xCC)
                             if (charmChainId === '204') {
                                 const stateId = state[0]?.data; // MESSAGE_TIMESTAMP
                                 const txpowid = txpow.txpowid;
 
                                 if (stateId && txpowid) {
                                     pendingMap.set(stateId, txpowid);
-                                    console.log(`⏳ [TxPending] Found pending CharmChain tx: ${stateId} -> ${txpowid}`);
+                                    console.log(`⏳ [TxPending] Found pending MetaChain tx: ${stateId} -> ${txpowid}`);
                                 }
                             }
                         }
@@ -1583,7 +1583,7 @@ Install it from the MiniDapp Store to start chatting!`;
                 }
             }
 
-            console.log(`✅ [TxPending] Found ${pendingMap.size} pending CharmChain transaction(s) in mempool`);
+            console.log(`✅ [TxPending] Found ${pendingMap.size} pending MetaChain transaction(s) in mempool`);
             return pendingMap;
 
         } catch (err) {
@@ -1677,13 +1677,13 @@ Install it from the MiniDapp Store to start chatting!`;
             const res = await this.runSQL(sql);
             return res.rows;
         } catch (err) {
-            console.error("❌ [CharmChain] Error fetching pending messages:", err);
+            console.error("❌ [MetaChain] Error fetching pending messages:", err);
             return [];
         }
     }
 
     async sendReadReceipt(toPublicKey: string) {
-        console.log("📤 [CharmChain] Sending read receipt to", toPublicKey);
+        console.log("📤 [MetaChain] Sending read receipt to", toPublicKey);
         try {
             const payload = {
                 message: "",
@@ -1699,13 +1699,13 @@ Install it from the MiniDapp Store to start chatting!`;
                 params: {
                     action: "send",
                     publickey: toPublicKey,
-                    application: "charmchain",
+                    application: "metachain",
                     data: hexData,
                     poll: false,
                 } as any,
             });
 
-            console.log("✅ [CharmChain] Read receipt sent successfully");
+            console.log("✅ [MetaChain] Read receipt sent successfully");
 
             // Mark received messages as read locally
             // IMPORTANT: Exclude 'pending' messages - they haven't been sent yet!
@@ -1715,12 +1715,12 @@ Install it from the MiniDapp Store to start chatting!`;
             });
 
         } catch (err) {
-            console.error("❌ [CharmChain] Error sending read receipt:", err);
+            console.error("❌ [MetaChain] Error sending read receipt:", err);
         }
     }
 
     async sendDeliveryReceipt(toPublicKey: string) {
-        console.log("📤 [CharmChain] Sending delivery receipt to", toPublicKey);
+        console.log("📤 [MetaChain] Sending delivery receipt to", toPublicKey);
         try {
             const payload = {
                 message: "",
@@ -1737,21 +1737,21 @@ Install it from the MiniDapp Store to start chatting!`;
                 params: {
                     action: "send",
                     publickey: toPublicKey,
-                    application: "charmchain",
+                    application: "metachain",
                     data: hexData,
                     poll: false,
                 } as any,
             });
 
-            console.log("✅ [CharmChain] Delivery receipt sent successfully");
+            console.log("✅ [MetaChain] Delivery receipt sent successfully");
 
         } catch (err) {
-            console.error("❌ [CharmChain] Error sending delivery receipt:", err);
+            console.error("❌ [MetaChain] Error sending delivery receipt:", err);
         }
     }
 
     async sendPing(toPublicKey: string) {
-        console.log("📡 [CharmChain] Sending Ping to", toPublicKey);
+        console.log("📡 [MetaChain] Sending Ping to", toPublicKey);
         try {
             const payload = {
                 message: "",
@@ -1767,21 +1767,21 @@ Install it from the MiniDapp Store to start chatting!`;
                 params: {
                     action: "send",
                     publickey: toPublicKey,
-                    application: "charmchain",
+                    application: "metachain",
                     data: hexData,
                     poll: false,
                 } as any,
             });
 
-            console.log("✅ [CharmChain] Ping sent successfully");
+            console.log("✅ [MetaChain] Ping sent successfully");
         } catch (err) {
-            console.error("❌ [CharmChain] Error sending ping:", err);
+            console.error("❌ [MetaChain] Error sending ping:", err);
             throw err;
         }
     }
 
     async sendPong(toPublicKey: string) {
-        console.log("📡 [CharmChain] Sending Pong to", toPublicKey);
+        console.log("📡 [MetaChain] Sending Pong to", toPublicKey);
         try {
             const payload = {
                 message: "",
@@ -1797,15 +1797,15 @@ Install it from the MiniDapp Store to start chatting!`;
                 params: {
                     action: "send",
                     publickey: toPublicKey,
-                    application: "charmchain",
+                    application: "metachain",
                     data: hexData,
                     poll: false,
                 } as any,
             });
 
-            console.log("✅ [CharmChain] Pong sent successfully");
+            console.log("✅ [MetaChain] Pong sent successfully");
         } catch (err) {
-            console.error("❌ [CharmChain] Error sending pong:", err);
+            console.error("❌ [MetaChain] Error sending pong:", err);
             throw err;
         }
     }
@@ -1818,7 +1818,7 @@ Install it from the MiniDapp Store to start chatting!`;
             const response = await MDS.cmd.balance();
             return response.response;
         } catch (err) {
-            console.error("❌ [CharmChain] Error fetching balance:", err);
+            console.error("❌ [MetaChain] Error fetching balance:", err);
             return [];
         }
     }
@@ -1910,7 +1910,7 @@ Install it from the MiniDapp Store to start chatting!`;
             if (stateId) {
                 sendParams.state = {
                     0: stateId,      // Unique timestamp ID
-                    1: 204           // CharmChain identifier (0xCC)
+                    1: 204           // MetaChain identifier (0xCC)
                 };
                 console.log(`🏷️[TOKEN SEND] Adding state variables: ID = ${stateId}`);
             }
@@ -1999,14 +1999,14 @@ Install it from the MiniDapp Store to start chatting!`;
             if (maxResponse.status) {
                 // Cast to any to avoid type errors if the type definition is incomplete
                 const myAddress = (maxResponse.response as any).address;
-                console.log("📍 [CharmChain] My Minima Address:", myAddress);
+                console.log("📍 [MetaChain] My Minima Address:", myAddress);
 
                 // We'll just log it for now as we're not sure about the update command yet
                 // and we want to avoid unused variable warnings
                 // const updateCmd = ...
             }
         } catch (err) {
-            console.error("❌ [CharmChain] Error initializing profile:", err);
+            console.error("❌ [MetaChain] Error initializing profile:", err);
         }
     }
 

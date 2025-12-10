@@ -1,7 +1,7 @@
 import { MDS } from '@minima-global/mds';
 import { UserProfile } from './discovery.service';
 
-const MAXIMA_TOPIC = 'charmchain_profiles_v1';
+const MAXIMA_TOPIC = 'metachain_profiles_v1';
 
 export interface ProfileBroadcast {
     type: 'charm_profile_v1';

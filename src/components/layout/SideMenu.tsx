@@ -100,7 +100,7 @@ export default function SideMenu({ isOpen, setIsOpen }: SideMenuProps) {
 
         {/* Footer */}
         <div className="p-4 border-t border-gray-700 text-xs text-gray-500 text-center">
-          <p>v1.0.0 • CharmChain</p>
+          <p>v1.0.0 • MetaChain</p>
           <p>Minima Network</p>
         </div>
       </div>

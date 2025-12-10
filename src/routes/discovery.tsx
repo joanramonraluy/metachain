@@ -112,7 +112,7 @@ function DiscoveryPage() {
                             <Globe className="text-blue-600" />
                             Community Discovery
                         </h1>
-                        <p className="text-gray-500 text-sm mt-1">Find and connect with other CharmChain users</p>
+                        <p className="text-gray-500 text-sm mt-1">Find and connect with other MetaChain users</p>
                     </div>
                 </div>
 

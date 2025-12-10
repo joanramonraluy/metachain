@@ -22,7 +22,7 @@ export default function InviteDialog({
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
             <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6 animate-in zoom-in-95 duration-200">
                 <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-bold text-gray-900">Invite to CharmChain</h3>
+                    <h3 className="text-lg font-bold text-gray-900">Invite to MetaChain</h3>
                     <button
                         onClick={onClose}
                         className="text-gray-500 hover:text-gray-700 transition-colors"
@@ -34,14 +34,14 @@ export default function InviteDialog({
 
                 <div className="mb-6">
                     <p className="text-gray-600 mb-4">
-                        It looks like <strong>{contactName}</strong> doesn't have CharmChain installed yet.
+                        It looks like <strong>{contactName}</strong> doesn't have MetaChain installed yet.
                     </p>
                     <p className="text-gray-600 mb-4">
-                        Send them an invitation via Maxima (MaxSolo) to let them know about CharmChain!
+                        Send them an invitation via Maxima (MaxSolo) to let them know about MetaChain!
                     </p>
 
                     <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 text-sm text-gray-500 italic">
-                        "Hey! I want to connect with you on CharmChain..."
+                        "Hey! I want to connect with you on MetaChain..."
                     </div>
                 </div>
 

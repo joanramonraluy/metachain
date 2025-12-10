@@ -24,8 +24,8 @@ export default function Header({ onToggleMenu }: HeaderProps) {
   const currentPath = router.location.pathname;
 
   const currentItem = menuLabels.find((item) => item.to === currentPath);
-  // If path is root "/", show "CharmChain" instead of "Chats"
-  const pageTitle = currentPath === "/" ? "CharmChain" : (currentItem?.label || "CharmChain");
+  // If path is root "/", show "MetaChain" instead of "Chats"
+  const pageTitle = currentPath === "/" ? "MetaChain" : (currentItem?.label || "MetaChain");
 
   return (
     <header className="w-full bg-[#0088cc] text-white shadow-md z-30 flex-shrink-0">

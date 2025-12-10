@@ -1,5 +1,5 @@
 /**
- * CharmChain Service Worker
+ * MetaChain Service Worker
  * Processes incoming Maxima messages even when app is closed
  */
 
@@ -27,7 +27,7 @@ MDS.init(function (msg) {
 
     // Do initialisation
     if (msg.event == "inited") {
-        MDS.log("[ServiceWorker] STARTING UP - Version 0.3.0");
+        MDS.log("[ServiceWorker] STARTING UP - Version 0.0.1");
 
         // Create the DB if not exists (using same schema as main app)
         var initsql = "CREATE TABLE IF NOT EXISTS CHAT_MESSAGES ( "
@@ -47,7 +47,7 @@ MDS.init(function (msg) {
 
         // Run this
         MDS.sql(initsql, function (res) {
-            MDS.log("[ServiceWorker] CharmChain DB initialized: " + JSON.stringify(res));
+            MDS.log("[ServiceWorker] MetaChain DB initialized: " + JSON.stringify(res));
             // Add amount column to existing tables if it doesn't exist
             var alterSql = "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS amount INT NOT NULL DEFAULT 0";
             MDS.sql(alterSql, function (alterRes) {
@@ -112,8 +112,8 @@ MDS.init(function (msg) {
 
         MDS.log("[ServiceWorker] MAXIMA event received. App: " + msg.data.application);
 
-        // Is it for charmchain?
-        if (msg.data.application && (msg.data.application.toLowerCase() == "charmchain" || msg.data.application.toLowerCase() == "charmchain-group")) {
+        // Is it for metachain?
+        if (msg.data.application && (msg.data.application.toLowerCase() == "metachain" || msg.data.application.toLowerCase() == "metachain-group")) {
             var app = msg.data.application.toLowerCase();
 
             // Relevant data
@@ -132,13 +132,13 @@ MDS.init(function (msg) {
                 MDS.log("[ServiceWorker] Parsed message from " + app + ": " + JSON.stringify(maxjson));
 
                 // Handle History Sync Messages (ignore in SW, handled by App)
-                if (app === "charmchain-group" && (maxjson.messageType === "history_request" || maxjson.messageType === "history_response")) {
+                if (app === "metachain-group" && (maxjson.messageType === "history_request" || maxjson.messageType === "history_response")) {
                     MDS.log("[ServiceWorker] Ignoring Group Sync Message: " + maxjson.messageType);
                     return;
                 }
 
-                // Handle Group Messages (charmchain-group or legacy with groupId)
-                if ((app === "charmchain-group" && maxjson.messageType === "group_message") || (maxjson.groupId && maxjson.messageType === "group_message")) {
+                // Handle Group Messages (metachain-group or legacy with groupId)
+                if ((app === "metachain-group" && maxjson.messageType === "group_message") || (maxjson.groupId && maxjson.messageType === "group_message")) {
                     MDS.log("[ServiceWorker] Processing Group Message");
 
                     // Ensure GROUP_MESSAGES table exists (in case service.js runs before app)
@@ -163,8 +163,8 @@ MDS.init(function (msg) {
                     return;
                 }
 
-                // Handle Group Invites (charmchain-group)
-                if (app === "charmchain-group" && maxjson.messageType === "group_invite") {
+                // Handle Group Invites (metachain-group)
+                if (app === "metachain-group" && maxjson.messageType === "group_invite") {
                     MDS.log("[ServiceWorker] Processing Group Invite");
 
                     // 1. Create group in DB
@@ -199,8 +199,8 @@ MDS.init(function (msg) {
                     return;
                 }
 
-                // Handle Group Member Added/Removed (charmchain-group)
-                if (app === "charmchain-group" && (maxjson.messageType === "group_member_added" || maxjson.messageType === "group_member_removed")) {
+                // Handle Group Member Added/Removed (metachain-group)
+                if (app === "metachain-group" && (maxjson.messageType === "group_member_added" || maxjson.messageType === "group_member_removed")) {
                     MDS.log("[ServiceWorker] Processing Group Member Update: " + maxjson.messageType);
 
                     if (maxjson.messageType === "group_member_added") {
@@ -247,7 +247,7 @@ MDS.init(function (msg) {
                     var jsonStr = JSON.stringify(payload);
                     var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
 
-                    MDS.cmd("maxima action:send publickey:" + pubkey + " application:charmchain data:" + hexData + " poll:false", function (res) {
+                    MDS.cmd("maxima action:send publickey:" + pubkey + " application:metachain data:" + hexData + " poll:false", function (res) {
                         MDS.log("[ServiceWorker] Pong sent to " + pubkey);
                     });
                     return;
@@ -291,7 +291,7 @@ MDS.init(function (msg) {
                 var jsonStr = JSON.stringify(payload);
                 var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
 
-                MDS.cmd("maxima action:send publickey:" + pubkey + " application:charmchain data:" + hexData + " poll:false", function (res) {
+                MDS.cmd("maxima action:send publickey:" + pubkey + " application:metachain data:" + hexData + " poll:false", function (res) {
                     MDS.log("[ServiceWorker] Delivery receipt sent to " + pubkey);
                 });
 

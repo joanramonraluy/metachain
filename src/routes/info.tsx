@@ -20,7 +20,7 @@ function Info() {
             <Zap size={40} fill="currentColor" className="text-blue-500" />
           </div>
 
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">CharmChain</h1>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">MetaChain</h1>
           <p className="text-gray-500 font-medium mb-6">v{appVersion}</p>
 
           <p className="text-gray-600 leading-relaxed max-w-lg mx-auto">

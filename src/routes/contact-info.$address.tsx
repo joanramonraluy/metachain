@@ -310,7 +310,7 @@ function ContactInfoPage() {
                     {/* Network Status - Now shows App Status */}
                     <div className="p-4 hover:bg-gray-50 transition-colors">
                         <div className="flex items-center justify-between mb-1">
-                            <span className="text-sm font-medium text-gray-500">CharmChain Status</span>
+                            <span className="text-sm font-medium text-gray-500">MetaChain Status</span>
                             {appStatus === 'not_found' && (
                                 <button
                                     onClick={() => {
@@ -334,7 +334,7 @@ function ContactInfoPage() {
                             {appStatus === 'installed' ? (
                                 <div className="flex items-center gap-2 text-green-600">
                                     <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                                    <span className="text-sm font-medium">CharmChain Verified</span>
+                                    <span className="text-sm font-medium">MetaChain Verified</span>
                                 </div>
                             ) : appStatus === 'checking' ? (
                                 <div className="flex items-center gap-2 text-blue-600">

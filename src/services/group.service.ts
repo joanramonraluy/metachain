@@ -442,7 +442,7 @@ class GroupService {
         const hexData = "0x" + minimaService.utf8ToHex(jsonStr).toUpperCase();
 
         const response = await new Promise<any>((resolve) => {
-            MDS.executeRaw("maxima action:send publickey:" + toPublicKey + " application:charmchain-group data:" + hexData + " poll:false", (res: any) => {
+            MDS.executeRaw("maxima action:send publickey:" + toPublicKey + " application:metachain-group data:" + hexData + " poll:false", (res: any) => {
                 resolve(res);
             });
         });

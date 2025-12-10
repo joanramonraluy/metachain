@@ -1,8 +1,8 @@
 {
-  "name": "charmchain",
+  "name": "metachain",
   "category": "social",
   "private": true,
-  "version": "1.0.1",
+  "version": "0.0.1",
   "type": "module",
   "template": "react-ts",
   "scripts": {
@@ -48,5 +48,5 @@
     "vite": "^5.4.9",
     "vite-plugin-html": "^3.2.0"
   },
-  "description": "CharmChain MiniDapp"
+  "description": "MetaChain MiniDapp"
 }
