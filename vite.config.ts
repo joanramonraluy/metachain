@@ -14,6 +14,23 @@ export default defineConfig({
         // Suppress eval warnings from lottie-web (safe usage)
         if (warning.code === 'EVAL' && warning.id?.includes('lottie')) return;
         warn(warning);
+      },
+      manualChunks: (id) => {
+        // Split external dependencies
+        if (id.includes('node_modules')) {
+          if (id.includes('@minima-global/mds')) {
+            return 'vendor-mds';
+          }
+          if (id.includes('react') || id.includes('@tanstack')) {
+            return 'vendor-react';
+          }
+          // Other vendors can stay in default or be split further if needed
+        }
+
+        // Split services into their own chunk
+        if (id.includes('src/services')) {
+          return 'services';
+        }
       }
     }
   },

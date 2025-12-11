@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useContext, useEffect, useState } from "react";
 import { MDS } from "@minima-global/mds";
 import { appContext } from "../AppContext";
+import { DiscoveryService } from "../services/discovery.service";
 import { User, ChevronDown, ChevronUp, Copy, Check, Edit2, Globe, Palette, Shield, AlertTriangle, RefreshCw, Info } from "lucide-react";
 
 export const Route = createFileRoute("/settings")({
@@ -201,7 +202,7 @@ function Settings() {
 
   const fetchCommunityProfile = async () => {
     try {
-      const { DiscoveryService } = await import('../services/discovery.service');
+      // const { DiscoveryService } = await import('../services/discovery.service');
       const profiles = await DiscoveryService.getProfiles();
       const myProfile = profiles.find(p => p.isMyProfile);
 
@@ -236,7 +237,7 @@ function Settings() {
   const executeL1Update = async () => {
     try {
       setSavingProfile(true);
-      const { DiscoveryService } = await import('../services/discovery.service');
+      // const { DiscoveryService } = await import('../services/discovery.service');
 
       // Update L1 Profile
       await DiscoveryService.updateL1Profile(
@@ -284,7 +285,9 @@ function Settings() {
     setSavingProfile(true);
     try {
       console.log("💾 [Settings] Updating Extended profile...");
-      const { DiscoveryService } = await import('../services/discovery.service');
+      // const { DiscoveryService } = await import('../services/discovery.service');
+      // Replaced with static import
+
 
       // Build extraData based on visibility toggles
       const extraData: any = {};

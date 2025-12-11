@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { MDS } from '@minima-global/mds'
 import { useEffect, useState } from 'react'
 import { DiscoveryService, UserProfile } from '../services/discovery.service'
 import { maximaDiscoveryService } from '../services/maxima-discovery.service'
@@ -41,7 +42,8 @@ function DiscoveryPage() {
     const checkStaticMLSConfig = async () => {
         setCheckingMLS(true)
         try {
-            const { MDS } = await import('@minima-global/mds')
+            // const { MDS } = await import('@minima-global/mds')
+
             const maximaInfo = await MDS.cmd.maxima()
             const info = (maximaInfo.response as any) || {}
 
@@ -133,7 +135,8 @@ function DiscoveryPage() {
                                 await checkStaticMLSConfig()
 
                                 // Check after async completes (using callback)
-                                const { MDS } = await import('@minima-global/mds')
+                                // const { MDS } = await import('@minima-global/mds')
+
                                 const maximaInfo = await MDS.cmd.maxima()
                                 const info = (maximaInfo.response as any) || {}
 

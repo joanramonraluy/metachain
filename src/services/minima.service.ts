@@ -1,4 +1,5 @@
 import { MDS } from "@minima-global/mds";
+import { groupService } from "./group.service";
 
 export interface ChatMessage {
     id?: number;
@@ -763,9 +764,15 @@ class MinimaService {
                 if (app === "metachain-group" || (json.messageType && json.groupId)) {
                     console.log("👥 [MAXIMA] Group message detected:", json.messageType);
                     // Import dynamically to avoid circular dependency
-                    import('./group.service').then(({ groupService }) => {
-                        groupService.handleIncomingGroupMessage(json, from);
-                    });
+                    // Replaced with static import
+                    // import('./group.service').then(({ groupService }) => {
+                    //    groupService.handleIncomingGroupMessage(json, from);
+                    // });
+                    // Static call now that circular dependency is resolved via utils/hex.ts
+                    groupService.handleIncomingGroupMessage(json, from);
+
+
+
                     return;
                 }
 

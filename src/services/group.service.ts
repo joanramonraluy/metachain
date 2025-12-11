@@ -1,5 +1,5 @@
-import { MDS } from "@minima-global/mds";
-import { minimaService } from "./minima.service";
+import { utf8ToHex } from "../utils/hex";
+
 
 export interface Group {
     group_id: string;
@@ -439,7 +439,7 @@ class GroupService {
     private async sendMaximaMessage(toPublicKey: string, message: GroupMaximaMessage): Promise<void> {
         console.log(`📤 [GROUP] Sending MAXIMA message type '${message.messageType}' to ${toPublicKey}...`);
         const jsonStr = JSON.stringify(message);
-        const hexData = "0x" + minimaService.utf8ToHex(jsonStr).toUpperCase();
+        const hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
 
         const response = await new Promise<any>((resolve) => {
             MDS.executeRaw("maxima action:send publickey:" + toPublicKey + " application:metachain-group data:" + hexData + " poll:false", (res: any) => {
