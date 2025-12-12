@@ -19,7 +19,7 @@ export interface UserProfile {
     timestamp: number;
     lastSeen: number;
     isMyProfile: boolean;
-    maxAddress?: string; // MAX# permanent address from STATE[4]
+    staticMLS?: string;  // Static MLS address from STATE[4]
     visible?: boolean;   // Visibility flag from STATE[5]
     coinid?: string;     // UTXO reference
     extraData?: {        // Extended profile data from STATE[6]
@@ -94,12 +94,12 @@ export const DiscoveryService = {
             throw new Error('Static MLS required. Please configure a Static MLS server before registering.');
         }
 
-        // Get permanent MAX# address
-        const myPubkey = maximaInfo.publickey;
+        // Get permanent MLS address (without the @host:port part)
         const staticMLS = maximaInfo.mls;
-        const maxAddress = `MAX#${myPubkey}#${staticMLS}`;
+        // Store only the MLS part, not the full MAX# format
+        const mlsForStorage = staticMLS;
 
-        console.log('📍 [Discovery] Registering with MAX# address:', maxAddress);
+        console.log('📍 [Discovery] Registering with Static MLS:', staticMLS);
         const address = await DiscoveryService.getRegistryAddress();
 
         // Get our public key using getaddress
@@ -126,8 +126,8 @@ export const DiscoveryService = {
 
         // Pubkey is already HEX (0x...)
 
-        // Encode MAX# address and visibility
-        const maxAddressHex = DiscoveryService.utf8ToHex(maxAddress);
+        // Encode MLS address and visibility
+        const mlsHex = DiscoveryService.utf8ToHex(mlsForStorage);
         const visibleValue = visible ? '1' : '0';
 
         // Send transaction
@@ -135,11 +135,11 @@ export const DiscoveryService = {
         // STATE(1) = Description
         // STATE(2) = Public Key (Ownership)
         // STATE(3) = Timestamp (unix seconds)
-        // STATE(4) = MAX# Permanent Address
+        // STATE(4) = Static MLS (without @host:port)
         // STATE(5) = Visible (0 or 1)
         // STATE(6) = REMOVED (was Extra Data)
         // STATE(99) = "CHARM_PROFILE_V1" (Marker)
-        const cmd = `send amount:0.01 address:${address} state:{"0":"${usernameHex}","1":"${descriptionHex}","2":"${pubkey}","3":"${timestampHex}","4":"${maxAddressHex}","5":"${visibleValue}","99":"${markerHex}"}`;
+        const cmd = `send amount:0.01 address:${address} state:{"0":"${usernameHex}","1":"${descriptionHex}","2":"${pubkey}","3":"${timestampHex}","4":"${mlsHex}","5":"${visibleValue}","99":"${markerHex}"}`;
 
         // Send blockchain transaction
         await new Promise((resolve, reject) => {
@@ -207,17 +207,17 @@ export const DiscoveryService = {
         }
     },
 
-    // Helper function to deduplicate profiles by Maxima Address (Identity + Host)
+    // Helper function to deduplicate profiles by Static MLS (Identity + Host)
     deduplicateProfiles: (profiles: UserProfile[]): UserProfile[] => {
         // Sort by timestamp desc (newest first)
         profiles.sort((a, b) => b.timestamp - a.timestamp);
 
-        // Keep only first (newest) per MaxAddress
+        // Keep only first (newest) per Static MLS
         const seen = new Map<string, UserProfile>();
         for (const p of profiles) {
-            // Use maxAddress as unique identifier if available (handles multi-device)
+            // Use staticMLS as unique identifier if available (handles multi-device)
             // Fallback to pubkey, then username
-            let key = p.maxAddress;
+            let key = p.staticMLS;
             if (!key) {
                 key = p.pubkey ? p.pubkey : p.username.toLowerCase();
             }
@@ -338,7 +338,7 @@ export const DiscoveryService = {
                             username: state0 ? DiscoveryService.hexToUtf8(state0.data) : 'Unknown',
                             pubkey: profilePubkey,
                             description: state1 ? DiscoveryService.hexToUtf8(state1.data) : '',
-                            maxAddress: state4 ? DiscoveryService.hexToUtf8(state4.data) : undefined,
+                            staticMLS: state4 ? DiscoveryService.hexToUtf8(state4.data) : undefined,
                             visible: state5?.data === '1' || state5?.data === '0x01',
                             extraData,
                             timestamp,

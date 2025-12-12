@@ -87,7 +87,7 @@ function ContactInfoPage() {
                 console.log("[ContactInfo] Checking Community Discovery...");
                 const profiles = await DiscoveryService.getProfiles();
                 let profile = profiles.find(
-                    (p) => p.maxAddress === address || p.pubkey === address || (c && p.pubkey === c.publickey)
+                    (p) => p.staticMLS === address || p.pubkey === address || (c && p.pubkey === c.publickey)
                 );
 
                 // Check local DB for extended profile data
@@ -202,32 +202,64 @@ function ContactInfoPage() {
 
     const handleAddContact = async () => {
         if (!discoveryProfile) return;
+
+        // Check if staticMLS is available
+        if (!discoveryProfile.staticMLS) {
+            alert("This profile doesn't have a Static MLS configured. They need to enable Static MLS in their settings to be added as a contact.");
+            return;
+        }
+
+        // Strip the @host:port part if present (for old profiles)
+        const mlsAddress = discoveryProfile.staticMLS.split('@')[0];
+
+        console.log("🔍 [ContactInfo] Attempting to add contact:");
+        console.log("  - Username:", discoveryProfile.username);
+        console.log("  - Pubkey:", discoveryProfile.pubkey);
+        console.log("  - Static MLS (original):", discoveryProfile.staticMLS);
+        console.log("  - Static MLS (cleaned):", mlsAddress);
+        console.log("  - Static MLS length:", mlsAddress.length);
+
         setAddingContact(true);
         try {
-            await new Promise((resolve, reject) => {
+            // Maxima requires the Static MLS address (without @host:port)
+            const response = await new Promise((resolve, reject) => {
                 MDS.cmd.maxcontacts({
                     params: {
                         action: "add",
-                        contact: discoveryProfile.maxAddress || discoveryProfile.pubkey
+                        contact: mlsAddress  // Use cleaned MLS address
                     } as any
                 }, (res: any) => {
+                    console.log("📡 [ContactInfo] maxcontacts full response:", JSON.stringify(res, null, 2));
                     if (res.status) resolve(res);
                     else reject(res.error);
                 });
             });
 
+            console.log("✅ [ContactInfo] Contact add command succeeded:", response);
+
             // Refresh contact status
             setIsContact(true);
+
             // Re-fetch to get the contact object
             const res = await MDS.cmd.maxcontacts();
+            console.log("📋 [ContactInfo] All contacts after adding:", res.response?.contacts?.length || 0);
+
             const list: Contact[] = (res as any)?.response?.contacts || [];
             const c = list.find(x => x.publickey === discoveryProfile.pubkey);
-            if (c) setContact(c);
+
+            if (c) {
+                console.log("✅ [ContactInfo] Found contact in list:", c);
+                setContact(c);
+            } else {
+                console.warn("⚠️ [ContactInfo] Contact not found in list after adding!");
+                console.log("  Looking for pubkey:", discoveryProfile.pubkey);
+                console.log("  Available pubkeys:", list.map(x => x.publickey));
+            }
 
             console.log("✅ Contact added successfully");
         } catch (err) {
             console.error("❌ Failed to add contact:", err);
-            alert("Failed to add contact. Please try again.");
+            alert(`Failed to add contact. Error: ${err}`);
         } finally {
             setAddingContact(false);
         }

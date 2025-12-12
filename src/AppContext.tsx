@@ -7,6 +7,7 @@ const defaultAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/s
 
 export const appContext = createContext<{
   loaded: boolean
+  dbReady: boolean
   synced: boolean
   block: Block | null
   userName: string
@@ -17,6 +18,7 @@ export const appContext = createContext<{
   refreshWriteMode: () => Promise<void>
 }>({
   loaded: false,
+  dbReady: false,
   synced: false,
   block: null,
   userName: "User",
@@ -30,6 +32,7 @@ export const appContext = createContext<{
 const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
   const initialised = useRef(false)
   const [loaded, setLoaded] = useState(false)
+  const [dbReady, setDbReady] = useState(false)
   const [synced, setSynced] = useState(false)
   const [block, setBlock] = useState<Block | null>(null)
   const [userName, setUserName] = useState("User")
@@ -138,6 +141,9 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
           // Initialize database after MDS is ready
           // We await this to ensure tables exist before running cleanup
           minimaService.initDB().then(() => {
+            console.log("✅ [AppContext] Database initialized and ready");
+            setDbReady(true);
+
             // Initialize profile (publish address for token receiving)
             minimaService.initProfile()
 
@@ -171,6 +177,7 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
 
   const context = {
     loaded,
+    dbReady,
     synced,
     block,
     userName,

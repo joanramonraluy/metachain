@@ -44,7 +44,7 @@ interface GroupWithUnread {
 }
 
 export default function ChatsAndGroups() {
-    const { loaded, myPublicKey } = useContext(appContext);
+    const { loaded, dbReady, myPublicKey } = useContext(appContext);
     const [activeTab, setActiveTab] = useState<'all' | 'individuals' | 'groups' | 'favorites' | 'archived'>('all');
     const [chats, setChats] = useState<ChatItem[]>([]);
     const [groups, setGroups] = useState<GroupWithUnread[]>([]);
@@ -95,7 +95,7 @@ export default function ChatsAndGroups() {
     };
 
     useEffect(() => {
-        if (!loaded) return;
+        if (!loaded || !dbReady) return;
 
         const fetchData = async () => {
             try {
@@ -142,9 +142,9 @@ export default function ChatsAndGroups() {
             groupService.removeGroupMessageCallback(handleGroupMessage);
             groupService.removeGroupUpdateCallback(fetchGroups);
         };
-    }, [loaded, myPublicKey]);
+    }, [loaded, dbReady, myPublicKey]);
 
-    if (!loaded || loading) {
+    if (!loaded || !dbReady || loading) {
         return (
             <div className="flex items-center justify-center h-screen bg-white">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
