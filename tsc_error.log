@@ -1,0 +1,3 @@
+vite.config.ts(22,7): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Object literal may only specify known properties, and 'manualChunks' does not exist in type 'RollupOptions'.
