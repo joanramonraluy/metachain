@@ -64,94 +64,97 @@ function ContactInfoPage() {
         return defaultAvatar;
     };
 
-    useEffect(() => {
-        const fetchContact = async () => {
-            try {
-                // First, try to find in contacts
-                const res = await MDS.cmd.maxcontacts();
-                const list: Contact[] = (res as any)?.response?.contacts || [];
-                const c = list.find(
-                    (x) =>
-                        x.publickey === address ||
-                        x.currentaddress === address ||
-                        x.extradata?.minimaaddress === address
-                );
+    const fetchContact = async () => {
+        try {
+            // First, try to find in contacts
+            const res = await MDS.cmd.maxcontacts();
+            const list: Contact[] = (res as any)?.response?.contacts || [];
+            const c = list.find(
+                (x) =>
+                    x.publickey === address ||
+                    x.currentaddress === address ||
+                    x.extradata?.minimaaddress === address
+            );
 
-                if (c) {
-                    console.log("[ContactInfo] Contact found:", c);
-                    setContact(c);
+            if (c) {
+                console.log("[ContactInfo] Contact found:", c);
+                setContact(c);
+                setIsContact(true);
+            }
+
+            // Always check Community Discovery to get extended info
+            console.log("[ContactInfo] Checking Community Discovery...");
+            const profiles = await DiscoveryService.getProfiles();
+            let profile = profiles.find(
+                (p) =>
+                    p.staticMLS === address ||
+                    p.pubkey === address ||
+                    p.maximaPublicKey === address ||
+                    (c && p.pubkey === c.publickey) ||
+                    (c && p.maximaPublicKey === c.publickey)
+            );
+
+            // Check local DB for extended profile data
+            if (profile?.pubkey) {
+                const k = profile.pubkey;
+                console.log("[ContactInfo] Checking local DB for extended data for:", k);
+                const localData = await new Promise<any>((resolve) => {
+                    MDS.sql(`SELECT * FROM PROFILES WHERE pubkey = '${k}'`, (sqlRes: any) => {
+                        if (sqlRes.status && sqlRes.rows && sqlRes.rows.length > 0) {
+                            resolve(sqlRes.rows[0]);
+                        } else {
+                            resolve(null);
+                        }
+                    });
+                });
+
+                if (localData) {
+                    // Merge local data
+                    profile = {
+                        ...profile,
+                        extraData: {
+                            location: localData.LOCATION || profile.extraData?.location,
+                            website: localData.WEBSITE || profile.extraData?.website,
+                            bio: localData.BIO || profile.extraData?.bio
+                        }
+                    };
+                }
+            }
+
+            if (profile) {
+                console.log("[ContactInfo] ✅ Found in Community Discovery:", profile);
+                setDiscoveryProfile(profile);
+                // If we didn't find it in contacts but found it here, update isContact
+                // But wait, if we added it, it SHOULD be in contacts.
+
+                // Re-evaluate 'isContact' if we now have more info (like Maxima key) to match against contacts
+                if (!c) {
+                    const match = list.find(x =>
+                        x.publickey === profile?.maximaPublicKey ||
+                        x.publickey === profile?.pubkey
+                    );
+                    if (match) {
+                        console.log("✅ [ContactInfo] Found in contacts via Discovery profile match:", match);
+                        setContact(match);
+                        setIsContact(true);
+                    } else {
+                        setIsContact(false);
+                    }
+                } else {
                     setIsContact(true);
                 }
-
-                // Always check Community Discovery to get extended info
-                console.log("[ContactInfo] Checking Community Discovery...");
-                const profiles = await DiscoveryService.getProfiles();
-                let profile = profiles.find(
-                    (p) => p.staticMLS === address || p.pubkey === address || (c && p.pubkey === c.publickey)
-                );
-
-                // Check local DB for extended profile data
-                const pubkeyToCheck = profile?.pubkey || c?.publickey;
-                if (pubkeyToCheck) {
-                    console.log("[ContactInfo] Checking local DB for extended data...");
-                    const localData = await new Promise<any>((resolve) => {
-                        MDS.sql(`SELECT * FROM PROFILES WHERE pubkey = '${pubkeyToCheck}'`, (sqlRes: any) => {
-                            if (sqlRes.status && sqlRes.rows && sqlRes.rows.length > 0) {
-                                console.log("[ContactInfo] ✅ Found extended data in local DB");
-                                resolve(sqlRes.rows[0]);
-                            } else {
-                                resolve(null);
-                            }
-                        });
-                    });
-
-                    if (localData) {
-                        if (profile) {
-                            // Merge local data with Discovery profile
-                            profile = {
-                                ...profile,
-                                extraData: {
-                                    location: localData.LOCATION || profile.extraData?.location,
-                                    website: localData.WEBSITE || profile.extraData?.website,
-                                    bio: localData.BIO || profile.extraData?.bio
-                                }
-                            };
-                        } else if (c) {
-                            // Create profile from contact + local data
-                            profile = {
-                                username: c.extradata?.name || 'Unknown',
-                                pubkey: c.publickey,
-                                description: c.extradata?.description || '',
-                                timestamp: 0,
-                                lastSeen: c.lastseen || 0,
-                                isMyProfile: false,
-                                extraData: {
-                                    location: localData.LOCATION,
-                                    website: localData.WEBSITE,
-                                    bio: localData.BIO
-                                }
-                            };
-                        }
-                    }
-                }
-
-
-                if (profile) {
-                    console.log("[ContactInfo] ✅ Found in Community Discovery:", profile);
-                    setDiscoveryProfile(profile);
-                    // If we didn't find it in contacts but found it here, update isContact
-                    if (!c) setIsContact(false);
-                } else {
-                    console.log("[ContactInfo] ❌ Not found in Community Discovery");
-                    if (!c) console.log("[ContactInfo] ❌ Not found anywhere");
-                }
-            } catch (err) {
-                console.error("[Contact] Error loading contact:", err);
-            } finally {
-                setLoading(false);
+            } else {
+                console.log("[ContactInfo] ❌ Not found in Community Discovery");
+                if (!c) console.log("[ContactInfo] ❌ Not found anywhere");
             }
-        };
+        } catch (err) {
+            console.error("[Contact] Error loading contact:", err);
+        } finally {
+            setLoading(false);
+        }
+    };
 
+    useEffect(() => {
         fetchContact();
     }, [address]);
 
@@ -209,24 +212,34 @@ function ContactInfoPage() {
             return;
         }
 
-        // Strip the @host:port part if present (for old profiles)
-        const mlsAddress = discoveryProfile.staticMLS.split('@')[0];
+        // Construct Permanent Address: MAX#<MaximaPubKey>#<MLS>
+        // We must use the Maxima Public Key,        // Construct Permanent Address: MAX#<MaximaPubKey>#<MLS>
+        const maximaPubkey = discoveryProfile.maximaPublicKey;
+
+        console.log("🔍 [ContactInfo] Add Contact Clicked. Profile Data:", JSON.stringify(discoveryProfile));
+
+        if (!maximaPubkey) {
+            console.error("❌ [ContactInfo] Missing Maxima Public Key for user:", discoveryProfile.username);
+            alert("This profile doesn't have a Maxima Public Key registered. They may need to update their profile.");
+            return;
+        }
+
+        const maxAddress = `MAX#${maximaPubkey}#${discoveryProfile.staticMLS}`;
 
         console.log("🔍 [ContactInfo] Attempting to add contact:");
         console.log("  - Username:", discoveryProfile.username);
-        console.log("  - Pubkey:", discoveryProfile.pubkey);
-        console.log("  - Static MLS (original):", discoveryProfile.staticMLS);
-        console.log("  - Static MLS (cleaned):", mlsAddress);
-        console.log("  - Static MLS length:", mlsAddress.length);
+        console.log("  - Maxima Pubkey:", maximaPubkey);
+        console.log("  - Static MLS:", discoveryProfile.staticMLS);
+        console.log("  - Constructed Address:", maxAddress);
 
         setAddingContact(true);
         try {
-            // Maxima requires the Static MLS address (without @host:port)
+            // Add the contact using the Permanent Address
             const response = await new Promise((resolve, reject) => {
                 MDS.cmd.maxcontacts({
                     params: {
                         action: "add",
-                        contact: mlsAddress  // Use cleaned MLS address
+                        contact: maxAddress
                     } as any
                 }, (res: any) => {
                     console.log("📡 [ContactInfo] maxcontacts full response:", JSON.stringify(res, null, 2));
@@ -242,10 +255,21 @@ function ContactInfoPage() {
 
             // Re-fetch to get the contact object
             const res = await MDS.cmd.maxcontacts();
-            console.log("📋 [ContactInfo] All contacts after adding:", res.response?.contacts?.length || 0);
+            console.log("📋 [ContactInfo] All contacts after adding:", (res as any).response?.contacts?.length || 0);
 
             const list: Contact[] = (res as any)?.response?.contacts || [];
-            const c = list.find(x => x.publickey === discoveryProfile.pubkey);
+            // Contact publickey in list will be the Maxima Public Key
+            const matchesContact = (x: Contact) => {
+                // Check Maxima Public Key match (primary for permanent contacts)
+                if (discoveryProfile.maximaPublicKey && x.publickey === discoveryProfile.maximaPublicKey) return true;
+                // Check Minima Public Key match (fallback)
+                if (x.publickey === discoveryProfile.pubkey) return true;
+                // Check if current address matches (sometimes useful)
+                if (x.currentaddress === discoveryProfile.staticMLS) return true;
+                return false;
+            };
+
+            const c = list.find(matchesContact);
 
             if (c) {
                 console.log("✅ [ContactInfo] Found contact in list:", c);
@@ -257,6 +281,9 @@ function ContactInfoPage() {
             }
 
             console.log("✅ Contact added successfully");
+
+            // Refresh contact state immediately
+            await fetchContact();
         } catch (err) {
             console.error("❌ Failed to add contact:", err);
             alert(`Failed to add contact. Error: ${err}`);

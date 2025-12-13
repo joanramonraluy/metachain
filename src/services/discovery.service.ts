@@ -21,6 +21,7 @@ export interface UserProfile {
     isMyProfile: boolean;
     staticMLS?: string;  // Static MLS address from STATE[4]
     visible?: boolean;   // Visibility flag from STATE[5]
+    maximaPublicKey?: string; // Maxima Public Key from STATE[6]
     coinid?: string;     // UTXO reference
     extraData?: {        // Extended profile data from STATE[6]
         location?: string;
@@ -96,6 +97,7 @@ export const DiscoveryService = {
 
         // Get permanent MLS address (without the @host:port part)
         const staticMLS = maximaInfo.mls;
+        const maximaPublicKey = maximaInfo.publickey;
         // Store only the MLS part, not the full MAX# format
         const mlsForStorage = staticMLS;
 
@@ -129,6 +131,7 @@ export const DiscoveryService = {
         // Encode MLS address and visibility
         const mlsHex = DiscoveryService.utf8ToHex(mlsForStorage);
         const visibleValue = visible ? '1' : '0';
+        const maximaPubkeyHex = DiscoveryService.utf8ToHex(maximaPublicKey);
 
         // Send transaction
         // STATE(0) = Username
@@ -137,9 +140,9 @@ export const DiscoveryService = {
         // STATE(3) = Timestamp (unix seconds)
         // STATE(4) = Static MLS (without @host:port)
         // STATE(5) = Visible (0 or 1)
-        // STATE(6) = REMOVED (was Extra Data)
+        // STATE(6) = Maxima Public Key (NEW)
         // STATE(99) = "CHARM_PROFILE_V1" (Marker)
-        const cmd = `send amount:0.01 address:${address} state:{"0":"${usernameHex}","1":"${descriptionHex}","2":"${pubkey}","3":"${timestampHex}","4":"${mlsHex}","5":"${visibleValue}","99":"${markerHex}"}`;
+        const cmd = `send amount:0.01 address:${address} state:{"0":"${usernameHex}","1":"${descriptionHex}","2":"${pubkey}","3":"${timestampHex}","4":"${mlsHex}","5":"${visibleValue}","6":"${maximaPubkeyHex}","99":"${markerHex}"}`;
 
         // Send blockchain transaction
         await new Promise((resolve, reject) => {
@@ -317,7 +320,7 @@ export const DiscoveryService = {
                         const state3 = c.state.find((s: any) => s.port === 3);
                         const state4 = c.state.find((s: any) => s.port === 4);
                         const state5 = c.state.find((s: any) => s.port === 5);
-                        // STATE 6 is no longer used for extraData
+                        const state6 = c.state.find((s: any) => s.port === 6);
 
                         const timestampStr = state3 ? DiscoveryService.hexToUtf8(state3.data) : '0';
                         const timestamp = parseInt(timestampStr) || 0;
@@ -340,6 +343,7 @@ export const DiscoveryService = {
                             description: state1 ? DiscoveryService.hexToUtf8(state1.data) : '',
                             staticMLS: state4 ? DiscoveryService.hexToUtf8(state4.data) : undefined,
                             visible: state5?.data === '1' || state5?.data === '0x01',
+                            maximaPublicKey: state6 ? DiscoveryService.hexToUtf8(state6.data) : undefined,
                             extraData,
                             timestamp,
                             lastSeen: c.created || 0,

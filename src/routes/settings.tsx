@@ -252,6 +252,13 @@ function Settings() {
 
       console.log("✅ [Settings] L1 Profile updated successfully");
       alert("✅ L1 Profile updated successfully!");
+
+      // Auto-register with MLS to ensure key/visibility is synced
+      if (hasStaticMLS) {
+        console.log("🔄 [Settings] Auto-triggering MLS registration update...");
+        // Call without waiting to not block UI
+        handleEnablePermanentAddress(true);
+      }
     } catch (err) {
       console.error("❌ [Settings] Error updating L1 profile:", err);
       alert("Failed to update L1 profile: " + (err as Error).message);
@@ -336,7 +343,16 @@ function Settings() {
 
       console.log("✅ [Settings] Static MLS configured:", response);
       await fetchCommunityStatus(); // Refresh status
-      alert("✅ Static MLS configured successfully!");
+
+      // IMPORTANT: After configuring, immediately try to register!
+      if (staticMLSServer.trim()) {
+        console.log("🚀 [Settings] Auto-registering permanent address...");
+        setTimeout(() => {
+          handleEnablePermanentAddress(true); // Silent = true
+        }, 1000); // Small delay to let state settle
+      }
+
+      alert("✅ Static MLS configured successfully! Registration request sent.");
     } catch (err) {
       console.error("❌ [Settings] Error configuring Static MLS:", err);
       alert("Failed to configure Static MLS: " + (err as Error).message);
@@ -345,9 +361,16 @@ function Settings() {
     }
   };
 
-  const handleEnablePermanentAddress = async () => {
+
+
+  const handleEnablePermanentAddress = async (silent = false) => {
     if (!hasStaticMLS) {
-      alert("⚠️ Please configure Static MLS first");
+      if (!silent) alert("⚠️ Please configure Static MLS first");
+      return;
+    }
+
+    if (!staticMLSServer) {
+      if (!silent) alert("⚠️ Static MLS server address not found");
       return;
     }
 
@@ -360,23 +383,41 @@ function Settings() {
         throw new Error("Unable to get public key");
       }
 
-      const cmd = `maxextra action:addpermanent publickey:${publickey}`;
+      console.log(`📤 [Settings] Sending registration request to MLS: ${staticMLSServer}`);
+
+      // Send registration request to the MLS server via Maxima
+      // The server (if running MetaChain) will pick this up and run 'maxextra action:addpermanent'
+      const msgData = {
+        type: "mls_register_permanent",
+        publickey: publickey
+      };
+
+      const mkcmd = `maxima action:send to:${staticMLSServer} application:metachain data:${JSON.stringify(msgData)}`;
+
       const response = await new Promise<any>((resolve, reject) => {
-        MDS.executeRaw(cmd, (res: any) => {
+        MDS.executeRaw(mkcmd, (res: any) => {
           if (res.status) {
             resolve(res);
           } else {
-            reject(new Error(res.error || 'Failed to enable permanent address'));
+            reject(new Error(res.error || 'Failed to send registration request'));
           }
         });
       });
 
-      console.log("✅ [Settings] Permanent address enabled:", response);
-      await fetchCommunityStatus(); // Refresh status
-      alert("✅ Permanent MAX# address enabled!\n\nYou can now join the Community Discovery.");
+      console.log("✅ [Settings] Registration request sent:", response);
+      if (!silent) {
+        alert("✅ Registration request sent to Static MLS!\n\nPlease wait a few moments for the server to register your permanent address.");
+      } else {
+        console.log("ℹ️ [Settings] Silent registration request sent successfully.");
+      }
+
+      // We don't strictly need to fetch status immediately as it's async on the server, 
+      // but we can refresh to see if anything changed locally.
+      await fetchCommunityStatus();
+
     } catch (err) {
       console.error("❌ [Settings] Error enabling permanent address:", err);
-      alert("Failed to enable permanent address: " + (err as Error).message);
+      if (!silent) alert("Failed to send registration request: " + (err as Error).message);
     } finally {
       setEnablingPermanent(false);
     }
@@ -1076,6 +1117,16 @@ function Settings() {
                           <p className="text-xs text-gray-600 font-mono break-all mt-2">
                             {staticMLSServer}
                           </p>
+                          <div className="mt-2 pt-2 border-t border-green-200">
+                            <button
+                              onClick={() => handleEnablePermanentAddress(false)}
+                              disabled={enablingPermanent}
+                              className="text-xs flex items-center gap-2 text-green-700 hover:text-green-800 underline"
+                            >
+                              {enablingPermanent ? <RefreshCw size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                              Force Re-register Permanent Address
+                            </button>
+                          </div>
                         </div>
                       ) : (
                         <>
@@ -1158,12 +1209,26 @@ function Settings() {
                             {copiedField === 'permanent' ? <Check size={16} /> : <Copy size={16} />}
                             {copiedField === 'permanent' ? 'Copied!' : 'Copy MAX# Address'}
                           </button>
+
+                          <div className="mt-4 pt-4 border-t border-green-200">
+                            <p className="text-xs text-gray-500 mb-2">
+                              If contacts can't find you, your MLS server might need a reminder:
+                            </p>
+                            <button
+                              onClick={() => handleEnablePermanentAddress(false)}
+                              disabled={enablingPermanent}
+                              className="text-xs flex items-center gap-2 px-3 py-1.5 bg-white border border-green-300 text-green-700 rounded hover:bg-green-50 transition-colors"
+                            >
+                              {enablingPermanent ? <RefreshCw size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                              Re-send Registration to MLS
+                            </button>
+                          </div>
                         </div>
                       ) : (
                         <div>
                           {hasStaticMLS ? (
                             <button
-                              onClick={handleEnablePermanentAddress}
+                              onClick={() => handleEnablePermanentAddress(false)}
                               disabled={enablingPermanent}
                               className="w-full py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                             >

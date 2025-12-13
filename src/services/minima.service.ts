@@ -776,6 +776,26 @@ class MinimaService {
                     return;
                 }
 
+                if (json.type === "mls_register_permanent") {
+                    console.log("📝 [Static MLS] Registration request received from", from);
+                    const pubkey = json.publickey;
+                    if (pubkey) {
+                        const cmd = `maxextra action:addpermanent publickey:${pubkey}`;
+                        console.log("⚙️ [Static MLS] Executing:", cmd);
+                        MDS.executeRaw(cmd, (res: any) => {
+                            if (res.status) {
+                                console.log("✅ [Static MLS] Permanent address added for:", pubkey);
+                                // Optional: Send confirmation back if needed
+                            } else {
+                                console.error("❌ [Static MLS] Failed to add permanent address:", res.error);
+                            }
+                        });
+                    } else {
+                        console.warn("⚠️ [Static MLS] Received registration request without public key");
+                    }
+                    return;
+                }
+
                 if (json.type === "read") {
                     console.log("📖 [MAXIMA] Read receipt received from", from);
                     // DB update is handled by Service Worker
