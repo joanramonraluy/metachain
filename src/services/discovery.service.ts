@@ -1,9 +1,30 @@
 import { MDS } from '@minima-global/mds';
-import { maximaDiscoveryService } from './maxima-discovery.service';
 
-// The Registry Script: Simple ownership check.
+
+// The Registry Script: Uses a generic pattern matching Public Object Architecture.
+// Filter Comment: /* METACHAIN_PROFILE */
+// This allows fast filtering by address AND script content.
 // Only the owner (defined by Public Key in STATE(2)) can spend/update the profile.
-export const REGISTRY_SCRIPT = 'RETURN SIGNEDBY(STATE(2)) /* v2_track */';
+export const REGISTRY_SCRIPT = 'RETURN SIGNEDBY(STATE(2)) /* METACHAIN_PROFILE */';
+
+/* --------------------------------------------------------------------------
+   PUBLIC OBJECT CONSTANTS
+   -------------------------------------------------------------------------- */
+const STATE_INDEX_OWNER = 2; // Public Key
+const STATE_INDEX_TIMESTAMP = 3;
+const STATE_INDEX_STATIC_MLS = 4;
+const STATE_INDEX_VISIBLE = 5;
+const STATE_INDEX_MAXIMA_KEY = 6;
+const STATE_INDEX_PROFILE_ID = 10; // New: Stable Identity ID
+const STATE_INDEX_VERSION = 11;    // New: Sequence Number
+const STATE_INDEX_PROFILE_HASH = 12; // New: Integrity Hash
+
+const STATE_INDEX_TYPE = 98;
+const STATE_INDEX_SCHEMA_VERSION = 99;
+
+
+const TYPE_PROFILE = "METACHAIN_PROFILE";
+const VERSION_1 = "1";
 
 // We need a fixed address for the registry. 
 // In a real deployment, we would calculate this once and hardcode it to ensure everyone uses the same one.
@@ -13,16 +34,28 @@ export const REGISTRY_SCRIPT = 'RETURN SIGNEDBY(STATE(2)) /* v2_track */';
 // For now, we will use a helper to get/ensure the address exists.
 
 export interface UserProfile {
+    // Identity
+    profileId: string;   // Stable Identity ID
+    pubkey: string;      // Current Owner Key (rotatable in theory, but currently bound)
+
+    // Metadata
+    version: number;     // Sequence number (higher is newer)
+    updatedAt: number;   // Timestamp of update
+
+    // Content
     username: string;
-    pubkey: string;
     description: string;
-    timestamp: number;
-    lastSeen: number;
-    isMyProfile: boolean;
+
+    // Discovery
     staticMLS?: string;  // Static MLS address from STATE[4]
     visible?: boolean;   // Visibility flag from STATE[5]
     maximaPublicKey?: string; // Maxima Public Key from STATE[6]
+
+    // System
     coinid?: string;     // UTXO reference
+    isMyProfile: boolean;
+    lastSeen?: number;   // Timestamp when this profile was last seen/fetched
+
     extraData?: {        // Extended profile data from STATE[6]
         location?: string;
         website?: string;
@@ -34,7 +67,6 @@ export interface UserProfile {
 let cachedRegistryAddress: string | null = null;
 
 // Marker for profile coins - versioned for future upgrades
-const PROFILE_MARKER = 'CHARM_PROFILE_V1';
 
 export const DiscoveryService = {
     utf8ToHex: (s: string): string => {
@@ -56,8 +88,68 @@ export const DiscoveryService = {
         }
     },
 
-    // Get the Registry Address (and ensure it's tracked/imported if needed? 
-    // Actually for a public registry we might just need the address string to search coins).
+    /**
+     * Internal helper to run SQL and ignore errors (or log them)
+     */
+    runSQL: (sql: string): Promise<any> => {
+        return new Promise((resolve) => {
+            MDS.sql(sql, (res: any) => {
+                resolve(res);
+            });
+        });
+    },
+
+    /**
+     * Get or Generate the Stable Root Identity
+     * This key is NEVER used for transactions, only for ID derivation.
+     */
+    getOrGenerateProfileId: async (): Promise<{ profileId: string, rootKey: string }> => {
+        // 1. Ensure table exists
+        await DiscoveryService.runSQL(`
+            CREATE TABLE IF NOT EXISTS LOCAL_IDENTITY (
+                id INT PRIMARY KEY, 
+                root_public_key VARCHAR(255), 
+                profile_id VARCHAR(255), 
+                created_at BIGINT
+            )
+        `);
+
+        // 2. Check if identity exists
+        const res = await DiscoveryService.runSQL(`SELECT * FROM LOCAL_IDENTITY WHERE id = 1`);
+
+        if (res.status && res.rows && res.rows.length > 0) {
+            return {
+                profileId: res.rows[0].PROFILE_ID,
+                rootKey: res.rows[0].ROOT_PUBLIC_KEY
+            };
+        }
+
+        console.log("🆔 [Discovery] Generating new Stable Root Identity...");
+
+        // 3. Generate new key 
+        // We use 'keys action:new' to generate a fresh key that is part of the wallet
+        const keyRes: any = await new Promise((resolve) => MDS.executeRaw("keys action:new", (res) => resolve(res)));
+        if (!keyRes.status || !keyRes.response || !keyRes.response.publickey) {
+            throw new Error("Failed to generate root key");
+        }
+
+        const rootKey = keyRes.response.publickey;
+
+        // 4. Derive Profile ID
+        // As per plan and user request, we use the Root Key itself as the ID for uniqueness and simplicity.
+        // It satisfies Identity = f(Key).
+        const profileId = rootKey;
+
+        // 5. Store permanently
+        await DiscoveryService.runSQL(`
+            INSERT INTO LOCAL_IDENTITY (id, root_public_key, profile_id, created_at)
+            VALUES (1, '${rootKey}', '${profileId}', ${Date.now()})
+        `);
+
+        return { profileId, rootKey };
+    },
+
+    // Get the Registry Address
     getRegistryAddress: async (): Promise<string> => {
         // Return cached address if available
         if (cachedRegistryAddress) {
@@ -66,6 +158,8 @@ export const DiscoveryService = {
 
         return new Promise((resolve, reject) => {
             const cmd = `newscript script:"${REGISTRY_SCRIPT}" trackall:true`;
+            console.log("🛠️ [Discovery] Executing newscript (v0.0.4 - TRACKALL:TRUE):", cmd);
+
 
             MDS.executeRaw(cmd, (res: any) => {
                 if (res.status && res.response?.address) {
@@ -79,8 +173,17 @@ export const DiscoveryService = {
         });
     },
 
-    updateL1Profile: async (username: string, description: string, visible: boolean = true) => {
-        // Validate that user has Static MLS configured
+    /**
+     * Unified Profile Update
+     * Updates both L1 Blockchain Profile and Local/Maxima Extended Profile in one go.
+     */
+    updateProfile: async (
+        username: string,
+        description: string,
+        visible: boolean,
+        extraData?: UserProfile['extraData']
+    ) => {
+        // 1. Validate Static MLS
         const maximaInfo = await new Promise<any>((resolve, reject) => {
             MDS.cmd.maxima((res: any) => {
                 if (res.status) {
@@ -95,16 +198,15 @@ export const DiscoveryService = {
             throw new Error('Static MLS required. Please configure a Static MLS server before registering.');
         }
 
-        // Get permanent MLS address (without the @host:port part)
         const staticMLS = maximaInfo.mls;
         const maximaPublicKey = maximaInfo.publickey;
-        // Store only the MLS part, not the full MAX# format
-        const mlsForStorage = staticMLS;
 
-        console.log('📍 [Discovery] Registering with Static MLS:', staticMLS);
-        const address = await DiscoveryService.getRegistryAddress();
+        // 2. Get/Generate Stable Identity
+        const { profileId } = await DiscoveryService.getOrGenerateProfileId();
 
-        // Get our public key using getaddress
+        // 3. Get Public Key (Ownership for this specific UTXO)
+        // We use a fresh address/key for the coin itself, OR we can reuse one.
+        // Reusing 'getaddress' key is fine for MVP.
         const pubkey = await new Promise<string>((resolve, reject) => {
             MDS.executeRaw('getaddress', (res: any) => {
                 if (res.status && res.response?.publickey) {
@@ -116,64 +218,127 @@ export const DiscoveryService = {
         });
 
         if (!pubkey || pubkey === 'undefined') {
-            throw new Error("Invalid public key: " + pubkey);
+            throw new Error("Invalid public key");
         }
 
+        // 3. Prepare L1 Transaction
+        const address = await DiscoveryService.getRegistryAddress();
+
+        // Find existing profile to get next version
+        const profiles = await DiscoveryService.getProfiles();
+        const myExistingProfile = profiles.find(p => p.profileId === profileId);
+        // Note: isMyProfile might not be enough if we just generated the ID, so matching by ID is safer if available
+        // But for now, getProfiles logic will set isMyProfile based on KEY ownership. 
+        // We should just look for the highest version for this profileId.
+
+        const nextVersion = myExistingProfile ? (myExistingProfile.version + 1) : 1;
+
         // Encode data to HEX
-        const markerHex = DiscoveryService.utf8ToHex(PROFILE_MARKER);
         const usernameHex = DiscoveryService.utf8ToHex(username);
         const descriptionHex = DiscoveryService.utf8ToHex(description);
         const timestamp = Math.floor(Date.now() / 1000).toString();
         const timestampHex = DiscoveryService.utf8ToHex(timestamp);
-
-        // Pubkey is already HEX (0x...)
-
-        // Encode MLS address and visibility
-        const mlsHex = DiscoveryService.utf8ToHex(mlsForStorage);
+        const mlsHex = DiscoveryService.utf8ToHex(staticMLS);
         const visibleValue = visible ? '1' : '0';
         const maximaPubkeyHex = DiscoveryService.utf8ToHex(maximaPublicKey);
 
-        // Send transaction
+        const typeHex = DiscoveryService.utf8ToHex(TYPE_PROFILE);
+        const versionHex = DiscoveryService.utf8ToHex(VERSION_1);
+
+        const profileIdHex = DiscoveryService.utf8ToHex(profileId);
+        const seqVersionHex = DiscoveryService.utf8ToHex(nextVersion.toString());
+        // Simple hash of content for integrity (optional but good)
+        const contentHash = username + description + timestamp; // Simplified
+        const hashHex = DiscoveryService.utf8ToHex(contentHash);
+
+
+        // Construct State Vars
         // STATE(0) = Username
         // STATE(1) = Description
         // STATE(2) = Public Key (Ownership)
         // STATE(3) = Timestamp (unix seconds)
         // STATE(4) = Static MLS (without @host:port)
         // STATE(5) = Visible (0 or 1)
-        // STATE(6) = Maxima Public Key (NEW)
-        // STATE(99) = "CHARM_PROFILE_V1" (Marker)
-        const cmd = `send amount:0.01 address:${address} state:{"0":"${usernameHex}","1":"${descriptionHex}","2":"${pubkey}","3":"${timestampHex}","4":"${mlsHex}","5":"${visibleValue}","6":"${maximaPubkeyHex}","99":"${markerHex}"}`;
+        // STATE(6) = Maxima Public Key
+        // STATE(10) = Profile ID (Stable)
+        // STATE(11) = Version (Sequence)
+        // STATE(12) = Hash
+        // STATE(98) = TYPE: "METACHAIN_PROFILE"
+        // STATE(99) = VERSION: "1"
 
-        // Send blockchain transaction
-        await new Promise((resolve, reject) => {
-            console.log(`📤 [Discovery] Sending registration transaction to ${address}...`);
+        let cmd = `send amount:0.00000001 address:${address} state:{` +
+            `"0":"${usernameHex}",` +
+            `"1":"${descriptionHex}",` +
+            `"2":"${pubkey}",` +
+            `"3":"${timestampHex}",` +
+            `"4":"${mlsHex}",` +
+            `"5":"${visibleValue}",` +
+            `"6":"${maximaPubkeyHex}",` +
+            `"${STATE_INDEX_PROFILE_ID}":"${profileIdHex}",` +
+            `"${STATE_INDEX_VERSION}":"${seqVersionHex}",` +
+            `"${STATE_INDEX_PROFILE_HASH}":"${hashHex}",` +
+            `"${STATE_INDEX_TYPE}":"${typeHex}",` +
+            `"${STATE_INDEX_SCHEMA_VERSION}":"${versionHex}"` +
+            `}`;
+
+        // Note: Old profile coins will remain on the blockchain but will be filtered out by deduplication logic
+        // This is acceptable as they don't consume significant resources and ensure atomicity isn't needed
+        if (myExistingProfile && myExistingProfile.coinid) {
+            console.log(`ℹ️ [Discovery] Previous profile found (Version ${myExistingProfile.version}). Will be superseded by new version.`);
+        }
+        // 4. Send L1 Transaction
+        let txPoWID = "";
+        const txnResult = await new Promise<any>((resolve, reject) => {
+            console.log(`📤 [Discovery] Sending unified registration transaction (v${nextVersion})...`);
+
+            // Timeout to prevent infinite hanging
+            const timer = setTimeout(() => {
+                console.error("❌ [Discovery] Transaction request timed out (10s)");
+                reject("Transaction request timed out");
+            }, 10000);
+
             MDS.executeRaw(cmd, (res: any) => {
-                console.log('📄 [Discovery] Send response:', JSON.stringify(res, null, 2));
+                clearTimeout(timer);
+                console.log("📥 [Discovery] Transaction Response:", JSON.stringify(res));
 
-                // Accept both status:true OR pending:true as success
-                if (res.status || res.pending) {
+                if (res.status) {
+                    console.log("✅ [Discovery] L1 Transaction sent successfully");
+                    txPoWID = res.response ? res.response.txpowid : "";
                     resolve(res.response);
+                } else if (res.pending) {
+                    console.log("⏸️ [Discovery] Transaction pending approval (flag).");
+                    resolve({ pending: true });
+                } else if (res.error && (res.error.includes("pending") || res.error.includes("confirmed"))) {
+                    // Catch explicit error strings that indicate pending state
+                    console.log("⏸️ [Discovery] Transaction pending approval (error message).");
+                    resolve({ pending: true });
                 } else {
+                    console.error("❌ [Discovery] L1 Transaction failed:", res.error);
                     reject(res.error || "Registration failed");
                 }
             });
         });
-    },
 
-    updateExtendedProfile: async (extraData: UserProfile['extraData']) => {
-        // Get current L1 profile to include core data in broadcast
-        const profiles = await DiscoveryService.getProfiles();
-        const myProfile = profiles.find(p => p.isMyProfile);
-
-        if (!myProfile) {
-            throw new Error('No L1 profile found. Please create an L1 profile first.');
+        // 5. Check for Pending Status
+        if (txnResult && txnResult.pending) {
+            console.log("⏸️ [Discovery] Profile update is pending confirmation. Skipping propagation check.");
+            return;
         }
 
-        const pubkey = myProfile.pubkey;
-        const username = myProfile.username;
+        // 6. Transaction sent successfully
+        console.log(`✅ [Discovery] Profile update transaction sent (v${nextVersion}). Transaction will propagate naturally.`);
+        if (txPoWID) {
+            console.log(`🔗 [Discovery] TxPoW ID: ${txPoWID}`);
+        }
 
-        // Save extended profile data to local DB
+        // 7. Save Extended Data to SQL (if provided)
         if (extraData) {
+            // We store extended data keyed by Profile ID now? 
+            // The existing schema uses 'pubkey'. 
+            // For backward compatibility and simplicity, we'll continue using 'pubkey' 
+            // BUT we should really shift to profileId eventually.
+            // For this task, we'll stick to 'pubkey' as the primary join key since L1 still has it in State 2.
+
             const location = extraData.location ? `'${extraData.location.replace(/'/g, "''")}'` : 'NULL';
             const website = extraData.website ? `'${extraData.website.replace(/'/g, "''")}'` : 'NULL';
             const bio = extraData.bio ? `'${extraData.bio.replace(/'/g, "''")}'` : 'NULL';
@@ -195,54 +360,45 @@ export const DiscoveryService = {
                 });
             });
         }
-
-        // Broadcast via Maxima for instant cross-node discovery
-        try {
-            await maximaDiscoveryService.broadcastProfile({
-                username,
-                pubkey,
-                description: myProfile.description,
-                timestamp: Math.floor(Date.now() / 1000),
-                extraData // Include in broadcast
-            });
-        } catch (e) {
-            console.warn('Maxima broadcast failed:', e);
-        }
     },
 
-    // Helper function to deduplicate profiles by Static MLS (Identity + Host)
+
+    // Helper function to deduplicate profiles by ProfileID
     deduplicateProfiles: (profiles: UserProfile[]): UserProfile[] => {
-        // Sort by timestamp desc (newest first)
-        profiles.sort((a, b) => b.timestamp - a.timestamp);
-
-        // Keep only first (newest) per Static MLS
+        // Group by ProfileID
         const seen = new Map<string, UserProfile>();
-        for (const p of profiles) {
-            // Use staticMLS as unique identifier if available (handles multi-device)
-            // Fallback to pubkey, then username
-            let key = p.staticMLS;
-            if (!key) {
-                key = p.pubkey ? p.pubkey : p.username.toLowerCase();
-            }
 
-            if (!seen.has(key)) {
-                seen.set(key, p);
+        for (const p of profiles) {
+            if (!p.profileId) continue; // Skip malformed profiles
+
+            const existing = seen.get(p.profileId);
+
+            if (!existing) {
+                seen.set(p.profileId, p);
+            } else {
+                // Keep the one with Higher Version
+                if (p.version > existing.version) {
+                    seen.set(p.profileId, p);
+                } else if (p.version === existing.version) {
+                    // Tie-break: Newest Timestamp
+                    if (p.updatedAt > existing.updatedAt) {
+                        seen.set(p.profileId, p);
+                    }
+                }
             }
         }
 
         return Array.from(seen.values());
     },
 
-    getProfiles: async (): Promise<UserProfile[]> => {
+    getProfiles: async (_options: { sync?: boolean } = { sync: true }): Promise<UserProfile[]> => {
         const address = await DiscoveryService.getRegistryAddress();
         if (!address) {
             return [];
         }
 
-        const markerHex = DiscoveryService.utf8ToHex(PROFILE_MARKER);
-
-        // Get our coin IDs to determine ownership
-
+        // Pre-calculate HEX values for filtering
+        const typeHex = DiscoveryService.utf8ToHex(TYPE_PROFILE).toUpperCase();
 
         // Get all our public keys to check ownership accurately
         const myPublicKeys = await new Promise<Set<string>>((resolve) => {
@@ -258,6 +414,11 @@ export const DiscoveryService = {
                 resolve(keys);
             });
         });
+
+        // Also get our Stable Profile ID if it exists
+        const myIdentity = await DiscoveryService.getOrGenerateProfileId().catch(() => null);
+        const myProfileId = myIdentity?.profileId;
+
 
         // Fetch local extended profiles
         const localProfilesMap = await new Promise<Map<string, any>>((resolve) => {
@@ -291,74 +452,101 @@ export const DiscoveryService = {
                 const coins = res.response || [];
                 console.log(`📦 [Discovery] Found ${coins.length} coins at registry address`);
 
-                const profiles = coins
-                    .filter((c: any) => {
-                        const state99 = c.state?.find((s: any) => s.port === 99);
-                        const state5 = c.state?.find((s: any) => s.port === 5);
-                        const state2 = c.state?.find((s: any) => s.port === 2);
+                const rawProfiles: UserProfile[] = [];
 
-                        // Debug filtering
-                        const marker = state99?.data;
-                        const isProfileCoin = marker?.toUpperCase() === markerHex.toUpperCase();
-                        const isVisible = state5?.data === '1' || state5?.data === '0x01';
+                coins.forEach((c: any) => {
+                    // 0. FILTER: Ignore spent coins (important for mempool updates)
+                    if (c.spent) return;
 
-                        // Check ownership
-                        const profilePubkey = state2?.data || '';
-                        const isMine = myPublicKeys.has(profilePubkey);
+                    // 1. FILTER: Check for Schema Type (State 98)
+                    const state98 = c.state?.find((s: any) => s.port === STATE_INDEX_TYPE);
+                    if (!state98 || state98.data.toUpperCase() !== typeHex) {
+                        // console.log("Skipping coin (wrong type):", c.coinid);
+                        return;
+                    }
 
-                        if (isProfileCoin && !isVisible && !isMine) {
-                            console.log(`👻 [Discovery] Hidden profile found. Pubkey: ${profilePubkey.substring(0, 10)}..., State5: ${state5?.data}`);
-                        }
+                    // 2. EXTRACT CORE DATA
+                    // const state2 = c.state?.find((s: any) => s.port === STATE_INDEX_OWNER);
+                    const state0 = c.state?.find((s: any) => s.port === 0);
+                    const state1 = c.state?.find((s: any) => s.port === 1);
+                    const state2 = c.state?.find((s: any) => s.port === STATE_INDEX_OWNER); // Pubkey
+                    const state3 = c.state?.find((s: any) => s.port === STATE_INDEX_TIMESTAMP);
+                    const state4 = c.state?.find((s: any) => s.port === STATE_INDEX_STATIC_MLS);
+                    const state5 = c.state?.find((s: any) => s.port === STATE_INDEX_VISIBLE);
+                    const state6 = c.state?.find((s: any) => s.port === STATE_INDEX_MAXIMA_KEY);
 
-                        // Return if it's a profile coin AND (it's visible OR it's mine)
-                        return isProfileCoin && (isVisible || isMine);
-                    })
-                    .map((c: any) => {
-                        const state0 = c.state.find((s: any) => s.port === 0);
-                        const state1 = c.state.find((s: any) => s.port === 1);
-                        const state2 = c.state.find((s: any) => s.port === 2);
-                        const state3 = c.state.find((s: any) => s.port === 3);
-                        const state4 = c.state.find((s: any) => s.port === 4);
-                        const state5 = c.state.find((s: any) => s.port === 5);
-                        const state6 = c.state.find((s: any) => s.port === 6);
+                    const state10 = c.state?.find((s: any) => s.port === STATE_INDEX_PROFILE_ID);
+                    const state11 = c.state?.find((s: any) => s.port === STATE_INDEX_VERSION);
 
-                        const timestampStr = state3 ? DiscoveryService.hexToUtf8(state3.data) : '0';
-                        const timestamp = parseInt(timestampStr) || 0;
+                    const ownerKey = state2?.data || '';
+                    const profileId = state10 ? DiscoveryService.hexToUtf8(state10.data) : ownerKey; // Fallback to key if no ID
 
-                        const profilePubkey = state2?.data || '';
-                        // Check ownership by public key match
-                        const isMine = myPublicKeys.has(profilePubkey);
+                    const timestampStr = state3 ? DiscoveryService.hexToUtf8(state3.data) : '0';
+                    const timestamp = parseInt(timestampStr) || 0;
 
+                    const versionStr = state11 ? DiscoveryService.hexToUtf8(state11.data) : '1';
+                    const version = parseInt(versionStr) || 1;
+
+                    const isVisible = state5?.data === '1' || state5?.data === '0x01';
+
+                    // Is Mine? Check if I own the key OR if the profile ID matches my root ID
+                    const isMine = myPublicKeys.has(ownerKey) || (myProfileId && profileId === myProfileId);
+
+                    if (isVisible || isMine) {
                         // Merge with local extended data
-                        const localData = localProfilesMap.get(profilePubkey);
+                        const localData = localProfilesMap.get(ownerKey);
                         const extraData = localData ? {
                             location: localData.location,
                             website: localData.website,
                             bio: localData.bio
                         } : undefined;
 
-                        return {
-                            username: state0 ? DiscoveryService.hexToUtf8(state0.data) : 'Unknown',
-                            pubkey: profilePubkey,
-                            description: state1 ? DiscoveryService.hexToUtf8(state1.data) : '',
-                            staticMLS: state4 ? DiscoveryService.hexToUtf8(state4.data) : undefined,
-                            visible: state5?.data === '1' || state5?.data === '0x01',
-                            maximaPublicKey: state6 ? DiscoveryService.hexToUtf8(state6.data) : undefined,
-                            extraData,
-                            timestamp,
-                            lastSeen: c.created || 0,
-                            isMyProfile: isMine,
-                            coinid: c.coinid
-                        };
-                    });
+                        const username = state0 ? DiscoveryService.hexToUtf8(state0.data) : 'Unknown';
 
-                console.log(`✅ [Discovery] Parsed ${profiles.length} valid profiles from coins`);
-                resolve(profiles);
+                        console.log(`✅ [Discovery] Included Profile: ${username} (IsMine: ${isMine}, Visible: ${isVisible}, Version: ${version})`);
+
+                        rawProfiles.push({
+                            profileId: profileId,
+                            pubkey: ownerKey,
+
+                            version: version,
+                            updatedAt: timestamp,
+
+                            username: username,
+                            description: state1 ? DiscoveryService.hexToUtf8(state1.data) : '',
+
+                            staticMLS: state4 ? DiscoveryService.hexToUtf8(state4.data) : undefined,
+                            visible: isVisible,
+                            maximaPublicKey: state6 ? DiscoveryService.hexToUtf8(state6.data) : undefined,
+
+                            coinid: c.coinid,
+                            isMyProfile: !!isMine,
+
+                            extraData
+                        });
+                    } else {
+                        const username = state0 ? DiscoveryService.hexToUtf8(state0.data) : 'Unknown';
+                        console.log(`🚫 [Discovery] Filtered out Profile: ${username} (IsMine: ${isMine}, Visible: ${isVisible}, Version: ${version})`);
+                    }
+                });
+
+                resolve(rawProfiles);
             });
         });
 
-        // Deduplicate by Public Key (keep newest)
+        // Deduplicate Logic
         const uniqueProfiles = DiscoveryService.deduplicateProfiles(currentProfiles);
+
+        // DEBUG LOG
+        const myFinal = uniqueProfiles.find(p => p.isMyProfile);
+        if (myFinal) {
+            console.log(`✅ [Discovery] Selected final profile for Me: Version ${myFinal.version}, CoinID: ${myFinal.coinid}`);
+        } else {
+            console.log(`⚠️ [Discovery] No final profile selected for Me.`);
+        }
+
+        // Sort by recency
+        uniqueProfiles.sort((a, b) => b.updatedAt - a.updatedAt);
 
         return uniqueProfiles;
     },
@@ -375,11 +563,13 @@ export const DiscoveryService = {
             throw new Error('No profile found to update');
         }
 
-        // Re-register with new visibility
-        await DiscoveryService.updateL1Profile(
+        // Re-register with new visibility (and increment version automatically via updateProfile)
+        // Pass existing data
+        await DiscoveryService.updateProfile(
             myProfile.username,
             myProfile.description,
-            visible
+            visible,
+            myProfile.extraData
         );
 
         console.log(`✅ [Discovery] Profile visibility updated to: ${visible}`);

@@ -376,6 +376,12 @@ MDS.init(function (msg) {
                     return;
                 }
 
+                // Handle Static MLS Registration (Ignore in Service Worker, handled by App)
+                if (maxjson.type === "mls_register_permanent") {
+                    MDS.log("[ServiceWorker] Ignoring Static MLS Registration request (handled by main app)");
+                    return;
+                }
+
                 // URL encode the message and deal with apostrophe
                 var encoded = encodeURIComponent(maxjson.message).replace(/'/g, "%27");
 

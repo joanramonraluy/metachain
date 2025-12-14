@@ -224,7 +224,14 @@ function ContactInfoPage() {
             return;
         }
 
-        const maxAddress = `MAX#${maximaPubkey}#${discoveryProfile.staticMLS}`;
+        let maxAddress = "";
+        // If staticMLS looks like a full Maxima Address (starts with Mx), use it directly
+        if (discoveryProfile.staticMLS.startsWith("Mx")) {
+            maxAddress = discoveryProfile.staticMLS;
+        } else {
+            // Otherwise construct legacy MAX# format
+            maxAddress = `MAX#${maximaPubkey}#${discoveryProfile.staticMLS}`;
+        }
 
         console.log("🔍 [ContactInfo] Attempting to add contact:");
         console.log("  - Username:", discoveryProfile.username);
@@ -237,11 +244,9 @@ function ContactInfoPage() {
             // Add the contact using the Permanent Address
             const response = await new Promise((resolve, reject) => {
                 MDS.cmd.maxcontacts({
-                    params: {
-                        action: "add",
-                        contact: maxAddress
-                    } as any
-                }, (res: any) => {
+                    action: "add",
+                    contact: maxAddress
+                } as any, (res: any) => {
                     console.log("📡 [ContactInfo] maxcontacts full response:", JSON.stringify(res, null, 2));
                     if (res.status) resolve(res);
                     else reject(res.error);

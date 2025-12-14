@@ -108,6 +108,11 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
         // RAW DEBUG LOG: See everything coming from Minima
         if (msg.event === "MAXIMA") {
           console.log("🔥 [AppContext] RAW MAXIMA EVENT:", msg);
+
+          // Dispatch event to window so MaximaDiscoveryService can pick it up
+          window.dispatchEvent(new CustomEvent('MDS_MAXIMA_EVENT', {
+            detail: msg.data // Pass the inner data object { application, data, from, ... }
+          }));
         }
 
         // Pass event to service for processing (e.g. Maxima messages)
