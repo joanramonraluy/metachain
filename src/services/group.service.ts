@@ -379,7 +379,10 @@ class GroupService {
             `;
             await this.runSQL(insertSql);
 
-            // Send to all members via MAXIMA (except myself)
+            // Get my Maxima contacts
+            const contacts = await this.getMyMaximaContacts();
+
+            // Prepare message
             const maximaMessage: GroupMaximaMessage = {
                 messageType: "group_message",
                 groupId,
@@ -392,18 +395,31 @@ class GroupService {
                 filedata
             };
 
+            // Send to group members who are also my contacts (selective propagation)
+            let sentCount = 0;
             for (const member of members) {
-                if ((member as any).PUBLICKEY !== myPublicKey) {
+                const memberPubkey = (member as any).PUBLICKEY;
+
+                // Skip myself
+                if (memberPubkey === myPublicKey) continue;
+
+                // Check if this member is in my contacts
+                const isContact = contacts.some(c => c.publickey === memberPubkey);
+
+                if (isContact) {
                     try {
-                        await this.sendMaximaMessage((member as any).PUBLICKEY, maximaMessage);
+                        await this.sendMaximaMessage(memberPubkey, maximaMessage);
+                        sentCount++;
+                        console.log(`📤 [GROUP] Sent to contact member: ${memberPubkey.substring(0, 20)}...`);
                     } catch (err) {
-                        console.error(`❌ [GROUP] Failed to send message to ${(member as any).PUBLICKEY}:`, err);
-                        // Continue with other members
+                        console.error(`❌ [GROUP] Failed to send to ${memberPubkey}:`, err);
                     }
+                } else {
+                    console.log(`⏭️ [GROUP] Skipping non-contact member: ${memberPubkey.substring(0, 20)}...`);
                 }
             }
 
-            console.log("✅ [GROUP] Message sent to group:", groupId);
+            console.log(`✅ [GROUP] Message sent to ${sentCount} contact members in group: ${groupId}`);
         } catch (err) {
             console.error("❌ [GROUP] Failed to send group message:", err);
             throw err;
@@ -437,13 +453,13 @@ class GroupService {
     /* ----------------------------------------------------------------------------
       MAXIMA COMMUNICATION
     ---------------------------------------------------------------------------- */
-    private async sendMaximaMessage(toPublicKey: string, message: GroupMaximaMessage): Promise<void> {
-        console.log(`📤 [GROUP] Sending MAXIMA message type '${message.messageType}' to ${toPublicKey}...`);
+    private async sendMaximaMessage(toPublicKey: string, message: GroupMaximaMessage, isRetry: boolean = false): Promise<void> {
+        console.log(`📤 [GROUP] Sending MAXIMA message type '${message.messageType}' to ${toPublicKey}${isRetry ? ' (RETRY)' : ''}...`);
         const jsonStr = JSON.stringify(message);
         const hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
 
         const response = await new Promise<any>((resolve) => {
-            MDS.executeRaw("maxima action:send publickey:" + toPublicKey + " application:metachain-group data:" + hexData + " poll:false", (res: any) => {
+            MDS.executeRaw("maxima action:send publickey:" + toPublicKey + " application:metachain-group data:" + hexData, (res: any) => {
                 resolve(res);
             });
         });
@@ -451,7 +467,24 @@ class GroupService {
         console.log(`📤 [GROUP] MAXIMA send response:`, response);
 
         if (!response || (response as any).status === false) {
-            throw new Error((response as any).error || "MAXIMA send failed");
+            const errorMsg = (response as any).error || "MAXIMA send failed";
+
+            // Check for specific "No Contact found" error
+            if (errorMsg.includes("No Contact found") && !isRetry) {
+                console.log(`⚠️ [GROUP] Contact missing for ${toPublicKey}. Attempting to add contact and retry...`);
+
+                try {
+                    await this.ensureMaximaContact(toPublicKey);
+                    // Add a small delay to allow the contact add to propagate if needed (though usually immediate)
+                    await new Promise(r => setTimeout(r, 2000));
+                    return this.sendMaximaMessage(toPublicKey, message, true);
+                } catch (addErr) {
+                    console.error(`❌ [GROUP] Failed to add contact for retry:`, addErr);
+                    // Fall through to throw original error
+                }
+            }
+
+            throw new Error(errorMsg);
         }
     }
 
@@ -607,9 +640,13 @@ class GroupService {
     private async handleGroupChatMessage(message: GroupMaximaMessage, fromPublicKey: string): Promise<void> {
         // Save message locally
         const encodedMsg = encodeURIComponent(message.message || "").replace(/'/g, "%27");
+
+        // FIX: Use ORIGINAL sender's public key (from payload), not the relayer's (fromPublicKey)
+        const originalSender = message.senderPublickey || fromPublicKey;
+
         const insertSql = `
             INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read)
-            VALUES ('${message.groupId}', '${fromPublicKey}', '${message.senderUsername.replace(/'/g, "''")}', '${message.type}', '${encodedMsg}', '${message.filedata || ""}', ${message.timestamp}, 0)
+            VALUES ('${message.groupId}', '${originalSender}', '${message.senderUsername.replace(/'/g, "''")}', '${message.type}', '${encodedMsg}', '${message.filedata || ""}', ${message.timestamp}, 0)
         `;
         await this.runSQL(insertSql);
 
@@ -655,64 +692,54 @@ class GroupService {
       HISTORY SYNC
     ---------------------------------------------------------------------------- */
     async requestGroupHistory(groupId: string): Promise<void> {
+        console.log(`🔄 [GROUP_SYNC] Requesting history for group ${groupId}...`);
+
         try {
-            console.log(`🔄 [GROUP_SYNC] Requesting history for group ${groupId}`);
-            const group = await this.getGroupInfo(groupId);
-            if (!group) return;
+            // 1. Get last message timestamp
+            const lastMsgSql = `SELECT date FROM GROUP_MESSAGES WHERE group_id = '${groupId}' ORDER BY date DESC LIMIT 1`;
+            const res = await this.runSQL(lastMsgSql);
+            const lastTimestamp = (res.rows && res.rows.length > 0) ? res.rows[0].DATE : 0;
 
-            // 1. Get latest message timestamp
-            const sql = `SELECT MAX(date) as last_date FROM GROUP_MESSAGES WHERE group_id = '${groupId}'`;
-            const res = await this.runSQL(sql);
-            const lastDate = (res.rows && res.rows.length > 0 && res.rows[0].LAST_DATE)
-                ? Number(res.rows[0].LAST_DATE)
-                : 0;
-
-            console.log(`🔄 [GROUP_SYNC] Last message date: ${lastDate}`);
-
-            // 2. Identification of who to ask (The Creator)
-            const creatorKey = (group as any).CREATOR_PUBLICKEY;
-            if (!creatorKey) {
-                console.warn("⚠️ [GROUP_SYNC] No creator key found");
-                return;
-            }
-
-            // 3. Construct Request
-            // 3. Construct Request
-            // 3. Construct Request
-            const { myPublicKey, myUsername } = await new Promise<{ myPublicKey: string, myUsername: string }>((resolve) => {
-                MDS.executeRaw("maxima", (res: any) => {
-                    console.log("🔍 [GROUP_SYNC] Maxima info:", JSON.stringify(res));
-                    let pub = "";
-                    let name = "User";
-
-                    if (res && res.status && res.response) {
-                        pub = res.response.publickey || "";
-                        name = res.response.name || "User";
-                    } else {
-                        console.warn("⚠️ [GROUP_SYNC] Could not get Maxima info");
-                    }
-                    resolve({ myPublicKey: pub, myUsername: name });
-                });
-            });
-
-
-            if (creatorKey === myPublicKey) {
-                console.log("ℹ️ [GROUP_SYNC] I am the creator, skipping history request.");
-                return;
-            }
-
+            // 2. Prepare Request Message
             const requestMsg: GroupMaximaMessage = {
                 messageType: "history_request",
-                groupId,
-                groupName: (group as any).NAME,
-                senderPublickey: myPublicKey,
-                senderUsername: myUsername,
+                groupId: groupId,
+                groupName: "SYNC", // Placeholder
+                senderPublickey: "", // Filled by sendMaximaMessage
+                senderUsername: "",  // Filled by sendMaximaMessage
                 timestamp: Date.now(),
-                historySince: lastDate
+                historySince: Number(lastTimestamp)
             };
 
-            // 4. Send Request
-            await this.sendMaximaMessage(creatorKey, requestMsg);
+            // 3. Get Members and My Contacts
+            const members = await this.getGroupMembers(groupId);
+            const contacts = await this.getMyMaximaContacts();
+
+            // 4. Send Request to ALL connected members (Mesh Sync)
+            // This increases reliability: if creator is offline, any peer can provide history.
+            const { myPublicKey } = await this.getIdentity();
+
+            let sentCount = 0;
+            for (const member of members) {
+                const memberPubkey = (member as any).PUBLICKEY;
+
+                // Skip myself
+                if (memberPubkey === myPublicKey) continue;
+
+                // Check if this member is in my contacts
+                const isContact = contacts.some(c => c.publickey === memberPubkey);
+
+                if (isContact) {
+                    try {
+                        await this.sendMaximaMessage(memberPubkey, requestMsg);
+                        sentCount++;
+                    } catch (err) {
+                        console.warn(`⚠️ [GROUP_SYNC] Failed to ask history from ${memberPubkey.substring(0, 10)}...`);
+                    }
+                }
+            }
+
+            console.log(`📤 [GROUP_SYNC] Requested history from ${sentCount} peers.`);
 
         } catch (err) {
             console.error("❌ [GROUP_SYNC] Failed to request history:", err);
@@ -794,6 +821,7 @@ class GroupService {
         let addedCount = 0;
         for (const msg of message.historyMessages) {
             // Check if already exists to avoid duplicates
+            // Also check using original sender public key
             const checkSql = `
                 SELECT id FROM GROUP_MESSAGES 
                 WHERE group_id = '${message.groupId}' 
@@ -811,9 +839,10 @@ class GroupService {
                 const encoded = encodeURIComponent(msg.message).replace(/'/g, "%27");
                 const filedata = msg.filedata || "";
 
+                // FIX: Set propagated=1 to prevent Service Worker from re-broadcasting history as new messages
                 const insertSql = `
-                    INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read)
-                    VALUES ('${message.groupId}', '${msg.sender_publickey}', '${msg.sender_username.replace(/'/g, "''")}', '${msg.type}', '${encoded}', '${filedata}', ${msg.date}, 0)
+                    INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read, propagated)
+                    VALUES ('${message.groupId}', '${msg.sender_publickey}', '${msg.sender_username.replace(/'/g, "''")}', '${msg.type}', '${encoded}', '${filedata}', ${msg.date}, 0, 1)
                  `;
 
                 await this.runSQL(insertSql);
@@ -847,6 +876,33 @@ class GroupService {
         } catch (err) {
             console.error("❌ [GROUP] Failed to get username:", err);
             return "Unknown";
+        }
+    }
+
+    private async getIdentity(): Promise<{ myPublicKey: string, myUsername: string }> {
+        return new Promise((resolve) => {
+            MDS.cmd.maxima((res: any) => {
+                let pub = "";
+                let name = "User";
+                if (res && res.status && res.response) {
+                    pub = res.response.publickey || "";
+                    name = res.response.name || "User";
+                }
+                resolve({ myPublicKey: pub, myUsername: name });
+            });
+        });
+    }
+
+    private async getMyMaximaContacts(): Promise<any[]> {
+        try {
+            const response = await MDS.cmd.maxcontacts();
+            if (response && (response as any).response && (response as any).response.contacts) {
+                return (response as any).response.contacts;
+            }
+            return [];
+        } catch (err) {
+            console.error("❌ [GROUP] Failed to get contacts:", err);
+            return [];
         }
     }
 

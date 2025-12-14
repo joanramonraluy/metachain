@@ -144,19 +144,133 @@ MDS.init(function (msg) {
                     // Ensure GROUP_MESSAGES table exists (in case service.js runs before app)
                     // We assume it exists if app ran. If not, inserting will fail, but that's acceptable for now.
 
-                    // URL encode the message
-                    var encoded = encodeURIComponent(maxjson.message || "").replace(/'/g, "%27");
-                    var messageTimestamp = maxjson.timestamp || Date.now();
+                    // MIGRATION: Ensure propagated column exists
+                    // We try to add it. If it fails (exists), we ignore.
+                    var migrationSql = "ALTER TABLE GROUP_MESSAGES ADD COLUMN propagated INT DEFAULT 0";
+                    MDS.sql(migrationSql, function (migRes) {
+                        MDS.log("[ServiceWorker] Migration attempt result: " + JSON.stringify(migRes));
 
-                    var groupMsgSql = "INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read) VALUES "
-                        + "('" + maxjson.groupId + "','" + pubkey + "','" + maxjson.senderUsername + "','" + (maxjson.type || "text") + "','" + encoded + "','" + (maxjson.filedata || "") + "'," + messageTimestamp + ", 0)";
+                        // URL encode the message
+                        var encoded = encodeURIComponent(maxjson.message || "").replace(/'/g, "%27");
+                        var messageTimestamp = maxjson.timestamp || Date.now();
 
-                    MDS.sql(groupMsgSql, function (res) {
-                        if (res.status) {
-                            MDS.log("[ServiceWorker] Group message saved to DB");
-                        } else {
-                            MDS.log("[ServiceWorker] Failed to save group message: " + res.error);
-                        }
+                        // FIX: Use ORIGINAL sender's public key (from payload), not the relayer's (msg.data.from)
+                        var originalSender = maxjson.senderPublickey || pubkey;
+
+                        // Check for duplicates before inserting
+                        // We select ID and PROPAGATED. If propagated column is missing (migration failed significantly), this might fail.
+                        var checkSql = "SELECT id, propagated FROM GROUP_MESSAGES WHERE group_id='" + maxjson.groupId + "' AND sender_publickey='" + originalSender + "' AND date=" + messageTimestamp;
+
+                        MDS.sql(checkSql, function (checkRes) {
+                            MDS.log("[ServiceWorker] Duplicate check result: " + JSON.stringify(checkRes));
+
+                            var shouldPropagate = false;
+
+                            if (checkRes.status && checkRes.rows && checkRes.rows.length > 0) {
+                                // Message exists. Check if it has been propagated.
+                                var row = checkRes.rows[0];
+                                var isPropagated = (row.PROPAGATED === 1 || row.propagated === 1);
+
+                                if (isPropagated) {
+                                    MDS.log("[ServiceWorker] Duplicate group message already propagated. Ignoring.");
+                                    return;
+                                } else {
+                                    MDS.log("[ServiceWorker] Message exists but NOT propagated. Propagating now.");
+                                    shouldPropagate = true;
+                                    // Update propagated flag (if column exists)
+                                    MDS.sql("UPDATE GROUP_MESSAGES SET propagated=1 WHERE id=" + row.ID);
+                                }
+                            } else {
+                                // Not a duplicate (or DB query failed), insert it with propagated=1
+                                if (!checkRes.status) {
+                                    MDS.log("[ServiceWorker] Duplicate check failed (table missing column?), trying to insert/propagate anyway.");
+                                }
+
+                                shouldPropagate = true;
+                                var groupMsgSql = "INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read, propagated) VALUES "
+                                    + "('" + maxjson.groupId + "','" + originalSender + "','" + maxjson.senderUsername + "','" + (maxjson.type || "text") + "','" + encoded + "','" + (maxjson.filedata || "") + "'," + messageTimestamp + ", 0, 1)";
+
+                                MDS.sql(groupMsgSql, function (res) {
+                                    if (res.status) {
+                                        MDS.log("[ServiceWorker] Group message saved to DB (propagated=1).");
+                                    } else {
+                                        MDS.log("[ServiceWorker] Failed to save group message (maybe column missing?): " + res.error);
+                                        // If insert failed because propagated column is missing, try inserting without it
+                                        // But we still want to propagate!
+                                        if (res.error && res.error.indexOf('propagated') !== -1) {
+                                            var retrySql = "INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read) VALUES "
+                                                + "('" + maxjson.groupId + "','" + originalSender + "','" + maxjson.senderUsername + "','" + (maxjson.type || "text") + "','" + encoded + "','" + (maxjson.filedata || "") + "'," + messageTimestamp + ", 0)";
+                                            MDS.sql(retrySql);
+                                        }
+                                    }
+                                });
+                            }
+
+                            if (shouldPropagate) {
+                                MDS.log("[ServiceWorker] Starting propagation process...");
+                                // PROPAGATION: Re-broadcast to my contacts who are in this group
+                                // 1. Get group members
+                                var membersSql = "SELECT * FROM GROUP_MEMBERS WHERE group_id='" + maxjson.groupId + "'";
+                                MDS.sql(membersSql, function (memberRes) {
+                                    if (!memberRes.status || !memberRes.rows) {
+                                        MDS.log("[ServiceWorker] Failed to fetch group members for propagation.");
+                                        return;
+                                    }
+
+                                    var members = memberRes.rows;
+                                    MDS.log("[ServiceWorker] Found " + members.length + " members in group. Fetching contacts...");
+
+                                    // 2. Get my contacts
+                                    MDS.cmd("maxcontacts", function (contactRes) {
+                                        if (!contactRes.status || !contactRes.response.contacts) {
+                                            MDS.log("[ServiceWorker] Failed to fetch contacts.");
+                                            return;
+                                        }
+
+                                        var contacts = contactRes.response.contacts;
+                                        // Fetch my public key securely
+                                        MDS.cmd("maxima", function (maximaRes) {
+                                            var myPubkey = maximaRes.response.publickey;
+
+                                            // 3. Filter and send
+                                            var propagatedCount = 0;
+                                            for (var i = 0; i < members.length; i++) {
+                                                var m = members[i];
+                                                var memberPubkey = m.PUBLICKEY;
+
+                                                // Skip sender (pubkey is the sender of THIS Maxima packet, maxjson.senderPublickey is the original sender)
+                                                // We should skip both to be safe, plus myself
+                                                if (memberPubkey === pubkey || memberPubkey === maxjson.senderPublickey || memberPubkey === myPubkey) continue;
+
+                                                // Check if valid contact
+                                                var isContact = false;
+                                                for (var j = 0; j < contacts.length; j++) {
+                                                    if (contacts[j].publickey === memberPubkey) {
+                                                        isContact = true;
+                                                        break;
+                                                    }
+                                                }
+
+                                                if (isContact) {
+                                                    // Forward the ORIGINAL message object
+                                                    var jsonStr = JSON.stringify(maxjson);
+                                                    var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
+
+                                                    MDS.log("[ServiceWorker] Propagating to contact: " + memberPubkey.substring(0, 10));
+                                                    MDS.cmd("maxima action:send publickey:" + memberPubkey + " application:metachain-group data:" + hexData + " poll:false", function (sendRes) {
+                                                        // Log result
+                                                    });
+                                                    propagatedCount++;
+                                                } else {
+                                                    // MDS.log("Skip non-contact: " + memberPubkey.substring(0,10));
+                                                }
+                                            }
+                                            MDS.log("[ServiceWorker] Propagation complete. Sent to " + propagatedCount + " contacts.");
+                                        });
+                                    });
+                                });
+                            }
+                        });
                     });
 
                     // Do NOT continue for group messages (avoids polluting CHAT_MESSAGES)

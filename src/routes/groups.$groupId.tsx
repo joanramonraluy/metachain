@@ -33,6 +33,7 @@ interface ParsedMessage {
   status?: 'pending' | 'sent' | 'delivered' | 'read' | 'failed' | 'zombie';
   tokenAmount?: { amount: string; tokenName: string }; // For token transfer messages
   senderPublicKey?: string;
+  senderUsername?: string; // Added to store original username
 }
 
 
@@ -44,7 +45,7 @@ function ChatPage() {
     return msgs.filter((m) => {
       // Create a more unique key including type info
       const typeStr = m.charm ? 'charm' : m.tokenAmount ? 'token' : 'text';
-      const key = `${m.timestamp} -${typeStr} -${m.text || ''} `;
+      const key = `${m.timestamp}-${typeStr}-${m.text || ''}`;
 
       if (seen.has(key)) return false;
       seen.add(key);
@@ -125,7 +126,7 @@ function ChatPage() {
         const parsedMessages = rawMessages.map((row: any) => {
           const displayText = decodeURIComponent(row.MESSAGE || "");
 
-          const parsed = {
+          const parsed: ParsedMessage = {
             text: displayText,
             fromMe: row.SENDER_PUBLICKEY === myPublicKey,
             charm: null,
@@ -134,6 +135,7 @@ function ChatPage() {
             status: 'sent' as const,
             tokenAmount: undefined,
             senderPublicKey: row.SENDER_PUBLICKEY,
+            senderUsername: row.SENDER_USERNAME, // Map sender username
           };
 
           return parsed;
@@ -237,7 +239,7 @@ function ChatPage() {
     if (!input.trim()) return;
     if (!address || !userName || !myPublicKey) return;
 
-    const newMsg: ParsedMessage = { text: input, fromMe: true, charm: null, amount: null, timestamp: Date.now(), status: 'sent' };
+    const newMsg: ParsedMessage = { text: input, fromMe: true, charm: null, amount: null, timestamp: Date.now(), status: 'sent', senderUsername: userName };
     setMessages((prev) => [...prev, newMsg]);
 
     try {
@@ -487,7 +489,7 @@ function ChatPage() {
                   timestamp={msg.timestamp}
                   status={msg.status}
                   tokenAmount={msg.tokenAmount}
-                  senderName={!msg.fromMe && msg.senderPublicKey ? (contactsMap[msg.senderPublicKey]?.name || msg.senderPublicKey.substring(0, 6)) : undefined}
+                  senderName={!msg.fromMe && msg.senderPublicKey ? (contactsMap[msg.senderPublicKey]?.name || msg.senderUsername || msg.senderPublicKey.substring(0, 6)) : undefined}
                   senderImage={!msg.fromMe && msg.senderPublicKey ? contactsMap[msg.senderPublicKey]?.icon : undefined}
                   onAvatarClick={!msg.fromMe && msg.senderPublicKey ? () => navigate({ to: `/contact-info/${msg.senderPublicKey}`, search: { returnTo: `/groups/${address}` } }) : undefined}
                 />
