@@ -158,7 +158,7 @@ export const DiscoveryService = {
 
         return new Promise((resolve, reject) => {
             const cmd = `newscript script:"${REGISTRY_SCRIPT}" trackall:true`;
-            console.log("🛠️ [Discovery] Executing newscript (v0.0.4 - TRACKALL:TRUE):", cmd);
+            console.log("🛠️ [Discovery] Executing newscript (v0.0.6 - trackall:true for discovery):", cmd);
 
 
             MDS.executeRaw(cmd, (res: any) => {
@@ -575,3 +575,34 @@ export const DiscoveryService = {
         console.log(`✅ [Discovery] Profile visibility updated to: ${visible}`);
     }
 };
+
+/**
+ * Ensure coinnotify is set up for the profile registry
+ * This is idempotent and safe to call multiple times
+ * Should be called on app startup to handle dapp updates without node restart
+ */
+export const ensureCoinnotifySetup = async (): Promise<void> => {
+    try {
+        const registryAddress = await DiscoveryService.getRegistryAddress();
+
+        console.log('[Discovery] Ensuring coinnotify setup for:', registryAddress);
+
+        // Add coinnotify (idempotent - safe to call multiple times)
+        const cmd = `coinnotify action:add address:${registryAddress}`;
+        await new Promise<void>((resolve) => {
+            MDS.executeRaw(cmd, (res: any) => {
+                if (res.status) {
+                    console.log('✅ [Discovery] coinnotify setup verified');
+                    resolve();
+                } else {
+                    console.warn('⚠️ [Discovery] coinnotify setup warning:', res.error);
+                    resolve(); // Don't reject - Service Worker might have it set up
+                }
+            });
+        });
+    } catch (error) {
+        console.error('❌ [Discovery] Failed to setup coinnotify:', error);
+        // Don't throw - this is not critical, Service Worker might have it set up
+    }
+};
+

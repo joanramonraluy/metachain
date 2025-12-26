@@ -104,6 +104,28 @@ MDS.init(function (msg) {
 
             MDS.sql(profileCacheSql, function (cacheRes) {
                 MDS.log("[ServiceWorker] PROFILE_CACHE table initialized: " + JSON.stringify(cacheRes));
+
+                // Setup coinnotify for profile registry (based on Soko pattern)
+                // This allows us to receive notifications without polluting the wallet
+                var REGISTRY_SCRIPT = 'RETURN SIGNEDBY(STATE(2)) /* METACHAIN_PROFILE */';
+
+                MDS.cmd("newscript script:\"" + REGISTRY_SCRIPT + "\" trackall:true", function (scriptRes) {
+                    if (scriptRes.status) {
+                        var registryAddress = scriptRes.response.address;
+                        MDS.log("[ServiceWorker] Registry address: " + registryAddress);
+
+                        // Add coinnotify listener (like Soko does for NFT marketplace)
+                        MDS.cmd("coinnotify action:add address:" + registryAddress, function (notifyRes) {
+                            if (notifyRes.status) {
+                                MDS.log("[ServiceWorker] coinnotify setup complete for profile registry");
+                            } else {
+                                MDS.log("[ServiceWorker] coinnotify setup failed: " + notifyRes.error);
+                            }
+                        });
+                    } else {
+                        MDS.log("[ServiceWorker] Failed to create registry script: " + scriptRes.error);
+                    }
+                });
             });
         });
 
@@ -418,6 +440,29 @@ MDS.init(function (msg) {
             } catch (err) {
                 MDS.log("[ServiceWorker] Error processing message: " + err);
             }
+        }
+
+        // Handle NOTIFYCOIN events (like Soko does for NFT marketplace)
+    } else if (msg.event === "NOTIFYCOIN") {
+        var coin = msg.data.coin;
+        var REGISTRY_SCRIPT_COMMENT = '/* METACHAIN_PROFILE */';
+
+        // Check if this is a profile coin by looking at the script
+        if (coin.script && coin.script.indexOf(REGISTRY_SCRIPT_COMMENT) !== -1) {
+            MDS.log("[Discovery] New profile detected! CoinID: " + coin.coinid);
+            MDS.log("[Discovery] Profile data: " + JSON.stringify(coin.state));
+
+            // The profile data is in the coin's state variables
+            // STATE(0) = profileId
+            // STATE(1) = alias
+            // STATE(2) = publickey (owner)
+            // STATE(3) = version
+            // STATE(4) = visible
+            // STATE(5) = profileHash
+            // STATE(6) = schemaVersion
+
+            // You can process the profile here if needed
+            // For now, we just log it. The main app will query via getProfiles()
         }
     }
 });

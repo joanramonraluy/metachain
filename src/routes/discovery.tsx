@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { MDS } from '@minima-global/mds'
 import { useEffect, useState } from 'react'
-import { DiscoveryService, UserProfile } from '../services/discovery.service'
+import { DiscoveryService, UserProfile, ensureCoinnotifySetup } from '../services/discovery.service'
 import { maximaDiscoveryService } from '../services/maxima-discovery.service'
 import { UserPlus, Search, Globe, RefreshCw, Edit } from 'lucide-react'
 
@@ -23,6 +23,9 @@ function DiscoveryPage() {
 
     useEffect(() => {
         loadData()
+        // Ensure coinnotify is set up (handles dapp updates without node restart)
+        ensureCoinnotifySetup();
+
         checkStaticMLSConfig() // Check MLS configuration on mount
 
         // Subscribe to Maxima profile broadcasts
