@@ -3,12 +3,24 @@
  * Processes incoming Maxima messages even when app is closed
  */
 
-// Convert HEX to UTF8
-function hexToUtf8(s) {
-    return decodeURIComponent(
-        s.replace(/\s+/g, '') // remove spaces
-            .replace(/[0-9A-F]{2}/g, '%$&') // add '%' before each 2 characters
-    );
+// Convert HEX to UTF8 - FIXED VERSION
+function hexToUtf8(hexStr) {
+    // Remove any whitespace
+    hexStr = hexStr.replace(/\s+/g, '');
+
+    // Convert hex pairs to bytes
+    var bytes = [];
+    for (var i = 0; i < hexStr.length; i += 2) {
+        bytes.push(parseInt(hexStr.substr(i, 2), 16));
+    }
+
+    // Convert bytes to UTF-8 string
+    var str = '';
+    for (var i = 0; i < bytes.length; i++) {
+        str += String.fromCharCode(bytes[i]);
+    }
+
+    return str;
 }
 
 // Convert UTF8 to HEX
@@ -27,7 +39,7 @@ MDS.init(function (msg) {
 
     // Do initialisation
     if (msg.event == "inited") {
-        MDS.log("[ServiceWorker] STARTING UP - Version 0.0.1");
+        MDS.log("🚀 [ServiceWorker] STARTING UP - PATCHED VERSION 0.0.1-Fix7");
 
         // Create the DB if not exists (using same schema as main app)
         var initsql = "CREATE TABLE IF NOT EXISTS CHAT_MESSAGES ( "
@@ -75,7 +87,7 @@ MDS.init(function (msg) {
 
             // Create MY_PROFILE table for extended community profile
             var myProfileSql = "CREATE TABLE IF NOT EXISTS MY_PROFILE ( "
-                + "  id INT PRIMARY KEY DEFAULT 1, "
+                + "  id INT PRIMARY KEY, "
                 + "  avatar TEXT, "
                 + "  tags TEXT, "
                 + "  bio_extended TEXT, "
@@ -85,25 +97,53 @@ MDS.init(function (msg) {
                 + " )";
 
             MDS.sql(myProfileSql, function (profileRes) {
-                MDS.log("[ServiceWorker] MY_PROFILE table initialized: " + JSON.stringify(profileRes));
+                // Initialize the single profile row if it doesn't exist
+                MDS.sql("INSERT IGNORE INTO MY_PROFILE (id) VALUES (1)", function () {
+                    MDS.log("[ServiceWorker] MY_PROFILE table initialized: " + JSON.stringify(profileRes));
+                });
             });
 
-            // Create PROFILE_CACHE table for caching other users' profiles
-            var profileCacheSql = "CREATE TABLE IF NOT EXISTS PROFILE_CACHE ( "
+            // Layer 1: Discovery Layer (Ephemeral) - TTL 1 hour
+            var discoveryLayerSql = "CREATE TABLE IF NOT EXISTS DISCOVERED_PEERS ( "
                 + "  publickey VARCHAR(512) PRIMARY KEY, "
-                + "  online_status VARCHAR(20), "
-                + "  last_ping BIGINT, "
-                + "  last_pong BIGINT, "
-                + "  avatar TEXT, "
-                + "  tags TEXT, "
-                + "  bio_extended TEXT, "
-                + "  social_links TEXT, "
-                + "  location TEXT, "
-                + "  fetched_at BIGINT "
+                + "  alias VARCHAR(160) NOT NULL, "
+                + "  bio VARCHAR(512), "
+                + "  address VARCHAR(512) NOT NULL, "
+                + "  last_seen BIGINT NOT NULL, "
+                + "  source VARCHAR(20) NOT NULL"
                 + " )";
 
-            MDS.sql(profileCacheSql, function (cacheRes) {
-                MDS.log("[ServiceWorker] PROFILE_CACHE table initialized: " + JSON.stringify(cacheRes));
+            MDS.sql(discoveryLayerSql, function (discoveryRes) {
+                MDS.log("[ServiceWorker] DISCOVERED_PEERS table initialized: " + JSON.stringify(discoveryRes));
+
+                // Add bio column to existing tables if it doesn't exist
+                var alterBioSql = "ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS bio VARCHAR(512)";
+                MDS.sql(alterBioSql, function (alterRes) {
+                    MDS.log("[ServiceWorker] Bio column added/verified: " + JSON.stringify(alterRes));
+                });
+            });
+
+            // Layer 2: User Registry (Stable) - Persistent, no TTL
+            var userRegistrySql = "CREATE TABLE IF NOT EXISTS METACHAIN_USERS ( "
+                + "  user_id VARCHAR(512) PRIMARY KEY, "
+                + "  publickey VARCHAR(512) UNIQUE NOT NULL, "
+                + "  alias VARCHAR(160) NOT NULL, "
+                + "  address VARCHAR(512) NOT NULL, "
+                + "  first_seen BIGINT NOT NULL, "
+                + "  last_updated BIGINT NOT NULL"
+                + " )";
+
+            MDS.sql(userRegistrySql, function (userRes) {
+                MDS.log("[ServiceWorker] METACHAIN_USERS table initialized: " + JSON.stringify(userRes));
+            });
+
+            // Enable networking logs to receive MINIMALOG events for P2P beacons
+            MDS.cmd("logs on", function (logRes) {
+                if (logRes.status) {
+                    MDS.log("✅ [Discovery] Logs enabled for MINIMALOG");
+                } else {
+                    MDS.log("⚠️ [Discovery] Could not enable logs: " + logRes.error);
+                }
             });
         });
 
@@ -339,10 +379,14 @@ MDS.init(function (msg) {
 
                 // Handle delivery receipts
                 if (maxjson.type === "delivery_receipt") {
-                    MDS.log("[ServiceWorker] Delivery receipt received from " + pubkey);
-                    // IMPORTANT: Don't update pending OR failed messages!
-                    var sql = "UPDATE CHAT_MESSAGES SET state='delivered' WHERE publickey='" + pubkey + "' AND username='Me' AND state!='read' AND state!='pending' AND state!='failed'";
-                    MDS.sql(sql);
+                    MDS.log("[ServiceWorker] Ignoring Delivery Receipt");
+                    return;
+                }
+
+                // Handle Peer Discovery Beacons (type: register)
+                if (maxjson.type === "register") {
+                    MDS.log("[ServiceWorker] Peer Discovery Beacon received: " + maxjson.alias);
+                    handleBeacon(maxjson, 'MAXIMA');
                     return;
                 }
 
@@ -420,4 +464,187 @@ MDS.init(function (msg) {
             }
         }
     }
+
+    // P2P Beacon Reception via MINIMALOG (NO debug logs to avoid infinite loop)
+    else if (msg.event === "MINIMALOG") {
+        var logMessage = msg.data.message;
+
+        // Strategy 1: Check for HEX encoded JSON (Pattern: ...:0x7b...)
+        var hexIndex = logMessage.indexOf(":0x7b");
+        if (hexIndex !== -1) {
+            try {
+                // Extract hex portion starting from "0x"
+                var hexStart = hexIndex + 1; // Start at "0x"
+                var rawHex = logMessage.substring(hexStart);
+
+                MDS.log("DEBUG_DISCOVERY: Raw hex substring (first 50): " + rawHex.substring(0, 50) + "...");
+
+                // Extract only valid hex characters (0x followed by hex digits)
+                // Stop at first non-hex character
+                var hexMatch = rawHex.match(/^(0x[0-9A-Fa-f]+)/);
+                if (!hexMatch) {
+                    MDS.log("DEBUG_DISCOVERY: No valid hex found after :0x7b");
+                    return;
+                }
+
+                var hexStr = hexMatch[1];
+                MDS.log("DEBUG_DISCOVERY: Extracted hex length: " + hexStr.length);
+
+                // Remove the "0x" prefix for decoding
+                var cleanHex = hexStr.substring(2);
+                MDS.log("DEBUG_DISCOVERY: Clean hex (first 50): " + cleanHex.substring(0, 50));
+
+                // Decode
+                var jsonStr = hexToUtf8(cleanHex);
+                MDS.log("DEBUG_DISCOVERY: Decoded length: " + jsonStr.length + ", first 100 chars: " + jsonStr.substring(0, 100));
+
+                // Sanitize: Trim null bytes and other control characters (stricter regex)
+                jsonStr = jsonStr.replace(/[\x00-\x1F\x7F-\x9F]/g, "").trim();
+                MDS.log("DEBUG_DISCOVERY: Sanitized, attempting JSON.parse...");
+
+                // Parse
+                var beacon = JSON.parse(jsonStr);
+
+                // Log success (Safe log: avoid re-triggering patterns)
+                MDS.log("DEBUG_DISCOVERY: ✅ Hex decoded successfully. App: " + beacon.app + ", Type: " + beacon.type + ", Alias: " + beacon.alias);
+
+                if (beacon.app === "metachain" && beacon.type === "BEACON") {
+                    handleBeacon(beacon, 'P2P');
+                }
+                return;
+            } catch (e) {
+                MDS.log("DEBUG_DISCOVERY: ❌ Hex Strategy Failed: " + e.message);
+            }
+        }
+
+        // Strategy 2: Check for plain text GENMESSAGE
+        if (logMessage.indexOf("GENMESSAGE :") !== -1) {
+            try {
+                var jsonStart = logMessage.indexOf("{");
+                if (jsonStart !== -1) {
+                    var jsonStr = logMessage.substring(jsonStart);
+                    var beacon = JSON.parse(jsonStr);
+
+                    if (beacon.app === "metachain" && beacon.type === "BEACON") {
+                        handleBeacon(beacon, 'P2P');
+                    }
+                }
+            } catch (e) {
+                // Silently ignore errors
+            }
+        }
+    }
 });
+
+// Beacon Handler - ALWAYS insert to Layer 1 (DISCOVERED_PEERS)
+function handleBeacon(beacon, source) {
+    MDS.log("🕵️ [Debug] handleBeacon called for " + beacon.alias + " (" + source + ")");
+
+    if (!beacon.pubkey || !beacon.address || !beacon.alias) {
+        MDS.log("❌ [Debug] Invalid beacon data: " + JSON.stringify(beacon));
+        return;
+    }
+
+    var now = Date.now();
+    var escapedAlias = beacon.alias.replace(/'/g, "''");
+    var escapedBio = (beacon.bio || "").replace(/'/g, "''");
+
+    // FIX: Use MERGE INTO instead of INSERT OR REPLACE (H2 Syntax)
+    var discoverySql = "MERGE INTO DISCOVERED_PEERS (publickey, alias, bio, address, last_seen, source) "
+        + "KEY (publickey) "
+        + "VALUES ('" + beacon.pubkey + "', '" + escapedAlias + "', '" + escapedBio + "', '"
+        + beacon.address + "', " + now + ", '" + source + "')";
+
+    MDS.sql(discoverySql, function (res) {
+        if (res.status) {
+            MDS.log("✅ [Discovery] Peer: " + beacon.alias + " (" + source + ") - Saved to DB");
+            promoteToUserRegistry(beacon, now);
+        } else {
+            MDS.log("❌ [Debug] INSERT FAILED: " + JSON.stringify(res));
+
+            // Fallback: Check if table exists
+            MDS.sql("SELECT * FROM DISCOVERED_PEERS LIMIT 1", function (checkRes) {
+                if (!checkRes.status) {
+                    MDS.log("❌ [Debug] DISCOVERED_PEERS table appears missing! Attempting recreation...");
+                    // Re-run creation logic? It should have run in init.
+                    var discoveryLayerSql = "CREATE TABLE IF NOT EXISTS DISCOVERED_PEERS ( "
+                        + "  publickey VARCHAR(512) PRIMARY KEY, "
+                        + "  alias VARCHAR(160) NOT NULL, "
+                        + "  address VARCHAR(512) NOT NULL, "
+                        + "  last_seen BIGINT NOT NULL, "
+                        + "  source VARCHAR(20) NOT NULL"
+                        + " )";
+                    MDS.sql(discoveryLayerSql, function (createRes) {
+                        MDS.log("🛠️ [Debug] Table Recreation Result: " + JSON.stringify(createRes));
+                        // Retry insert? No, wait for next beacon.
+                    });
+                }
+            });
+        }
+    });
+}
+
+// Controlled Promotion to Layer 2
+function promoteToUserRegistry(beacon, now) {
+    var user_id = beacon.pubkey;
+    var escapedAlias = beacon.alias.replace(/'/g, "''");
+
+    MDS.sql("SELECT * FROM METACHAIN_USERS WHERE user_id='" + user_id + "'", function (res) {
+        if (res.status && res.rows && res.rows.length > 0) {
+            // User exists → UPDATE
+            var updateSql = "UPDATE METACHAIN_USERS "
+                + "SET alias='" + escapedAlias + "', address='" + beacon.address + "', "
+                + "last_updated=" + now + " WHERE user_id='" + user_id + "'";
+            MDS.sql(updateSql);
+        } else {
+            // Check promotion criteria
+            checkPromotionCriteria(beacon, user_id, escapedAlias, now);
+        }
+    });
+}
+
+// Check Promotion Criteria
+function checkPromotionCriteria(beacon, user_id, escapedAlias, now) {
+    MDS.sql("SELECT source FROM DISCOVERED_PEERS WHERE publickey='" + beacon.pubkey + "'", function (res) {
+        if (res.status && res.rows && res.rows.length > 0) {
+            var source = res.rows[0].SOURCE;
+
+            if (source === 'BOOTSTRAP') {
+                // ✅ Promote: Bootstrap users are validated
+                var insertSql = "INSERT INTO METACHAIN_USERS "
+                    + "(user_id, publickey, alias, address, first_seen, last_updated) "
+                    + "VALUES ('" + user_id + "', '" + beacon.pubkey + "', '" + escapedAlias + "', '"
+                    + beacon.address + "', " + now + ", " + now + ")";
+                MDS.sql(insertSql);
+                MDS.log("⭐ [Discovery] Promoted: " + beacon.alias);
+            }
+        }
+    });
+}
+
+// Periodic Cleanup Timer - TTL for Layer 1 only
+function startCleanupTimer() {
+    setInterval(function () {
+        var oneHourAgo = Date.now() - (60 * 60 * 1000);
+        var sql = "DELETE FROM DISCOVERED_PEERS WHERE last_seen < " + oneHourAgo;
+        MDS.sql(sql, function (res) {
+            if (res.status && res.count > 0) {
+                MDS.log("[Discovery] Cleaned " + res.count + " stale peers");
+            }
+        });
+    }, 15 * 60 * 1000);
+}
+
+// Bootstrap Sync Timer
+function startBootstrapSync() {
+    setInterval(function () {
+        MDS.cmd("maxima", function (res) {
+            if (res.status && res.response.staticmls && res.response.mls) {
+                var msgData = { app: "metachain", type: "get_peers" };
+                var cmd = "maxima action:send to:" + res.response.mls +
+                    " application:metachain data:" + JSON.stringify(msgData);
+                MDS.cmd(cmd);
+            }
+        });
+    }, 10 * 60 * 1000);
+}

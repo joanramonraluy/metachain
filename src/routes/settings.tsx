@@ -2,8 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useContext, useEffect, useState } from "react";
 import { MDS } from "@minima-global/mds";
 import { appContext } from "../AppContext";
-import { DiscoveryService } from "../services/discovery.service";
 import { User, ChevronDown, ChevronUp, Copy, Check, Edit2, Globe, Palette, Shield, AlertTriangle, RefreshCw, Info } from "lucide-react";
+import { sendBeacon } from "../hooks/useBeaconSender";
 
 export const Route = createFileRoute("/settings")({
   component: Settings,
@@ -33,24 +33,13 @@ function Settings() {
   const [hasStaticMLS, setHasStaticMLS] = useState(false);
   const [hasPermanentAddress, setHasPermanentAddress] = useState(false);
   const [permanentAddress, setPermanentAddress] = useState("");
-  const [profileVisible, setProfileVisible] = useState(true);
-  const [configuringMLS, setConfiguringMLS] = useState(false);
   const [enablingPermanent, setEnablingPermanent] = useState(false);
   const [p2pIdentity, setP2pIdentity] = useState("");
 
-  // L1 Profile State Tracking
-  const [l1Name, setL1Name] = useState("");
-  const [showReadModeWarning, setShowReadModeWarning] = useState(false);
 
-  // Extended Profile Fields
-  const [profileDescription, setProfileDescription] = useState("");
-  const [profileLocation, setProfileLocation] = useState("");
-  const [profileWebsite, setProfileWebsite] = useState("");
-  const [profileBio, setProfileBio] = useState("");
-  const [showLocation, setShowLocation] = useState(true);
-  const [showWebsite, setShowWebsite] = useState(true);
-  const [showBio, setShowBio] = useState(true);
-  const [savingProfile, setSavingProfile] = useState(false);
+  // P2P Profile State (Discovery) - Only bio, name comes from Maxima
+  const [p2pBio, setP2pBio] = useState("");
+  const [savingP2pProfile, setSavingP2pProfile] = useState(false);
 
   // Network Status State
   const [networkStatus, setNetworkStatus] = useState<any>(null);
@@ -93,6 +82,20 @@ function Settings() {
     };
 
     fetchProfile();
+
+    // Fetch P2P Bio only (name comes from Maxima)
+    const fetchP2pProfile = async () => {
+      try {
+        const bioRes = await MDS.keypair.get('p2p_bio');
+        if (bioRes && bioRes.status && bioRes.value) {
+          setP2pBio(bioRes.value);
+        }
+      } catch (err) {
+        console.error("Error fetching P2P bio:", err);
+      }
+    };
+
+    fetchP2pProfile();
 
     // Fetch network status
     fetchNetworkStatus();
@@ -187,145 +190,13 @@ function Settings() {
         // Check if permanent address is enabled (we assume it's enabled if staticmls is true)
         // In a real implementation, you'd verify this with maxextra or another check
         setHasPermanentAddress(true);
-
-        // Load existing profile from blockchain
-        await fetchCommunityProfile();
       }
     } catch (err) {
       console.error("Error fetching community status:", err);
     }
   };
 
-  const fetchCommunityProfile = async () => {
-    try {
-      // const { DiscoveryService } = await import('../services/discovery.service');
-      const profiles = await DiscoveryService.getProfiles();
-      const myProfile = profiles.find(p => p.isMyProfile);
 
-      if (myProfile) {
-        // Load extended data if available
-        if (myProfile.extraData) {
-          setProfileLocation(myProfile.extraData.location || "");
-          setProfileWebsite(myProfile.extraData.website || "");
-          setProfileBio(myProfile.extraData.bio || "");
-        }
-
-        const name = myProfile.username || "";
-        const desc = myProfile.description || "";
-        const visible = myProfile.visible !== false;
-
-        setL1Name(name);
-        setProfileDescription(desc);
-        setProfileVisible(visible);
-
-        // Set original values for dirty checking
-
-      }
-    }
-
-    catch (err) {
-      console.error("Error fetching community profile:", err);
-    }
-  };
-
-  const executeCombinedUpdate = async () => {
-    try {
-      setSavingProfile(true);
-
-      // Prepare Extended Profile Data
-      const extraData: any = {};
-      if (showLocation && profileLocation.trim()) extraData.location = profileLocation.trim();
-      if (showWebsite && profileWebsite.trim()) extraData.website = profileWebsite.trim();
-      if (showBio && profileBio.trim()) extraData.bio = profileBio.trim();
-
-      // Unified Update (L1 + Extended Atomic Update)
-      await DiscoveryService.updateProfile(
-        l1Name,
-        profileDescription,
-        profileVisible,
-        Object.keys(extraData).length > 0 ? extraData : undefined
-      );
-
-      // Update original values
-
-
-      console.log("✅ [Settings] Profile update initiated");
-
-      // Only show alert if in Read Mode (Pending Transaction)
-      if (!writeMode) {
-        alert("✅ Operation pending. Please approve in Minima pending tab.");
-      }
-
-      // Auto-register with MLS to ensure key/visibility is synced
-      // DISABLED: This was causing duplicate pending transactions and interfering with the main profile update
-      // Users can manually trigger MLS registration from the Community & Discovery section if needed
-      // if (hasStaticMLS) {
-      //   console.log("🔄 [Settings] Auto-triggering MLS registration update...");
-      //   handleEnablePermanentAddress(true);
-      // }
-    } catch (err) {
-      console.error("❌ [Settings] Error updating profile:", err);
-      alert("Failed to update profile: " + (err as Error).message);
-    } finally {
-      setSavingProfile(false);
-      setShowReadModeWarning(false);
-    }
-  };
-
-  const handleCombinedProfileUpdate = async () => {
-    console.log("🖱️ [Settings] Save Profile clicked. WriteMode:", writeMode);
-
-    if (!hasPermanentAddress) {
-      alert("⚠️ Please enable permanent address first");
-      return;
-    }
-
-    if (!writeMode) {
-      setShowReadModeWarning(true);
-      return;
-    }
-
-    await executeCombinedUpdate();
-  };
-
-  const handleConfigureStaticMLS = async () => {
-    if (!staticMLSServer.trim()) {
-      alert("Please enter a Static MLS server address");
-      return;
-    }
-
-    setConfiguringMLS(true);
-    try {
-      const cmd = `maxextra action:staticmls host:${staticMLSServer.trim()}`;
-      const response = await new Promise<any>((resolve, reject) => {
-        MDS.executeRaw(cmd, (res: any) => {
-          if (res.status) {
-            resolve(res);
-          } else {
-            reject(new Error(res.error || 'Failed to configure Static MLS'));
-          }
-        });
-      });
-
-      console.log("✅ [Settings] Static MLS configured:", response);
-      await fetchCommunityStatus(); // Refresh status
-
-      // IMPORTANT: After configuring, immediately try to register!
-      if (staticMLSServer.trim()) {
-        console.log("🚀 [Settings] Auto-registering permanent address...");
-        setTimeout(() => {
-          handleEnablePermanentAddress(true); // Silent = true
-        }, 1000); // Small delay to let state settle
-      }
-
-      alert("✅ Static MLS configured successfully! Registration request sent.");
-    } catch (err) {
-      console.error("❌ [Settings] Error configuring Static MLS:", err);
-      alert("Failed to configure Static MLS: " + (err as Error).message);
-    } finally {
-      setConfiguringMLS(false);
-    }
-  };
 
 
 
@@ -526,6 +397,28 @@ function Settings() {
     }
   };
 
+  const handleSaveP2pProfile = async () => {
+    setSavingP2pProfile(true);
+    try {
+      // Save bio
+      await MDS.keypair.set('p2p_bio', p2pBio.trim());
+
+      console.log("✅ [Settings] P2P bio saved");
+
+      // Send beacon immediately to propagate bio change
+      console.log("[Settings] Sending beacon with updated bio...");
+      await sendBeacon();
+      console.log("[Settings] Beacon sent successfully");
+
+      alert("✅ Bio saved and broadcasted!");
+    } catch (err) {
+      console.error("❌ [Settings] Error saving P2P profile:", err);
+      alert("Failed to save P2P profile: " + (err as Error).message);
+    } finally {
+      setSavingP2pProfile(false);
+    }
+  };
+
   const copyToClipboard = (text: string, fieldId: string) => {
     navigator.clipboard.writeText(text);
     setCopiedField(fieldId);
@@ -538,39 +431,6 @@ function Settings() {
 
   return (
     <>
-      {/* Read Mode Warning Modal */}
-      {showReadModeWarning && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl w-96 max-w-full mx-4">
-            <div className="flex items-center gap-3 mb-4 text-yellow-600 dark:text-yellow-500">
-              <AlertTriangle size={24} />
-              <h3 className="text-xl font-bold text-gray-900 dark:text-white">Read Mode Active</h3>
-            </div>
-
-            <p className="text-gray-600 dark:text-gray-300 mb-6 leading-relaxed">
-              This action will create a <strong>PENDING transaction</strong>.
-              <br /><br />
-              You will need to go to the <strong>Minima app</strong> to approve it manually.
-            </p>
-
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={() => setShowReadModeWarning(false)}
-                className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={executeCombinedUpdate}
-                className="px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-md transition-colors font-medium"
-              >
-                Proceed & Create Pending
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Edit Name Dialog */}
       {showEditDialog && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -708,165 +568,47 @@ function Settings() {
               </div>
 
 
-              {/* Public Profile Section (Combined L1 + Extended) */}
-              {hasPermanentAddress && (
-                <div className="border border-gray-200 rounded-lg overflow-hidden">
-                  <div className="px-6 py-4 bg-gray-50/50 border-b border-gray-200">
-                    <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider">Public Profile</h3>
+              {/* P2P Discovery Profile Section - Always Visible */}
+              <div className="p-6 border-b border-gray-100">
+                <div className="flex items-center gap-2 mb-4">
+                  <Globe className="text-blue-500" size={20} />
+                  <h3 className="text-lg font-semibold text-gray-800">Discovery Profile (P2P)</h3>
+                </div>
+
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800 flex items-start gap-2 mb-4">
+                  <Info size={16} className="mt-0.5 flex-shrink-0" />
+                  <p>Your <strong>Maxima name</strong> is used for P2P discovery. Add a bio below to share more about yourself.</p>
+                </div>
+
+                <div className="space-y-4">
+
+                  {/* Bio */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Bio
+                    </label>
+                    <textarea
+                      value={p2pBio}
+                      onChange={(e) => setP2pBio(e.target.value)}
+                      placeholder="Tell others about yourself..."
+                      rows={3}
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white text-gray-700 resize-none"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Shared with all discovered peers</p>
                   </div>
 
-                  <div className="p-6 space-y-6">
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800 flex items-start gap-2">
-                      <Info size={16} className="mt-0.5 flex-shrink-0" />
-                      <p>This information is public and stored on the blockchain or shared via Maxima.</p>
-                    </div>
-
-                    {/* CORE L1 FIELDS */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      {/* Display Name */}
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Display Name</label>
-                        <input
-                          type="text"
-                          value={l1Name}
-                          onChange={(e) => setL1Name(e.target.value)}
-                          placeholder="Your public display name"
-                          className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white text-gray-700"
-                        />
-                      </div>
-
-                      {/* Description */}
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Description / Bio Header</label>
-                        <input
-                          type="text"
-                          value={profileDescription}
-                          onChange={(e) => setProfileDescription(e.target.value)}
-                          placeholder="Short tagline..."
-                          className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm text-gray-700 bg-white"
-                        />
-                      </div>
-                    </div>
-
-                    {/* EXTENDED FIELDS */}
-                    <div className="space-y-4 pt-4 border-t border-gray-100">
-                      {/* Location */}
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <label className="text-sm font-medium text-gray-700">Location</label>
-                          <label className="relative inline-flex items-center cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={showLocation}
-                              onChange={(e) => setShowLocation(e.target.checked)}
-                              className="sr-only peer"
-                            />
-                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                            <span className="ml-3 text-xs text-gray-600">Show</span>
-                          </label>
-                        </div>
-                        <input
-                          type="text"
-                          value={profileLocation}
-                          onChange={(e) => setProfileLocation(e.target.value)}
-                          placeholder="e.g., Barcelona, Catalonia"
-                          className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm text-gray-700 bg-white"
-                        />
-                      </div>
-
-                      {/* Website */}
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <label className="text-sm font-medium text-gray-700">Website</label>
-                          <label className="relative inline-flex items-center cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={showWebsite}
-                              onChange={(e) => setShowWebsite(e.target.checked)}
-                              className="sr-only peer"
-                            />
-                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                            <span className="ml-3 text-xs text-gray-600">Show</span>
-                          </label>
-                        </div>
-                        <input
-                          type="url"
-                          value={profileWebsite}
-                          onChange={(e) => setProfileWebsite(e.target.value)}
-                          placeholder="https://example.com"
-                          className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm text-gray-700 bg-white"
-                        />
-                      </div>
-
-                      {/* Bio / About */}
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <label className="text-sm font-medium text-gray-700">About Me</label>
-                          <label className="relative inline-flex items-center cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={showBio}
-                              onChange={(e) => setShowBio(e.target.checked)}
-                              className="sr-only peer"
-                            />
-                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                            <span className="ml-3 text-xs text-gray-600">Show</span>
-                          </label>
-                        </div>
-                        <textarea
-                          value={profileBio}
-                          onChange={(e) => setProfileBio(e.target.value)}
-                          placeholder="Tell the community about yourself..."
-                          rows={3}
-                          className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm resize-none text-gray-700 bg-white"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Visibility Toggle */}
-                    <div className="flex items-center justify-between p-4 rounded-lg border bg-gray-50 border-gray-200">
-                      <div>
-                        <p className="font-medium text-gray-800 text-sm">
-                          {profileVisible ? 'Publicly Visible' : 'Hidden from Community'}
-                        </p>
-                        <p className="text-xs text-gray-600 mt-1">
-                          {profileVisible
-                            ? 'Your profile is discoverable by others.'
-                            : 'You are hidden from the discovery list.'}
-                        </p>
-                      </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={profileVisible}
-                          onChange={(e) => setProfileVisible(e.target.checked)}
-                          className="sr-only peer"
-                        />
-                        <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                      </label>
-                    </div>
-
-                    {/* UNIFIED SAVE BUTTON */}
+                  {/* Save Button */}
+                  <div className="flex justify-end">
                     <button
-                      onClick={handleCombinedProfileUpdate}
-                      disabled={savingProfile}
-                      className="w-full py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-sm"
+                      onClick={handleSaveP2pProfile}
+                      disabled={savingP2pProfile}
+                      className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      {savingProfile ? (
-                        <>
-                          <RefreshCw size={20} className="animate-spin" />
-                          Saving Profile...
-                        </>
-                      ) : (
-                        <>
-                          <Check size={20} />
-                          Save Public Profile
-                        </>
-                      )}
+                      {savingP2pProfile ? 'Saving...' : 'Save Bio'}
                     </button>
                   </div>
                 </div>
-              )}
+              </div>
 
               {/* Maxima Address - Full Width */}
               <div className="border-b border-gray-100">
@@ -1035,7 +777,7 @@ function Settings() {
                   {expandedAddress === 'staticMLS' && (
                     <div className="px-6 pb-6 pt-0">
                       <p className="text-sm text-gray-600 mb-4">
-                        Configure a permanent Maxima Lookup Service to enable a permanent MAX# address for Community Discovery.
+                        Configure a permanent Maxima Lookup Service to enable a permanent MAX# address for P2P Discovery.
                       </p>
 
                       {hasStaticMLS ? (
@@ -1066,7 +808,7 @@ function Settings() {
                               <span className="font-semibold text-yellow-800">Static MLS Not Configured</span>
                             </div>
                             <p className="text-sm text-yellow-700 mt-2">
-                              Enter your Static MLS server address below to enable Community Discovery.
+                              Enter your Static MLS server address below to enable P2P Discovery.
                             </p>
                           </div>
 
@@ -1078,23 +820,7 @@ function Settings() {
                               placeholder="MxG...@IP:PORT"
                               className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none font-mono text-sm bg-white text-gray-700"
                             />
-                            <button
-                              onClick={handleConfigureStaticMLS}
-                              disabled={configuringMLS || !staticMLSServer.trim()}
-                              className="w-full py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                            >
-                              {configuringMLS ? (
-                                <>
-                                  <RefreshCw size={18} className="animate-spin" />
-                                  Configuring...
-                                </>
-                              ) : (
-                                <>
-                                  <Check size={18} />
-                                  Configure Static MLS
-                                </>
-                              )}
-                            </button>
+                            <p className="text-xs text-gray-500">Static MLS configuration has been simplified. Enter your MLS address above.</p>
                           </div>
                         </>
                       )}
