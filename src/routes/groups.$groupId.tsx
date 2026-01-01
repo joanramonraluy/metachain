@@ -95,7 +95,7 @@ function ChatPage() {
         // Sync history
         await groupService.requestGroupHistory(address);
       } catch (err) {
-        console.error("[Group] Error loading group:", err);
+        console.error("❌ [GROUP-MGMT] Error loading group:", err);
       }
     };
 
@@ -113,7 +113,7 @@ function ChatPage() {
 
     // Prevent simultaneous loads
     if (isLoadingMessages.current) {
-      console.log("⏭️ [Group] Skipping load - already loading messages");
+      console.log("⏭️ [GROUP-CHAT] Skipping load (active).");
       return;
     }
 
@@ -124,7 +124,7 @@ function ChatPage() {
 
       if (Array.isArray(rawMessages)) {
         const parsedMessages = rawMessages.map((row: any) => {
-          const displayText = decodeURIComponent(row.MESSAGE || "");
+          const displayText = row.MESSAGE || "";
 
           const parsed: ParsedMessage = {
             text: displayText,
@@ -156,7 +156,7 @@ function ChatPage() {
         }
       }
     } catch (err) {
-      console.error("Failed to load group messages:", err);
+      console.error("❌ [GROUP-CHAT] Message load error:", err);
     } finally {
       isLoadingMessages.current = false;
     }
@@ -245,7 +245,7 @@ function ChatPage() {
     try {
       await groupService.sendGroupMessage(address, input, "text", myPublicKey, userName);
     } catch (err) {
-      console.error("[Group] Error sending message:", err);
+      console.error("❌ [GROUP-CHAT] Send error:", err);
     }
 
     setInput("");
@@ -259,11 +259,11 @@ function ChatPage() {
 
     try {
       await groupService.deleteGroup(address);
-      console.log("✅ Group deleted successfully");
+      console.log("✅ [GROUP-MGMT] Group deleted.");
       // Navigate back to chat list
       navigate({ to: '/' });
     } catch (err) {
-      console.error("❌ Failed to delete group:", err);
+      console.error("❌ [GROUP-MGMT] Delete failed:", err);
     }
   };
 
@@ -295,7 +295,7 @@ function ChatPage() {
                     validIcon = decoded;
                   }
                 } catch (e) {
-                  console.warn("Failed to decode contact icon", e);
+                  console.warn("⚠️ [AVATAR] Decode warning:", e);
                 }
               }
 
@@ -310,7 +310,7 @@ function ChatPage() {
         }
       });
     } catch (err) {
-      console.error("Failed to fetch contacts:", err);
+      console.error("❌ [CONTACTS] Fetch error:", err);
     }
   };
 

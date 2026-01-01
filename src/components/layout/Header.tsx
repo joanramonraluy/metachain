@@ -12,6 +12,7 @@ interface HeaderProps {
 const menuLabels = [
   { to: "/", label: "Chats" },
   { to: "/contacts", label: "Contacts" },
+  { to: "/discovery", label: "Community" },
   { to: "/settings", label: "Settings" },
   { to: "/info", label: "Info" },
 ];

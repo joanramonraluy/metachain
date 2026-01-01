@@ -2,8 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useContext, useEffect, useState } from "react";
 import { MDS } from "@minima-global/mds";
 import { appContext } from "../AppContext";
-import { User, ChevronDown, ChevronUp, Copy, Check, Edit2, Globe, Palette, Shield, AlertTriangle, RefreshCw, Info } from "lucide-react";
+import { User, ChevronDown, ChevronUp, Copy, Check, Edit2, Globe, Shield, AlertTriangle, RefreshCw, Info } from "lucide-react";
 import { sendBeacon } from "../hooks/useBeaconSender";
+import { SettingsTabs, SettingsTab } from "../components/SettingsTabs";
 
 export const Route = createFileRoute("/settings")({
   component: Settings,
@@ -11,9 +12,49 @@ export const Route = createFileRoute("/settings")({
 
 const defaultAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23cbd5e1'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E";
 
-function Settings() {
-  const { loaded, updateUserProfile, writeMode, refreshWriteMode } = useContext(appContext);
+// Countries and regions list
+const COUNTRIES = [
+  "Afghanistan", "Albania", "Algeria", "Andorra", "Angola", "Argentina", "Armenia", "Australia", "Austria", "Azerbaijan",
+  "Bahamas", "Bahrain", "Bangladesh", "Barbados", "Belarus", "Belgium", "Belize", "Benin", "Bhutan", "Bolivia", "Bosnia and Herzegovina", "Botswana", "Brazil", "Brunei", "Bulgaria", "Burkina Faso", "Burundi",
+  "Cambodia", "Cameroon", "Canada", "Cape Verde", "Catalonia", "Central African Republic", "Chad", "Chile", "China", "Colombia", "Comoros", "Congo", "Costa Rica", "Croatia", "Cuba", "Cyprus", "Czech Republic",
+  "Denmark", "Djibouti", "Dominica", "Dominican Republic",
+  "Ecuador", "Egypt", "El Salvador", "Equatorial Guinea", "Eritrea", "Estonia", "Eswatini", "Ethiopia", "Euskadi",
+  "Fiji", "Finland", "France",
+  "Gabon", "Gambia", "Georgia", "Germany", "Ghana", "Greece", "Grenada", "Guatemala", "Guinea", "Guinea-Bissau", "Guyana",
+  "Haiti", "Honduras", "Hungary",
+  "Iceland", "India", "Indonesia", "Iran", "Iraq", "Ireland", "Israel", "Italy",
+  "Jamaica", "Japan", "Jordan",
+  "Kazakhstan", "Kenya", "Kiribati", "Kosovo", "Kuwait", "Kyrgyzstan",
+  "Laos", "Latvia", "Lebanon", "Lesotho", "Liberia", "Libya", "Liechtenstein", "Lithuania", "Luxembourg",
+  "Madagascar", "Malawi", "Malaysia", "Maldives", "Mali", "Malta", "Marshall Islands", "Mauritania", "Mauritius", "Mexico", "Micronesia", "Moldova", "Monaco", "Mongolia", "Montenegro", "Morocco", "Mozambique", "Myanmar",
+  "Namibia", "Nauru", "Nepal", "Netherlands", "New Zealand", "Nicaragua", "Niger", "Nigeria", "North Korea", "North Macedonia", "Norway",
+  "Oman",
+  "Pakistan", "Palau", "Palestine", "Panama", "Papua New Guinea", "Paraguay", "Peru", "Philippines", "Poland", "Portugal",
+  "Qatar",
+  "Romania", "Russia", "Rwanda",
+  "Saint Kitts and Nevis", "Saint Lucia", "Saint Vincent and the Grenadines", "Samoa", "San Marino", "Sao Tome and Principe", "Saudi Arabia", "Scotland", "Senegal", "Serbia", "Seychelles", "Sierra Leone", "Singapore", "Slovakia", "Slovenia", "Solomon Islands", "Somalia", "South Africa", "South Korea", "South Sudan", "Spain", "Sri Lanka", "Sudan", "Suriname", "Sweden", "Switzerland", "Syria",
+  "Taiwan", "Tajikistan", "Tanzania", "Thailand", "Timor-Leste", "Togo", "Tonga", "Trinidad and Tobago", "Tunisia", "Turkey", "Turkmenistan", "Tuvalu",
+  "Uganda", "Ukraine", "United Arab Emirates", "United Kingdom", "United States", "Uruguay", "Uzbekistan",
+  "Vanuatu", "Vatican City", "Venezuela", "Vietnam",
+  "Yemen",
+  "Zambia", "Zimbabwe"
+];
 
+// Languages list - most spoken languages + regional languages
+const LANGUAGES = [
+  "Arabic", "Basque (Euskera)", "Bengali", "Catalan (Català)", "Chinese (Mandarin)", "Chinese (Cantonese)",
+  "Czech", "Danish", "Dutch", "English", "Finnish", "French", "German", "Greek", "Hebrew", "Hindi",
+  "Hungarian", "Indonesian", "Italian", "Japanese", "Korean", "Malay", "Norwegian", "Persian (Farsi)",
+  "Polish", "Portuguese", "Romanian", "Russian", "Scots", "Scots Gaelic (Gàidhlig)", "Serbian", "Slovak",
+  "Spanish (Español)", "Swahili", "Swedish", "Tagalog", "Tamil", "Thai", "Turkish", "Ukrainian",
+  "Urdu", "Vietnamese", "Welsh (Cymraeg)"
+].sort();
+
+function Settings() {
+  const { loaded, writeMode, refreshWriteMode, refreshProfile } = useContext(appContext);
+
+  // Tab State
+  const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
 
   // Profile State
   const [userName, setUserName] = useState("User");
@@ -39,7 +80,33 @@ function Settings() {
 
   // P2P Profile State (Discovery) - Only bio, name comes from Maxima
   const [p2pBio, setP2pBio] = useState("");
-  const [savingP2pProfile, setSavingP2pProfile] = useState(false);
+  // Removed unused savingP2pProfile state
+
+  // Extended Profile State - Level 2 (Semi-Private)
+  const [location, setLocation] = useState(""); // City/Region
+  const [country, setCountry] = useState(""); // Country
+  const [languages, setLanguages] = useState<string[]>([]); // Languages spoken
+  const [website, setWebsite] = useState("");
+  const [socialLinks, setSocialLinks] = useState({
+    twitter: "",
+    linkedin: "",
+    github: ""
+  });
+  const [tags, setTags] = useState<string[]>([]);
+
+  // Extended Profile State - Level 3 (Private)
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  // Removed unused savingExtendedProfile state
+
+  // Privacy Settings State
+  type VisibilityLevel = 'public' | 'contacts' | 'personal';
+  const [level2Visibility, setLevel2Visibility] = useState<VisibilityLevel>('public');
+  const [level3Visibility, setLevel3Visibility] = useState<VisibilityLevel>('personal');
+  const [personalContacts, setPersonalContacts] = useState<string[]>([]); // Array of Maxima addresses
+  const [allowNonContactChats, setAllowNonContactChats] = useState(true); // Allow chats from non-contacts (default: open)
+  const [privacyLoading, setPrivacyLoading] = useState(true); // Loading state for privacy settings
+  // Removed unused savingPrivacySettings state
 
   // Network Status State
   const [networkStatus, setNetworkStatus] = useState<any>(null);
@@ -95,7 +162,98 @@ function Settings() {
       }
     };
 
+    // Fetch Extended Profile (Level 2 & 3)
+    const fetchExtendedProfile = async () => {
+      try {
+        // Level 2 fields
+        const locationRes = await MDS.keypair.get('profile_location');
+        if (locationRes?.status && locationRes.value) setLocation(locationRes.value);
+
+        const countryRes = await MDS.keypair.get('profile_country');
+        if (countryRes?.status && countryRes.value) setCountry(countryRes.value);
+
+        const languagesRes = await MDS.keypair.get('profile_languages');
+        if (languagesRes?.status && languagesRes.value) {
+          setLanguages(JSON.parse(languagesRes.value));
+        }
+
+        const websiteRes = await MDS.keypair.get('profile_website');
+        if (websiteRes?.status && websiteRes.value) setWebsite(websiteRes.value);
+
+        const socialLinksRes = await MDS.keypair.get('profile_social_links');
+        if (socialLinksRes?.status && socialLinksRes.value) {
+          setSocialLinks(JSON.parse(socialLinksRes.value));
+        }
+
+        const tagsRes = await MDS.keypair.get('profile_tags');
+        if (tagsRes?.status && tagsRes.value) {
+          setTags(JSON.parse(tagsRes.value));
+        }
+
+        // Level 3 fields
+        const emailRes = await MDS.keypair.get('profile_email');
+        if (emailRes?.status && emailRes.value) setEmail(emailRes.value);
+
+        const phoneRes = await MDS.keypair.get('profile_phone');
+        if (phoneRes?.status && phoneRes.value) setPhone(phoneRes.value);
+      } catch (err) {
+        console.error("Error fetching extended profile:", err);
+      }
+    };
+
+    // Fetch Privacy Settings
+    const fetchPrivacySettings = async () => {
+      try {
+        const level2Res = await MDS.keypair.get('privacy_level2_visibility');
+        if (level2Res?.status && level2Res.value) {
+          setLevel2Visibility(level2Res.value as VisibilityLevel);
+        }
+
+        const level3Res = await MDS.keypair.get('privacy_level3_visibility');
+        if (level3Res?.status && level3Res.value) {
+          setLevel3Visibility(level3Res.value as VisibilityLevel);
+        }
+
+        const personalRes = await MDS.keypair.get('privacy_personal_contacts');
+        if (personalRes?.status && personalRes.value) {
+          setPersonalContacts(JSON.parse(personalRes.value));
+        }
+
+        // Load chat permission setting from MY_PROFILE (source of truth)
+        try {
+          const sql = "SELECT allow_non_contact_chats FROM MY_PROFILE LIMIT 1";
+          const res = await MDS.sql(sql);
+          if (res.status && res.rows && res.rows.length > 0) {
+            const rawValue = res.rows[0].ALLOW_NON_CONTACT_CHATS ?? res.rows[0].allow_non_contact_chats;
+            const value = (rawValue === 1 || rawValue === "1" || rawValue === true || rawValue === "true");
+            setAllowNonContactChats(value);
+          } else {
+            // Default to true if not set
+            setAllowNonContactChats(true);
+          }
+        } catch (err) {
+          console.error('[Settings] Error loading chat permission from DB:', err);
+          // Fallback to keypair if DB fails
+          const chatPermRes = await MDS.keypair.get('allow_noncontact_chats');
+          if (chatPermRes?.status && chatPermRes.value !== undefined) {
+            setAllowNonContactChats(chatPermRes.value === 'true');
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching privacy settings:", err);
+      } finally {
+        // Add minimum delay so loading state is visible
+        console.log('[Settings] Privacy settings loaded, waiting 300ms before enabling...');
+        setTimeout(() => {
+          setPrivacyLoading(false);
+          console.log('[Settings] Privacy controls now enabled');
+        }, 300);
+      }
+    };
+
     fetchP2pProfile();
+    fetchExtendedProfile();
+    fetchPrivacySettings();
 
     // Fetch network status
     fetchNetworkStatus();
@@ -275,11 +433,6 @@ function Settings() {
 
 
 
-  const handleEditName = async () => {
-    console.log("[Settings] Opening edit dialog");
-    setEditNameValue(userName);
-    setShowEditDialog(true);
-  };
 
   const handleSaveName = async () => {
     console.log("[Settings] Saving name:", editNameValue);
@@ -303,9 +456,14 @@ function Settings() {
 
         console.log("[Settings] Name set successfully, updating state");
         setUserName(editNameValue.trim());
-        // Update global context to sync with Header and SideMenu
-        updateUserProfile(editNameValue.trim(), userAvatar);
+        // Update global context by fetching the latest profile data
+        await refreshProfile();
         setShowEditDialog(false);
+
+        // Send beacon to propagate name change
+        console.log("[Settings] Sending beacon with updated name...");
+        await sendBeacon();
+
       } catch (err) {
         console.error("[Settings] Error setting name:", err);
         alert("Failed to update name: " + (err as Error).message);
@@ -387,8 +545,8 @@ function Settings() {
 
         console.log("[Settings] Avatar set successfully, updating state");
         setUserAvatar(avatarUrl.trim());
-        // Update global context to sync with Header and SideMenu
-        updateUserProfile(userName, avatarUrl.trim());
+        // Update global context by fetching the latest profile data
+        await refreshProfile();
         setShowAvatarDialog(false);
       } catch (err) {
         console.error("[Settings] Error setting avatar:", err);
@@ -398,7 +556,6 @@ function Settings() {
   };
 
   const handleSaveP2pProfile = async () => {
-    setSavingP2pProfile(true);
     try {
       // Save bio
       await MDS.keypair.set('p2p_bio', p2pBio.trim());
@@ -410,12 +567,62 @@ function Settings() {
       await sendBeacon();
       console.log("[Settings] Beacon sent successfully");
 
-      alert("✅ Bio saved and broadcasted!");
+      // Silent save - no popup needed for auto-save
     } catch (err) {
       console.error("❌ [Settings] Error saving P2P profile:", err);
       alert("Failed to save P2P profile: " + (err as Error).message);
-    } finally {
-      setSavingP2pProfile(false);
+    }
+  };
+
+  const handleSaveExtendedProfile = async () => {
+    try {
+      // Save Level 2 fields
+      await MDS.keypair.set('profile_location', location.trim());
+      await MDS.keypair.set('profile_country', country.trim());
+      await MDS.keypair.set('profile_languages', JSON.stringify(languages));
+      await MDS.keypair.set('profile_website', website.trim());
+      await MDS.keypair.set('profile_social_links', JSON.stringify(socialLinks));
+      await MDS.keypair.set('profile_tags', JSON.stringify(tags));
+
+      // Save Level 3 fields
+      await MDS.keypair.set('profile_email', email.trim());
+      await MDS.keypair.set('profile_phone', phone.trim());
+
+      console.log("✅ [Settings] Extended profile saved");
+      // Silent save - no popup needed for auto-save
+    } catch (err) {
+      console.error("❌ [Settings] Error saving extended profile:", err);
+      alert("Failed to save profile: " + (err as Error).message);
+    }
+  };
+
+  const handleSavePrivacySettings = async () => {
+    try {
+      await MDS.keypair.set('privacy_level2_visibility', level2Visibility);
+      await MDS.keypair.set('privacy_level3_visibility', level3Visibility);
+      await MDS.keypair.set('privacy_personal_contacts', JSON.stringify(personalContacts));
+
+      console.log("✅ [Settings] Privacy settings saved");
+    } catch (err) {
+      console.error("❌ [Settings] Error saving privacy settings:", err);
+    }
+  };
+
+  const handleToggleChatPermission = async () => {
+    try {
+      const newValue = !allowNonContactChats;
+
+      // Save to keypair storage (for app itself)
+      await MDS.keypair.set('allow_noncontact_chats', String(newValue));
+
+      // CRITICAL: Also save to MY_PROFILE table (for Service Worker to read and transmit)
+      const updateSql = `UPDATE MY_PROFILE SET allow_non_contact_chats = ${newValue ? 1 : 0} WHERE id = 1`;
+      await MDS.sql(updateSql);
+
+      setAllowNonContactChats(newValue);
+      console.log('[Settings] Chat permission updated (keypair + MY_PROFILE):', newValue);
+    } catch (err) {
+      console.error('[Settings] Error saving chat permission:', err);
     }
   };
 
@@ -525,543 +732,995 @@ function Settings() {
 
 
 
-      <div className="h-full overflow-y-auto bg-gray-50">
-        <div className="max-w-4xl mx-auto p-4 md:p-8 min-h-full">
+      <div className="h-full flex flex-col bg-gray-50">
+        {/* Tabs Navigation */}
+        <SettingsTabs activeTab={activeTab} onTabChange={setActiveTab} />
 
-          <div className="grid gap-6">
+        {/* Tab Content */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="max-w-4xl mx-auto p-4 md:p-8 min-h-full">
 
-            {/* PROFILE SECTION */}
-            <section className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-              <div className="p-6 border-b border-gray-100 flex items-center gap-3">
-                <User className="text-blue-500" />
-                <h2 className="text-xl font-semibold text-gray-800">Profile</h2>
-              </div>
+            <div className="grid gap-6">
 
-              {/* User Info - Full Width */}
-              <div className="p-6 border-b border-gray-100 flex items-center gap-4">
-                <div className="relative">
-                  <img
-                    src={userAvatar}
-                    alt="Avatar"
-                    className="w-16 h-16 rounded-full object-cover border-4 border-gray-100"
-                    onError={(e) => (e.target as HTMLImageElement).src = defaultAvatar}
-                  />
-                  <button
-                    onClick={handleEditAvatar}
-                    className="absolute -bottom-1 -right-1 p-1.5 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors shadow-lg"
-                    title="Change Avatar"
-                  >
-                    <Edit2 size={12} />
-                  </button>
-                </div>
-                <div className="flex-1 flex items-center gap-2">
-                  <h3 className="text-lg font-bold text-gray-900">{userName}</h3>
-                  <button
-                    onClick={handleEditName}
-                    className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors"
-                    title="Edit Maxima Name"
-                  >
-                    <Edit2 size={14} />
-                  </button>
-                </div>
-                <p className="text-sm text-gray-500">Visible to your contacts</p>
-              </div>
-
-
-              {/* P2P Discovery Profile Section - Always Visible */}
-              <div className="p-6 border-b border-gray-100">
-                <div className="flex items-center gap-2 mb-4">
-                  <Globe className="text-blue-500" size={20} />
-                  <h3 className="text-lg font-semibold text-gray-800">Discovery Profile (P2P)</h3>
-                </div>
-
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800 flex items-start gap-2 mb-4">
-                  <Info size={16} className="mt-0.5 flex-shrink-0" />
-                  <p>Your <strong>Maxima name</strong> is used for P2P discovery. Add a bio below to share more about yourself.</p>
-                </div>
-
-                <div className="space-y-4">
-
-                  {/* Bio */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Bio
-                    </label>
-                    <textarea
-                      value={p2pBio}
-                      onChange={(e) => setP2pBio(e.target.value)}
-                      placeholder="Tell others about yourself..."
-                      rows={3}
-                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white text-gray-700 resize-none"
-                    />
-                    <p className="text-xs text-gray-500 mt-1">Shared with all discovered peers</p>
-                  </div>
-
-                  {/* Save Button */}
-                  <div className="flex justify-end">
-                    <button
-                      onClick={handleSaveP2pProfile}
-                      disabled={savingP2pProfile}
-                      className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {savingP2pProfile ? 'Saving...' : 'Save Bio'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Maxima Address - Full Width */}
-              <div className="border-b border-gray-100">
-                <button
-                  onClick={() => toggleAddress('maxima')}
-                  className="w-full flex items-center justify-between p-6 hover:bg-gray-50 transition-colors text-left"
-                >
-                  <span className="font-medium text-gray-700">My Maxima Address</span>
-                  {expandedAddress === 'maxima' ? <ChevronUp size={20} className="text-gray-500" /> : <ChevronDown size={20} className="text-gray-500" />}
-                </button>
-
-                {expandedAddress === 'maxima' && (
-                  <div className="px-6 pb-6 pt-0">
-                    <p className="text-xs font-mono text-gray-600 break-all mb-3 bg-gray-50 p-3 rounded border border-gray-100">
-                      {maximaAddress || "Loading..."}
-                    </p>
-                    <button
-                      onClick={() => copyToClipboard(maximaAddress, 'maxima')}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${copiedField === 'maxima' ? 'bg-green-100 text-green-700' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`}
-                    >
-                      {copiedField === 'maxima' ? <Check size={16} /> : <Copy size={16} />}
-                      {copiedField === 'maxima' ? 'Copied!' : 'Copy Address'}
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Minima Address - Full Width */}
-              <div>
-                <button
-                  onClick={() => toggleAddress('minima')}
-                  className="w-full flex items-center justify-between p-6 hover:bg-gray-50 transition-colors text-left"
-                >
-                  <span className="font-medium text-gray-700">My Minima Address</span>
-                  {expandedAddress === 'minima' ? <ChevronUp size={20} className="text-gray-500" /> : <ChevronDown size={20} className="text-gray-500" />}
-                </button>
-
-                {expandedAddress === 'minima' && (
-                  <div className="px-6 pb-6 pt-0">
-                    <p className="text-xs font-mono text-gray-600 break-all mb-3 bg-gray-50 p-3 rounded border border-gray-100">
-                      {minimaAddress || "Loading..."}
-                    </p>
-                    <button
-                      onClick={() => copyToClipboard(minimaAddress, 'minima')}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${copiedField === 'minima' ? 'bg-green-100 text-green-700' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`}
-                    >
-                      {copiedField === 'minima' ? <Check size={16} /> : <Copy size={16} />}
-                      {copiedField === 'minima' ? 'Copied!' : 'Copy Address'}
-                    </button>
-                  </div>
-                )}
-              </div>
-            </section>
-
-            {/* APPLICATION MODE SECTION */}
-            <section className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-              <div className="p-6 border-b border-gray-100 flex items-center gap-3">
-                <Shield className={writeMode ? "text-green-500" : "text-yellow-500"} />
-                <h2 className="text-xl font-semibold text-gray-800">Application Mode</h2>
-              </div>
-              <div className="p-6">
-                <div className={`flex items-center gap-3 p-4 rounded-xl mb-4 ${writeMode ? 'bg-green-50 border border-green-100' : 'bg-yellow-50 border border-yellow-100'}`}>
-                  {writeMode ? (
-                    <div className="p-2 bg-green-100 rounded-full text-green-600">
-                      <Check size={20} />
+              {/* PROFILE TAB */}
+              {activeTab === 'profile' && (
+                <>
+                  {/* PROFILE SECTION */}
+                  <section className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                    <div className="p-6 border-b border-gray-100 flex items-center gap-3">
+                      <User className="text-blue-500" />
+                      <h2 className="text-xl font-semibold text-gray-800">Profile</h2>
                     </div>
-                  ) : (
-                    <div className="p-2 bg-yellow-100 rounded-full text-yellow-600">
-                      <AlertTriangle size={20} />
-                    </div>
-                  )}
-                  <div>
-                    <h3 className={`font-semibold ${writeMode ? 'text-green-800' : 'text-yellow-800'}`}>
-                      {writeMode ? 'Write Mode Active' : 'Read Mode Active'}
-                    </h3>
-                    <p className={`text-sm ${writeMode ? 'text-green-600' : 'text-yellow-600'}`}>
-                      {writeMode
-                        ? 'MetaChain has full permission to send messages and tokens.'
-                        : 'MetaChain needs your approval for every transaction.'}
-                    </p>
-                  </div>
-                </div>
 
-                {!writeMode && (
-                  <div className="space-y-4">
-                    <p className="text-gray-600 text-sm leading-relaxed">
-                      To enable <strong>Write Mode</strong> and avoid repeated approval requests:
-                    </p>
-                    <ol className="list-decimal list-inside text-sm text-gray-600 space-y-2 pl-2">
-                      <li>Go to <strong>Minima</strong> main screen</li>
-                      <li>Open <strong>MiniDapps</strong></li>
-                      <li>Find <strong>MetaChain</strong></li>
-                      <li>Click the <strong>lock icon</strong> / permissions</li>
-                      <li>Select <strong>Write Mode</strong></li>
-                    </ol>
-
-                    <button
-                      onClick={async () => {
-                        console.log("🔄 [Settings] Manual refresh button clicked");
-                        await refreshWriteMode();
-                      }}
-                      className="w-full mt-2 py-2.5 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
-                    >
-                      <RefreshCw size={18} />
-                      Check Permissions Again
-                    </button>
-                  </div>
-                )}
-              </div>
-            </section>
-
-            {/* COMMUNITY & DISCOVERY SECTION */}
-            <section id="community-discovery" className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden scroll-mt-4">
-              <div className="p-6 border-b border-gray-100 flex items-center gap-3">
-                <Globe className="text-blue-500" />
-                <h2 className="text-xl font-semibold text-gray-800">Community & Discovery</h2>
-              </div>
-
-              <div className="p-6 space-y-6">
-                {/* MLS Server (for Development) */}
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <div className="flex items-center gap-2 mb-3">
-                    <Info className="text-blue-600" size={20} />
-                    <h3 className="text-lg font-semibold text-blue-900">Use This Node as MLS Server</h3>
-                  </div>
-                  <p className="text-sm text-blue-800 mb-3">
-                    For development/testing, other nodes can use this node as their Static MLS server.
-                  </p>
-
-                  {p2pIdentity ? (
-                    <>
-                      <div className="bg-white rounded border border-blue-200 p-3 mb-3">
-                        <p className="text-xs text-blue-600 mb-1 font-semibold">Your P2P Identity:</p>
-                        <p className="text-xs font-mono text-gray-800 break-all">{p2pIdentity}</p>
-                      </div>
-                      <button
-                        onClick={() => copyToClipboard(p2pIdentity, 'p2p')}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${copiedField === 'p2p' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700 hover:bg-blue-200 border border-blue-300'}`}
-                      >
-                        {copiedField === 'p2p' ? <Check size={16} /> : <Copy size={16} />}
-                        {copiedField === 'p2p' ? 'Copied!' : 'Copy P2P Identity'}
-                      </button>
-                      <p className="text-xs text-blue-700 mt-3">
-                        💡 <strong>Note:</strong> Other nodes can paste this address in "Static MLS Server" below to use this node as their MLS.
-                      </p>
-                    </>
-                  ) : (
-                    <p className="text-sm text-blue-700">Loading P2P identity...</p>
-                  )}
-                </div>
-
-                {/* Static MLS Configuration */}
-                {/* Static MLS Configuration */}
-                <div className="border-b border-gray-100">
-                  <button
-                    onClick={() => toggleAddress('staticMLS')}
-                    className="w-full flex items-center justify-between p-6 hover:bg-gray-50 transition-colors text-left"
-                  >
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-lg font-semibold text-gray-800">Static MLS Server</h3>
-                      {hasStaticMLS && <Check className="text-green-500" size={20} />}
-                    </div>
-                    {expandedAddress === 'staticMLS' ? <ChevronUp size={20} className="text-gray-500" /> : <ChevronDown size={20} className="text-gray-500" />}
-                  </button>
-
-                  {expandedAddress === 'staticMLS' && (
-                    <div className="px-6 pb-6 pt-0">
-                      <p className="text-sm text-gray-600 mb-4">
-                        Configure a permanent Maxima Lookup Service to enable a permanent MAX# address for P2P Discovery.
-                      </p>
-
-                      {hasStaticMLS ? (
-                        <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
-                          <div className="flex items-center gap-2 mb-2">
-                            <Check className="text-green-600" size={20} />
-                            <span className="font-semibold text-green-800">Static MLS Configured</span>
-                          </div>
-                          <p className="text-xs text-gray-600 font-mono break-all mt-2">
-                            {staticMLSServer}
-                          </p>
-                          <div className="mt-2 pt-2 border-t border-green-200">
-                            <button
-                              onClick={() => handleEnablePermanentAddress(false)}
-                              disabled={enablingPermanent}
-                              className="text-xs flex items-center gap-2 text-green-700 hover:text-green-800 underline"
-                            >
-                              {enablingPermanent ? <RefreshCw size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                              Force Re-register Permanent Address
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <>
-                          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
-                            <div className="flex items-center gap-2">
-                              <AlertTriangle className="text-yellow-600" size={20} />
-                              <span className="font-semibold text-yellow-800">Static MLS Not Configured</span>
-                            </div>
-                            <p className="text-sm text-yellow-700 mt-2">
-                              Enter your Static MLS server address below to enable P2P Discovery.
-                            </p>
-                          </div>
-
-                          <div className="space-y-3">
-                            <input
-                              type="text"
-                              value={staticMLSServer}
-                              onChange={(e) => setStaticMLSServer(e.target.value)}
-                              placeholder="MxG...@IP:PORT"
-                              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none font-mono text-sm bg-white text-gray-700"
-                            />
-                            <p className="text-xs text-gray-500">Static MLS configuration has been simplified. Enter your MLS address above.</p>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Permanent Address */}
-                {/* Permanent Address */}
-                <div className="border-b border-gray-100">
-                  <button
-                    onClick={() => toggleAddress('permanentAddress')}
-                    className="w-full flex items-center justify-between p-6 hover:bg-gray-50 transition-colors text-left"
-                  >
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-lg font-semibold text-gray-800">Permanent MAX# Address</h3>
-                      {hasPermanentAddress && <Check className="text-green-500" size={20} />}
-                    </div>
-                    {expandedAddress === 'permanentAddress' ? <ChevronUp size={20} className="text-gray-500" /> : <ChevronDown size={20} className="text-gray-500" />}
-                  </button>
-
-                  {expandedAddress === 'permanentAddress' && (
-                    <div className="px-6 pb-6 pt-0">
-                      <p className="text-sm text-gray-600 mb-4">
-                        Enable a permanent address that never changes, allowing others to contact you even if you're not a contact.
-                      </p>
-
-                      {hasPermanentAddress ? (
-                        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                          <div className="flex items-center gap-2 mb-3">
-                            <Check className="text-green-600" size={20} />
-                            <span className="font-semibold text-green-800">Permanent Address Active</span>
-                          </div>
-                          <div className="bg-white rounded border border-green-200 p-3">
-                            <p className="text-xs text-gray-500 mb-1">Your MAX# Address:</p>
-                            <p className="text-xs font-mono text-gray-800 break-all">{permanentAddress}</p>
-                          </div>
+                    {/* User Info - Full Width */}
+                    <div className="p-6 border-b border-gray-100">
+                      <div className="flex items-center gap-4">
+                        <div className="relative">
+                          <img
+                            src={userAvatar}
+                            alt="Avatar"
+                            className="w-16 h-16 rounded-full object-cover border-4 border-gray-100"
+                            onError={(e) => (e.target as HTMLImageElement).src = defaultAvatar}
+                          />
                           <button
-                            onClick={() => copyToClipboard(permanentAddress, 'permanent')}
-                            className={`mt-3 flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${copiedField === 'permanent' ? 'bg-green-100 text-green-700' : 'bg-green-50 text-green-700 hover:bg-green-100 border border-green-200'}`}
+                            onClick={handleEditAvatar}
+                            className="absolute -bottom-1 -right-1 p-1.5 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors shadow-lg"
+                            title="Change Avatar"
                           >
-                            {copiedField === 'permanent' ? <Check size={16} /> : <Copy size={16} />}
-                            {copiedField === 'permanent' ? 'Copied!' : 'Copy MAX# Address'}
+                            <Edit2 size={12} />
                           </button>
-
-                          <div className="mt-4 pt-4 border-t border-green-200">
-                            <p className="text-xs text-gray-500 mb-2">
-                              If contacts can't find you, your MLS server might need a reminder:
-                            </p>
-                            <button
-                              onClick={() => handleEnablePermanentAddress(false)}
-                              disabled={enablingPermanent}
-                              className="text-xs flex items-center gap-2 px-3 py-1.5 bg-white border border-green-300 text-green-700 rounded hover:bg-green-50 transition-colors"
-                            >
-                              {enablingPermanent ? <RefreshCw size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                              Re-send Registration to MLS
-                            </button>
-                          </div>
                         </div>
-                      ) : (
+                        <div className="flex-1">
+                          <label className="block text-xs font-medium text-gray-500 mb-1">Maxima Name</label>
+                          <input
+                            type="text"
+                            value={userName}
+                            onChange={(e) => setUserName(e.target.value)}
+                            onBlur={async () => {
+                              if (userName.trim()) {
+                                try {
+                                  await MDS.cmd.maxima({ params: { action: "setname", name: userName.trim() } });
+                                  console.log("✅ [Settings] Maxima name updated");
+                                  // Refresh global profile
+                                  await refreshProfile();
+                                } catch (err) {
+                                  console.error("❌ [Settings] Error updating name:", err);
+                                }
+                              }
+                            }}
+                            className="w-full text-lg font-bold text-gray-900 bg-transparent border-b-2 border-transparent hover:border-gray-300 focus:border-blue-500 focus:outline-none transition-colors px-1 -mx-1"
+                            placeholder="Your name"
+                          />
+                          <p className="text-sm text-gray-500 mt-1">Visible to your contacts • Auto-saves</p>
+                        </div>
+                      </div>
+                    </div>
+
+
+                    {/* Level 1: Public Profile - P2P Discovery */}
+                    <div className="p-6 border-b border-gray-100">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-2">
+                          <Globe className="text-blue-500" size={20} />
+                          <h3 className="text-lg font-semibold text-gray-800">Discovery Profile (P2P)</h3>
+                        </div>
+                        <span className="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-semibold rounded-full">Level 1 - Public</span>
+                      </div>
+
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800 flex items-start gap-2 mb-4">
+                        <Info size={16} className="mt-0.5 flex-shrink-0" />
+                        <p>Your <strong>Maxima name</strong> is used for P2P discovery. Add a bio below to share more about yourself.</p>
+                      </div>
+
+                      <div className="space-y-4">
+                        {/* Bio */}
                         <div>
-                          {hasStaticMLS ? (
-                            <button
-                              onClick={() => handleEnablePermanentAddress(false)}
-                              disabled={enablingPermanent}
-                              className="w-full py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                            >
-                              {enablingPermanent ? (
-                                <>
-                                  <RefreshCw size={18} className="animate-spin" />
-                                  Enabling...
-                                </>
-                              ) : (
-                                <>
-                                  <Check size={18} />
-                                  Enable Permanent Address
-                                </>
-                              )}
-                            </button>
-                          ) : (
-                            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-center">
-                              <AlertTriangle className="text-gray-400 mx-auto mb-2" size={24} />
-                              <p className="text-sm text-gray-600">
-                                Configure Static MLS first to enable permanent address
-                              </p>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Bio
+                          </label>
+                          <textarea
+                            value={p2pBio}
+                            onChange={(e) => setP2pBio(e.target.value)}
+                            onBlur={handleSaveP2pProfile}
+                            placeholder="Tell others about yourself..."
+                            rows={3}
+                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white text-gray-700 resize-none"
+                          />
+                          <p className="text-xs text-gray-500 mt-1">Shared with all discovered peers • Auto-saves when you finish editing</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Level 2: Semi-Private Information */}
+                    <div className="p-6 border-b border-gray-100">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-2">
+                          <User className="text-purple-500" size={20} />
+                          <h3 className="text-lg font-semibold text-gray-800">Additional Information</h3>
+                        </div>
+                        <span className="px-3 py-1 bg-purple-100 text-purple-700 text-xs font-semibold rounded-full">Level 2 - Semi-Private</span>
+                      </div>
+
+                      <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 text-sm text-purple-800 flex items-start gap-2 mb-4">
+                        <Info size={16} className="mt-0.5 flex-shrink-0" />
+                        <p>You can control who sees this information in the <strong>Privacy</strong> tab.</p>
+                      </div>
+
+                      <div className="space-y-4">
+                        {/* Location */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">City/Region</label>
+                          <input
+                            type="text"
+                            value={location}
+                            onChange={(e) => setLocation(e.target.value)}
+                            onBlur={handleSaveExtendedProfile}
+                            placeholder="Barcelona, New York, etc."
+                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white text-gray-700"
+                          />
+                          <p className="text-xs text-gray-500 mt-1">Visibility controlled in Privacy tab • Auto-saves</p>
+                        </div>
+
+                        {/* Country */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Country/Region</label>
+                          <select
+                            value={country}
+                            onChange={(e) => setCountry(e.target.value)}
+                            onBlur={handleSaveExtendedProfile}
+                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white text-gray-700"
+                          >
+                            <option value="">Select a country...</option>
+                            {COUNTRIES.map((c) => (
+                              <option key={c} value={c}>{c}</option>
+                            ))}
+                          </select>
+                          <p className="text-xs text-gray-500 mt-1">Visibility controlled in Privacy tab • Auto-saves</p>
+                        </div>
+
+                        {/* Languages */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Languages</label>
+                          <div className="border border-gray-300 rounded-lg p-3 bg-white max-h-48 overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-gray-100 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:bg-purple-400 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:hover:bg-purple-500">
+                            <div className="grid grid-cols-2 gap-2">
+                              {LANGUAGES.map((lang) => (
+                                <label key={lang} className="flex items-center gap-2 cursor-pointer hover:bg-purple-50 p-1 rounded transition-colors">
+                                  <input
+                                    type="checkbox"
+                                    checked={languages.includes(lang)}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setLanguages([...languages, lang]);
+                                      } else {
+                                        setLanguages(languages.filter(l => l !== lang));
+                                      }
+                                      // Auto-save after a short delay
+                                      setTimeout(handleSaveExtendedProfile, 100);
+                                    }}
+                                    className="w-4 h-4 rounded border-2 border-purple-300 text-purple-600 focus:ring-2 focus:ring-purple-500 focus:ring-offset-0 checked:bg-purple-600 checked:border-purple-600"
+                                  />
+                                  <span className="text-sm text-gray-700">{lang}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                          {languages.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1">
+                              {languages.map((lang) => (
+                                <span key={lang} className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded-full">
+                                  {lang}
+                                  <button
+                                    onClick={() => {
+                                      setLanguages(languages.filter(l => l !== lang));
+                                      setTimeout(handleSaveExtendedProfile, 100);
+                                    }}
+                                    className="hover:text-purple-900"
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              ))}
                             </div>
                           )}
+                          <p className="text-xs text-gray-500 mt-1">Visibility controlled in Privacy tab • Auto-saves</p>
+                        </div>
+
+                        {/* Website */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Website</label>
+                          <input
+                            type="url"
+                            value={website}
+                            onChange={(e) => setWebsite(e.target.value)}
+                            onBlur={handleSaveExtendedProfile}
+                            placeholder="https://example.com"
+                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white text-gray-700"
+                          />
+                          <p className="text-xs text-gray-500 mt-1">Visibility controlled in Privacy tab • Auto-saves</p>
+                        </div>
+
+                        {/* Social Links */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Social Links</label>
+                          <div className="space-y-2">
+                            <input
+                              type="text"
+                              value={socialLinks.twitter}
+                              onChange={(e) => setSocialLinks({ ...socialLinks, twitter: e.target.value })}
+                              onBlur={handleSaveExtendedProfile}
+                              placeholder="Twitter/X username"
+                              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white text-gray-700"
+                            />
+                            <input
+                              type="text"
+                              value={socialLinks.linkedin}
+                              onChange={(e) => setSocialLinks({ ...socialLinks, linkedin: e.target.value })}
+                              onBlur={handleSaveExtendedProfile}
+                              placeholder="LinkedIn profile URL"
+                              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white text-gray-700"
+                            />
+                            <input
+                              type="text"
+                              value={socialLinks.github}
+                              onChange={(e) => setSocialLinks({ ...socialLinks, github: e.target.value })}
+                              onBlur={handleSaveExtendedProfile}
+                              placeholder="GitHub username"
+                              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white text-gray-700"
+                            />
+                          </div>
+                          <p className="text-xs text-gray-500 mt-1">Visibility controlled in Privacy tab • Auto-saves</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Level 3: Private Contact Information */}
+                    <div className="p-6 border-b border-gray-100">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-2">
+                          <Shield className="text-amber-600" size={20} />
+                          <h3 className="text-lg font-semibold text-gray-800">Private Contact Information</h3>
+                        </div>
+                        <span className="px-3 py-1 bg-amber-100 text-amber-700 text-xs font-semibold rounded-full">Level 3 - Private</span>
+                      </div>
+
+                      <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
+                        <p className="text-sm text-amber-800 flex items-start gap-2">
+                          <Info size={16} className="mt-0.5 flex-shrink-0" />
+                          <span>You can control who sees this information in the <strong>Privacy</strong> tab.</span>
+                        </p>
+                      </div>
+
+                      <div className="space-y-4">
+                        {/* Email */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                          <input
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            onBlur={handleSaveExtendedProfile}
+                            placeholder="your@email.com"
+                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 bg-white text-gray-700"
+                          />
+                          <p className="text-xs text-gray-500 mt-1">Visibility controlled in Privacy tab • Auto-saves</p>
+                        </div>
+
+                        {/* Phone */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
+                          <input
+                            type="tel"
+                            value={phone}
+                            onChange={(e) => setPhone(e.target.value)}
+                            onBlur={handleSaveExtendedProfile}
+                            placeholder="+1 234 567 8900"
+                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 bg-white text-gray-700"
+                          />
+                          <p className="text-xs text-gray-500 mt-1">Visibility controlled in Privacy tab • Auto-saves</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Maxima Address - Full Width */}
+                    <div className="border-b border-gray-100">
+                      <button
+                        onClick={() => toggleAddress('maxima')}
+                        className="w-full flex items-center justify-between p-6 hover:bg-gray-50 transition-colors text-left"
+                      >
+                        <span className="font-medium text-gray-700">My Maxima Address</span>
+                        {expandedAddress === 'maxima' ? <ChevronUp size={20} className="text-gray-500" /> : <ChevronDown size={20} className="text-gray-500" />}
+                      </button>
+
+                      {expandedAddress === 'maxima' && (
+                        <div className="px-6 pb-6 pt-0">
+                          <p className="text-xs font-mono text-gray-600 break-all mb-3 bg-gray-50 p-3 rounded border border-gray-100">
+                            {maximaAddress || "Loading..."}
+                          </p>
+                          <button
+                            onClick={() => copyToClipboard(maximaAddress, 'maxima')}
+                            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${copiedField === 'maxima' ? 'bg-green-100 text-green-700' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`}
+                          >
+                            {copiedField === 'maxima' ? <Check size={16} /> : <Copy size={16} />}
+                            {copiedField === 'maxima' ? 'Copied!' : 'Copy Address'}
+                          </button>
                         </div>
                       )}
                     </div>
-                  )}
-                </div>
-              </div>
-            </section>
 
-            {/* APPEARANCE SECTION (Placeholder) */}
-            <section className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden opacity-60">
-              <div className="p-6 border-b border-gray-100 flex items-center gap-3">
-                <Palette className="text-purple-500" />
-                <h2 className="text-xl font-semibold text-gray-800">Appearance</h2>
-              </div>
-              <div className="p-6">
-                <p className="text-gray-500">Theme customization coming soon.</p>
-              </div>
-            </section>
+                    {/* Minima Address - Full Width */}
+                    <div>
+                      <button
+                        onClick={() => toggleAddress('minima')}
+                        className="w-full flex items-center justify-between p-6 hover:bg-gray-50 transition-colors text-left"
+                      >
+                        <span className="font-medium text-gray-700">My Minima Address</span>
+                        {expandedAddress === 'minima' ? <ChevronUp size={20} className="text-gray-500" /> : <ChevronDown size={20} className="text-gray-500" />}
+                      </button>
 
-            {/* NETWORK SECTION */}
-            <section id="network" className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-              <div className="p-6 border-b border-gray-100 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Globe className="text-green-500" />
-                  <h2 className="text-xl font-semibold text-gray-800">Network</h2>
-                </div>
-                <button
-                  onClick={fetchNetworkStatus}
-                  disabled={networkLoading}
-                  className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50"
-                  title="Refresh network status"
-                >
-                  <RefreshCw size={18} className={networkLoading ? "animate-spin" : ""} />
-                </button>
-              </div>
-              <div className="p-6">
-                {networkLoading && !networkStatus ? (
-                  <div className="flex items-center justify-center py-8">
-                    <RefreshCw size={24} className="animate-spin text-gray-400" />
-                  </div>
-                ) : networkStatus ? (
-                  <>
-                    {/* Health Status Badge */}
-                    <div className={`flex items-center gap-3 p-4 rounded-xl mb-6 ${networkStatus.network?.connected > 3
-                      ? 'bg-green-50 border border-green-100'
-                      : networkStatus.network?.connected > 0
-                        ? 'bg-yellow-50 border border-yellow-100'
-                        : 'bg-red-50 border border-red-100'
-                      }`}>
-                      <div className={`p-2 rounded-full ${networkStatus.network?.connected > 3
-                        ? 'bg-green-100 text-green-600'
-                        : networkStatus.network?.connected > 0
-                          ? 'bg-yellow-100 text-yellow-600'
-                          : 'bg-red-100 text-red-600'
-                        }`}>
-                        <Check size={20} />
-                      </div>
-                      <div>
-                        <h3 className={`font-semibold ${networkStatus.network?.connected > 3
-                          ? 'text-green-800'
-                          : networkStatus.network?.connected > 0
-                            ? 'text-yellow-800'
-                            : 'text-red-800'
-                          }`}>
-                          {networkStatus.network?.connected > 3
-                            ? 'Network running smoothly'
-                            : networkStatus.network?.connected > 0
-                              ? 'Limited connection'
-                              : 'No connection'}
-                        </h3>
-                        <p className={`text-sm ${networkStatus.network?.connected > 3
-                          ? 'text-green-600'
-                          : networkStatus.network?.connected > 0
-                            ? 'text-yellow-600'
-                            : 'text-red-600'
-                          }`}>
-                          {networkStatus.network?.connected > 3
-                            ? 'Connected to Minima network'
-                            : networkStatus.network?.connected > 0
-                              ? 'Few active connections'
-                              : 'No active connections'}
+                      {expandedAddress === 'minima' && (
+                        <div className="px-6 pb-6 pt-0">
+                          <p className="text-xs font-mono text-gray-600 break-all mb-3 bg-gray-50 p-3 rounded border border-gray-100">
+                            {minimaAddress || "Loading..."}
+                          </p>
+                          <button
+                            onClick={() => copyToClipboard(minimaAddress, 'minima')}
+                            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${copiedField === 'minima' ? 'bg-green-100 text-green-700' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`}
+                          >
+                            {copiedField === 'minima' ? <Check size={16} /> : <Copy size={16} />}
+                            {copiedField === 'minima' ? 'Copied!' : 'Copy Address'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </section>
+                </>
+              )}
+
+              {/* PRIVACY TAB */}
+              {activeTab === 'privacy' && (
+                <>
+                  <section className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                    <div className="p-6 border-b border-gray-100 flex items-center gap-3">
+                      <Shield className="text-purple-500" />
+                      <h2 className="text-xl font-semibold text-gray-800">Privacy Settings</h2>
+                    </div>
+
+                    <div className="p-6 space-y-8">
+                      {/* Introduction */}
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <p className="text-sm text-blue-800">
+                          <strong>Control who can see your information.</strong> Choose visibility settings for each level of your profile data.
                         </p>
                       </div>
+
+                      {/* Level 2 Visibility */}
+                      <div>
+                        <div className="flex items-center justify-between mb-4">
+                          <div>
+                            <h3 className="text-lg font-semibold text-gray-800">Level 2 - Semi-Private</h3>
+                            <p className="text-sm text-gray-500">Location, Website, Social Links</p>
+                          </div>
+                          <span className="px-3 py-1 bg-purple-100 text-purple-700 text-xs font-semibold rounded-full">Level 2</span>
+                        </div>
+
+                        <div className="space-y-3">
+                          <label className="flex items-start gap-3 p-4 border-2 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
+                            style={{ borderColor: level2Visibility === 'public' ? '#3b82f6' : '#e5e7eb' }}>
+                            <input
+                              type="radio"
+                              name="level2"
+                              value="public"
+                              checked={level2Visibility === 'public'}
+                              onChange={(e) => {
+                                setLevel2Visibility(e.target.value as VisibilityLevel);
+                                handleSavePrivacySettings();
+                              }}
+                              className="mt-1"
+                            />
+                            <div className="flex-1">
+                              <div className="font-medium text-gray-900">Public Discovery</div>
+                              <div className="text-sm text-gray-500 mt-1">Anyone who discovers you via P2P</div>
+                              <div className="text-xs text-gray-400 mt-2 space-y-0.5">
+                                <div>✓ Public users</div>
+                                <div>✓ Chat contacts</div>
+                                <div>✓ Personal contacts</div>
+                              </div>
+                            </div>
+                          </label>
+
+                          <label className="flex items-start gap-3 p-4 border-2 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
+                            style={{ borderColor: level2Visibility === 'contacts' ? '#3b82f6' : '#e5e7eb' }}>
+                            <input
+                              type="radio"
+                              name="level2"
+                              value="contacts"
+                              checked={level2Visibility === 'contacts'}
+                              onChange={(e) => {
+                                setLevel2Visibility(e.target.value as VisibilityLevel);
+                                handleSavePrivacySettings();
+                              }}
+                              className="mt-1"
+                            />
+                            <div className="flex-1">
+                              <div className="font-medium text-gray-900">Chat Contacts</div>
+                              <div className="text-sm text-gray-500 mt-1">Only people you have active chats with</div>
+                              <div className="text-xs text-gray-400 mt-2 space-y-0.5">
+                                <div className="text-gray-300">✗ Public users</div>
+                                <div>✓ Chat contacts</div>
+                                <div>✓ Personal contacts</div>
+                              </div>
+                            </div>
+                          </label>
+
+                          <label className="flex items-start gap-3 p-4 border-2 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
+                            style={{ borderColor: level2Visibility === 'personal' ? '#3b82f6' : '#e5e7eb' }}>
+                            <input
+                              type="radio"
+                              name="level2"
+                              value="personal"
+                              checked={level2Visibility === 'personal'}
+                              onChange={(e) => {
+                                setLevel2Visibility(e.target.value as VisibilityLevel);
+                                handleSavePrivacySettings();
+                              }}
+                              className="mt-1"
+                            />
+                            <div className="flex-1">
+                              <div className="font-medium text-gray-900">Personal Contacts Only</div>
+                              <div className="text-sm text-gray-500 mt-1">Only contacts you mark as personal ({personalContacts.length} selected)</div>
+                              <div className="text-xs text-gray-400 mt-2 space-y-0.5">
+                                <div className="text-gray-300">✗ Public users</div>
+                                <div className="text-gray-300">✗ Chat contacts</div>
+                                <div>✓ Personal contacts</div>
+                              </div>
+                            </div>
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* Level 3 Visibility */}
+                      <div className="pt-6 border-t border-gray-200">
+                        <div className="flex items-center justify-between mb-4">
+                          <div>
+                            <h3 className="text-lg font-semibold text-gray-800">Level 3 - Private</h3>
+                            <p className="text-sm text-gray-500">Email, Phone</p>
+                          </div>
+                          <span className="px-3 py-1 bg-amber-100 text-amber-700 text-xs font-semibold rounded-full">Level 3</span>
+                        </div>
+
+                        <div className="space-y-3">
+                          <label className="flex items-start gap-3 p-4 border-2 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
+                            style={{ borderColor: level3Visibility === 'public' ? '#3b82f6' : '#e5e7eb' }}>
+                            <input
+                              type="radio"
+                              name="level3"
+                              value="public"
+                              checked={level3Visibility === 'public'}
+                              onChange={(e) => {
+                                setLevel3Visibility(e.target.value as VisibilityLevel);
+                                handleSavePrivacySettings();
+                              }}
+                              className="mt-1"
+                            />
+                            <div className="flex-1">
+                              <div className="font-medium text-gray-900">Public Discovery</div>
+                              <div className="text-sm text-gray-500 mt-1">Anyone who discovers you via P2P</div>
+                              <div className="text-xs text-gray-400 mt-2 space-y-0.5">
+                                <div>✓ Public users</div>
+                                <div>✓ Chat contacts</div>
+                                <div>✓ Personal contacts</div>
+                              </div>
+                            </div>
+                          </label>
+
+                          <label className="flex items-start gap-3 p-4 border-2 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
+                            style={{ borderColor: level3Visibility === 'contacts' ? '#3b82f6' : '#e5e7eb' }}>
+                            <input
+                              type="radio"
+                              name="level3"
+                              value="contacts"
+                              checked={level3Visibility === 'contacts'}
+                              onChange={(e) => {
+                                setLevel3Visibility(e.target.value as VisibilityLevel);
+                                handleSavePrivacySettings();
+                              }}
+                              className="mt-1"
+                            />
+                            <div className="flex-1">
+                              <div className="font-medium text-gray-900">Chat Contacts</div>
+                              <div className="text-sm text-gray-500 mt-1">Only people you have active chats with</div>
+                              <div className="text-xs text-gray-400 mt-2 space-y-0.5">
+                                <div className="text-gray-300">✗ Public users</div>
+                                <div>✓ Chat contacts</div>
+                                <div>✓ Personal contacts</div>
+                              </div>
+                            </div>
+                          </label>
+
+                          <label className="flex items-start gap-3 p-4 border-2 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
+                            style={{ borderColor: level3Visibility === 'personal' ? '#3b82f6' : '#e5e7eb' }}>
+                            <input
+                              type="radio"
+                              name="level3"
+                              value="personal"
+                              checked={level3Visibility === 'personal'}
+                              onChange={(e) => {
+                                setLevel3Visibility(e.target.value as VisibilityLevel);
+                                handleSavePrivacySettings();
+                              }}
+                              className="mt-1"
+                            />
+                            <div className="flex-1">
+                              <div className="font-medium text-gray-900">Personal Contacts Only</div>
+                              <div className="text-sm text-gray-500 mt-1">Only contacts you mark as personal ({personalContacts.length} selected)</div>
+                              <div className="text-xs text-gray-400 mt-2 space-y-0.5">
+                                <div className="text-gray-300">✗ Public users</div>
+                                <div className="text-gray-300">✗ Chat contacts</div>
+                                <div>✓ Personal contacts</div>
+                              </div>
+                            </div>
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* Personal Contacts Management */}
+                      <div className="pt-6 border-t border-gray-200">
+                        <div className="flex items-center justify-between mb-4">
+                          <div>
+                            <h3 className="text-lg font-semibold text-gray-800">Personal Contacts</h3>
+                            <p className="text-sm text-gray-500">{personalContacts.length} contact{personalContacts.length !== 1 ? 's' : ''} marked as personal</p>
+                          </div>
+                        </div>
+
+                        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                          <p className="text-sm text-gray-600">
+                            Personal Contacts management coming soon. You'll be able to select specific contacts from your Maxima contact list to mark as "personal" for enhanced privacy control.
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Chat Permissions */}
+                      <div className="pt-6 border-t border-gray-200">
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex-1">
+                            <h3 className="text-lg font-semibold text-gray-800">Chat Permissions</h3>
+                            <p className="text-sm text-gray-500 mt-1">
+                              Control who can start chats with you
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
+                          <div className="flex-1">
+                            <div className="font-medium text-gray-900">Allow chats from non-contacts</div>
+                            <p className="text-sm text-gray-500 mt-1">
+                              {allowNonContactChats
+                                ? 'Anyone can send you direct messages'
+                                : 'Only your contacts can send you messages'}
+                            </p>
+                          </div>
+                          <button
+                            onClick={handleToggleChatPermission}
+                            disabled={privacyLoading}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${privacyLoading ? 'opacity-50 cursor-not-allowed' : ''
+                              } ${allowNonContactChats ? 'bg-blue-600' : 'bg-gray-200'}`}
+                          >
+                            <span
+                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${allowNonContactChats ? 'translate-x-6' : 'translate-x-1'
+                                }`}
+                            />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+                </>
+              )}
+
+              {/* ADVANCED TAB */}
+              {activeTab === 'advanced' && (
+                <>
+                  {/* APPLICATION MODE SECTION */}
+                  <section className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                    <div className="p-6 border-b border-gray-100 flex items-center gap-3">
+                      <Shield className={writeMode ? "text-green-500" : "text-yellow-500"} />
+                      <h2 className="text-xl font-semibold text-gray-800">Application Mode</h2>
+                    </div>
+                    <div className="p-6">
+                      <div className={`flex items-center gap-3 p-4 rounded-xl mb-4 ${writeMode ? 'bg-green-50 border border-green-100' : 'bg-yellow-50 border border-yellow-100'}`}>
+                        {writeMode ? (
+                          <div className="p-2 bg-green-100 rounded-full text-green-600">
+                            <Check size={20} />
+                          </div>
+                        ) : (
+                          <div className="p-2 bg-yellow-100 rounded-full text-yellow-600">
+                            <AlertTriangle size={20} />
+                          </div>
+                        )}
+                        <div>
+                          <h3 className={`font-semibold ${writeMode ? 'text-green-800' : 'text-yellow-800'}`}>
+                            {writeMode ? 'Write Mode Active' : 'Read Mode Active'}
+                          </h3>
+                          <p className={`text-sm ${writeMode ? 'text-green-600' : 'text-yellow-600'}`}>
+                            {writeMode
+                              ? 'MetaChain has full permission to send messages and tokens.'
+                              : 'MetaChain needs your approval for every transaction.'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {!writeMode && (
+                        <div className="space-y-4">
+                          <p className="text-gray-600 text-sm leading-relaxed">
+                            To enable <strong>Write Mode</strong> and avoid repeated approval requests:
+                          </p>
+                          <ol className="list-decimal list-inside text-sm text-gray-600 space-y-2 pl-2">
+                            <li>Go to <strong>Minima</strong> main screen</li>
+                            <li>Open <strong>MiniDapps</strong></li>
+                            <li>Find <strong>MetaChain</strong></li>
+                            <li>Click the <strong>lock icon</strong> / permissions</li>
+                            <li>Select <strong>Write Mode</strong></li>
+                          </ol>
+
+                          <button
+                            onClick={async () => {
+                              console.log("🔄 [Settings] Manual refresh button clicked");
+                              await refreshWriteMode();
+                            }}
+                            className="w-full mt-2 py-2.5 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+                          >
+                            <RefreshCw size={18} />
+                            Check Permissions Again
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </section>
+                </>
+              )}
+
+              {/* DISCOVERY TAB */}
+              {activeTab === 'discovery' && (
+                <>
+                  {/* COMMUNITY & DISCOVERY SECTION */}
+                  <section id="community-discovery" className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden scroll-mt-4">
+                    <div className="p-6 border-b border-gray-100 flex items-center gap-3">
+                      <Globe className="text-blue-500" />
+                      <h2 className="text-xl font-semibold text-gray-800">Community & Discovery</h2>
                     </div>
 
-                    {/* Network Metrics */}
-                    <div className="space-y-4">
-                      {/* Connections */}
-                      <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 bg-blue-100 rounded-lg text-blue-600">
-                            <Globe size={18} />
-                          </div>
-                          <span className="font-medium text-gray-700">Connections</span>
+                    <div className="p-6 space-y-6">
+                      {/* MLS Server (for Development) */}
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <div className="flex items-center gap-2 mb-3">
+                          <Info className="text-blue-600" size={20} />
+                          <h3 className="text-lg font-semibold text-blue-900">Use This Node as MLS Server</h3>
                         </div>
-                        <span className="text-lg font-bold text-gray-900">
-                          {networkStatus.network?.connected || 0} nodes
-                        </span>
+                        <p className="text-sm text-blue-800 mb-3">
+                          For development/testing, other nodes can use this node as their Static MLS server.
+                        </p>
+
+                        {p2pIdentity ? (
+                          <>
+                            <div className="bg-white rounded border border-blue-200 p-3 mb-3">
+                              <p className="text-xs text-blue-600 mb-1 font-semibold">Your P2P Identity:</p>
+                              <p className="text-xs font-mono text-gray-800 break-all">{p2pIdentity}</p>
+                            </div>
+                            <button
+                              onClick={() => copyToClipboard(p2pIdentity, 'p2p')}
+                              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${copiedField === 'p2p' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700 hover:bg-blue-200 border border-blue-300'}`}
+                            >
+                              {copiedField === 'p2p' ? <Check size={16} /> : <Copy size={16} />}
+                              {copiedField === 'p2p' ? 'Copied!' : 'Copy P2P Identity'}
+                            </button>
+                            <p className="text-xs text-blue-700 mt-3">
+                              💡 <strong>Note:</strong> Other nodes can paste this address in "Static MLS Server" below to use this node as their MLS.
+                            </p>
+                          </>
+                        ) : (
+                          <p className="text-sm text-blue-700">Loading P2P identity...</p>
+                        )}
                       </div>
 
-                      {/* Current Block */}
-                      <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 bg-purple-100 rounded-lg text-purple-600">
-                            <span className="text-sm font-bold">⛓️</span>
+                      {/* Static MLS Configuration */}
+                      {/* Static MLS Configuration */}
+                      <div className="border-b border-gray-100">
+                        <button
+                          onClick={() => toggleAddress('staticMLS')}
+                          className="w-full flex items-center justify-between p-6 hover:bg-gray-50 transition-colors text-left"
+                        >
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-lg font-semibold text-gray-800">Static MLS Server</h3>
+                            {hasStaticMLS && <Check className="text-green-500" size={20} />}
                           </div>
-                          <span className="font-medium text-gray-700">Current Block</span>
-                        </div>
-                        <span className="text-lg font-bold text-gray-900">
-                          #{networkStatus.chain?.block?.toLocaleString() || 0}
-                        </span>
+                          {expandedAddress === 'staticMLS' ? <ChevronUp size={20} className="text-gray-500" /> : <ChevronDown size={20} className="text-gray-500" />}
+                        </button>
+
+                        {expandedAddress === 'staticMLS' && (
+                          <div className="px-6 pb-6 pt-0">
+                            <p className="text-sm text-gray-600 mb-4">
+                              Configure a permanent Maxima Lookup Service to enable a permanent MAX# address for P2P Discovery.
+                            </p>
+
+                            {hasStaticMLS ? (
+                              <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <Check className="text-green-600" size={20} />
+                                  <span className="font-semibold text-green-800">Static MLS Configured</span>
+                                </div>
+                                <p className="text-xs text-gray-600 font-mono break-all mt-2">
+                                  {staticMLSServer}
+                                </p>
+                                <div className="mt-2 pt-2 border-t border-green-200">
+                                  <button
+                                    onClick={() => handleEnablePermanentAddress(false)}
+                                    disabled={enablingPermanent}
+                                    className="text-xs flex items-center gap-2 text-green-700 hover:text-green-800 underline"
+                                  >
+                                    {enablingPermanent ? <RefreshCw size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                                    Force Re-register Permanent Address
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                                  <div className="flex items-center gap-2">
+                                    <AlertTriangle className="text-yellow-600" size={20} />
+                                    <span className="font-semibold text-yellow-800">Static MLS Not Configured</span>
+                                  </div>
+                                  <p className="text-sm text-yellow-700 mt-2">
+                                    Enter your Static MLS server address below to enable P2P Discovery.
+                                  </p>
+                                </div>
+
+                                <div className="space-y-3">
+                                  <input
+                                    type="text"
+                                    value={staticMLSServer}
+                                    onChange={(e) => setStaticMLSServer(e.target.value)}
+                                    placeholder="MxG...@IP:PORT"
+                                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none font-mono text-sm bg-white text-gray-700"
+                                  />
+                                  <p className="text-xs text-gray-500">Static MLS configuration has been simplified. Enter your MLS address above.</p>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        )}
                       </div>
 
-                      {/* Last Block Time */}
-                      <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 bg-orange-100 rounded-lg text-orange-600">
-                            <span className="text-sm font-bold">🕐</span>
+                      {/* Permanent Address */}
+                      {/* Permanent Address */}
+                      <div className="border-b border-gray-100">
+                        <button
+                          onClick={() => toggleAddress('permanentAddress')}
+                          className="w-full flex items-center justify-between p-6 hover:bg-gray-50 transition-colors text-left"
+                        >
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-lg font-semibold text-gray-800">Permanent MAX# Address</h3>
+                            {hasPermanentAddress && <Check className="text-green-500" size={20} />}
                           </div>
-                          <span className="font-medium text-gray-700">Last Update</span>
-                        </div>
-                        <span className="text-sm font-semibold text-gray-700">
-                          {networkStatus.chain?.time || 'N/A'}
-                        </span>
-                      </div>
+                          {expandedAddress === 'permanentAddress' ? <ChevronUp size={20} className="text-gray-500" /> : <ChevronDown size={20} className="text-gray-500" />}
+                        </button>
 
-                      {/* Minima Version */}
-                      <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 bg-gray-200 rounded-lg text-gray-600">
-                            <Info size={18} />
+                        {expandedAddress === 'permanentAddress' && (
+                          <div className="px-6 pb-6 pt-0">
+                            <p className="text-sm text-gray-600 mb-4">
+                              Enable a permanent address that never changes, allowing others to contact you even if you're not a contact.
+                            </p>
+
+                            {hasPermanentAddress ? (
+                              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                                <div className="flex items-center gap-2 mb-3">
+                                  <Check className="text-green-600" size={20} />
+                                  <span className="font-semibold text-green-800">Permanent Address Active</span>
+                                </div>
+                                <div className="bg-white rounded border border-green-200 p-3">
+                                  <p className="text-xs text-gray-500 mb-1">Your MAX# Address:</p>
+                                  <p className="text-xs font-mono text-gray-800 break-all">{permanentAddress}</p>
+                                </div>
+                                <button
+                                  onClick={() => copyToClipboard(permanentAddress, 'permanent')}
+                                  className={`mt-3 flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${copiedField === 'permanent' ? 'bg-green-100 text-green-700' : 'bg-green-50 text-green-700 hover:bg-green-100 border border-green-200'}`}
+                                >
+                                  {copiedField === 'permanent' ? <Check size={16} /> : <Copy size={16} />}
+                                  {copiedField === 'permanent' ? 'Copied!' : 'Copy MAX# Address'}
+                                </button>
+
+                                <div className="mt-4 pt-4 border-t border-green-200">
+                                  <p className="text-xs text-gray-500 mb-2">
+                                    If contacts can't find you, your MLS server might need a reminder:
+                                  </p>
+                                  <button
+                                    onClick={() => handleEnablePermanentAddress(false)}
+                                    disabled={enablingPermanent}
+                                    className="text-xs flex items-center gap-2 px-3 py-1.5 bg-white border border-green-300 text-green-700 rounded hover:bg-green-50 transition-colors"
+                                  >
+                                    {enablingPermanent ? <RefreshCw size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                                    Re-send Registration to MLS
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div>
+                                {hasStaticMLS ? (
+                                  <button
+                                    onClick={() => handleEnablePermanentAddress(false)}
+                                    disabled={enablingPermanent}
+                                    className="w-full py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                  >
+                                    {enablingPermanent ? (
+                                      <>
+                                        <RefreshCw size={18} className="animate-spin" />
+                                        Enabling...
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Check size={18} />
+                                        Enable Permanent Address
+                                      </>
+                                    )}
+                                  </button>
+                                ) : (
+                                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-center">
+                                    <AlertTriangle className="text-gray-400 mx-auto mb-2" size={24} />
+                                    <p className="text-sm text-gray-600">
+                                      Configure Static MLS first to enable permanent address
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
-                          <span className="font-medium text-gray-700">Version</span>
-                        </div>
-                        <span className="text-sm font-semibold text-gray-700">
-                          Minima {networkStatus.version || 'N/A'}
-                        </span>
+                        )}
                       </div>
                     </div>
+                  </section>
+                </>
+              )}
 
-                    {/* Last Updated Timestamp */}
-                    <div className="mt-6 text-center text-xs text-gray-500">
-                      Updated {Math.floor((Date.now() - lastUpdated) / 1000)} seconds ago
+              {/* NETWORK SECTION - Part of Advanced Tab */}
+              {activeTab === 'advanced' && (
+                <>
+                  {/* NETWORK SECTION */}
+                  <section id="network" className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                    <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <Globe className="text-green-500" />
+                        <h2 className="text-xl font-semibold text-gray-800">Network</h2>
+                      </div>
+                      <button
+                        onClick={fetchNetworkStatus}
+                        disabled={networkLoading}
+                        className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50"
+                        title="Refresh network status"
+                      >
+                        <RefreshCw size={18} className={networkLoading ? "animate-spin" : ""} />
+                      </button>
                     </div>
-                  </>
-                ) : (
-                  <p className="text-gray-500 text-center py-4">Unable to load network data</p>
-                )}
-              </div>
-            </section>
+                    <div className="p-6">
+                      {networkLoading && !networkStatus ? (
+                        <div className="flex items-center justify-center py-8">
+                          <RefreshCw size={24} className="animate-spin text-gray-400" />
+                        </div>
+                      ) : networkStatus ? (
+                        <>
+                          {/* Health Status Badge */}
+                          <div className={`flex items-center gap-3 p-4 rounded-xl mb-6 ${networkStatus.network?.connected > 3
+                            ? 'bg-green-50 border border-green-100'
+                            : networkStatus.network?.connected > 0
+                              ? 'bg-yellow-50 border border-yellow-100'
+                              : 'bg-red-50 border border-red-100'
+                            }`}>
+                            <div className={`p-2 rounded-full ${networkStatus.network?.connected > 3
+                              ? 'bg-green-100 text-green-600'
+                              : networkStatus.network?.connected > 0
+                                ? 'bg-yellow-100 text-yellow-600'
+                                : 'bg-red-100 text-red-600'
+                              }`}>
+                              <Check size={20} />
+                            </div>
+                            <div>
+                              <h3 className={`font-semibold ${networkStatus.network?.connected > 3
+                                ? 'text-green-800'
+                                : networkStatus.network?.connected > 0
+                                  ? 'text-yellow-800'
+                                  : 'text-red-800'
+                                }`}>
+                                {networkStatus.network?.connected > 3
+                                  ? 'Network running smoothly'
+                                  : networkStatus.network?.connected > 0
+                                    ? 'Limited connection'
+                                    : 'No connection'}
+                              </h3>
+                              <p className={`text-sm ${networkStatus.network?.connected > 3
+                                ? 'text-green-600'
+                                : networkStatus.network?.connected > 0
+                                  ? 'text-yellow-600'
+                                  : 'text-red-600'
+                                }`}>
+                                {networkStatus.network?.connected > 3
+                                  ? 'Connected to Minima network'
+                                  : networkStatus.network?.connected > 0
+                                    ? 'Few active connections'
+                                    : 'No active connections'}
+                              </p>
+                            </div>
+                          </div>
 
+                          {/* Network Metrics */}
+                          <div className="space-y-4">
+                            {/* Connections */}
+                            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                              <div className="flex items-center gap-3">
+                                <div className="p-2 bg-blue-100 rounded-lg text-blue-600">
+                                  <Globe size={18} />
+                                </div>
+                                <span className="font-medium text-gray-700">Connections</span>
+                              </div>
+                              <span className="text-lg font-bold text-gray-900">
+                                {networkStatus.network?.connected || 0} nodes
+                              </span>
+                            </div>
+
+                            {/* Current Block */}
+                            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                              <div className="flex items-center gap-3">
+                                <div className="p-2 bg-purple-100 rounded-lg text-purple-600">
+                                  <span className="text-sm font-bold">⛓️</span>
+                                </div>
+                                <span className="font-medium text-gray-700">Current Block</span>
+                              </div>
+                              <span className="text-lg font-bold text-gray-900">
+                                #{networkStatus.chain?.block?.toLocaleString() || 0}
+                              </span>
+                            </div>
+
+                            {/* Last Block Time */}
+                            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                              <div className="flex items-center gap-3">
+                                <div className="p-2 bg-orange-100 rounded-lg text-orange-600">
+                                  <span className="text-sm font-bold">🕐</span>
+                                </div>
+                                <span className="font-medium text-gray-700">Last Update</span>
+                              </div>
+                              <span className="text-sm font-semibold text-gray-700">
+                                {networkStatus.chain?.time || 'N/A'}
+                              </span>
+                            </div>
+
+                            {/* Minima Version */}
+                            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                              <div className="flex items-center gap-3">
+                                <div className="p-2 bg-gray-200 rounded-lg text-gray-600">
+                                  <Info size={18} />
+                                </div>
+                                <span className="font-medium text-gray-700">Version</span>
+                              </div>
+                              <span className="text-sm font-semibold text-gray-700">
+                                Minima {networkStatus.version || 'N/A'}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Last Updated Timestamp */}
+                          <div className="mt-6 text-center text-xs text-gray-500">
+                            Updated {Math.floor((Date.now() - lastUpdated) / 1000)} seconds ago
+                          </div>
+                        </>
+                      ) : (
+                        <p className="text-gray-500 text-center py-4">Unable to load network data</p>
+                      )}
+                    </div>
+                  </section>
+                </>
+              )}
+
+            </div>
           </div>
-        </div >
-      </div >
+        </div>
+      </div>
     </>
   );
 }

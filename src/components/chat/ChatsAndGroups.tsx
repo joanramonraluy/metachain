@@ -6,7 +6,7 @@ import { appContext } from "../../AppContext";
 import { minimaService } from "../../services/minima.service";
 import { groupService } from "../../services/group.service";
 import { MDS } from "@minima-global/mds";
-import { Plus, Archive, Star, Users } from "lucide-react";
+import { Plus, Archive, Star, Users, MessageCircle, LayoutGrid, Inbox } from "lucide-react";
 
 interface Contact {
     currentaddress: string;
@@ -45,7 +45,9 @@ interface GroupWithUnread {
 
 export default function ChatsAndGroups() {
     const { loaded, dbReady, myPublicKey } = useContext(appContext);
-    const [activeTab, setActiveTab] = useState<'all' | 'individuals' | 'groups' | 'favorites' | 'archived'>('all');
+    const [activeTab, setActiveTab] = useState<'all' | 'individuals' | 'groups' | 'requests' | 'favorites' | 'archived'>('all');
+    // State to hold discovered peer names map
+    const [peerNames, setPeerNames] = useState<Map<string, string>>(new Map());
     const [chats, setChats] = useState<ChatItem[]>([]);
     const [groups, setGroups] = useState<GroupWithUnread[]>([]);
     const [contacts, setContacts] = useState<Map<string, Contact>>(new Map());
@@ -101,10 +103,25 @@ export default function ChatsAndGroups() {
             try {
                 const contactsRes: any = await MDS.cmd.maxcontacts();
                 const contactsList: Contact[] = contactsRes?.response?.contacts || [];
+                // Create a map for quick lookup
                 const contactsMap = new Map<string, Contact>();
                 contactsList.forEach((contact) => {
                     if (contact.publickey) {
                         contactsMap.set(contact.publickey, contact);
+                    }
+                });
+
+                // Fetch discovered peers for name resolution of non-contacts
+                const peersSql = "SELECT publickey, alias FROM DISCOVERED_PEERS";
+                MDS.sql(peersSql, (res: any) => {
+                    if (res.status && res.rows) {
+                        const pMap = new Map<string, string>();
+                        res.rows.forEach((row: any) => {
+                            if (row.PUBLICKEY && row.ALIAS) {
+                                pMap.set(row.PUBLICKEY, row.ALIAS);
+                            }
+                        });
+                        setPeerNames(pMap);
                     }
                 });
 
@@ -153,7 +170,23 @@ export default function ChatsAndGroups() {
     }
 
     const activeChats = chats.filter(c => !c.archived);
-    const individualChats = activeChats;
+
+    // Helper function to check if a chat is from a contact
+    const isContact = (publickey: string) => {
+        const result = contacts.has(publickey);
+        if (!result) {
+            console.log('[ChatsAndGroups] publickey not in contacts:', publickey);
+        }
+        return result;
+    };
+
+    // Filter chats based on contact status
+    const contactChats = activeChats.filter(c => isContact(c.publickey));
+    const requestChats = activeChats.filter(c => !isContact(c.publickey));
+
+    console.log('[ChatsAndGroups] Total chats:', activeChats.length, 'Contacts:', contactChats.length, 'Requests:', requestChats.length);
+
+    const individualChats = contactChats; // Only contacts in Individuals tab
     const favoriteChats = chats.filter(c => c.favorite && !c.archived);
     const archivedChats = chats.filter(c => c.archived);
     const favoriteGroups = groups.filter(() => false);
@@ -164,16 +197,20 @@ export default function ChatsAndGroups() {
 
     switch (activeTab) {
         case 'all':
-            displayedChats = activeChats;
+            displayedChats = activeChats; // All chats (contacts + non-contacts)
             displayedGroups = groups;
             break;
         case 'individuals':
-            displayedChats = individualChats;
+            displayedChats = individualChats; // Only contacts
             displayedGroups = [];
             break;
         case 'groups':
             displayedChats = [];
             displayedGroups = groups;
+            break;
+        case 'requests':
+            displayedChats = requestChats; // Only non-contacts
+            displayedGroups = [];
             break;
         case 'favorites':
             displayedChats = favoriteChats;
@@ -204,7 +241,13 @@ export default function ChatsAndGroups() {
 
     const getName = (chat: ChatItem) => {
         const contact = contacts.get(chat.publickey);
-        return contact?.extradata?.name || chat.roomname || "Unknown";
+        if (contact?.extradata?.name) return contact.extradata.name;
+
+        // Check discovered peers if not a contact
+        const peerName = peerNames.get(chat.publickey);
+        if (peerName) return peerName;
+
+        return chat.roomname || "Unknown";
     };
 
     const formatTime = (timestamp: any) => {
@@ -234,6 +277,7 @@ export default function ChatsAndGroups() {
     const totalCount = activeChats.length + groups.length;
     const individualsCount = individualChats.length;
     const groupsCount = groups.length;
+    const requestsCount = requestChats.length;
     const favoritesCount = favoriteChats.length + favoriteGroups.length;
     const archivedCount = archivedChats.length + archivedGroups.length;
 
@@ -244,49 +288,63 @@ export default function ChatsAndGroups() {
                 <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
                     <button
                         onClick={() => setActiveTab('all')}
-                        className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1 ${activeTab === 'all'
+                        className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === 'all'
                             ? 'bg-[#0088cc] text-white shadow-md'
                             : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                             }`}
                     >
-                        <span className="md:hidden">📋</span>
+                        <LayoutGrid size={16} className="flex-shrink-0" />
                         <span className="hidden md:inline">All</span> {totalCount > 0 && `(${totalCount})`}
                     </button>
                     <button
                         onClick={() => setActiveTab('individuals')}
-                        className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1 ${activeTab === 'individuals'
+                        className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === 'individuals'
                             ? 'bg-[#0088cc] text-white shadow-md'
                             : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                             }`}
                     >
-                        <span>💬</span> <span className="hidden md:inline">Individuals</span> {individualsCount > 0 && `(${individualsCount})`}
+                        <MessageCircle size={16} className="flex-shrink-0" />
+                        <span className="hidden md:inline">Individuals</span> {individualsCount > 0 && `(${individualsCount})`}
                     </button>
                     <button
                         onClick={() => setActiveTab('groups')}
-                        className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1 ${activeTab === 'groups'
+                        className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === 'groups'
                             ? 'bg-[#0088cc] text-white shadow-md'
                             : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                             }`}
                     >
-                        <span>👥</span> <span className="hidden md:inline">Groups</span> {groupsCount > 0 && `(${groupsCount})`}
+                        <Users size={16} className="flex-shrink-0" />
+                        <span className="hidden md:inline">Groups</span> {groupsCount > 0 && `(${groupsCount})`}
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('requests')}
+                        className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === 'requests'
+                            ? 'bg-[#0088cc] text-white shadow-md'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                            }`}
+                    >
+                        <Inbox size={16} className="flex-shrink-0" />
+                        <span className="hidden md:inline">Non-Contacts</span> {requestsCount > 0 && `(${requestsCount})`}
                     </button>
                     <button
                         onClick={() => setActiveTab('favorites')}
-                        className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1 ${activeTab === 'favorites'
+                        className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === 'favorites'
                             ? 'bg-[#0088cc] text-white shadow-md'
                             : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                             }`}
                     >
-                        <span>⭐</span> <span className="hidden md:inline">Favorites</span> {favoritesCount > 0 && `(${favoritesCount})`}
+                        <Star size={16} className="flex-shrink-0" />
+                        <span className="hidden md:inline">Favorites</span> {favoritesCount > 0 && `(${favoritesCount})`}
                     </button>
                     <button
                         onClick={() => setActiveTab('archived')}
-                        className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1 ${activeTab === 'archived'
+                        className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === 'archived'
                             ? 'bg-[#0088cc] text-white shadow-md'
                             : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                             }`}
                     >
-                        <span>📦</span> <span className="hidden md:inline">Archived</span> {archivedCount > 0 && `(${archivedCount})`}
+                        <Archive size={16} className="flex-shrink-0" />
+                        <span className="hidden md:inline">Archived</span> {archivedCount > 0 && `(${archivedCount})`}
                     </button>
 
                     {activeTab === 'groups' && (
@@ -307,6 +365,8 @@ export default function ChatsAndGroups() {
                         <div className="bg-blue-50 p-4 rounded-full mb-4">
                             {activeTab === 'groups' ? (
                                 <Users className="w-12 h-12 text-[#0088cc]" />
+                            ) : activeTab === 'requests' ? (
+                                <Inbox className="w-12 h-12 text-[#0088cc]" />
                             ) : (
                                 <svg className="w-12 h-12 text-[#0088cc]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
@@ -314,12 +374,16 @@ export default function ChatsAndGroups() {
                             )}
                         </div>
                         <h3 className="text-lg font-medium text-gray-900 mb-1">
-                            {activeTab === 'groups' ? 'No groups yet' : 'No chats yet'}
+                            {activeTab === 'groups' ? 'No groups yet' :
+                                activeTab === 'requests' ? 'No message requests' :
+                                    'No chats yet'}
                         </h3>
                         <p className="text-sm mb-6">
                             {activeTab === 'groups'
                                 ? 'Create a group to start chatting with multiple people.'
-                                : 'Start a new conversation to see it here.'}
+                                : activeTab === 'requests'
+                                    ? 'Messages from non-contacts will appear here.'
+                                    : 'Start a new conversation to see it here.'}
                         </p>
                         {activeTab === 'groups' ? (
                             <button
@@ -423,7 +487,7 @@ export default function ChatsAndGroups() {
                                             {chat.username === "Me" && <span className="text-[#0088cc] font-medium mr-1">You:</span>}
                                             {chat.lastMessageType === "charm" ? "✨ Charm sent" :
                                                 chat.lastMessageType === "token" ? "💰 Token sent" :
-                                                    decodeURIComponent(chat.lastMessage || "")}
+                                                    chat.lastMessage || ""}
                                         </p>
                                     </div>
                                 </div>

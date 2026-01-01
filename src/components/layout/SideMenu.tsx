@@ -13,6 +13,10 @@ interface SideMenuProps {
 
 export default function SideMenu({ isOpen, setIsOpen }: SideMenuProps) {
   const { userName, userAvatar } = useContext(appContext);
+
+  useEffect(() => {
+    console.log(`Sidebar rendering with userName: ${userName}`);
+  }, [userName]);
   const router = useRouterState();
   const currentPath = router.location.pathname;
   const menuRef = useRef<HTMLDivElement>(null);

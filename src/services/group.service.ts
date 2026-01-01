@@ -119,7 +119,7 @@ class GroupService {
                 VALUES ('${groupId}', '${name.replace(/'/g, "''")}', '${myPublicKey}', ${now}, '${description.replace(/'/g, "''")}')
             `;
             await this.runSQL(createGroupSql);
-            console.log("✅ [GROUP] Group created:", groupId);
+            console.log("✅ [GROUP-MGMT] Created:", groupId);
 
             // 2. Add creator as member
             const addCreatorSql = `
@@ -155,7 +155,7 @@ class GroupService {
                         members
                     );
                 } catch (err) {
-                    console.error(`❌ [GROUP] Failed to send invite to ${memberPubkey}:`, err);
+                    console.error(`❌ [GROUP-INVITE] Failed to send invite to ${memberPubkey}:`, err);
                     // Continue with other members even if one fails
                 }
             }
@@ -170,7 +170,7 @@ class GroupService {
             this.notifyGroupUpdate();
             return groupId;
         } catch (err) {
-            console.error("❌ [GROUP] Failed to create group:", err);
+            console.error("❌ [GROUP-MGMT] Failed to create group:", err);
             throw err;
         }
     }
@@ -187,7 +187,7 @@ class GroupService {
             const res = await this.runSQL(sql);
             return res.rows || [];
         } catch (err) {
-            console.error("❌ [GROUP] Failed to get groups:", err);
+            console.error("❌ [GROUP-MGMT] Failed to get groups:", err);
             return [];
         }
     }
@@ -198,7 +198,7 @@ class GroupService {
             const res = await this.runSQL(sql);
             return res.rows && res.rows.length > 0 ? res.rows[0] : null;
         } catch (err) {
-            console.error("❌ [GROUP] Failed to get group info:", err);
+            console.error("❌ [GROUP-MGMT] Failed to get group info:", err);
             return null;
         }
     }
@@ -218,10 +218,10 @@ class GroupService {
             // Delete group
             await this.runSQL(`DELETE FROM GROUPS WHERE group_id = '${groupId}'`);
 
-            console.log("✅ [GROUP] Group deleted:", groupId);
+            console.log("✅ [GROUP-MGMT] Deleted:", groupId);
             this.notifyGroupUpdate();
         } catch (err) {
-            console.error("❌ [GROUP] Failed to delete group:", err);
+            console.error("❌ [GROUP-MGMT] Failed to delete group:", err);
             throw err;
         }
     }
@@ -265,7 +265,7 @@ class GroupService {
                             myUsername
                         );
                     } catch (err) {
-                        console.error(`❌ [GROUP] Failed to notify ${(member as any).PUBLICKEY}:`, err);
+                        console.error(`❌ [GROUP-MEMBER] Failed to notify ${(member as any).PUBLICKEY}:`, err);
                     }
                 }
             }
@@ -283,7 +283,7 @@ class GroupService {
 
             this.notifyGroupUpdate();
         } catch (err) {
-            console.error("❌ [GROUP] Failed to add member:", err);
+            console.error("❌ [GROUP-MEMBER] Failed to add member:", err);
             throw err;
         }
     }
@@ -325,13 +325,13 @@ class GroupService {
                         myUsername
                     );
                 } catch (err) {
-                    console.error(`❌ [GROUP] Failed to notify ${(m as any).PUBLICKEY}:`, err);
+                    console.error(`❌ [GROUP-MEMBER] Failed to notify ${(m as any).PUBLICKEY}:`, err);
                 }
             }
 
             this.notifyGroupUpdate();
         } catch (err) {
-            console.error("❌ [GROUP] Failed to remove member:", err);
+            console.error("❌ [GROUP-MEMBER] Failed to remove member:", err);
             throw err;
         }
     }
@@ -346,7 +346,7 @@ class GroupService {
             const res = await this.runSQL(sql);
             return res.rows || [];
         } catch (err) {
-            console.error("❌ [GROUP] Failed to get members:", err);
+            console.error("❌ [GROUP-MEMBER] Failed to get members:", err);
             return [];
         }
     }
@@ -371,11 +371,11 @@ class GroupService {
 
             const members = await this.getGroupMembers(groupId);
 
-            // Save message locally
-            const encodedMsg = encodeURIComponent(message).replace(/'/g, "''");
+            // Save message locally - only escape SQL quotes
+            const escapedMsg = message.replace(/'/g, "''");
             const insertSql = `
                 INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read)
-                VALUES ('${groupId}', '${myPublicKey}', '${myUsername.replace(/'/g, "''")}', '${type}', '${encodedMsg}', '${filedata}', ${now}, 1)
+                VALUES ('${groupId}', '${myPublicKey}', '${myUsername.replace(/'/g, "''")}', '${type}', '${escapedMsg}', '${filedata}', ${now}, 1)
             `;
             await this.runSQL(insertSql);
 
@@ -410,18 +410,18 @@ class GroupService {
                     try {
                         await this.sendMaximaMessage(memberPubkey, maximaMessage);
                         sentCount++;
-                        console.log(`📤 [GROUP] Sent to contact member: ${memberPubkey.substring(0, 20)}...`);
+                        console.log(`📤 [GROUP-MSG] Sent to contact: ${memberPubkey.substring(0, 20)}...`);
                     } catch (err) {
-                        console.error(`❌ [GROUP] Failed to send to ${memberPubkey}:`, err);
+                        console.error(`❌ [GROUP-MSG] Failed to send to ${memberPubkey}:`, err);
                     }
                 } else {
-                    console.log(`⏭️ [GROUP] Skipping non-contact member: ${memberPubkey.substring(0, 20)}...`);
+                    console.log(`⏭️ [GROUP-MSG] Skipping non-contact: ${memberPubkey.substring(0, 20)}...`);
                 }
             }
 
-            console.log(`✅ [GROUP] Message sent to ${sentCount} contact members in group: ${groupId}`);
+            console.log(`✅ [GROUP-MSG] Sent to ${sentCount} contact members in group: ${groupId}`);
         } catch (err) {
-            console.error("❌ [GROUP] Failed to send group message:", err);
+            console.error("❌ [GROUP-MSG] Message send failed:", err);
             throw err;
         }
     }
@@ -436,7 +436,7 @@ class GroupService {
             const res = await this.runSQL(sql);
             return res.rows || [];
         } catch (err) {
-            console.error("❌ [GROUP] Failed to get messages:", err);
+            console.error("❌ [GROUP-MSG] Failed to get messages:", err);
             return [];
         }
     }
@@ -446,7 +446,7 @@ class GroupService {
             const sql = `UPDATE GROUP_MESSAGES SET read = 1 WHERE group_id = '${groupId}'`;
             await this.runSQL(sql);
         } catch (err) {
-            console.error("❌ [GROUP] Failed to mark messages as read:", err);
+            console.error("❌ [GROUP-MSG] Failed to mark read:", err);
         }
     }
 
@@ -454,7 +454,7 @@ class GroupService {
       MAXIMA COMMUNICATION
     ---------------------------------------------------------------------------- */
     private async sendMaximaMessage(toPublicKey: string, message: GroupMaximaMessage, isRetry: boolean = false): Promise<void> {
-        console.log(`📤 [GROUP] Sending MAXIMA message type '${message.messageType}' to ${toPublicKey}${isRetry ? ' (RETRY)' : ''}...`);
+        console.log(`📤 [MAXIMA] Sending type '${message.messageType}' to ${toPublicKey}${isRetry ? ' (RETRY)' : ''}...`);
         const jsonStr = JSON.stringify(message);
         const hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
 
@@ -464,14 +464,14 @@ class GroupService {
             });
         });
 
-        console.log(`📤 [GROUP] MAXIMA send response:`, response);
+        console.log(`📤 [MAXIMA] Send response:`, response);
 
         if (!response || (response as any).status === false) {
             const errorMsg = (response as any).error || "MAXIMA send failed";
 
             // Check for specific "No Contact found" error
             if (errorMsg.includes("No Contact found") && !isRetry) {
-                console.log(`⚠️ [GROUP] Contact missing for ${toPublicKey}. Attempting to add contact and retry...`);
+                console.log(`⚠️ [MAXIMA] Contact missing for ${toPublicKey}. Attempting to add contact and retry...`);
 
                 try {
                     await this.ensureMaximaContact(toPublicKey);
@@ -479,7 +479,7 @@ class GroupService {
                     await new Promise(r => setTimeout(r, 2000));
                     return this.sendMaximaMessage(toPublicKey, message, true);
                 } catch (addErr) {
-                    console.error(`❌ [GROUP] Failed to add contact for retry:`, addErr);
+                    console.error(`❌ [CONTACTS] Failed to add contact for retry:`, addErr);
                     // Fall through to throw original error
                 }
             }
@@ -508,7 +508,7 @@ class GroupService {
             members: members.map(m => ({ publickey: (m as any).PUBLICKEY, username: (m as any).USERNAME }))
         };
 
-        console.log(`INVITING MEMBER: ${toPublicKey} to group ${groupId}`);
+        console.log(`📨 [GROUP-INVITE] Inviting member: ${toPublicKey} to group ${groupId}`);
         await this.sendMaximaMessage(toPublicKey, message);
     }
 
@@ -563,7 +563,7 @@ class GroupService {
     ---------------------------------------------------------------------------- */
     async handleIncomingGroupMessage(message: GroupMaximaMessage, fromPublicKey: string): Promise<void> {
         try {
-            console.log("📨 [GROUP] Incoming group message:", message);
+            console.log("📨 [GROUP-MSG] Incoming:", message);
 
             switch (message.messageType) {
                 case "group_invite":
@@ -585,13 +585,13 @@ class GroupService {
                     await this.handleHistoryResponse(message);
                     break;
                 default:
-                    console.warn("⚠️ [GROUP] Unknown message type:", message.messageType);
+                    console.warn("⚠️ [GROUP-MSG] Unknown type:", message.messageType);
             }
 
             // Notify UI
             this.notifyGroupMessage(message);
         } catch (err) {
-            console.error("❌ [GROUP] Failed to handle incoming message:", err);
+            console.error("❌ [GROUP-MSG] Handler failed:", err);
         }
     }
 
@@ -599,7 +599,7 @@ class GroupService {
         // Check if group already exists
         const existing = await this.getGroupInfo(message.groupId);
         if (existing) {
-            console.log("ℹ️ [GROUP] Group already exists, skipping invite");
+            console.log("ℹ️ [GROUP-INVITE] Group exists, skipping");
             return;
         }
 
@@ -633,24 +633,24 @@ class GroupService {
         `;
         await this.runSQL(initialMsgSql);
 
-        console.log("✅ [GROUP] Group invite accepted:", message.groupId);
+        console.log("✅ [GROUP-INVITE] Accepted:", message.groupId);
         this.notifyGroupUpdate();
     }
 
     private async handleGroupChatMessage(message: GroupMaximaMessage, fromPublicKey: string): Promise<void> {
-        // Save message locally
-        const encodedMsg = encodeURIComponent(message.message || "").replace(/'/g, "%27");
+        // Save message locally - only escape SQL quotes
+        const escapedMsg = (message.message || "").replace(/'/g, "''");
 
         // FIX: Use ORIGINAL sender's public key (from payload), not the relayer's (fromPublicKey)
         const originalSender = message.senderPublickey || fromPublicKey;
 
         const insertSql = `
             INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read)
-            VALUES ('${message.groupId}', '${originalSender}', '${message.senderUsername.replace(/'/g, "''")}', '${message.type}', '${encodedMsg}', '${message.filedata || ""}', ${message.timestamp}, 0)
+            VALUES ('${message.groupId}', '${originalSender}', '${message.senderUsername.replace(/'/g, "''")}', '${message.type}', '${escapedMsg}', '${message.filedata || ""}', ${message.timestamp}, 0)
         `;
         await this.runSQL(insertSql);
 
-        console.log("✅ [GROUP] Message saved:", message.groupId);
+        console.log("✅ [GROUP-MSG] Saved:", message.groupId);
     }
 
     private async handleMemberAdded(message: GroupMaximaMessage): Promise<void> {
@@ -660,7 +660,7 @@ class GroupService {
         const checkSql = `SELECT * FROM GROUP_MEMBERS WHERE group_id = '${message.groupId}' AND publickey = '${message.memberPublickey}'`;
         const checkRes = await this.runSQL(checkSql);
         if (checkRes.rows && checkRes.rows.length > 0) {
-            console.log("ℹ️ [GROUP] Member already exists, skipping");
+            console.log("ℹ️ [GROUP-MEMBER] Exists, skipping");
             return;
         }
 
@@ -674,7 +674,7 @@ class GroupService {
         // Auto-add as MAXIMA contact
         await this.ensureMaximaContact(message.memberPublickey);
 
-        console.log("✅ [GROUP] Member added:", message.memberPublickey);
+        console.log("✅ [GROUP-MEMBER] Added:", message.memberPublickey);
         this.notifyGroupUpdate();
     }
 
@@ -684,7 +684,7 @@ class GroupService {
         const removeSql = `DELETE FROM GROUP_MEMBERS WHERE group_id = '${message.groupId}' AND publickey = '${message.memberPublickey}'`;
         await this.runSQL(removeSql);
 
-        console.log("✅ [GROUP] Member removed:", message.memberPublickey);
+        console.log("✅ [GROUP-MEMBER] Removed:", message.memberPublickey);
         this.notifyGroupUpdate();
     }
 
@@ -692,7 +692,7 @@ class GroupService {
       HISTORY SYNC
     ---------------------------------------------------------------------------- */
     async requestGroupHistory(groupId: string): Promise<void> {
-        console.log(`🔄 [GROUP_SYNC] Requesting history for group ${groupId}...`);
+        console.log(`🔄 [HISTORY-SYNC] Requesting history for group ${groupId}...`);
 
         try {
             // 1. Get last message timestamp
@@ -734,20 +734,20 @@ class GroupService {
                         await this.sendMaximaMessage(memberPubkey, requestMsg);
                         sentCount++;
                     } catch (err) {
-                        console.warn(`⚠️ [GROUP_SYNC] Failed to ask history from ${memberPubkey.substring(0, 10)}...`);
+                        console.warn(`⚠️ [HISTORY-SYNC] Failed to ask history from ${memberPubkey.substring(0, 10)}...`);
                     }
                 }
             }
 
-            console.log(`📤 [GROUP_SYNC] Requested history from ${sentCount} peers.`);
+            console.log(`📤 [HISTORY-SYNC] Requested history from ${sentCount} peers.`);
 
         } catch (err) {
-            console.error("❌ [GROUP_SYNC] Failed to request history:", err);
+            console.error("❌ [HISTORY-SYNC] Failed to request history:", err);
         }
     }
 
     private async handleHistoryRequest(message: GroupMaximaMessage, fromPublicKey: string): Promise<void> {
-        console.log(`📥 [GROUP_SYNC] History request from ${message.senderUsername} since ${message.historySince}`);
+        console.log(`📥 [HISTORY-SYNC] History request from ${message.senderUsername} since ${message.historySince}`);
 
         // 1. Fetch missing messages
         // Limit to 50 to prevent huge payloads
@@ -764,11 +764,11 @@ class GroupService {
             const messages = res.rows || [];
 
             if (messages.length === 0) {
-                console.log("ℹ️ [GROUP_SYNC] No new history to send.");
+                console.log("ℹ️ [HISTORY-SYNC] No new history.");
                 return;
             }
 
-            console.log(`📤 [GROUP_SYNC] Sending ${messages.length} messages to ${message.senderUsername}`);
+            console.log(`📤 [HISTORY-SYNC] Sending ${messages.length} messages to ${message.senderUsername}`);
 
             // 2. Map DB rows to GroupMessage objects
             // We use DECODED message content here because handleHistoryResponse expects to ENCODE it.
@@ -777,7 +777,7 @@ class GroupService {
                 sender_publickey: row.SENDER_PUBLICKEY,
                 sender_username: row.SENDER_USERNAME,
                 type: row.TYPE,
-                message: decodeURIComponent(row.MESSAGE),
+                message: row.MESSAGE, // Send plain text now, was decodeURIComponent(row.MESSAGE)
                 filedata: row.FILEDATA,
                 date: Number(row.DATE),
                 read: 1
@@ -809,12 +809,12 @@ class GroupService {
             await this.sendMaximaMessage(fromPublicKey, responseMsg);
 
         } catch (err) {
-            console.error("❌ [GROUP_SYNC] Failed to process history request:", err);
+            console.error("❌ [HISTORY-SYNC] Failed to process history request:", err);
         }
     }
 
     private async handleHistoryResponse(message: GroupMaximaMessage): Promise<void> {
-        console.log(`📥 [GROUP_SYNC] Received history response: ${message.historyMessages?.length} messages`);
+        console.log(`📥 [HISTORY-SYNC] Received response: ${message.historyMessages?.length} messages`);
 
         if (!message.historyMessages || message.historyMessages.length === 0) return;
 
@@ -835,25 +835,25 @@ class GroupService {
                     continue;
                 }
 
-                // Insert - Re-encode message content for DB
-                const encoded = encodeURIComponent(msg.message).replace(/'/g, "%27");
+                // Insert - only escape SQL quotes
+                const escapedMsg = msg.message.replace(/'/g, "''");
                 const filedata = msg.filedata || "";
 
                 // FIX: Set propagated=1 to prevent Service Worker from re-broadcasting history as new messages
                 const insertSql = `
                     INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read, propagated)
-                    VALUES ('${message.groupId}', '${msg.sender_publickey}', '${msg.sender_username.replace(/'/g, "''")}', '${msg.type}', '${encoded}', '${filedata}', ${msg.date}, 0, 1)
+                    VALUES ('${message.groupId}', '${msg.sender_publickey}', '${msg.sender_username.replace(/'/g, "''")}', '${msg.type}', '${escapedMsg}', '${filedata}', ${msg.date}, 0, 1)
                  `;
 
                 await this.runSQL(insertSql);
                 addedCount++;
             } catch (err) {
-                console.warn("Error inserting sync message:", err);
+                console.warn("❌ [DB] Error inserting sync message:", err);
             }
         }
 
         if (addedCount > 0) {
-            console.log(`✅ [GROUP_SYNC] Added ${addedCount} missing messages.`);
+            console.log(`✅ [HISTORY-SYNC] Added ${addedCount} missing messages.`);
             this.notifyGroupUpdate();
             this.notifyGroupMessage(message); // Also notify message listeners to trigger refresh
         }
@@ -874,7 +874,7 @@ class GroupService {
             }
             return "Unknown";
         } catch (err) {
-            console.error("❌ [GROUP] Failed to get username:", err);
+            console.error("❌ [CONTACTS] Failed to resolve username:", err);
             return "Unknown";
         }
     }
@@ -901,7 +901,7 @@ class GroupService {
             }
             return [];
         } catch (err) {
-            console.error("❌ [GROUP] Failed to get contacts:", err);
+            console.error("❌ [CONTACTS] Failed to get contacts:", err);
             return [];
         }
     }
@@ -914,7 +914,7 @@ class GroupService {
                 const contacts = (response as any).response.contacts;
                 const exists = contacts.some((c: any) => c.publickey === publickey);
                 if (exists) {
-                    console.log("ℹ️ [GROUP] Contact already exists:", publickey);
+                    console.log("ℹ️ [CONTACTS] Contact exists:", publickey);
                     return;
                 }
             }
@@ -924,9 +924,9 @@ class GroupService {
                 action: "add",
                 contact: publickey
             } as any);
-            console.log("✅ [GROUP] Auto-added MAXIMA contact:", publickey);
+            console.log("✅ [CONTACTS] Auto-added:", publickey);
         } catch (err) {
-            console.error("❌ [GROUP] Failed to add MAXIMA contact:", err);
+            console.error("❌ [CONTACTS] Failed to add:", err);
         }
     }
 

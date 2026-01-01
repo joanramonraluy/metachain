@@ -56,7 +56,7 @@ export default function ChatList() {
             const chatsList = await minimaService.getRecentChats();
             setChats(chatsList);
         } catch (err: any) {
-            console.error("🚨 Error fetching chats:", err);
+            console.error("❌ [CHAT-LIST] Fetch error:", err);
         }
     };
 
@@ -86,7 +86,7 @@ export default function ChatList() {
                     setContacts(contactsMap);
                 }
             } catch (err: any) {
-                console.error("🚨 Error fetching chats:", err);
+                console.error("❌ [CHAT-LIST] Fetch error:", err);
                 if (isMounted) setError(err.message || "Unknown error");
             } finally {
                 if (isMounted) setLoading(false);
@@ -102,19 +102,19 @@ export default function ChatList() {
 
         // Listen for mute status changes to refresh the chat list
         const handleMuteStatusChange = () => {
-            console.log('🔄 [ChatList] Mute status changed, refreshing chat list');
+            console.log("🔄 [CHAT-LIST] Mute status changed (refreshing)");
             fetchChats();
         };
 
         // Listen for archive status changes to refresh the chat list
         const handleArchiveStatusChange = () => {
-            console.log('🔄 [ChatList] Archive status changed, refreshing chat list');
+            console.log("🔄 [CHAT-LIST] Archive status changed (refreshing)");
             fetchChats();
         };
 
         // Listen for favorite status changes to refresh the chat list
         const handleFavoriteStatusChange = () => {
-            console.log('⭐ [ChatList] Favorite status changed, refreshing chat list');
+            console.log("⭐ [CHAT-LIST] Favorite status changed (refreshing)");
             fetchChats();
         };
 
@@ -142,7 +142,7 @@ export default function ChatList() {
             await minimaService.archiveChat(publickey);
             // No need to fetchChats here as the listener will do it
         } catch (err) {
-            console.error("Error archiving chat:", err);
+            console.error("❌ [CHAT-LIST] Archive error:", err);
         }
     };
 
@@ -158,7 +158,7 @@ export default function ChatList() {
                 await minimaService.markChatAsFavorite(publickey);
             }
         } catch (err) {
-            console.error("Error toggling favorite:", err);
+            console.error("❌ [CHAT-LIST] Favorite toggle error:", err);
         }
     };
 
@@ -190,7 +190,7 @@ export default function ChatList() {
                     return decoded;
                 }
             } catch (err) {
-                console.warn("⚠️ Error decoding avatar:", err);
+                console.warn("⚠️ [AVATAR] Decode error:", err);
             }
         }
         return defaultAvatar;
@@ -209,7 +209,7 @@ export default function ChatList() {
             return `💰 Token sent`;
         }
         try {
-            const decoded = decodeURIComponent(chat.lastMessage);
+            const decoded = chat.lastMessage;
             return decoded.length > 50 ? decoded.slice(0, 50) + "..." : decoded;
         } catch {
             return chat.lastMessage;
@@ -269,7 +269,7 @@ export default function ChatList() {
         try {
             await minimaService.unarchiveChat(publickey);
         } catch (err) {
-            console.error("Error unarchiving chat:", err);
+            console.error("❌ [CHAT-LIST] Unarchive error:", err);
         }
     };
 

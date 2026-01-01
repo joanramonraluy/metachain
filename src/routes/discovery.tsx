@@ -1,17 +1,14 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { getUsersWithStatus, UserWithStatus } from '../services/discovery.service'
-import useBeaconSender from '../hooks/useBeaconSender'
-import { Search, Globe } from 'lucide-react'
+import { Search, Globe, Info } from 'lucide-react'
+
 
 export const Route = createFileRoute('/discovery')({
     component: DiscoveryPage,
 })
 
 function DiscoveryPage() {
-    // Start sending beacons
-    useBeaconSender();
-
     const navigate = useNavigate()
     const [users, setUsers] = useState<UserWithStatus[]>([])
     const [loading, setLoading] = useState(true)
@@ -21,30 +18,66 @@ function DiscoveryPage() {
     const [totalFound, setTotalFound] = useState(0)
 
     useEffect(() => {
+        // Initial load
         loadData()
 
-        // Refresh data every 30 seconds to show updated online/offline status
-        const intervalId = setInterval(loadData, 30000)
+        // FAST POLLING: Check frequently during the first few seconds
+        const t1 = setTimeout(loadData, 2000);
+        const t2 = setTimeout(loadData, 5000);
+        const t3 = setTimeout(loadData, 10000);
 
-        return () => clearInterval(intervalId)
+        // Regular refresh every 10 seconds (was 30s) - More responsive for P2P
+        const intervalId = setInterval(loadData, 10000)
+
+        // React immediately to Gossip events from Frontend
+        const handleDiscoveryUpdate = () => {
+            console.log('⚡ [UI] Discovery update event received! Reloading data...');
+            loadData();
+        };
+        window.addEventListener('DISCOVERY_UPDATE', handleDiscoveryUpdate);
+
+        // Auto-refresh when tab becomes visible
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+                console.log('👀 [UI] Tab visible, refreshing discovery...');
+                loadData();
+            }
+        };
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        return () => {
+            clearTimeout(t1);
+            clearTimeout(t2);
+            clearTimeout(t3);
+            clearInterval(intervalId);
+            window.removeEventListener('DISCOVERY_UPDATE', handleDiscoveryUpdate);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        }
     }, [])
 
 
 
     const loadData = async () => {
-        setLoading(true)
+        // setLoading(true) // Don't flicker loading on every refresh
         try {
+            console.log("🔄 [DISCOVERY] loadData triggering...");
             // Fetch users with online/offline status from two-layer system
             const fetchedUsers = await getUsersWithStatus()
+
+            console.log(`✅ [DISCOVERY] Received ${fetchedUsers.length} users.`);
+            fetchedUsers.forEach((u, i) => {
+                console.log(`   [${i}] ${u.alias} - Online: ${u.is_online}`);
+            });
+
             setTotalFound(fetchedUsers.length)
             const onlineCount = fetchedUsers.filter(u => u.is_online).length
-            console.log(`📡 [Discovery] Found ${fetchedUsers.length} users (${onlineCount} online)`)
+            console.log(`📡 [DISCOVERY] Found ${fetchedUsers.length} users (${onlineCount} online)`);
 
             // Show users immediately
             setUsers(fetchedUsers)
-            setLoading(false)
+            // setLoading(false)
 
-            console.log(`⚡ [Discovery] Showing ${fetchedUsers.length} users`)
+            console.log(`⚡ [DISCOVERY] State updated.`);
 
             // Check if new users appeared
             if (previousCount > 0 && fetchedUsers.length > previousCount) {
@@ -55,7 +88,7 @@ function DiscoveryPage() {
             }
             setPreviousCount(fetchedUsers.length)
         } catch (e) {
-            console.error(e)
+            console.error("❌ [DISCOVERY] Error:", e)
         } finally {
             setLoading(false)
         }
@@ -66,12 +99,27 @@ function DiscoveryPage() {
     return (
         <div className="flex flex-col h-full">
             {/* Header */}
-            <div className="bg-white border-b border-gray-200 px-6 py-4 shadow-sm">
-                <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-                    <Globe className="text-blue-600" />
-                    P2P Discovery
-                </h1>
-                <p className="text-gray-500 text-sm mt-1">Find and connect with other MetaChain users</p>
+            <div className="bg-white border-b border-gray-200 px-6 py-4 shadow-sm flexjustify-between items-center">
+                <div className="flex items-center gap-2">
+                    <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+                        <Globe className="text-blue-600" />
+                        P2P Discovery
+                    </h1>
+                </div>
+                <button
+                    onClick={() => { setLoading(true); loadData(); }}
+                    className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors"
+                    title="Refresh List"
+                >
+                    <Search size={20} />
+                </button>
+            </div>
+            <div className="px-6 pb-2 text-gray-500 text-sm border-b border-gray-200 bg-white">
+                Find and connect with other MetaChain users
+            </div>
+            <div className="px-6 py-2 bg-blue-50 border-b border-blue-100 text-blue-700 text-xs flex items-center gap-2">
+                <Info size={14} className="shrink-0" />
+                <span>Discovery is decentralized. It may take up to 60 seconds for all peers to appear.</span>
             </div>
 
             {/* Content */}
@@ -163,6 +211,8 @@ function DiscoveryPage() {
                     <span>{notificationMessage}</span>
                 </div>
             )}
+
+
         </div>
     )
 }

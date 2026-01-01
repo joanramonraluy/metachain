@@ -1,6 +1,7 @@
 import { Block, MDS, MinimaEvents } from "@minima-global/mds"
 import { createContext, useCallback, useEffect, useRef, useState } from "react"
 import { minimaService } from "./services/minima.service"
+import useBeaconSender from "./hooks/useBeaconSender"
 
 
 const defaultAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23cbd5e1'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E";
@@ -16,6 +17,7 @@ export const appContext = createContext<{
   myPublicKey: string
   updateUserProfile: (name: string, avatar: string) => void
   refreshWriteMode: () => Promise<void>
+  refreshProfile: () => Promise<void>
 }>({
   loaded: false,
   dbReady: false,
@@ -26,7 +28,8 @@ export const appContext = createContext<{
   writeMode: false,
   myPublicKey: "",
   updateUserProfile: () => { },
-  refreshWriteMode: async () => { }
+  refreshWriteMode: async () => { },
+  refreshProfile: async () => { }
 })
 
 const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
@@ -40,9 +43,13 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
   const [writeMode, setWriteMode] = useState(false)
   const [myPublicKey, setMyPublicKey] = useState("")
 
+  // Enable periodic beacon sending globally (only when MDS is loaded)
+  useBeaconSender(loaded);
+
   // Fetch user profile from Maxima
   const fetchUserProfile = async () => {
     try {
+      console.log("🔄 [AppContext] Fetching latest user profile from Maxima...");
       const res = await MDS.cmd.maxima({ params: { action: "info" } })
       const info = (res.response as any) || {}
 
@@ -50,6 +57,8 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
         const name = info.name || "User"
         const icon = info.icon ? decodeURIComponent(info.icon) : defaultAvatar
         const pubkey = info.publickey || ""
+
+        console.log(`✅ [AppContext] Profile fetched: Name=${name}`);
 
         setUserName(name)
         setMyPublicKey(pubkey)
@@ -66,10 +75,17 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
   }
 
   // Function to update user profile (called from Settings)
+  // DEPRECATED INTENT: Consumers should prefer refreshProfile() to get the true state.
+  // Keeping this for optimistic updates or partial updates if needed.
   const updateUserProfile = (name: string, avatar: string) => {
-    setUserName(name)
-    setUserAvatar(avatar)
+    if (name) setUserName(name)
+    if (avatar) setUserAvatar(avatar)
   }
+
+  // Function to force a refresh of the profile from the backend
+  const refreshProfile = useCallback(async (): Promise<void> => {
+    await fetchUserProfile();
+  }, []);
 
   // Function to refresh write mode using checkmode command (doesn't create pending)
   const refreshWriteMode = useCallback(async (): Promise<void> => {
@@ -105,6 +121,8 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
       minimaService.init()
 
       MDS.init(async (msg) => {
+
+
         // RAW DEBUG LOG: See everything coming from Minima
         if (msg.event === "MAXIMA") {
           console.log("🔥 [AppContext] RAW MAXIMA EVENT:", msg);
@@ -165,6 +183,7 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
           // Fetch user profile
           fetchUserProfile()
 
+
           const command = await MDS.cmd.block()
           setBlock(command.response)
         }
@@ -191,6 +210,7 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
     myPublicKey,
     updateUserProfile,
     refreshWriteMode,
+    refreshProfile
   }
 
   return <appContext.Provider value={context}>{children}</appContext.Provider>

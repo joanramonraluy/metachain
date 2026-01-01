@@ -4,8 +4,9 @@ import { useContext, useEffect, useState } from "react";
 import { appContext } from "../../AppContext";
 import { MDS } from "@minima-global/mds";
 import { useNavigate } from "@tanstack/react-router";
-import { Plus, VolumeX } from "lucide-react";
+import { Plus, VolumeX, UserCheck, LayoutGrid } from "lucide-react";
 import { minimaService } from "../../services/minima.service";
+import { personalContactsService } from "../../services/personal-contacts.service";
 
 interface Contact {
   currentaddress: string;
@@ -23,6 +24,8 @@ interface Contact {
 export default function CheckContacts() {
   const { loaded } = useContext(appContext);
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [personalContacts, setPersonalContacts] = useState<string[]>([]);
+  const [activeTab, setActiveTab] = useState<'all' | 'personal'>('all');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [showAddContactDialog, setShowAddContactDialog] = useState(false);
@@ -67,7 +70,13 @@ export default function CheckContacts() {
   useEffect(() => {
     if (!loaded) return;
     fetchContacts();
+    loadPersonalContacts();
   }, [loaded]);
+
+  const loadPersonalContacts = async () => {
+    const personal = await personalContactsService.getPersonalContacts();
+    setPersonalContacts(personal);
+  };
 
   const handleAddContact = async () => {
     if (!contactAddress.trim()) {
@@ -96,6 +105,7 @@ export default function CheckContacts() {
         // Wait a moment for Maxima to sync, then refresh contacts list
         setTimeout(async () => {
           await fetchContacts();
+          await loadPersonalContacts();
           setIsSyncing(false);
         }, 1000);
       } else {
@@ -217,74 +227,129 @@ export default function CheckContacts() {
           </div>
         )}
 
+        {/* Tabs */}
+        <div className="bg-white flex-shrink-0 px-4 py-3 shadow-sm">
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
+            <button
+              onClick={() => setActiveTab('all')}
+              className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === 'all'
+                ? 'bg-[#0088cc] text-white shadow-md'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+            >
+              <LayoutGrid size={16} className="flex-shrink-0" />
+              <span className="hidden md:inline">All</span> ({contacts.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('personal')}
+              className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === 'personal'
+                ? 'bg-[#0088cc] text-white shadow-md'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+            >
+              <UserCheck size={16} className="flex-shrink-0" />
+              <span className="hidden md:inline">Personal</span> ({personalContacts.length})
+            </button>
+          </div>
+        </div>
 
         {/* Contacts List */}
         <div className="flex-1 overflow-y-auto p-3">
-          {contacts.length > 0 ? (
-            <div className="space-y-2">
-              {contacts.map((c, i) => (
-                <div
-                  key={i}
-                  onClick={() =>
-                    navigate({
-                      to: "/chat/$address",
-                      params: {
-                        address: c.publickey || c.currentaddress || c.extradata?.minimaaddress || "",
-                      },
-                    })
-                  }
-                  className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 hover:shadow-md cursor-pointer transition-shadow active:bg-gray-50"
-                >
-                  <div className="flex items-center gap-3">
-                    {/* Avatar */}
-                    <div className="relative flex-shrink-0">
-                      <img
-                        src={getAvatar(c)}
-                        alt={c.extradata?.name || "Unknown"}
-                        className="w-12 h-12 rounded-full object-cover bg-gray-200"
-                        onError={(e: any) => {
-                          e.target.src = defaultAvatar;
-                        }}
-                      />
-                      {c.samechain && (
-                        <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
-                      )}
-                      {c.muted && (
-                        <div className="absolute -top-1 -right-1 bg-orange-100 rounded-full p-0.5 border border-white shadow-sm">
-                          <VolumeX size={12} className="text-orange-500" />
-                        </div>
-                      )}
-                    </div>
+          {(() => {
+            // Filter contacts based on active tab
+            const displayedContacts = activeTab === 'personal'
+              ? contacts.filter(c => c.publickey && personalContacts.includes(c.publickey))
+              : contacts;
 
-                    {/* Contact Info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-baseline justify-between gap-2">
-                        <h3 className="font-semibold text-gray-900 truncate">
-                          {c.extradata?.name || "Unknown"}
-                        </h3>
-                        <span className="text-xs text-gray-500 flex-shrink-0">
-                          {timeAgo(c.lastseen)}
-                        </span>
+            return displayedContacts.length > 0 ? (
+              <div className="space-y-2">
+                {displayedContacts.map((c, i) => (
+                  <div
+                    key={i}
+                    onClick={() =>
+                      navigate({
+                        to: "/chat/$address",
+                        params: {
+                          address: c.publickey || c.currentaddress || c.extradata?.minimaaddress || "",
+                        },
+                      })
+                    }
+                    className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 hover:shadow-md cursor-pointer transition-shadow active:bg-gray-50"
+                  >
+                    <div className="flex items-center gap-3">
+                      {/* Avatar */}
+                      <div className="relative flex-shrink-0">
+                        <img
+                          src={getAvatar(c)}
+                          alt={c.extradata?.name || "Unknown"}
+                          className="w-12 h-12 rounded-full object-cover bg-gray-200"
+                          onError={(e: any) => {
+                            e.target.src = defaultAvatar;
+                          }}
+                        />
+                        {c.samechain && (
+                          <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
+                        )}
+                        {c.muted && (
+                          <div className="absolute -top-1 -right-1 bg-orange-100 rounded-full p-0.5 border border-white shadow-sm">
+                            <VolumeX size={12} className="text-orange-500" />
+                          </div>
+                        )}
+                        {c.publickey && personalContacts.includes(c.publickey) && (
+                          <div className="absolute -top-1 -left-1 bg-blue-100 rounded-full p-0.5 border border-white shadow-sm">
+                            <UserCheck size={12} className="text-blue-600" />
+                          </div>
+                        )}
                       </div>
-                      <p className="text-xs text-gray-500 truncate mt-0.5">
-                        {c.publickey?.slice(0, 16)}...
-                      </p>
+
+                      {/* Contact Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-baseline justify-between gap-2">
+                          <h3 className="font-semibold text-gray-900 truncate">
+                            {c.extradata?.name || "Unknown"}
+                          </h3>
+                          <span className="text-xs text-gray-500 flex-shrink-0">
+                            {timeAgo(c.lastseen)}
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-500 truncate mt-0.5">
+                          {c.publickey?.slice(0, 16)}...
+                        </p>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center h-full text-gray-500 p-8 text-center">
-              <div className="bg-gray-100 p-4 rounded-full mb-4">
-                <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                </svg>
+                ))}
               </div>
-              <h3 className="text-lg font-medium text-gray-900 mb-1">No contacts found</h3>
-              <p className="text-sm">Click the + button to add your first contact.</p>
-            </div>
-          )}
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full text-gray-500 p-8 text-center">
+                <div className="bg-blue-50 p-4 rounded-full mb-4">
+                  {activeTab === 'personal' ? (
+                    <UserCheck className="w-12 h-12 text-[#0088cc]" />
+                  ) : (
+                    <svg className="w-12 h-12 text-[#0088cc]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                    </svg>
+                  )}
+                </div>
+                <h3 className="text-lg font-medium text-gray-900 mb-1">
+                  {activeTab === 'personal' ? 'No personal contacts yet' : 'No contacts yet'}
+                </h3>
+                <p className="text-sm mb-6">
+                  {activeTab === 'personal'
+                    ? 'Mark contacts as personal from their contact info page.'
+                    : 'Add your first contact to start chatting.'}
+                </p>
+                {activeTab === 'all' && (
+                  <button
+                    onClick={() => setShowAddContactDialog(true)}
+                    className="px-6 py-2 bg-[#0088cc] text-white rounded-full font-medium hover:bg-[#0077b5] transition-colors shadow-sm"
+                  >
+                    Add Contact
+                  </button>
+                )}
+              </div>
+            );
+          })()}
         </div>
 
         {/* Floating Action Button */}

@@ -54,8 +54,13 @@ export const getUsersWithStatus = async (): Promise<UserWithStatus[]> => {
         runSQL(discoveredSql)
     ]);
 
+    if (!registryRes.status) console.error("❌ [DiscoveryService] Registry SQL Error:", registryRes.error);
+    if (!discoveredRes.status) console.error("❌ [DiscoveryService] Discovered SQL Error:", discoveredRes.error);
+
     const registryUsers: MetachainUser[] = registryRes.rows || [];
     const discoveredPeers: DiscoveredPeer[] = discoveredRes.rows || [];
+
+    console.log(`🔍 [DiscoveryService] DB Fetch Complete. Registry Rows: ${registryUsers.length}, Discovered Rows: ${discoveredPeers.length}`);
 
     console.log(`🔍 [Discovery] DB Status - Registry: ${registryUsers.length}, Discovered: ${discoveredPeers.length}`);
 
@@ -94,22 +99,35 @@ export const getUsersWithStatus = async (): Promise<UserWithStatus[]> => {
     });
 
     // 2. Add/Update with Discovered Peers (Online)
+    // Helper to get property case-insensitively
+    const getCI = (obj: any, key: string) => {
+        const foundKey = Object.keys(obj).find(k => k.toLowerCase() === key.toLowerCase());
+        return foundKey ? obj[foundKey] : undefined;
+    };
+
+    // ...
+
+    // 2. Add/Update with Discovered Peers (Online)
     discoveredPeers.forEach(peer => {
-        // H2 returns uppercase column names
-        const publickey = (peer as any).PUBLICKEY || peer.publickey;
-        const alias = (peer as any).ALIAS || peer.alias;
-        const bio = (peer as any).BIO || peer.bio;
-        const address = (peer as any).ADDRESS || peer.address;
-        const lastSeen = (peer as any).LAST_SEEN || peer.last_seen;
-        const source = (peer as any).SOURCE || peer.source;
+        // Robust case-insensitive extraction
+        const publickey = getCI(peer, 'publickey');
+        const alias = getCI(peer, 'alias');
+        const bio = getCI(peer, 'bio');
+        const address = getCI(peer, 'address');
+        const lastSeen = getCI(peer, 'last_seen');
+        const source = getCI(peer, 'source');
+
+        if (!publickey) return; // Skip invalid rows
 
         const existing = userMap.get(publickey);
         if (existing) {
             // Update existing user with online status and latest address
             userMap.set(publickey, {
                 ...existing,
-                bio: bio, // Update bio from latest beacon
-                address: address, // Prefer most recent address from beacon
+                // Force update alias from beacon if present and valid (not empty/unknown)
+                alias: (alias && alias !== 'Unknown' && alias !== 'Anonymous') ? alias : (existing.alias || alias),
+                bio: bio || existing.bio,
+                address: address || existing.address,
                 is_online: true,
                 source: source as 'P2P' | 'BOOTSTRAP',
                 last_updated: Math.max(existing.last_updated, lastSeen)
@@ -119,7 +137,7 @@ export const getUsersWithStatus = async (): Promise<UserWithStatus[]> => {
             userMap.set(publickey, {
                 user_id: publickey,
                 publickey: publickey,
-                alias: alias,
+                alias: alias || 'Anonymous',
                 bio: bio,
                 address: address,
                 first_seen: lastSeen,
@@ -130,12 +148,25 @@ export const getUsersWithStatus = async (): Promise<UserWithStatus[]> => {
         }
     });
 
-    // Convert map to array and sort
-    return Array.from(userMap.values()).sort((a, b) => {
-        // Sort by Online status first, then recency
-        if (a.is_online !== b.is_online) return a.is_online ? -1 : 1;
-        return b.last_updated - a.last_updated;
-    });
+    // Get own public key to exclude from list
+    let myPublicKey = '';
+    try {
+        const maximaInfo = await MDS.cmd.maxima({ params: { action: 'info' } });
+        if (maximaInfo.status && maximaInfo.response) {
+            myPublicKey = (maximaInfo.response as any).publickey || '';
+        }
+    } catch (err) {
+        console.warn('⚠️ [Discovery] Could not fetch own publickey:', err);
+    }
+
+    // Convert map to array, exclude self, and sort
+    return Array.from(userMap.values())
+        .filter(user => !myPublicKey || user.publickey !== myPublicKey)  // Exclude self
+        .sort((a, b) => {
+            // Sort by Online status first, then recency
+            if (a.is_online !== b.is_online) return a.is_online ? -1 : 1;
+            return b.last_updated - a.last_updated;
+        });
 };
 
 // Update local profile (for beacon generation)
