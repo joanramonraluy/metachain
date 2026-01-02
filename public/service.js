@@ -1019,7 +1019,7 @@ function handleBeacon(beacon, source) {
 
         var now = Date.now();
         var escapedAlias = beacon.alias.replace(/'/g, "''");
-        var escapedBio = (beacon.bio || "").replace(/'/g, "''");
+        var bioValue = beacon.bio || "";
 
         // Extract permission setting (default to TRUE if not present for backward compatibility)
         var allowNonContactChats = (beacon.allowNonContactChats !== undefined && beacon.allowNonContactChats !== null)
@@ -1028,83 +1028,134 @@ function handleBeacon(beacon, source) {
 
         MDS.log("📡 [BEACON] AllowNonContactChats: " + allowNonContactChats + " for " + beacon.alias);
 
-        // FIX: Use MERGE INTO instead of INSERT OR REPLACE (H2 Syntax)
-        var discoverySql = "MERGE INTO DISCOVERED_PEERS (publickey, alias, bio, address, last_seen, source, allow_non_contact_chats) "
-            + "KEY (publickey) "
-            + "VALUES ('" + beacon.pubkey + "', '" + escapedAlias + "', '" + escapedBio + "', '"
-            + beacon.address + "', " + now + ", '" + source + "', " + allowNonContactChats + ")";
+        // CRITICAL: If bio is empty, check DB first to preserve cached value
+        if (bioValue) {
+            // Bio is present - save directly
+            var escapedBio = bioValue.replace(/'/g, "''");
+            var discoverySql = "MERGE INTO DISCOVERED_PEERS (publickey, alias, bio, address, last_seen, source, allow_non_contact_chats) "
+                + "KEY (publickey) "
+                + "VALUES ('" + beacon.pubkey + "', '" + escapedAlias + "', '" + escapedBio + "', '"
+                + beacon.address + "', " + now + ", '" + source + "', " + allowNonContactChats + ")";
 
+            MDS.sql(discoverySql, function (res) {
+                if (res.status) {
+                    MDS.log("✅ [BEACON] Saved: " + beacon.alias + " (allowNonContactChats: " + allowNonContactChats + ")");
+                    promoteToUserRegistry(beacon, now);
 
+                    // INTERNAL SYNC: Notify Frontend about new peer
+                    if (MY_MAXIMA_PK) {
+                        var syncPayload = {
+                            app: "metachain",
+                            type: "peer_discovered",
+                            peer: {
+                                pubkey: beacon.pubkey,
+                                alias: beacon.alias,
+                                bio: beacon.bio || "",
+                                address: beacon.address,
+                                allowNonContactChats: allowNonContactChats
+                            }
+                        };
+                        var syncJson = JSON.stringify(syncPayload);
+                        var syncHex = "0x" + utf8ToHex(syncJson).toUpperCase();
 
-        MDS.sql(discoverySql, function (res) {
-            if (res.status) {
-                MDS.log("✅ [BEACON] Saved: " + beacon.alias + " (allowNonContactChats: " + allowNonContactChats + ")");
-                promoteToUserRegistry(beacon, now);
-
-                // INTERNAL SYNC: Notify Frontend about new peer
-                if (MY_MAXIMA_PK) {
-                    var syncPayload = {
-                        app: "metachain",
-                        type: "peer_discovered",
-                        peer: {
-                            pubkey: beacon.pubkey,
-                            alias: beacon.alias,
-                            bio: beacon.bio || "",
-                            address: beacon.address,
-                            allowNonContactChats: allowNonContactChats
-                        }
-                    };
-                    var syncJson = JSON.stringify(syncPayload);
-                    var syncHex = "0x" + utf8ToHex(syncJson).toUpperCase();
-
-                    MDS.cmd("maxima action:send publickey:" + MY_MAXIMA_PK + " application:metachain data:" + syncHex + " poll:false", function (syncRes) {
-                        // MDS.log("📡 [SYNC] Peer discovery synced to Frontend");
-                    });
-                }
-
-                /*
-                // DEBUG: List all peers in DB to verify persistence (Silenced for production)
-                MDS.sql("SELECT alias FROM DISCOVERED_PEERS", function (rowRes) {
-                    if (rowRes.status && rowRes.rows) {
-                        var aliases = rowRes.rows.map(function (r) { return r.ALIAS; }).join(", ");
-                        // MDS.log("📂 [DB-CHECK] All Peers: " + aliases);
-                    }
-                });
-                */
-
-                // REACTIVE GOSSIP: Bidirectional Discovery
-                // 1. Send our peer list to them (Welcome Package)
-                // 2. Request their peer list from them (Reactive Request)
-                if (source === 'P2P' || source === 'MAXIMA') {
-                    sendWelcomePackage(beacon.pubkey, beacon.alias);
-
-                    // REACTIVE REQUEST: Immediately ask this peer for their network
-                    MDS.log("🔄 [REACTIVE] Asking " + beacon.alias + " for their peers...");
-                    askPeers([beacon.pubkey]);
-                }
-            } else {
-                MDS.log("❌ [BEACON] Save failed: " + JSON.stringify(res));
-
-                // Fallback: Check if table exists
-                MDS.sql("SELECT * FROM DISCOVERED_PEERS LIMIT 1", function (checkRes) {
-                    if (!checkRes.status) {
-                        MDS.log("⚠️ [BEACON] Table missing! Recreating...");
-                        // Re-run creation logic? It should have run in init.
-                        var discoveryLayerSql = "CREATE TABLE IF NOT EXISTS DISCOVERED_PEERS ( "
-                            + "  publickey VARCHAR(512) PRIMARY KEY, "
-                            + "  alias VARCHAR(160) NOT NULL, "
-                            + "  address VARCHAR(512) NOT NULL, "
-                            + "  last_seen BIGINT NOT NULL, "
-                            + "  source VARCHAR(20) NOT NULL"
-                            + " )";
-                        MDS.sql(discoveryLayerSql, function (createRes) {
-                            MDS.log("🛠️ [BEACON] Recreation result: " + JSON.stringify(createRes));
-                            // Retry insert? No, wait for next beacon.
+                        MDS.cmd("maxima action:send publickey:" + MY_MAXIMA_PK + " application:metachain data:" + syncHex + " poll:false", function (syncRes) {
+                            // MDS.log("📡 [SYNC] Peer discovery synced to Frontend");
                         });
                     }
+
+                    /*
+                    // DEBUG: List all peers in DB to verify persistence (Silenced for production)
+                    MDS.sql("SELECT alias FROM DISCOVERED_PEERS", function (rowRes) {
+                        if (rowRes.status && rowRes.rows) {
+                            var aliases = rowRes.rows.map(function (r) { return r.ALIAS; }).join(", ");
+                            // MDS.log("📂 [DB-CHECK] All Peers: " + aliases);
+                        }
+                    });
+                    */
+
+                    // REACTIVE GOSSIP: Bidirectional Discovery
+                    // 1. Send our peer list to them (Welcome Package)
+                    // 2. Request their peer list from them (Reactive Request)
+                    if (source === 'P2P' || source === 'MAXIMA') {
+                        sendWelcomePackage(beacon.pubkey, beacon.alias);
+
+                        // REACTIVE REQUEST: Immediately ask this peer for their network
+                        MDS.log("🔄 [REACTIVE] Asking " + beacon.alias + " for their peers...");
+                        askPeers([beacon.pubkey]);
+                    }
+                } else {
+                    MDS.log("❌ [BEACON] Save failed: " + JSON.stringify(res));
+
+                    // Fallback: Check if table exists
+                    MDS.sql("SELECT * FROM DISCOVERED_PEERS LIMIT 1", function (checkRes) {
+                        if (!checkRes.status) {
+                            MDS.log("⚠️ [BEACON] Table missing! Recreating...");
+                            // Re-run creation logic? It should have run in init.
+                            var discoveryLayerSql = "CREATE TABLE IF NOT EXISTS DISCOVERED_PEERS ( "
+                                + "  publickey VARCHAR(512) PRIMARY KEY, "
+                                + "  alias VARCHAR(160) NOT NULL, "
+                                + "  address VARCHAR(512) NOT NULL, "
+                                + "  last_seen BIGINT NOT NULL, "
+                                + "  source VARCHAR(20) NOT NULL"
+                                + " )";
+                            MDS.sql(discoveryLayerSql, function (createRes) {
+                                MDS.log("🛠️ [BEACON] Recreation result: " + JSON.stringify(createRes));
+                                // Retry insert? No, wait for next beacon.
+                            });
+                        }
+                    });
+                }
+            });
+        } else {
+            // Bio is empty - check DB first to preserve cached value
+            MDS.sql("SELECT bio FROM DISCOVERED_PEERS WHERE publickey='" + beacon.pubkey + "'", function (checkRes) {
+                var bioToSave = "";
+                if (checkRes.status && checkRes.rows && checkRes.rows.length > 0 && checkRes.rows[0].BIO) {
+                    bioToSave = checkRes.rows[0].BIO;
+                }
+
+                var escapedBio = bioToSave.replace(/'/g, "''");
+                var discoverySql = "MERGE INTO DISCOVERED_PEERS (publickey, alias, bio, address, last_seen, source, allow_non_contact_chats) "
+                    + "KEY (publickey) "
+                    + "VALUES ('" + beacon.pubkey + "', '" + escapedAlias + "', '" + escapedBio + "', '"
+                    + beacon.address + "', " + now + ", '" + source + "', " + allowNonContactChats + ")";
+
+                MDS.sql(discoverySql, function (res) {
+                    if (res.status) {
+                        MDS.log("✅ [BEACON] Saved: " + beacon.alias + " (Bio: " + (bioToSave ? "preserved" : "empty") + ")");
+                        promoteToUserRegistry(beacon, now);
+
+                        // INTERNAL SYNC: Notify Frontend about new peer
+                        if (MY_MAXIMA_PK) {
+                            var syncPayload = {
+                                app: "metachain",
+                                type: "peer_discovered",
+                                peer: {
+                                    pubkey: beacon.pubkey,
+                                    alias: beacon.alias,
+                                    bio: bioToSave,
+                                    address: beacon.address,
+                                    allowNonContactChats: allowNonContactChats
+                                }
+                            };
+                            var syncJson = JSON.stringify(syncPayload);
+                            var syncHex = "0x" + utf8ToHex(syncJson).toUpperCase();
+
+                            MDS.cmd("maxima action:send publickey:" + MY_MAXIMA_PK + " application:metachain data:" + syncHex + " poll:false", function (syncRes) {
+                                // MDS.log("📡 [SYNC] Peer discovery synced to Frontend");
+                            });
+                        }
+
+                        // REACTIVE GOSSIP
+                        if (source === 'P2P' || source === 'MAXIMA') {
+                            sendWelcomePackage(beacon.pubkey, beacon.alias);
+                            MDS.log("🔄 [REACTIVE] Asking " + beacon.alias + " for their peers...");
+                            askPeers([beacon.pubkey]);
+                        }
+                    }
                 });
-            }
-        });
+            });
+        }
     } catch (e) {
         MDS.log("❌ [BEACON] Handler error: " + e.message + " for " + (beacon ? beacon.alias : "unknown"));
     }
@@ -1190,72 +1241,119 @@ function sendBackgroundBeacon() {
 
         MDS.log("📋 [BG-BEACON] Using Maxima name: " + alias);
 
-        // 2. Get Bio from keypair
+        // 2. Get Bio from keypair with DB fallback
         MDS.cmd("keypair action:get key:p2p_bio", function (bioRes) {
-            var bio = (bioRes.status && bioRes.response && bioRes.response.value) ? bioRes.response.value : "";
 
-            // 3. Get Chat Permission from keypair
-            MDS.cmd("keypair action:get key:allow_noncontact_chats", function (permRes) {
-                var allowNonContactChats = (permRes.status && permRes.response && permRes.response.value !== undefined)
-                    ? (permRes.response.value === 'true' || permRes.response.value === true)
-                    : true;
+            function continueWithBio(finalBio) {
+                // 3. Get Chat Permission from keypair
+                MDS.cmd("keypair action:get key:allow_noncontact_chats", function (permRes) {
+                    var allowNonContactChats = (permRes.status && permRes.response && permRes.response.value !== undefined)
+                        ? (permRes.response.value === 'true' || permRes.response.value === true)
+                        : true;
 
-                // Construct Beacon
-                var beacon = {
-                    app: "metachain",
-                    type: "BEACON",
-                    v: 1,
-                    pubkey: pubkey,
-                    address: address,
-                    alias: alias,
-                    bio: bio,
-                    allowNonContactChats: allowNonContactChats
-                };
+                    // Construct Beacon
+                    var beacon = {
+                        app: "metachain",
+                        type: "BEACON",
+                        v: 1,
+                        pubkey: pubkey,
+                        address: address,
+                        alias: alias,
+                        bio: finalBio,
+                        allowNonContactChats: allowNonContactChats
+                    };
 
-                var jsonStr = JSON.stringify(beacon);
-                var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
+                    var jsonStr = JSON.stringify(beacon);
+                    var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
 
-                MDS.log("📤 [BG-BEACON] Sending P2P: " + alias);
+                    MDS.log("📤 [BG-BEACON] Sending P2P: " + alias);
 
-                // 4. Send P2P
-                MDS.cmd("message data:" + hexData, function (res) {
-                    MDS.log("✅ [BG-BEACON] P2P sent.");
+                    // 4. Send P2P
+                    MDS.cmd("message data:" + hexData, function (res) {
+                        MDS.log("✅ [BG-BEACON] P2P sent.");
 
-                    // Save own profile to DISCOVERED_PEERS (for cold start UX)
-                    var now = Date.now();
-                    var escapedAlias = alias.replace(/'/g, "''");
-                    var escapedBio = bio.replace(/'/g, "''");
-                    var allowChats = allowNonContactChats ? 1 : 0;
+                        // Save own profile to DISCOVERED_PEERS (for cold start UX)
+                        // CRITICAL: If bio is empty, check DB first to preserve cached value
+                        var now = Date.now();
+                        var escapedAlias = alias.replace(/'/g, "''");
+                        var allowChats = allowNonContactChats ? 1 : 0;
 
-                    var selfSql = "MERGE INTO DISCOVERED_PEERS (publickey, alias, bio, address, last_seen, source, allow_non_contact_chats) "
-                        + "KEY (publickey) "
-                        + "VALUES ('" + pubkey + "', '" + escapedAlias + "', '" + escapedBio + "', '"
-                        + address + "', " + now + ", 'SELF', " + allowChats + ")";
+                        if (finalBio) {
+                            // Bio is present - save directly
+                            var escapedBio = finalBio.replace(/'/g, "''");
+                            var selfSql = "MERGE INTO DISCOVERED_PEERS (publickey, alias, bio, address, last_seen, source, allow_non_contact_chats) "
+                                + "KEY (publickey) "
+                                + "VALUES ('" + pubkey + "', '" + escapedAlias + "', '" + escapedBio + "', '"
+                                + address + "', " + now + ", 'SELF', " + allowChats + ")";
 
-                    MDS.sql(selfSql, function (selfRes) {
-                        if (selfRes.status) {
-                            MDS.log("✅ [BG-BEACON] Own profile saved to DISCOVERED_PEERS");
+                            MDS.sql(selfSql, function (selfRes) {
+                                if (selfRes.status) {
+                                    MDS.log("✅ [BG-BEACON] Own profile saved (with Bio)");
+                                }
+                            });
+                        } else {
+                            // Bio is empty - check DB first to preserve cached value
+                            MDS.sql("SELECT bio FROM DISCOVERED_PEERS WHERE publickey='" + pubkey + "'", function (checkRes) {
+                                var bioToSave = "";
+                                if (checkRes.status && checkRes.rows && checkRes.rows.length > 0 && checkRes.rows[0].BIO) {
+                                    bioToSave = checkRes.rows[0].BIO;
+                                    MDS.log("✅ [BG-BEACON] Preserving cached Bio: " + bioToSave.substring(0, 20) + "...");
+                                }
+
+                                var escapedBio = bioToSave.replace(/'/g, "''");
+                                var selfSql = "MERGE INTO DISCOVERED_PEERS (publickey, alias, bio, address, last_seen, source, allow_non_contact_chats) "
+                                    + "KEY (publickey) "
+                                    + "VALUES ('" + pubkey + "', '" + escapedAlias + "', '" + escapedBio + "', '"
+                                    + address + "', " + now + ", 'SELF', " + allowChats + ")";
+
+                                MDS.sql(selfSql, function (selfRes) {
+                                    if (selfRes.status) {
+                                        MDS.log("✅ [BG-BEACON] Own profile saved (Bio: " + (bioToSave ? "preserved" : "empty") + ")");
+                                    }
+                                });
+                            });
+                        }
+
+                        // 5. Send to Bootstrap (if exists)
+                        if (staticMLS && info.staticmls) {
+                            var bootstrapBeacon = {
+                                app: "metachain",
+                                type: "register",
+                                pubkey: pubkey,
+                                address: address,
+                                alias: alias,
+                                bio: finalBio,
+                                allowNonContactChats: allowNonContactChats
+                            };
+                            var bootCmd = "maxima action:send to:" + staticMLS + " application:metachain data:" + JSON.stringify(bootstrapBeacon);
+                            MDS.cmd(bootCmd, function (bootRes) {
+                                MDS.log("✅ [BG-BEACON] Sent to Bootstrap.");
+                            });
                         }
                     });
+                });
+            }
 
-                    // 5. Send to Bootstrap (if exists)
-                    if (staticMLS && info.staticmls) {
-                        var bootstrapBeacon = {
-                            app: "metachain",
-                            type: "register",
-                            pubkey: pubkey,
-                            address: address,
-                            alias: alias,
-                            bio: bio,
-                            allowNonContactChats: allowNonContactChats
-                        };
-                        var bootCmd = "maxima action:send to:" + staticMLS + " application:metachain data:" + JSON.stringify(bootstrapBeacon);
-                        MDS.cmd(bootCmd, function (bootRes) {
-                            MDS.log("✅ [BG-BEACON] Sent to Bootstrap.");
-                        });
+
+            // Decide which bio to use - ALWAYS check DB if keypair is empty
+            var keypairBio = (bioRes.status && bioRes.response && bioRes.response.value) ? bioRes.response.value : "";
+
+            if (keypairBio) {
+                // Keypair has a value, use it
+                continueWithBio(keypairBio);
+            } else {
+                // Keypair is empty or failed - check DB for cached value
+                MDS.log("⚠️ [BG-BEACON] Keypair Bio empty/failed, checking DB cache...");
+                MDS.sql("SELECT bio FROM DISCOVERED_PEERS WHERE source='SELF'", function (sqlRes) {
+                    if (sqlRes.status && sqlRes.rows && sqlRes.rows.length > 0 && sqlRes.rows[0].BIO) {
+                        MDS.log("✅ [BG-BEACON] Using cached Bio from DB: " + sqlRes.rows[0].BIO.substring(0, 20) + "...");
+                        continueWithBio(sqlRes.rows[0].BIO);
+                    } else {
+                        MDS.log("ℹ️ [BG-BEACON] No cached Bio found, using empty");
+                        continueWithBio("");
                     }
                 });
-            });
+            }
         });
     });
 }

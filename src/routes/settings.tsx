@@ -80,6 +80,10 @@ function Settings() {
 
   // P2P Profile State (Discovery) - Only bio, name comes from Maxima
   const [p2pBio, setP2pBio] = useState("");
+
+  // Discovery Configuration
+  const [discoveryInterval, setDiscoveryInterval] = useState(60);
+  const [discoveryLimit, setDiscoveryLimit] = useState(5);
   // Removed unused savingP2pProfile state
 
   // Extended Profile State - Level 2 (Semi-Private)
@@ -160,6 +164,23 @@ function Settings() {
       } catch (err) {
         console.error("Error fetching P2P bio:", err);
       }
+
+      // Fetch Discovery Settings
+      try {
+        const intervalRes = await MDS.keypair.get('discovery_interval');
+        if (intervalRes && intervalRes.status && intervalRes.value) {
+          setDiscoveryInterval(parseInt(intervalRes.value));
+        }
+
+        const limitRes = await MDS.keypair.get('discovery_limit');
+        if (limitRes && limitRes.status && limitRes.value) {
+          setDiscoveryLimit(parseInt(limitRes.value));
+        }
+      } catch (err) {
+        console.error("Error fetching discovery settings:", err);
+      }
+
+
     };
 
     // Fetch Extended Profile (Level 2 & 3)
@@ -557,10 +578,23 @@ function Settings() {
 
   const handleSaveP2pProfile = async () => {
     try {
-      // Save bio
+      // Save bio to Keypair
       await MDS.keypair.set('p2p_bio', p2pBio.trim());
 
-      console.log("✅ [Settings] P2P bio saved");
+      console.log("✅ [Settings] P2P bio saved to Keypair");
+
+      // CRITICAL: Also save to DB for persistent cache (survives Keypair resets)
+      const maximaInfo = await MDS.cmd.maxima({ params: { action: 'info' } });
+      if (maximaInfo.status && maximaInfo.response) {
+        const pubkey = maximaInfo.response.publickey;
+        const escapedBio = p2pBio.trim().replace(/'/g, "''");
+
+        // Update bio in DISCOVERED_PEERS for SELF
+        const updateSql = `UPDATE DISCOVERED_PEERS SET bio='${escapedBio}' WHERE publickey='${pubkey}' AND source='SELF'`;
+        await MDS.sql(updateSql);
+
+        console.log("✅ [Settings] P2P bio saved to DB cache");
+      }
 
       // Send beacon immediately to propagate bio change
       console.log("[Settings] Sending beacon with updated bio...");
@@ -752,52 +786,7 @@ function Settings() {
                       <h2 className="text-xl font-semibold text-gray-800">Profile</h2>
                     </div>
 
-                    {/* User Info - Full Width */}
-                    <div className="p-6 border-b border-gray-100">
-                      <div className="flex items-center gap-4">
-                        <div className="relative">
-                          <img
-                            src={userAvatar}
-                            alt="Avatar"
-                            className="w-16 h-16 rounded-full object-cover border-4 border-gray-100"
-                            onError={(e) => (e.target as HTMLImageElement).src = defaultAvatar}
-                          />
-                          <button
-                            onClick={handleEditAvatar}
-                            className="absolute -bottom-1 -right-1 p-1.5 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors shadow-lg"
-                            title="Change Avatar"
-                          >
-                            <Edit2 size={12} />
-                          </button>
-                        </div>
-                        <div className="flex-1">
-                          <label className="block text-xs font-medium text-gray-500 mb-1">Maxima Name</label>
-                          <input
-                            type="text"
-                            value={userName}
-                            onChange={(e) => setUserName(e.target.value)}
-                            onBlur={async () => {
-                              if (userName.trim()) {
-                                try {
-                                  await MDS.cmd.maxima({ params: { action: "setname", name: userName.trim() } });
-                                  console.log("✅ [Settings] Maxima name updated");
-                                  // Refresh global profile
-                                  await refreshProfile();
-                                } catch (err) {
-                                  console.error("❌ [Settings] Error updating name:", err);
-                                }
-                              }
-                            }}
-                            className="w-full text-lg font-bold text-gray-900 bg-transparent border-b-2 border-transparent hover:border-gray-300 focus:border-blue-500 focus:outline-none transition-colors px-1 -mx-1"
-                            placeholder="Your name"
-                          />
-                          <p className="text-sm text-gray-500 mt-1">Visible to your contacts • Auto-saves</p>
-                        </div>
-                      </div>
-                    </div>
-
-
-                    {/* Level 1: Public Profile - P2P Discovery */}
+                    {/* Level 1: Public Discovery Profile */}
                     <div className="p-6 border-b border-gray-100">
                       <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-2">
@@ -807,12 +796,53 @@ function Settings() {
                         <span className="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-semibold rounded-full">Level 1 - Public</span>
                       </div>
 
-                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800 flex items-start gap-2 mb-4">
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800 flex items-start gap-2 mb-6">
                         <Info size={16} className="mt-0.5 flex-shrink-0" />
-                        <p>Your <strong>Maxima name</strong> is used for P2P discovery. Add a bio below to share more about yourself.</p>
+                        <p>Your <strong>Maxima Name</strong> and <strong>Avatar</strong> are used for P2P discovery. Add a bio below to share more about yourself. All information here is public.</p>
                       </div>
 
-                      <div className="space-y-4">
+                      <div className="space-y-6">
+                        {/* Maxima Name & Avatar */}
+                        <div className="flex items-center gap-4">
+                          <div className="relative">
+                            <img
+                              src={userAvatar}
+                              alt="Avatar"
+                              className="w-16 h-16 rounded-full object-cover border-4 border-gray-100"
+                              onError={(e) => (e.target as HTMLImageElement).src = defaultAvatar}
+                            />
+                            <button
+                              onClick={handleEditAvatar}
+                              className="absolute -bottom-1 -right-1 p-1.5 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors shadow-lg"
+                              title="Change Avatar"
+                            >
+                              <Edit2 size={12} />
+                            </button>
+                          </div>
+                          <div className="flex-1">
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Maxima Name</label>
+                            <input
+                              type="text"
+                              value={userName}
+                              onChange={(e) => setUserName(e.target.value)}
+                              onBlur={async () => {
+                                if (userName.trim()) {
+                                  try {
+                                    await MDS.cmd.maxima({ params: { action: "setname", name: userName.trim() } });
+                                    console.log("✅ [Settings] Maxima name updated");
+                                    await refreshProfile();
+                                  } catch (err) {
+                                    console.error("❌ [Settings] Error updating name:", err);
+                                  }
+                                }
+                              }}
+                              className="w-full text-lg font-bold text-gray-900 bg-transparent border-b-2 border-transparent hover:border-gray-300 focus:border-blue-500 focus:outline-none transition-colors px-1 -mx-1"
+                              placeholder="Your name"
+                            />
+                            <p className="text-sm text-gray-500 mt-1">Visible to your contacts and discovered peers</p>
+                          </div>
+                        </div>
+
                         {/* Bio */}
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -826,7 +856,7 @@ function Settings() {
                             rows={3}
                             className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white text-gray-700 resize-none"
                           />
-                          <p className="text-xs text-gray-500 mt-1">Shared with all discovered peers • Auto-saves when you finish editing</p>
+                          <p className="text-xs text-gray-500 mt-1">Shared with all discovered peers • Auto-saves</p>
                         </div>
                       </div>
                     </div>
@@ -1390,6 +1420,70 @@ function Settings() {
                     </div>
 
                     <div className="p-6 space-y-6">
+                      {/* Discovery Configuration */}
+                      <div className="bg-white border border-gray-200 rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-4">
+                          <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-200">Discovery Settings</h4>
+                          <span className="text-xs text-gray-500 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">Advanced</span>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Gossip Frequency (Seconds)</label>
+                            <div className="relative">
+                              <input
+                                type="number"
+                                min="30"
+                                step="10"
+                                placeholder="60"
+                                value={discoveryInterval}
+                                onChange={(e) => setDiscoveryInterval(parseInt(e.target.value) || 0)}
+                                id="discoveryIntervalInput"
+                                className="w-full p-2 pl-3 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                                onBlur={(e) => {
+                                  const val = parseInt(e.target.value) || 60;
+                                  const safeVal = val < 30 ? 30 : val;
+                                  setDiscoveryInterval(safeVal);
+                                  MDS.keypair.set('discovery_interval', String(safeVal));
+                                  console.log("✅ [Settings] Discovery interval saved:", safeVal);
+                                }}
+                              />
+                              <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                                <span className="text-gray-400 text-xs">sec</span>
+                              </div>
+                            </div>
+                            <p className="text-xs text-gray-400 mt-1">Minimum 30s. Lower = faster updates, more data.</p>
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Gossip Peer Limit</label>
+                            <div className="relative">
+                              <input
+                                type="number"
+                                min="1"
+                                max="50"
+                                placeholder="5"
+                                value={discoveryLimit}
+                                onChange={(e) => setDiscoveryLimit(parseInt(e.target.value) || 0)}
+                                id="discoveryLimitInput"
+                                className="w-full p-2 pl-3 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                                onBlur={(e) => {
+                                  const val = parseInt(e.target.value) || 5;
+                                  const safeVal = val < 1 ? 1 : (val > 50 ? 50 : val);
+                                  setDiscoveryLimit(safeVal);
+                                  MDS.keypair.set('discovery_limit', String(safeVal));
+                                  console.log("✅ [Settings] Discovery limit saved:", safeVal);
+                                }}
+                              />
+                              <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                                <span className="text-gray-400 text-xs">nodes</span>
+                              </div>
+                            </div>
+                            <p className="text-xs text-gray-400 mt-1">Number of peers to exchange data with per gossip.</p>
+                          </div>
+                        </div>
+                      </div>
+
                       {/* MLS Server (for Development) */}
                       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                         <div className="flex items-center gap-2 mb-3">

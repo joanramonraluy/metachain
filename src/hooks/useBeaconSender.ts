@@ -43,7 +43,8 @@ export const sendBeacon = async () => {
             address,
             alias,
             bio,
-            allowNonContactChats
+            allowNonContactChats,
+            timestamp: Date.now()
         };
 
         console.log("📡 [BEACON] Payload:", beacon);
@@ -78,7 +79,8 @@ export const sendBeacon = async () => {
                 address,
                 alias,
                 bio,
-                allowNonContactChats
+                allowNonContactChats,
+                timestamp: Date.now()
             };
 
             console.log("📡 [BEACON] Bootstrap payload:", bootstrapBeacon);

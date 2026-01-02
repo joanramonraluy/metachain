@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { getUsersWithStatus, UserWithStatus } from '../services/discovery.service'
-import { Search, Globe, Info } from 'lucide-react'
+import { Search, Globe, Info, RefreshCw } from 'lucide-react'
 
 
 export const Route = createFileRoute('/discovery')({
@@ -99,7 +99,7 @@ function DiscoveryPage() {
     return (
         <div className="flex flex-col h-full">
             {/* Header */}
-            <div className="bg-white border-b border-gray-200 px-6 py-4 shadow-sm flexjustify-between items-center">
+            <div className="bg-white border-b border-gray-200 px-6 py-4 shadow-sm flex justify-between items-center">
                 <div className="flex items-center gap-2">
                     <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
                         <Globe className="text-blue-600" />
@@ -111,7 +111,7 @@ function DiscoveryPage() {
                     className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors"
                     title="Refresh List"
                 >
-                    <Search size={20} />
+                    <RefreshCw size={20} />
                 </button>
             </div>
             <div className="px-6 pb-2 text-gray-500 text-sm border-b border-gray-200 bg-white">
