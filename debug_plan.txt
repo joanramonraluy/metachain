@@ -1,0 +1,37 @@
+// Debug script to force update DISCOVERED_PEERS with extra_data
+const MDS = require('mds-api'); // This won't work directly in node without the library, but I can use the tool to run it via Minima if possible, or just standard SQL if I can accessing DB.
+// Actually, I can't run JS against MDS easily from terminal unless I have an environment.
+// But I can use the `run_command` tool to execute `mds` CLI if available? No.
+// I can write a script that I ask the user to run? No, agentic mode.
+
+// Best approach: I will modify `src/routes/discovery.tsx` to include a temporary "Debug" button that runs this logic, 
+// OR I can use `public/service.js` modification to force it on next load? No, too slow.
+
+// Wait, I can use a simple HTML/JS file in `public/debug.html` and ask the user to open it? No, user won't open it.
+
+// Let's stick to the "Debug Logs" I added. 
+// If I really want to WRITE to the DB, I need to use the `MDS` object available in `discovery.tsx`.
+// I can add a temporary effect in `discovery.tsx` that writes to the DB once.
+
+/*
+useEffect(() => {
+    const debugUpdate = async () => {
+        // Fetch valid public key from a real user
+        const users = await getUsersWithStatus();
+        if (users.length > 0) {
+            const target = users[0];
+            const fakeData = JSON.stringify({
+                country: "DEBUG_LAND",
+                avatar: "",
+                languages: ["Debugish"]
+            });
+            const sql = `UPDATE DISCOVERED_PEERS SET extra_data='${fakeData}' WHERE publickey='${target.publickey}'`;
+            await runSQL(sql);
+            console.log("🐞 [DEBUG] Forced update for " + target.alias);
+        }
+    };
+    debugUpdate();
+}, []);
+*/
+
+// I will inject this into discovery.tsx temporarily.

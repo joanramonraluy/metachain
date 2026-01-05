@@ -15,7 +15,7 @@ export function ContactTabs({ activeTab, onTabChange }: ContactTabsProps) {
     ];
 
     return (
-        <div className="bg-white border-b border-gray-200 sticky top-0 z-10 mb-6">
+        <div className="bg-white border-b border-gray-200 sticky top-16 z-10 mb-6">
             <div className="max-w-4xl mx-auto">
                 <nav className="flex overflow-x-auto scrollbar-hide -mb-px">
                     {tabs.map((tab) => {

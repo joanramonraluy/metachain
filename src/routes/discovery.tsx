@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { getUsersWithStatus, UserWithStatus } from '../services/discovery.service'
-import { Search, Globe, Info, RefreshCw } from 'lucide-react'
+import { Search, Globe, Info, RefreshCw, X, Filter } from 'lucide-react'
 
 
 export const Route = createFileRoute('/discovery')({
@@ -16,6 +16,12 @@ function DiscoveryPage() {
     const [showNotification, setShowNotification] = useState(false)
     const [notificationMessage, setNotificationMessage] = useState('')
     const [totalFound, setTotalFound] = useState(0)
+
+    // Search & Filter State
+    const [searchQuery, setSearchQuery] = useState('')
+    const [selectedCountry, setSelectedCountry] = useState('')
+    const [selectedLanguage, setSelectedLanguage] = useState('')
+    const [showFilters, setShowFilters] = useState(false)
 
     useEffect(() => {
         // Initial load
@@ -94,12 +100,43 @@ function DiscoveryPage() {
         }
     }
 
+    // Filter Logic
+    const filteredUsers = useMemo(() => {
+        return users.filter(user => {
+            const matchesSearch = !searchQuery ||
+                (user.alias && user.alias.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                (user.bio && user.bio.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                (user.address && user.address.toLowerCase().includes(searchQuery.toLowerCase()));
+
+            const matchesCountry = !selectedCountry || user.country === selectedCountry;
+
+            const matchesLanguage = !selectedLanguage || (user.languages && user.languages.includes(selectedLanguage));
+
+            return matchesSearch && matchesCountry && matchesLanguage;
+        });
+    }, [users, searchQuery, selectedCountry, selectedLanguage]);
+
+    // Unique Countries & Languages for Dropdowns
+    const uniqueCountries = useMemo(() => {
+        const countries = new Set(users.map(u => u.country).filter(Boolean));
+        return Array.from(countries).sort();
+    }, [users]);
+
+    const uniqueLanguages = useMemo(() => {
+        const langs = new Set<string>();
+        users.forEach(u => {
+            if (u.languages && Array.isArray(u.languages)) {
+                u.languages.forEach(l => langs.add(l));
+            }
+        });
+        return Array.from(langs).sort();
+    }, [users]);
 
 
     return (
-        <div className="flex flex-col h-full">
+        <div className="flex flex-col h-full bg-gray-50">
             {/* Header */}
-            <div className="bg-white border-b border-gray-200 px-6 py-4 shadow-sm flex justify-between items-center">
+            <div className="bg-white border-b border-gray-200 px-6 py-4 shadow-sm flex justify-between items-center sticky top-0 z-10">
                 <div className="flex items-center gap-2">
                     <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
                         <Globe className="text-blue-600" />
@@ -114,9 +151,80 @@ function DiscoveryPage() {
                     <RefreshCw size={20} />
                 </button>
             </div>
-            <div className="px-6 pb-2 text-gray-500 text-sm border-b border-gray-200 bg-white">
-                Find and connect with other MetaChain users
+
+            {/* Search & Filter Bar */}
+            <div className="bg-white border-b border-gray-200 px-6 py-4 shadow-sm space-y-3">
+                <div className="flex gap-2">
+                    <div className="relative flex-1">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                        <input
+                            type="text"
+                            placeholder="Search users by name, bio..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="w-full pl-10 pr-10 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-white text-gray-900"
+                        />
+                        {searchQuery && (
+                            <button
+                                onClick={() => setSearchQuery('')}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                            >
+                                <X size={16} />
+                            </button>
+                        )}
+                    </div>
+                    <button
+                        onClick={() => setShowFilters(!showFilters)}
+                        className={`p-2 rounded-lg border transition-colors flex items-center gap-2 px-3 ${showFilters ? 'bg-blue-50 border-blue-200 text-blue-600' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                    >
+                        <Filter size={18} />
+                        <span className="hidden sm:inline text-sm font-medium">Filters</span>
+                    </button>
+                </div>
+
+                {/* Expanded Filters */}
+                {showFilters && (
+                    <div className="flex flex-wrap gap-3 pt-2 animate-in slide-in-from-top-2 duration-200">
+                        {/* Country Filter */}
+                        <div className="flex-1 min-w-[150px]">
+                            <select
+                                value={selectedCountry}
+                                onChange={(e) => setSelectedCountry(e.target.value)}
+                                className="w-full p-2 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                            >
+                                <option value="">All Discovered Countries</option>
+                                {uniqueCountries.map(c => (
+                                    <option key={c} value={c as string}>{c as string}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* Language Filter */}
+                        <div className="flex-1 min-w-[150px]">
+                            <select
+                                value={selectedLanguage}
+                                onChange={(e) => setSelectedLanguage(e.target.value)}
+                                className="w-full p-2 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                            >
+                                <option value="">All Discovered Languages</option>
+                                {uniqueLanguages.map(l => (
+                                    <option key={l} value={l}>{l}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {(selectedCountry || selectedLanguage) && (
+                            <button
+                                onClick={() => { setSelectedCountry(''); setSelectedLanguage(''); }}
+                                className="text-sm text-red-500 hover:text-red-700 font-medium px-2"
+                            >
+                                Clear all
+                            </button>
+                        )}
+                    </div>
+                )}
             </div>
+
             <div className="px-6 py-2 bg-blue-50 border-b border-blue-100 text-blue-700 text-xs flex items-center gap-2">
                 <Info size={14} className="shrink-0" />
                 <span>Discovery is decentralized. It may take up to 60 seconds for all peers to appear.</span>
@@ -131,23 +239,35 @@ function DiscoveryPage() {
                             <p className="text-gray-600">Loading discovered peers...</p>
                         </div>
                     </div>
-                ) : users.length === 0 ? (
-                    <div className="text-center py-20">
-                        <div className="bg-blue-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <Search className="text-blue-400" size={32} />
+                ) : filteredUsers.length === 0 ? (
+                    <div className="text-center py-20 px-4">
+                        <div className="bg-gray-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <Search className="text-gray-400" size={32} />
                         </div>
                         <h3 className="text-lg font-medium text-gray-900">No profiles found</h3>
-                        <p className="text-gray-500 mt-2">Be the first to join the community!</p>
+                        <p className="text-gray-500 mt-2">
+                            {searchQuery || selectedCountry || selectedLanguage
+                                ? "Try adjusting your search or filters."
+                                : "Be the first to join the community!"}
+                        </p>
+                        {(searchQuery || selectedCountry || selectedLanguage) && (
+                            <button
+                                onClick={() => { setSearchQuery(''); setSelectedCountry(''); setSelectedLanguage(''); }}
+                                className="mt-4 px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm font-medium"
+                            >
+                                Clear Filters
+                            </button>
+                        )}
                     </div>
                 ) : (
                     <>
-                        <div className="px-6 py-3 bg-gray-50 border-b border-gray-200">
+                        <div className="px-6 py-3 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
                             <p className="text-sm text-gray-600">
-                                Showing <span className="font-bold text-blue-600">{totalFound}</span> {totalFound === 1 ? 'profile' : 'profiles'}
+                                Showing <span className="font-bold text-blue-600">{filteredUsers.length}</span> of <span className="font-medium">{totalFound}</span> {totalFound === 1 ? 'profile' : 'profiles'}
                             </p>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-6">
-                            {users.map((user) => (
+                            {filteredUsers.map((user) => (
                                 <div
                                     key={user.publickey || user.user_id || Math.random()}
                                     onClick={() => {
@@ -164,15 +284,28 @@ function DiscoveryPage() {
                                     <div className="flex items-start justify-between mb-3">
                                         <div className="flex items-center gap-3 flex-1">
                                             <div className="relative">
-                                                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-lg shadow-sm">
-                                                    {(user.alias || 'A').charAt(0).toUpperCase()}
-                                                </div>
+                                                {user.avatar ? (
+                                                    <img
+                                                        src={user.avatar}
+                                                        alt={user.alias}
+                                                        className="w-12 h-12 rounded-full object-cover shadow-sm border border-gray-100"
+                                                    />
+                                                ) : (
+                                                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-lg shadow-sm">
+                                                        {(user.alias || 'A').charAt(0).toUpperCase()}
+                                                    </div>
+                                                )}
                                                 {user.is_online && (
                                                     <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 border-2 border-white rounded-full"></div>
                                                 )}
                                             </div>
                                             <div className="flex-1 min-w-0">
                                                 <h3 className="font-bold text-gray-900 truncate">{user.alias || 'Anonymous'}</h3>
+                                                {user.country && (
+                                                    <p className="text-xs text-blue-600 font-medium truncate mb-0.5">
+                                                        {user.country}
+                                                    </p>
+                                                )}
                                                 <p className="text-xs text-gray-400 font-mono truncate" title={user.publickey || user.user_id || ''}>
                                                     {(user.publickey || user.user_id || '').substring(0, 12)}...
                                                 </p>
@@ -186,9 +319,38 @@ function DiscoveryPage() {
                                         </p>
                                     )}
 
+                                    {/* Languages Tag (if available) */}
+                                    {user.languages && user.languages.length > 0 && (
+                                        <div className="flex flex-wrap gap-1 mb-3">
+                                            {user.languages.slice(0, 2).map((lang, idx) => (
+                                                <span key={idx} className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded border border-gray-200">
+                                                    {lang}
+                                                </span>
+                                            ))}
+                                            {user.languages.length > 2 && (
+                                                <span className="text-[10px] bg-gray-50 text-gray-500 px-1.5 py-0.5 rounded border border-gray-200">
+                                                    +{user.languages.length - 2}
+                                                </span>
+                                            )}
+                                        </div>
+                                    )}
+
                                     <div className="pt-3 border-t border-gray-100 flex justify-between items-center text-xs">
                                         <span className="text-gray-500">
-                                            {user.first_seen ? new Date(Number(user.first_seen)).toLocaleDateString() : 'Unknown'}
+                                            {(() => {
+                                                if (!user.last_updated) return 'Unknown';
+                                                const now = Date.now();
+                                                const diff = now - Number(user.last_updated);
+                                                const minutes = Math.floor(diff / 60000);
+                                                const hours = Math.floor(diff / 3600000);
+                                                const days = Math.floor(diff / 86400000);
+
+                                                if (minutes < 1) return 'Just now';
+                                                if (minutes < 60) return `${minutes}m ago`;
+                                                if (hours < 24) return `${hours}h ago`;
+                                                if (days < 7) return `${days}d ago`;
+                                                return new Date(Number(user.last_updated)).toLocaleDateString();
+                                            })()}
                                         </span>
                                         {user.is_online ? (
                                             <span className="bg-green-100 text-green-700 px-2 py-1 rounded-full font-medium">Online</span>

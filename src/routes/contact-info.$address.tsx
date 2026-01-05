@@ -143,6 +143,24 @@ function ContactInfoPage() {
                     const peer = discoveryRes.rows[0];
                     console.log("✅ [CONTACT] Found in Discovery:", peer);
 
+                    // Parse extra_data to get extended profile fields
+                    let avatar = "";
+                    let country = "";
+                    let languages: string[] = [];
+
+                    if (peer.EXTRA_DATA) {
+                        try {
+                            const extraObj = JSON.parse(peer.EXTRA_DATA);
+                            avatar = extraObj.avatar || "";
+                            country = extraObj.country || "";
+                            languages = extraObj.languages || [];
+
+                            console.log("📦 [CONTACT] Parsed extra_data:", { avatar: !!avatar, country, languages });
+                        } catch (e) {
+                            console.warn("⚠️ [CONTACT] Failed to parse extra_data:", e);
+                        }
+                    }
+
                     // Convert discovered peer to Contact format
                     // H2 database returns column names in UPPERCASE
                     const discoveredContact: Contact = {
@@ -151,13 +169,32 @@ function ContactInfoPage() {
                         extradata: {
                             name: peer.ALIAS || "Unknown",
                             description: peer.BIO || "",
-                            icon: "" // Avatar not stored in DISCOVERED_PEERS yet
+                            icon: avatar // Use parsed avatar from extra_data
                         },
                         lastseen: peer.LAST_SEEN ? Number(peer.LAST_SEEN) : undefined
                     };
 
                     setContact(discoveredContact);
                     setIsMaximaContact(false);
+
+                    // IMPORTANT: Populate extended profile from local cache immediately
+                    // This shows Level 1 data (country, languages, avatar) instantly
+                    // But we still allow profile_request to fetch Level 2 data (location, website, etc.)
+                    if (country || languages.length > 0 || avatar) {
+                        console.log("🎯 [CONTACT] Populating extended profile from local cache");
+                        setExtendedProfile({
+                            name: peer.ALIAS || "Unknown",
+                            bio: peer.BIO || "",
+                            avatar: avatar,
+                            country: country,
+                            languages: languages,
+                            allowNonContactChats: true, // Default assumption for discovered peers
+                            privacy_l2: 'visible',
+                            privacy_l3: 'visible'
+                        });
+                        // DON'T set profileLoaded = true here - we still want to request full profile
+                        // setProfileLoaded(true); // ← Commented to always fetch latest data
+                    }
                 } else {
                     console.warn("⚠️ [CONTACT] Not found in Discovery either");
                 }
@@ -225,8 +262,9 @@ function ContactInfoPage() {
     useEffect(() => {
         if (!contact?.currentaddress || !contact?.publickey) return;
 
-        // Don't request if already loaded or already requested (for THIS contact)
-        if (extendedProfile || profileRequestedRef.current) return;
+        // Only check if already requested (not if we have cache data)
+        // This allows us to show cache immediately but still fetch latest
+        if (profileRequestedRef.current) return;
 
         // Mark as requested
         profileRequestedRef.current = true;

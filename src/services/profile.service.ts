@@ -132,6 +132,7 @@ console.log('🚀 [ProfileService] Module Initialized via import');
  */
 export function handleProfileResponse(senderPublicKey: string, data: ExtendedProfile) {
     console.log(`[ProfileService] Received profile response from ${senderPublicKey.substring(0, 10)}`);
+    console.log(`[ProfileService] Raw Response Data:`, JSON.stringify(data, null, 2));
 
     const normalizedKey = normalizeKey(senderPublicKey);
     const pending = pendingRequests.get(normalizedKey);

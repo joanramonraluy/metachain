@@ -60,20 +60,6 @@ export const getUsersWithStatus = async (): Promise<UserWithStatus[]> => {
     const registryUsers: MetachainUser[] = registryRes.rows || [];
     const discoveredPeers: DiscoveredPeer[] = discoveredRes.rows || [];
 
-    console.log(`🔍 [DiscoveryService] DB Fetch Complete. Registry Rows: ${registryUsers.length}, Discovered Rows: ${discoveredPeers.length}`);
-
-    console.log(`🔍 [Discovery] DB Status - Registry: ${registryUsers.length}, Discovered: ${discoveredPeers.length}`);
-
-    // Log detailed peer data (H2 returns uppercase column names)
-    if (discoveredPeers.length > 0) {
-        console.log('🔍 [Discovery] Raw discovered peers from DB:', discoveredRes.rows);
-        console.log('🔍 [Discovery] Discovered Peers Details:', discoveredPeers.map(p => ({
-            alias: (p as any).ALIAS || p.alias,
-            publickey: ((p as any).PUBLICKEY || p.publickey)?.substring(0, 20) + '...',
-            source: (p as any).SOURCE || p.source
-        })));
-    }
-
     const userMap = new Map<string, UserWithStatus>();
 
     // 1. Add Registry Users (Base)
@@ -117,7 +103,83 @@ export const getUsersWithStatus = async (): Promise<UserWithStatus[]> => {
         const lastSeen = getCI(peer, 'last_seen');
         const source = getCI(peer, 'source');
 
+        // Parse extra_data if available
+        let extendedInfo: any = {};
+        const extraDataRaw = getCI(peer, 'extra_data');
+        if (extraDataRaw) {
+            try {
+                // H2 CLOB might need handling if it's an object or string
+                // Usually comes as string from SQL result
+                const jsonStr = typeof extraDataRaw === 'string' ? extraDataRaw : JSON.stringify(extraDataRaw);
+                extendedInfo = JSON.parse(jsonStr);
+            } catch (e) {
+                console.warn('⚠️ [Discovery] Failed to parse extra_data', e);
+            }
+        }
+
         if (!publickey) return; // Skip invalid rows
+
+        // Helper to safe decode
+        const safeDecode = (str: string | undefined) => {
+            if (!str) return str;
+
+            // 1. Try resolving Mojibake (UTF-8 bytes interpreted as Latin-1)
+            // e.g. "CatalÃ " (where 'à' became 'Ã ' via C3 A0)
+            try {
+                // Heuristic: If string has unlikely UTF-8 sequences interpreted as single bytes
+                // We convert chars back to bytes and try decoding as UTF-8
+                // This fixes cases like "CatalÃ " -> "Català"
+                if (/[ÃÂÅÄ]/.test(str)) { // Common artifacts of UTF-8 misinterpretation
+                    const bytes = new Uint8Array(str.length);
+                    for (let i = 0; i < str.length; i++) {
+                        const code = str.charCodeAt(i);
+                        if (code > 255) {
+                            // If we have real unicode chars > 255, it's probably not simple Latin-1 mojibake
+                            // unless it's mixed. But let's be conservative.
+                            // allow it to proceed effectively treating it as mixed? No, risky.
+                            // If it's pure Mojibake, all chars are <= 255 (ISO-8859-1 range)
+                            // Actually some Windows-1252 chars are mapped > 255 in Unicode keys.
+                            // Let's stick to the simplest try-catch approach:
+                        }
+                        bytes[i] = code;
+                    }
+
+                    const decoder = new TextDecoder('utf-8');
+                    const decoded = decoder.decode(bytes);
+
+                    // If decoding worked and changed something (and didn't result in replacement chars which are 0xFFFD)
+                    if (decoded !== str && !decoded.includes('\uFFFD')) {
+                        str = decoded;
+                    }
+                }
+            } catch (e) {
+                // Ignore failure
+            }
+
+            // 2. Try URI decoding
+            try {
+                if (str.includes('%')) {
+                    str = decodeURIComponent(str);
+                }
+            } catch (e) {
+                // Ignore
+            }
+
+            // 3. Known Manual Fixes (Emergency Fallback)
+            if (str && typeof str === 'string') {
+                if (str.includes('Catalan') && (str.includes('Catal') || str.includes('CatalÃ'))) {
+                    return 'Catalan (Català)';
+                }
+                if (str.includes('Spanish') && (str.includes('Espa') || str.includes('EspaÃ±'))) {
+                    return 'Spanish (Español)';
+                }
+                if (str.includes('Basque') && str.includes('Euskera')) {
+                    return 'Basque (Euskera)';
+                }
+            }
+
+            return str;
+        };
 
         const existing = userMap.get(publickey);
         if (existing) {
@@ -125,25 +187,35 @@ export const getUsersWithStatus = async (): Promise<UserWithStatus[]> => {
             userMap.set(publickey, {
                 ...existing,
                 // Force update alias from beacon if present and valid (not empty/unknown)
-                alias: (alias && alias !== 'Unknown' && alias !== 'Anonymous') ? alias : (existing.alias || alias),
-                bio: bio || existing.bio,
+                alias: (alias && alias !== 'Unknown' && alias !== 'Anonymous') ? safeDecode(alias) : (existing.alias || alias),
+                bio: safeDecode(bio) || existing.bio,
                 address: address || existing.address,
                 is_online: true,
                 source: source as 'P2P' | 'BOOTSTRAP',
-                last_updated: Math.max(existing.last_updated, lastSeen)
+                last_updated: Math.max(existing.last_updated, lastSeen),
+                // Merge Extended Info
+                avatar: extendedInfo.avatar || existing.avatar,
+                country: safeDecode(extendedInfo.country) || existing.country,
+                languages: extendedInfo.languages && Array.isArray(extendedInfo.languages)
+                    ? extendedInfo.languages.map((l: string) => safeDecode(l))
+                    : existing.languages
             });
         } else {
             // Add new ephemeral peer not in registry yet
             userMap.set(publickey, {
                 user_id: publickey,
                 publickey: publickey,
-                alias: alias || 'Anonymous',
-                bio: bio,
+                alias: safeDecode(alias) || 'Anonymous',
+                bio: safeDecode(bio),
                 address: address,
                 first_seen: lastSeen,
                 last_updated: lastSeen,
                 is_online: true,
-                source: source as 'P2P' | 'BOOTSTRAP'
+                source: source as 'P2P' | 'BOOTSTRAP',
+                // Extended Info
+                avatar: extendedInfo.avatar,
+                country: extendedInfo.country,
+                languages: extendedInfo.languages
             });
         }
     });
@@ -231,6 +303,7 @@ export interface DiscoveredPeer {
     address: string;
     last_seen: number;
     source: 'P2P' | 'BOOTSTRAP';
+    extra_data?: string; // JSON string
 }
 
 export interface MetachainUser {
@@ -241,6 +314,10 @@ export interface MetachainUser {
     address: string;
     first_seen: number;
     last_updated: number;
+    // Extended fields (optional as they might not persist in SQL layer 2 yet)
+    avatar?: string;
+    country?: string;
+    languages?: string[];
 }
 
 export interface UserWithStatus extends MetachainUser {

@@ -28,20 +28,33 @@ export const sendBeacon = async () => {
         const bio = (bioRes && bioRes.status && bioRes.value) ? bioRes.value : '';
         console.log("📝 [BEACON] Bio:", bio || "(empty)");
 
-        // Get allow_noncontact_chats setting - Check DB First
+        // Get allow_noncontact_chats & Extended Profile - Check DB First
         let allowNonContactChats = true;
+        let extendedData: any = {};
+
         try {
-            const sql = "SELECT allow_non_contact_chats FROM MY_PROFILE WHERE id=1 LIMIT 1";
+            const sql = "SELECT * FROM MY_PROFILE WHERE id=1 LIMIT 1";
             const res = await new Promise<any>((resolve) => {
                 (MDS as any).sql(sql, (r: any) => resolve(r));
             });
 
             if (res && res.rows && res.rows.length > 0) {
-                const rawValue = res.rows[0].ALLOW_NON_CONTACT_CHATS ?? res.rows[0].allow_non_contact_chats;
+                const row = res.rows[0];
+                const rawValue = row.ALLOW_NON_CONTACT_CHATS ?? row.allow_non_contact_chats;
                 allowNonContactChats = (rawValue === 1 || rawValue === "1" || rawValue === true || rawValue === "true");
-                console.log("🔐 [BEACON] Retrieved permission from DB:", allowNonContactChats);
+
+                // Extract Extended Data
+                try {
+                    extendedData.country = decodeURIComponent(row.COUNTRY || row.country || "");
+                    extendedData.languages = JSON.parse(decodeURIComponent(row.LANGUAGES || row.languages || "[]"));
+                    extendedData.avatar = row.AVATAR || row.avatar || "";
+                } catch (e) {
+                    console.error("⚠️ [BEACON] Error parsing extended data:", e);
+                }
+
+                console.log("🔐 [BEACON] Retrieved data from DB:", allowNonContactChats, extendedData);
             } else {
-                // Fallback to Keypair
+                // Fallback to Keypair for Permission Key
                 const chatPermRes = await MDS.keypair.get('allow_noncontact_chats');
                 allowNonContactChats = (chatPermRes && chatPermRes.status && chatPermRes.value !== undefined)
                     ? (chatPermRes.value === 'true')
@@ -61,6 +74,7 @@ export const sendBeacon = async () => {
             alias,
             bio,
             allowNonContactChats,
+            ...extendedData, // Spread extended data (country, languages, avatar)
             timestamp: Date.now()
         };
 

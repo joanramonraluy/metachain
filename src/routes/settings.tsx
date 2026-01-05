@@ -564,6 +564,19 @@ function Settings() {
           throw new Error(errorMsg);
         }
 
+        // Sync to MY_PROFILE table (Critical for Discovery Beacons)
+        const updateSql = `UPDATE MY_PROFILE SET AVATAR = '${avatarUrl.trim().replace(/'/g, "''")}', LAST_UPDATED = ${Date.now()} WHERE id = 1`;
+        await new Promise<void>((resolve) => {
+          MDS.sql(updateSql, (res: any) => {
+            if (res.status) {
+              console.log("[Settings] Avatar synced to MY_PROFILE");
+            } else {
+              console.error("[Settings] Failed to sync avatar to MY_PROFILE:", res.error);
+            }
+            resolve();
+          });
+        });
+
         console.log("[Settings] Avatar set successfully, updating state");
         setUserAvatar(avatarUrl.trim());
         // Update global context by fetching the latest profile data
@@ -591,7 +604,16 @@ function Settings() {
 
         // Update bio in DISCOVERED_PEERS for SELF
         const updateSql = `UPDATE DISCOVERED_PEERS SET bio='${escapedBio}' WHERE publickey='${pubkey}' AND source='SELF'`;
-        await MDS.sql(updateSql);
+
+        await new Promise<void>((resolve, reject) => {
+          MDS.sql(updateSql, (res: any) => {
+            if (res.status) {
+              resolve();
+            } else {
+              reject(new Error(res.error));
+            }
+          });
+        });
 
         console.log("✅ [Settings] P2P bio saved to DB cache");
       }
@@ -608,36 +630,61 @@ function Settings() {
     }
   };
 
-  const handleSaveExtendedProfile = async () => {
+  const handleSaveExtendedProfile = async (overrides?: any) => {
     try {
+      // Use overrides if provided (fixing stale state in event handlers), otherwise use current state
+      const layoutLocation = overrides?.location ?? location;
+      const layoutCountry = overrides?.country ?? country;
+      const layoutLanguages = overrides?.languages ?? languages;
+      const layoutWebsite = overrides?.website ?? website;
+      const layoutSocial = overrides?.socialLinks ?? socialLinks;
+      const layoutEmail = overrides?.email ?? email;
+      const layoutPhone = overrides?.phone ?? phone;
+
       // Save Level 2 fields to keypair
-      await MDS.keypair.set('profile_location', location.trim());
-      await MDS.keypair.set('profile_country', country.trim());
-      await MDS.keypair.set('profile_languages', JSON.stringify(languages));
-      await MDS.keypair.set('profile_website', website.trim());
-      await MDS.keypair.set('profile_social_links', JSON.stringify(socialLinks));
+      await MDS.keypair.set('profile_location', layoutLocation.trim());
+      await MDS.keypair.set('profile_country', layoutCountry.trim());
+      await MDS.keypair.set('profile_languages', JSON.stringify(layoutLanguages));
+      await MDS.keypair.set('profile_website', layoutWebsite.trim());
+      await MDS.keypair.set('profile_social_links', JSON.stringify(layoutSocial));
       await MDS.keypair.set('profile_tags', JSON.stringify(tags));
 
       // Save Level 3 fields to keypair
-      await MDS.keypair.set('profile_email', email.trim());
-      await MDS.keypair.set('profile_phone', phone.trim());
+      await MDS.keypair.set('profile_email', layoutEmail.trim());
+      await MDS.keypair.set('profile_phone', layoutPhone.trim());
 
       // Sync to MY_PROFILE table for Service Worker access
       const updateSql = `
         UPDATE MY_PROFILE SET
-          LOCATION = '${encodeURIComponent(location.trim())}',
-          COUNTRY = '${encodeURIComponent(country.trim())}',
-          LANGUAGES = '${encodeURIComponent(JSON.stringify(languages))}',
-          WEBSITE = '${encodeURIComponent(website.trim())}',
-          SOCIAL_LINKS = '${encodeURIComponent(JSON.stringify(socialLinks))}',
-          EMAIL = '${encodeURIComponent(email.trim())}',
-          PHONE = '${encodeURIComponent(phone.trim())}',
+          LOCATION = '${encodeURIComponent(layoutLocation.trim())}',
+          COUNTRY = '${encodeURIComponent(layoutCountry.trim())}',
+          LANGUAGES = '${encodeURIComponent(JSON.stringify(layoutLanguages))}',
+          WEBSITE = '${encodeURIComponent(layoutWebsite.trim())}',
+          SOCIAL_LINKS = '${encodeURIComponent(JSON.stringify(layoutSocial))}',
+          EMAIL = '${encodeURIComponent(layoutEmail.trim())}',
+          PHONE = '${encodeURIComponent(layoutPhone.trim())}',
           LAST_UPDATED = ${Date.now()}
         WHERE id = 1
       `;
 
-      await MDS.sql(updateSql);
+      await new Promise<void>((resolve, reject) => {
+        MDS.sql(updateSql, (res: any) => {
+          if (res.status) {
+            console.log("✅ [Settings] MY_PROFILE updated successfully");
+            resolve();
+          } else {
+            console.error("❌ [Settings] Failed to update MY_PROFILE:", res.error);
+            reject(new Error(res.error));
+          }
+        });
+      });
       console.log("✅ [Settings] Extended profile saved to keypair and MY_PROFILE");
+
+      // Send beacon to propagate public fields (country, languages) via P2P
+      console.log("[Settings] Sending beacon with updated profile...");
+      await sendBeacon();
+      console.log("[Settings] Beacon sent successfully");
+
       // Silent save - no popup needed for auto-save
     } catch (err) {
       console.error("❌ [Settings] Error saving extended profile:", err);
@@ -658,13 +705,15 @@ function Settings() {
 
       // Save to DB (for Service Worker access)
       const sql = `UPDATE MY_PROFILE SET privacy_l2='${l2}', privacy_l3='${l3}' WHERE id=1`;
-      await new Promise<void>((resolve) => {
+      await new Promise<void>((resolve, reject) => {
         // @ts-ignore
         MDS.sql(sql, (res: any) => {
           if (typeof res === 'object' && !res.status) {
             console.error("❌ [Settings] SQL Update failed:", res);
+            reject(new Error(res.error || "SQL Update failed"));
+          } else {
+            resolve();
           }
-          resolve();
         });
       });
 
@@ -683,7 +732,16 @@ function Settings() {
 
       // CRITICAL: Also save to MY_PROFILE table (for Service Worker to read and transmit)
       const updateSql = `UPDATE MY_PROFILE SET allow_non_contact_chats = ${newValue ? 1 : 0} WHERE id = 1`;
-      await MDS.sql(updateSql);
+
+      await new Promise<void>((resolve, reject) => {
+        MDS.sql(updateSql, (res: any) => {
+          if (res.status) {
+            resolve();
+          } else {
+            reject(new Error(res.error));
+          }
+        });
+      });
 
       setAllowNonContactChats(newValue);
       console.log('[Settings] Chat permission updated (keypair + MY_PROFILE):', newValue);
@@ -881,7 +939,7 @@ function Settings() {
 
                       <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800 flex items-start gap-2 mb-6">
                         <Info size={16} className="mt-0.5 flex-shrink-0" />
-                        <p>Your <strong>Maxima Name</strong> and <strong>Avatar</strong> are used for P2P discovery. Add a bio below to share more about yourself. All information here is public.</p>
+                        <p>This information is shared publicly via P2P discovery beacons. It helps other users find and connect with you.</p>
                       </div>
 
                       <div className="space-y-6">
@@ -948,6 +1006,74 @@ function Settings() {
                           />
                           <p className="text-xs text-gray-500 mt-1">Shared with all discovered peers • Auto-saves</p>
                         </div>
+
+                        {/* Country */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Country/Region</label>
+                          <select
+                            value={country}
+                            onChange={(e) => setCountry(e.target.value)}
+                            onBlur={handleSaveExtendedProfile}
+                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-700"
+                          >
+                            <option value="">Select a country...</option>
+                            {COUNTRIES.map((c) => (
+                              <option key={c} value={c}>{c}</option>
+                            ))}
+                          </select>
+                          <p className="text-xs text-gray-500 mt-1">Shared with all discovered peers • Auto-saves</p>
+                        </div>
+
+                        {/* Languages */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Languages</label>
+                          <div className="border border-gray-300 rounded-lg p-3 bg-white max-h-48 overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-gray-100 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:bg-blue-400 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb:hover]:bg-blue-500">
+                            <div className="grid grid-cols-2 gap-2">
+                              {LANGUAGES.map((lang) => (
+                                <label key={lang} className="flex items-center gap-2 cursor-pointer hover:bg-blue-50 p-1 rounded transition-colors">
+                                  <input
+                                    type="checkbox"
+                                    checked={languages.includes(lang)}
+                                    onChange={(e) => {
+                                      let newLangs;
+                                      if (e.target.checked) {
+                                        newLangs = [...languages, lang];
+                                      } else {
+                                        newLangs = languages.filter(l => l !== lang);
+                                      }
+                                      setLanguages(newLangs);
+                                      // Pass updated value directly to avoid stale closure state in setTimeout/handler
+                                      handleSaveExtendedProfile({ languages: newLangs });
+                                    }}
+                                    className="w-4 h-4 rounded border-gray-300 bg-white focus:ring-2 focus:ring-blue-500"
+                                    style={{ accentColor: '#3b82f6' }}
+                                  />
+                                  <span className="text-sm text-gray-700">{lang}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                          {languages.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1">
+                              {languages.map((lang) => (
+                                <span key={lang} className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full">
+                                  {lang}
+                                  <button
+                                    onClick={() => {
+                                      const newLangs = languages.filter(l => l !== lang);
+                                      setLanguages(newLangs);
+                                      handleSaveExtendedProfile({ languages: newLangs });
+                                    }}
+                                    className="hover:text-blue-900"
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          <p className="text-xs text-gray-500 mt-1">Shared with all discovered peers • Auto-saves</p>
+                        </div>
                       </div>
                     </div>
 
@@ -982,70 +1108,7 @@ function Settings() {
                           <p className="text-xs text-gray-500 mt-1">Visibility controlled in Privacy tab • Auto-saves</p>
                         </div>
 
-                        {/* Country */}
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Country/Region</label>
-                          <select
-                            value={country}
-                            onChange={(e) => setCountry(e.target.value)}
-                            onBlur={handleSaveExtendedProfile}
-                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white text-gray-700"
-                          >
-                            <option value="">Select a country...</option>
-                            {COUNTRIES.map((c) => (
-                              <option key={c} value={c}>{c}</option>
-                            ))}
-                          </select>
-                          <p className="text-xs text-gray-500 mt-1">Visibility controlled in Privacy tab • Auto-saves</p>
-                        </div>
 
-                        {/* Languages */}
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Languages</label>
-                          <div className="border border-gray-300 rounded-lg p-3 bg-white max-h-48 overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-gray-100 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:bg-purple-400 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb:hover]:bg-purple-500">
-                            <div className="grid grid-cols-2 gap-2">
-                              {LANGUAGES.map((lang) => (
-                                <label key={lang} className="flex items-center gap-2 cursor-pointer hover:bg-purple-50 p-1 rounded transition-colors">
-                                  <input
-                                    type="checkbox"
-                                    checked={languages.includes(lang)}
-                                    onChange={(e) => {
-                                      if (e.target.checked) {
-                                        setLanguages([...languages, lang]);
-                                      } else {
-                                        setLanguages(languages.filter(l => l !== lang));
-                                      }
-                                      // Auto-save after a short delay
-                                      setTimeout(handleSaveExtendedProfile, 100);
-                                    }}
-                                    className="w-4 h-4 rounded border-gray-300 bg-white focus:ring-2 focus:ring-blue-500"
-                                    style={{ accentColor: '#a855f7' }}
-                                  />
-                                  <span className="text-sm text-gray-700">{lang}</span>
-                                </label>
-                              ))}
-                            </div>
-                          </div>
-                          {languages.length > 0 && (
-                            <div className="mt-2 flex flex-wrap gap-1">
-                              {languages.map((lang) => (
-                                <span key={lang} className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded-full">
-                                  {lang}
-                                  <button
-                                    onClick={() => {
-                                      setLanguages(languages.filter(l => l !== lang));
-                                      setTimeout(handleSaveExtendedProfile, 100);
-                                    }}
-                                    className="hover:text-purple-900"
-                                  >
-                                    ×
-                                  </button>
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                          <p className="text-xs text-gray-500 mt-1">Visibility controlled in Privacy tab • Auto-saves</p>
-                        </div>
 
                         {/* Website */}
                         <div>

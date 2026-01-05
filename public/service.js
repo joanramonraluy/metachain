@@ -105,6 +105,44 @@ function shouldIncludeLevel(visibility, isContact, isPersonalContact) {
     return false;
 }
 
+// Safe Decode Helper (Shared logic with frontend)
+function safeDecode(str) {
+    if (!str) return str;
+
+    // 1. Try resolving Mojibake (UTF-8 bytes interpreted as Latin-1)
+    try {
+        if (/[ÃÂÅÄ]/.test(str)) {
+            var bytes = new Uint8Array(str.length);
+            for (var i = 0; i < str.length; i++) {
+                var code = str.charCodeAt(i);
+                if (code > 255) { } // No-op
+                bytes[i] = code;
+            }
+            var decoder = new TextDecoder('utf-8');
+            var decoded = decoder.decode(bytes);
+            if (decoded !== str && decoded.indexOf('\uFFFD') === -1) {
+                str = decoded;
+            }
+        }
+    } catch (e) { }
+
+    // 2. Try URI decoding
+    try {
+        if (str.indexOf('%') !== -1) {
+            str = decodeURIComponent(str);
+        }
+    } catch (e) { }
+
+    // 3. Known Manual Fixes
+    if (str && typeof str === 'string') {
+        if (str.indexOf('Catalan') !== -1 && (str.indexOf('Catal') !== -1 || str.indexOf('CatalÃ') !== -1)) return 'Catalan (Català)';
+        if (str.indexOf('Spanish') !== -1 && (str.indexOf('Espa') !== -1 || str.indexOf('EspaÃ±') !== -1)) return 'Spanish (Español)';
+        if (str.indexOf('Basque') !== -1 && str.indexOf('Euskera') !== -1) return 'Basque (Euskera)';
+    }
+
+    return str;
+}
+
 // Main message handler
 MDS.init(function (msg) {
 
@@ -221,6 +259,12 @@ MDS.init(function (msg) {
                 var alterPermissionSql = "ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS allow_non_contact_chats BOOLEAN DEFAULT TRUE";
                 MDS.sql(alterPermissionSql, function (alterPermRes) {
                     MDS.log("💾 [DB] Column 'allow_non_contact_chats' added/verified: " + JSON.stringify(alterPermRes));
+                });
+
+                // Add extra_data column for extended profile (JSON)
+                var alterExtraDataSql = "ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS extra_data CLOB";
+                MDS.sql(alterExtraDataSql, function (alterExtraRes) {
+                    MDS.log("💾 [DB] Column 'extra_data' added/verified: " + JSON.stringify(alterExtraRes));
                 });
             });
 
@@ -665,36 +709,53 @@ MDS.init(function (msg) {
                         if (res.status && res.rows && res.rows.length > 0) {
                             // MDS.log("🗣️ [GOSSIP] Found " + res.rows.length + " peers in DB to share.");
                             var peers = [];
-
-
                             for (var i = 0; i < res.rows.length; i++) {
                                 var row = res.rows[i];
+
+                                // Parse extra_data if present
+                                var avatar = "";
+                                var country = "";
+                                var languages = [];
+                                var bio = row.BIO || ""; // Always include bio
+                                if (row.EXTRA_DATA) {
+                                    try {
+                                        var extraObj = JSON.parse(row.EXTRA_DATA);
+                                        avatar = extraObj.avatar || "";
+                                        country = extraObj.country || "";
+                                        languages = extraObj.languages || [];
+                                        // If bio is empty in DB but present in extra_data, use it
+                                        if (!bio && extraObj.bio) {
+                                            bio = extraObj.bio;
+                                        }
+                                    } catch (e) {
+                                        // If parsing fails, use DB values
+                                    }
+                                }
+
                                 // Map DB columns to Beacon format
                                 peers.push({
                                     pubkey: row.PUBLICKEY,
                                     alias: row.ALIAS,
-                                    bio: row.BIO,
+                                    bio: bio, // Include bio from DB or extra_data
                                     address: row.ADDRESS,
-                                    allowNonContactChats: (row.ALLOW_NON_CONTACT_CHATS === 1 || row.ALLOW_NON_CONTACT_CHATS === true)
+                                    allowNonContactChats: (row.ALLOW_NON_CONTACT_CHATS === 1 || row.ALLOW_NON_CONTACT_CHATS === true),
+                                    // Extended data
+                                    avatar: avatar,
+                                    country: country,
+                                    languages: languages
                                 });
                             }
 
-                            // MDS.log("🗣️ [GOSSIP] Sending list: " + peers.map(p => p.alias).join(", ")); // Too verbose
-
-                            // Send response
-
-
-                            var responsePayload = {
+                            // Send peer list
+                            var replyPayload = {
                                 app: "metachain",
                                 type: "peers_response",
                                 peers: peers
                             };
-
-                            var jsonStr = JSON.stringify(responsePayload);
-                            var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
-
-                            MDS.cmd("maxima action:send publickey:" + pubkey + " application:metachain data:" + hexData + " poll:false", function (sendRes) {
-                                MDS.log("✅ [GOSSIP] Sent " + peers.length + " peers to " + maxjson.alias);
+                            var replyJson = JSON.stringify(replyPayload);
+                            var replyHex = "0x" + utf8ToHex(replyJson).toUpperCase();
+                            MDS.cmd("maxima action:send publickey:" + pubkey + " application:metachain data:" + replyHex + " poll:false", function (sendRes) {
+                                MDS.log("✅ [GOSSIP] Sent " + peers.length + " peers to " + (maxjson.alias || pubkey));
                             });
                         }
                     });
@@ -743,7 +804,7 @@ MDS.init(function (msg) {
                             // Step 2: Get privacy settings
                             // Step 2: Fetch profile & privacy settings from DB
                             MDS.sql("SELECT * FROM MY_PROFILE LIMIT 1", function (res) {
-                                MDS.log("🔍 [PROFILE] DB fetch complete. Status: " + res.status);
+                                MDS.log("🔍 [PROFILE-DEBUG] DB Fetch Result: " + JSON.stringify(res));
 
                                 var profile = {};
                                 var level2Visibility = "public";
@@ -1381,10 +1442,14 @@ function handleBeacon(beacon, source) {
         if (bioValue) {
             // Bio is present - save directly
             var escapedBio = bioValue.replace(/'/g, "''");
-            var discoverySql = "MERGE INTO DISCOVERED_PEERS (publickey, alias, bio, address, last_seen, source, allow_non_contact_chats) "
+
+            // Serialize full beacon as extra_data (for Avatar, Country, etc.)
+            var extraData = JSON.stringify(beacon).replace(/'/g, "''");
+
+            var discoverySql = "MERGE INTO DISCOVERED_PEERS (publickey, alias, bio, address, last_seen, source, allow_non_contact_chats, extra_data) "
                 + "KEY (publickey) "
                 + "VALUES ('" + beacon.pubkey + "', '" + escapedAlias + "', '" + escapedBio + "', '"
-                + cleanAddress + "', " + now + ", '" + source + "', " + allowNonContactChats + ")";
+                + cleanAddress + "', " + now + ", '" + source + "', " + allowNonContactChats + ", '" + extraData + "')";
 
             MDS.sql(discoverySql, function (res) {
                 if (res.status) {
@@ -1465,10 +1530,14 @@ function handleBeacon(beacon, source) {
                 }
 
                 var escapedBio = bioToSave.replace(/'/g, "''");
-                var discoverySql = "MERGE INTO DISCOVERED_PEERS (publickey, alias, bio, address, last_seen, source, allow_non_contact_chats) "
+
+                // Serialize full beacon as extra_data
+                var extraData = JSON.stringify(beacon).replace(/'/g, "''");
+
+                var discoverySql = "MERGE INTO DISCOVERED_PEERS (publickey, alias, bio, address, last_seen, source, allow_non_contact_chats, extra_data) "
                     + "KEY (publickey) "
                     + "VALUES ('" + beacon.pubkey + "', '" + escapedAlias + "', '" + escapedBio + "', '"
-                    + cleanAddress + "', " + now + ", '" + source + "', " + allowNonContactChats + ")";
+                    + cleanAddress + "', " + now + ", '" + source + "', " + allowNonContactChats + ", '" + extraData + "')";
 
                 MDS.sql(discoverySql, function (res) {
                     if (res.status) {
@@ -1598,7 +1667,8 @@ function sendBackgroundBeacon() {
             function continueWithBio(finalBio) {
                 // 3. Get Chat Permission from keypair
                 // 3. Get Chat Permission from DB (Source of Truth)
-                MDS.sql("SELECT allow_non_contact_chats FROM MY_PROFILE WHERE id=1 LIMIT 1", function (permRes) {
+                // 3. Get Chat Permission & Extended Profile from DB (Source of Truth)
+                MDS.sql("SELECT * FROM MY_PROFILE WHERE id=1 LIMIT 1", function (permRes) {
                     var allowNonContactChats = true;
                     if (permRes.status && permRes.rows && permRes.rows.length > 0) {
                         var rawValue = permRes.rows[0].ALLOW_NON_CONTACT_CHATS || permRes.rows[0].allow_non_contact_chats;
@@ -1607,6 +1677,29 @@ function sendBackgroundBeacon() {
                     } else {
                         MDS.log("⚠️ [BG-BEACON] Permission DB check failed, defaulting to TRUE");
                     }
+
+                    // Fetch Extended Profile from DB (Avatar, Country, etc.)
+                    // We need a nested query here or just do it inside.
+                    // Since we are already inside a callback, let's keep it simple.
+                    // We already queried MY_PROFILE for permission, let's just query everything next time or assume we can get it.
+                    // Actually, the permission query loop is getting deep.
+                    // Let's grab the profile row from the query we JUST did?
+                    // Ah, the previous query was `SELECT allow_non_contact_chats`.
+                    // Let's change the query to SELECT * to get everything in one go.
+
+                    // RE-WRITE QUERY to get all profile data
+                    // (See below block replacement)
+
+                    var profileRow = {};
+                    if (permRes.status && permRes.rows && permRes.rows.length > 0) {
+                        profileRow = permRes.rows[0];
+                    }
+
+                    // Extract Extended Data
+                    var country = decodeURIComponent(profileRow.COUNTRY || profileRow.country || "");
+                    var languages = [];
+                    try { languages = JSON.parse(decodeURIComponent(profileRow.LANGUAGES || profileRow.languages || "[]")); } catch (e) { }
+                    var avatar = profileRow.AVATAR || profileRow.avatar || "";
 
                     // Construct Beacon
                     var beacon = {
@@ -1617,7 +1710,12 @@ function sendBackgroundBeacon() {
                         address: address,
                         alias: alias,
                         bio: finalBio,
-                        allowNonContactChats: allowNonContactChats
+                        allowNonContactChats: allowNonContactChats,
+                        // Extended Data (Modernization)
+                        country: country,
+                        languages: languages,
+                        avatar: avatar,
+                        timestamp: Date.now()
                     };
 
                     var jsonStr = JSON.stringify(beacon);
@@ -1638,10 +1736,12 @@ function sendBackgroundBeacon() {
                         if (finalBio) {
                             // Bio is present - save directly
                             var escapedBio = finalBio.replace(/'/g, "''");
-                            var selfSql = "MERGE INTO DISCOVERED_PEERS (publickey, alias, bio, address, last_seen, source, allow_non_contact_chats) "
+                            var extraData = JSON.stringify(beacon).replace(/'/g, "''");
+
+                            var selfSql = "MERGE INTO DISCOVERED_PEERS (publickey, alias, bio, address, last_seen, source, allow_non_contact_chats, extra_data) "
                                 + "KEY (publickey) "
                                 + "VALUES ('" + pubkey + "', '" + escapedAlias + "', '" + escapedBio + "', '"
-                                + address + "', " + now + ", 'SELF', " + allowChats + ")";
+                                + address + "', " + now + ", 'SELF', " + allowChats + ", '" + extraData + "')";
 
                             MDS.sql(selfSql, function (selfRes) {
                                 if (selfRes.status) {
@@ -1791,12 +1891,38 @@ function sendWelcomePackage(targetPubkey, targetAlias) {
             var peers = [];
             for (var i = 0; i < res.rows.length; i++) {
                 var row = res.rows[i];
+
+                // Parse extra_data if present
+                var avatar = "";
+                var country = "";
+                var languages = [];
+                var bio = row.BIO || ""; // Always include bio
+                if (row.EXTRA_DATA) {
+                    try {
+                        var extraObj = JSON.parse(row.EXTRA_DATA);
+                        avatar = extraObj.avatar || "";
+                        country = extraObj.country || "";
+                        languages = extraObj.languages || [];
+                        // If bio is empty in DB but present in extra_data, use it
+                        if (!bio && extraObj.bio) {
+                            bio = extraObj.bio;
+                        }
+                    } catch (e) {
+                        // If parsing fails, use DB values
+                    }
+                }
+
+                // Map DB columns to Beacon format
                 peers.push({
                     pubkey: row.PUBLICKEY,
                     alias: row.ALIAS,
-                    bio: row.BIO,
+                    bio: bio, // Include bio from DB or extra_data
                     address: row.ADDRESS,
-                    allowNonContactChats: (row.ALLOW_NON_CONTACT_CHATS === 1 || row.ALLOW_NON_CONTACT_CHATS === true)
+                    allowNonContactChats: (row.ALLOW_NON_CONTACT_CHATS === 1 || row.ALLOW_NON_CONTACT_CHATS === true),
+                    // Extended data
+                    avatar: avatar,
+                    country: country,
+                    languages: languages
                 });
             }
 
