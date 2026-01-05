@@ -4,9 +4,10 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { MDS } from "@minima-global/mds";
 import { appContext } from "../../AppContext";
 import CharmSelector from "../../components/chat/CharmSelector";
-import { Paperclip, Trash2, Info, BarChart, Archive, Star } from "lucide-react";
+import { Paperclip, Trash2, Info, BarChart, Archive, Star, Smile } from "lucide-react";
 import MessageBubble from "../../components/chat/MessageBubble";
 import TokenSelector from "../../components/chat/TokenSelector";
+import EmojiPicker, { EmojiClickData } from "emoji-picker-react";
 import { minimaService } from "../../services/minima.service";
 import InviteDialog from "../../components/chat/InviteDialog";
 
@@ -60,6 +61,7 @@ function ChatPage() {
   const [messages, setMessages] = useState<ParsedMessage[]>([]);
   const [input, setInput] = useState("");
   const [showCharmSelector, setShowCharmSelector] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showTokenSelector, setShowTokenSelector] = useState(false);
   const [showAttachments, setShowAttachments] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
@@ -77,7 +79,34 @@ function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const attachmentsRef = useRef<HTMLDivElement>(null); // Ref for attachments menu container
+  const emojiPickerRef = useRef<HTMLDivElement>(null); // Ref for emoji picker (Desktop)
+  const emojiPickerMobileRef = useRef<HTMLDivElement>(null); // Ref for emoji picker (Mobile)
   const navigate = useNavigate();
+
+  // Handle click outside to close popovers
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      // If clicking outside attachments menu
+      if (showAttachments && attachmentsRef.current && !attachmentsRef.current.contains(event.target as Node)) {
+        setShowAttachments(false);
+      }
+
+      // If clicking outside emoji picker
+      const target = event.target as Node;
+      const isOutsideDesktop = !emojiPickerRef.current || !emojiPickerRef.current.contains(target);
+      const isOutsideMobile = !emojiPickerMobileRef.current || !emojiPickerMobileRef.current.contains(target);
+
+      if (showEmojiPicker && isOutsideDesktop && isOutsideMobile) {
+        setShowEmojiPicker(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [showAttachments, showEmojiPicker]);
 
   // Auto-focus input on mount
   useEffect(() => {
@@ -87,6 +116,7 @@ function ChatPage() {
     }, 100);
     return () => clearTimeout(timer);
   }, [address]); // Re-focus when switching chats
+
   const { writeMode, userName, myPublicKey } = useContext(appContext);
   const isLoadingMessages = useRef(false); // Flag to prevent simultaneous loads
 
@@ -115,11 +145,6 @@ function ChatPage() {
     return defaultAvatar;
   };
 
-
-
-  /* ----------------------------------------------------------------------------
-      GET CONTACT INFO
-  ---------------------------------------------------------------------------- */
   /* ----------------------------------------------------------------------------
       GET CONTACT INFO
   ---------------------------------------------------------------------------- */
@@ -454,7 +479,7 @@ function ChatPage() {
             try {
               const tokenData = JSON.parse(row.MESSAGE || "{}");
               tokenAmount = { amount: tokenData.amount, tokenName: tokenData.tokenName };
-              displayText = `I sent you ${tokenData.amount} ${tokenData.tokenName} `;
+              // displayText = `I sent you ${tokenData.amount} ${tokenData.tokenName} `; // Removed to avoid redundancy with card UI
             } catch (err) {
               console.error("❌ [CHAT-DB] Token parse error:", err);
               displayText = row.MESSAGE || "";
@@ -797,6 +822,10 @@ function ChatPage() {
   /* ----------------------------------------------------------------------------
       SEND TEXT MESSAGE
   ---------------------------------------------------------------------------- */
+  const onEmojiClick = (emojiData: EmojiClickData) => {
+    setInput((prev) => prev + emojiData.emoji);
+  };
+
   const handleSendMessage = async () => {
     if (blockReason !== 'none') return; // Cannot send while blocked
     if (!input.trim()) return;
@@ -1439,7 +1468,7 @@ function ChatPage() {
 
 
       {/* CHAT BODY - Scrollable */}
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto flex flex-col p-2 sm:p-4 bg-gray-50 relative">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto overflow-x-hidden flex flex-col p-2 sm:p-4 bg-gray-50 relative">
         {/* Custom Background Pattern (Subtle Dot Grid) */}
         <div
           className="absolute inset-0 opacity-[0.4] pointer-events-none"
@@ -1637,7 +1666,7 @@ function ChatPage() {
       <div className="p-2 bg-[#F0F2F5] flex gap-2 items-center flex-shrink-0 z-10 relative">
         {/* Attachment Menu Popover */}
         {showAttachments && (
-          <div className="absolute bottom-16 left-2 bg-white rounded-xl shadow-xl border border-gray-100 p-2 flex flex-col gap-1 min-w-[160px] animate-in slide-in-from-bottom-2 fade-in duration-200">
+          <div ref={attachmentsRef} className="absolute bottom-16 left-2 bg-white rounded-xl shadow-xl border border-gray-100 p-2 flex flex-col gap-1 min-w-[160px] animate-in slide-in-from-bottom-2 fade-in duration-200">
             <button
               className="flex items-center gap-3 p-3 hover:bg-gray-50 rounded-lg transition-colors text-left"
               onClick={() => {
@@ -1661,12 +1690,55 @@ function ChatPage() {
           </div>
         )}
 
+        {/* Emoji Picker Popover */}
+        {showEmojiPicker && (
+          <div ref={emojiPickerRef} className="absolute bottom-16 left-2 z-50 animate-in slide-in-from-bottom-2 fade-in duration-200 shadow-2xl rounded-xl border border-gray-100 hidden sm:block">
+            <EmojiPicker
+              onEmojiClick={onEmojiClick}
+              width={320}
+              height={400}
+              searchDisabled={false}
+              skinTonesDisabled
+              previewConfig={{ showPreview: false }}
+            />
+          </div>
+        )}
+        {/* Mobile Emoji Picker (Full Width) */}
+        {showEmojiPicker && (
+          <div ref={emojiPickerMobileRef} className="absolute bottom-16 left-0 right-0 mx-2 z-50 animate-in slide-in-from-bottom-2 fade-in duration-200 shadow-2xl rounded-xl border border-gray-100 sm:hidden">
+            <EmojiPicker
+              onEmojiClick={onEmojiClick}
+              width="100%"
+              height={350}
+              searchDisabled={false}
+              skinTonesDisabled
+              previewConfig={{ showPreview: false }}
+            />
+          </div>
+        )}
+
         <button
           className={`p-3 rounded-full transition-colors ${showAttachments ? 'bg-gray-200 text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}
-          onClick={() => setShowAttachments(!showAttachments)}
+          onClick={(e) => {
+            e.stopPropagation(); // Stop propagation to prevent immediate close
+            setShowEmojiPicker(false);
+            setShowAttachments(!showAttachments);
+          }}
           title="Attachments"
         >
           <Paperclip className="w-6 h-6" />
+        </button>
+
+        <button
+          className={`p-3 rounded-full transition-colors ${showEmojiPicker ? 'bg-yellow-100 text-yellow-600' : 'text-gray-500 hover:text-gray-700'}`}
+          onClick={(e) => {
+            e.stopPropagation(); // Stop propagation to prevent immediate close
+            setShowAttachments(false);
+            setShowEmojiPicker(!showEmojiPicker);
+          }}
+          title="Emojis"
+        >
+          <Smile className="w-6 h-6" />
         </button>
 
         <div className="flex-1 bg-white rounded-2xl flex items-center border border-gray-200 focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent shadow-sm px-4 py-2 transition-all">

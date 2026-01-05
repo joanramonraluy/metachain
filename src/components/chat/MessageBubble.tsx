@@ -98,15 +98,17 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
   let bubbleColor = "";
 
   if (status === 'failed') {
-    bubbleColor = "bg-red-50 border-2 border-red-200 shadow-sm opacity-90 grayscale-[0.3]";
+    bubbleColor = "bg-red-50 border border-red-100 shadow-sm opacity-90 grayscale-[0.3]";
   } else if (isCharm) {
-    bubbleColor = "bg-gradient-to-br from-indigo-100 to-blue-50 border-2 border-indigo-200 shadow-lg";
+    // Collectible Style: No border, radial glow effect
+    bubbleColor = "bg-radial-gradient from-purple-100/50 to-transparent shadow-none border-none p-0 overflow-visible";
   } else if (isTokenTransfer) {
-    bubbleColor = "bg-gradient-to-br from-cyan-100 via-sky-50 to-blue-50 border-2 border-cyan-300 shadow-lg";
+    // Transaction Card Style: Light Gradient, border, shadow
+    bubbleColor = "bg-gradient-to-br from-gray-50 via-white to-gray-50 border border-gray-200 shadow-md";
   } else if (fromMe) {
-    bubbleColor = "bg-blue-50 shadow-sm";
+    bubbleColor = "bg-blue-50 shadow-sm border border-blue-100";
   } else {
-    bubbleColor = "bg-white shadow-sm";
+    bubbleColor = "bg-white shadow-sm border border-gray-100";
   }
 
   const borderRadius = fromMe
@@ -124,6 +126,10 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
 
   // Pulsing animation for pending state
   const isPending = status === 'pending';
+
+  // Helper to detect if text is ONLY emojis (up to 4) to make them JUMBO
+  const isJumboEmoji = text && !isCharm && !isTokenTransfer &&
+    /^[\p{Extended_Pictographic}\s]{1,12}$/u.test(text);
 
   // Helper to render the bubble content
   const renderBubbleContent = () => (
@@ -158,74 +164,82 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
       >
         {/* Token Transfer Badge with enhanced styling */}
         {isTokenTransfer && (
-          <motion.div
-            initial={{ scale: 0.8, opacity: 0, y: -10 }}
-            animate={{ scale: 1, opacity: 1, y: 0 }}
-            transition={{ type: "spring", stiffness: 300, damping: 15 }}
-            className="flex items-center gap-3 mb-2 relative"
-          >
-            {/* Animated money icon */}
-            <motion.span
-              className="text-3xl"
-              animate={status === 'pending' ? {
-                rotate: [0, -10, 10, -10, 0],
-                scale: [1, 1.1, 1]
-              } : {}}
-              transition={{
-                duration: 0.5,
-                repeat: status === 'pending' ? Infinity : 0,
-                repeatDelay: 0.5
-              }}
-            >
-              💰
-            </motion.span>
-            <div>
-              <div className="text-xl font-bold bg-gradient-to-r from-cyan-700 to-blue-600 bg-clip-text text-transparent">
-                {tokenAmount.amount} {tokenAmount.tokenName}
+          <div className="flex flex-col gap-3 min-w-[180px] max-w-full">
+            {/* Header: Icon + Label */}
+            <div className="flex items-center gap-2 border-b border-gray-200 pb-2 mb-1">
+              <div className="w-8 h-8 rounded-full bg-cyan-50 flex items-center justify-center text-cyan-600">
+                <span className="text-lg">💸</span>
               </div>
-              <div className="text-xs font-semibold text-cyan-600 uppercase tracking-wide flex items-center gap-1">
-                <motion.span
-                  animate={status === 'pending' ? { opacity: [1, 0.5, 1] } : {}}
-                  transition={{ duration: 1, repeat: Infinity }}
-                >
-                  {status === 'pending' ? '⏳ Sending...' : '✓ Token Transfer'}
-                </motion.span>
+              <div className="flex flex-col">
+                <span className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold">Transfer</span>
+                <span className="text-xs text-cyan-600 font-medium">
+                  {status === 'pending' ? 'Processing...' : 'Confirmed'}
+                </span>
               </div>
             </div>
-          </motion.div>
+
+            {/* Amount - Big Typography */}
+            <div className="py-1">
+              <div className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-600 to-emerald-600 tracking-tight break-all">
+                {tokenAmount.amount}
+              </div>
+              <div className="text-sm font-medium text-gray-500 mt-0.5 break-all">
+                {tokenAmount.tokenName}
+              </div>
+            </div>
+
+            {/* Status Footer */}
+            {status === 'pending' && (
+              <div className="text-[10px] bg-yellow-500/10 text-yellow-500 px-2 py-1 rounded border border-yellow-500/20 self-start animate-pulse">
+                Waiting for network...
+              </div>
+            )}
+          </div>
         )}
 
         {/* Charm with enhanced animation */}
         {isCharm && animationData && (
           <motion.div
-            className="w-32 h-32 mb-1"
-            initial={{ scale: 0.8, rotate: -10 }}
+            className="relative"
+            initial={{ scale: 0.8, rotate: -5 }}
             animate={{ scale: 1, rotate: 0 }}
-            transition={{ type: "spring", stiffness: 200, damping: 12 }}
+            transition={{ type: "spring", stiffness: 200, damping: 10 }}
           >
-            <Lottie animationData={animationData} loop={true} />
+            {/* Glow Effect behind charm */}
+            <div className="absolute inset-0 bg-yellow-400/20 blur-2xl rounded-full scale-150 animate-pulse" />
+
+            <div className="w-40 h-40 relative z-10 drop-shadow-xl filter">
+              <Lottie animationData={animationData} loop={true} />
+            </div>
           </motion.div>
         )}
 
         {/* Text with Link Parsing */}
         {text && (
-          <p className={`text-[15px] leading-relaxed whitespace-pre-wrap break-all ${isTokenTransfer ? 'text-gray-700 font-medium' : 'text-gray-800'
-            }`}>
+          <p className={`leading-relaxed whitespace-pre-wrap break-all mt-2 ${isTokenTransfer
+            ? 'text-gray-600 font-normal border-t border-gray-200 pt-2 text-[15px]'
+            : isJumboEmoji
+              ? 'text-5xl leading-tight py-2' // Jumbo size for emojis
+              : 'text-gray-800 text-[15px]'
+            } ${isCharm ? 'text-center font-medium bg-white/50 backdrop-blur-sm px-3 py-1 rounded-full text-sm inline-block shadow-sm' : ''}`}>
             {text.split(/((?:https?:\/\/|www\.)[^\s]+)/g).map((part, i) => {
-              const url = safeUrl(part);
-              if (url) {
-                return (
-                  <a
-                    key={i}
-                    href={url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-600 hover:underline"
-                    onClick={(e) => e.stopPropagation()} // Prevent bubble click handlers
-                  >
-                    {part}
-                  </a>
-                );
+              // Only render as link if it actually LOOKS like a URL (matches the split regex logic)
+              if ((part.startsWith('http') || part.startsWith('www.')) && /^(?:https?:\/\/|www\.)[^\s]+$/.test(part)) {
+                const url = safeUrl(part);
+                if (url) {
+                  return (
+                    <a
+                      key={i}
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:underline"
+                      onClick={(e) => e.stopPropagation()} // Prevent bubble click handlers
+                    >
+                      {part}
+                    </a>
+                  );
+                }
               }
               return part;
             })}
@@ -240,14 +254,9 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
                 initial={{ scale: 0.8, y: 10 }}
                 animate={{ scale: 1, y: 0 }}
                 transition={{ type: "spring", stiffness: 300, damping: 15, delay: 0.1 }}
-                className="text-base font-bold bg-gradient-to-r from-indigo-700 to-blue-600 bg-clip-text text-transparent flex items-center gap-1.5"
+                className="text-sm font-bold text-gray-700 bg-white/80 backdrop-blur-md px-3 py-1 rounded-full shadow-sm border border-white/50 inline-flex items-center gap-1.5"
               >
-                <motion.span
-                  animate={{ rotate: [0, -10, 10, -10, 0] }}
-                  transition={{ duration: 0.5, delay: 0.2 }}
-                >
-                  💎
-                </motion.span>
+                <span>💎</span>
                 {amount} MINIMA
               </motion.div>
             )}

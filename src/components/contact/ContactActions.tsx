@@ -63,7 +63,7 @@ const ContactActions: React.FC<ContactActionsProps> = ({
                                 </button>
                                 <button
                                     onClick={onNavigateChat}
-                                    className="w-full px-4 py-2 bg-white border border-purple-200 text-purple-600 rounded-lg hover:bg-purple-50 transition-colors font-medium"
+                                    className="w-full px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium"
                                 >
                                     View Request in Chat
                                 </button>
@@ -76,7 +76,7 @@ const ContactActions: React.FC<ContactActionsProps> = ({
                             <>
                                 <button
                                     onClick={onNavigateChat}
-                                    className="w-full px-4 py-2 bg-white border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors font-medium flex items-center justify-center gap-2"
+                                    className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium flex items-center justify-center gap-2"
                                 >
                                     <span className="transform rotate-[-45deg]">➤</span>
                                     Send Message
@@ -117,8 +117,8 @@ const ContactActions: React.FC<ContactActionsProps> = ({
                                                     onClick={onSendMaximaRequest}
                                                     disabled={sendingMaximaRequest}
                                                     className={`w-full px-4 py-2 mt-4 rounded-lg transition-colors font-medium flex items-center justify-center gap-2 ${sendingMaximaRequest
-                                                        ? 'bg-gray-50 border border-gray-200 text-gray-400 cursor-not-allowed'
-                                                        : 'bg-white border border-purple-200 text-purple-600 hover:bg-purple-50'
+                                                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                                        : 'bg-purple-600 text-white hover:bg-purple-700'
                                                         }`}
                                                 >
                                                     <UserPlus size={18} />
@@ -181,7 +181,7 @@ const ContactActions: React.FC<ContactActionsProps> = ({
                                         <button
                                             onClick={onSendContactRequest}
                                             disabled={addingContact}
-                                            className="w-full px-4 py-2 bg-white border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 disabled:bg-blue-50 disabled:text-blue-300 disabled:cursor-not-allowed transition-colors font-medium flex items-center justify-center gap-2"
+                                            className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-blue-300 disabled:cursor-not-allowed transition-colors font-medium flex items-center justify-center gap-2"
                                         >
                                             <UserPlus size={18} />
                                             {addingContact ? "Sending..." : "Send Chat Request"}
@@ -192,7 +192,7 @@ const ContactActions: React.FC<ContactActionsProps> = ({
                                 {/* Disabled Message Indicator */}
                                 <button
                                     disabled={true}
-                                    className="w-full px-4 py-2 mt-2 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors bg-white border border-gray-200 text-gray-400 cursor-not-allowed"
+                                    className="w-full px-4 py-2 mt-2 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors bg-gray-200 text-gray-400 cursor-not-allowed"
                                     title="This user only accepts chats from contacts"
                                 >
                                     <span className="transform rotate-[-45deg]">➤</span>
@@ -212,7 +212,7 @@ const ContactActions: React.FC<ContactActionsProps> = ({
                         </p>
                         <button
                             onClick={onNavigateChat}
-                            className="w-full px-4 py-2 bg-white border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors font-medium flex items-center justify-center gap-2"
+                            className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium flex items-center justify-center gap-2"
                         >
                             <span className="transform rotate-[-45deg]">➤</span>
                             Send Message

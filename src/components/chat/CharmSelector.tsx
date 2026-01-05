@@ -65,12 +65,14 @@ export default function CharmSelector({ onSend, onClose }: CharmSelectorProps) {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
+        onClick={onClose}
       >
         <motion.div
           className="bg-gray-800 rounded-xl shadow-xl w-96 max-w-full p-6"
           initial={{ scale: 0.9, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           exit={{ scale: 0.9, opacity: 0 }}
+          onClick={(e) => e.stopPropagation()}
         >
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-xl font-bold text-white">Send a Charm</h3>

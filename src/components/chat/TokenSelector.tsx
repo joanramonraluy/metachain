@@ -48,8 +48,8 @@ const TokenSelector: React.FC<TokenSelectorProps> = ({ onSend, onCancel }) => {
     if (loading) return <div className="p-4 text-center">Loading tokens...</div>;
 
     return (
-        <div className="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 p-4">
-            <div className="bg-gray-800 rounded-xl shadow-xl w-96 max-w-full p-6">
+        <div className="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 p-4" onClick={onCancel}>
+            <div className="bg-gray-800 rounded-xl shadow-xl w-96 max-w-full p-6" onClick={(e) => e.stopPropagation()}>
                 <div className="flex justify-between items-center mb-4">
                     <h3 className="text-xl font-bold text-white">Send Tokens</h3>
                     <button
