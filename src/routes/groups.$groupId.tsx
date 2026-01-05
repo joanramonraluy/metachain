@@ -432,24 +432,25 @@ function ChatPage() {
         {messages.filter(m => m.status === 'pending').length > 0 && (
           <div className="sticky top-0 z-20 mb-4 mx-2 mt-2">
             {messages.filter(m => m.status === 'pending').map((msg) => (
-              <div key={msg.timestamp} className="bg-yellow-50/95 backdrop-blur-sm border border-yellow-200 rounded-lg shadow-sm p-3 mb-2 flex items-center justify-between animate-in fade-in slide-in-from-top-2 duration-300">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-yellow-100 rounded-full flex items-center justify-center shrink-0 border border-yellow-200">
-                    <span className="animate-spin text-xl">⏳</span>
+              <div key={msg.timestamp} className="bg-blue-50/95 backdrop-blur-sm border border-blue-200 rounded-lg shadow-sm p-4 mb-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                <div className="flex items-start gap-3">
+                  <div className="flex-shrink-0 w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                    <svg className="w-5 h-5 text-blue-600 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
                   </div>
-                  <div>
-                    <p className="text-sm font-bold text-yellow-800">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 mb-1">
                       Sending {msg.tokenAmount ? 'Token' : 'Charm'}
                     </p>
-                    <p className="text-xs text-yellow-700 font-medium mt-0.5">
+                    <p className="text-sm text-gray-600">
                       {msg.tokenAmount
-                        ? `${msg.tokenAmount.amount} ${msg.tokenAmount.tokenName} `
+                        ? `${msg.tokenAmount.amount} ${msg.tokenAmount.tokenName}`
                         : `${msg.amount} MINIMA`}
+                      {' · '}
+                      <span className="text-blue-600 font-medium">Waiting for confirmation...</span>
                     </p>
                   </div>
-                </div>
-                <div className="text-xs text-yellow-700 font-semibold bg-yellow-100 px-2.5 py-1 rounded-full border border-yellow-200">
-                  Waiting Confirmation...
                 </div>
               </div>
             ))}

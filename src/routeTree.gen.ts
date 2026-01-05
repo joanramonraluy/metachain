@@ -10,10 +10,11 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SettingsRouteImport } from './routes/settings'
-import { Route as InfoRouteImport } from './routes/info'
+import { Route as HelpRouteImport } from './routes/help'
 import { Route as DiscoveryRouteImport } from './routes/discovery'
 import { Route as CreateGroupRouteImport } from './routes/create-group'
 import { Route as ContactsRouteImport } from './routes/contacts'
+import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as GroupsGroupIdRouteImport } from './routes/groups.$groupId'
 import { Route as ContactInfoAddressRouteImport } from './routes/contact-info.$address'
@@ -24,9 +25,9 @@ const SettingsRoute = SettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
-const InfoRoute = InfoRouteImport.update({
-  id: '/info',
-  path: '/info',
+const HelpRoute = HelpRouteImport.update({
+  id: '/help',
+  path: '/help',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DiscoveryRoute = DiscoveryRouteImport.update({
@@ -42,6 +43,11 @@ const CreateGroupRoute = CreateGroupRouteImport.update({
 const ContactsRoute = ContactsRouteImport.update({
   id: '/contacts',
   path: '/contacts',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AboutRoute = AboutRouteImport.update({
+  id: '/about',
+  path: '/about',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -67,10 +73,11 @@ const ChatAddressRoute = ChatAddressRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
   '/contacts': typeof ContactsRoute
   '/create-group': typeof CreateGroupRoute
   '/discovery': typeof DiscoveryRoute
-  '/info': typeof InfoRoute
+  '/help': typeof HelpRoute
   '/settings': typeof SettingsRoute
   '/chat/$address': typeof ChatAddressRoute
   '/contact-info/$address': typeof ContactInfoAddressRoute
@@ -78,10 +85,11 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
   '/contacts': typeof ContactsRoute
   '/create-group': typeof CreateGroupRoute
   '/discovery': typeof DiscoveryRoute
-  '/info': typeof InfoRoute
+  '/help': typeof HelpRoute
   '/settings': typeof SettingsRoute
   '/chat/$address': typeof ChatAddressRoute
   '/contact-info/$address': typeof ContactInfoAddressRoute
@@ -90,10 +98,11 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
   '/contacts': typeof ContactsRoute
   '/create-group': typeof CreateGroupRoute
   '/discovery': typeof DiscoveryRoute
-  '/info': typeof InfoRoute
+  '/help': typeof HelpRoute
   '/settings': typeof SettingsRoute
   '/chat/$address': typeof ChatAddressRoute
   '/contact-info/$address': typeof ContactInfoAddressRoute
@@ -103,10 +112,11 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/about'
     | '/contacts'
     | '/create-group'
     | '/discovery'
-    | '/info'
+    | '/help'
     | '/settings'
     | '/chat/$address'
     | '/contact-info/$address'
@@ -114,10 +124,11 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/about'
     | '/contacts'
     | '/create-group'
     | '/discovery'
-    | '/info'
+    | '/help'
     | '/settings'
     | '/chat/$address'
     | '/contact-info/$address'
@@ -125,10 +136,11 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/about'
     | '/contacts'
     | '/create-group'
     | '/discovery'
-    | '/info'
+    | '/help'
     | '/settings'
     | '/chat/$address'
     | '/contact-info/$address'
@@ -137,10 +149,11 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AboutRoute: typeof AboutRoute
   ContactsRoute: typeof ContactsRoute
   CreateGroupRoute: typeof CreateGroupRoute
   DiscoveryRoute: typeof DiscoveryRoute
-  InfoRoute: typeof InfoRoute
+  HelpRoute: typeof HelpRoute
   SettingsRoute: typeof SettingsRoute
   ChatAddressRoute: typeof ChatAddressRoute
   ContactInfoAddressRoute: typeof ContactInfoAddressRoute
@@ -156,11 +169,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/info': {
-      id: '/info'
-      path: '/info'
-      fullPath: '/info'
-      preLoaderRoute: typeof InfoRouteImport
+    '/help': {
+      id: '/help'
+      path: '/help'
+      fullPath: '/help'
+      preLoaderRoute: typeof HelpRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/discovery': {
@@ -182,6 +195,13 @@ declare module '@tanstack/react-router' {
       path: '/contacts'
       fullPath: '/contacts'
       preLoaderRoute: typeof ContactsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/about': {
+      id: '/about'
+      path: '/about'
+      fullPath: '/about'
+      preLoaderRoute: typeof AboutRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -217,10 +237,11 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AboutRoute: AboutRoute,
   ContactsRoute: ContactsRoute,
   CreateGroupRoute: CreateGroupRoute,
   DiscoveryRoute: DiscoveryRoute,
-  InfoRoute: InfoRoute,
+  HelpRoute: HelpRoute,
   SettingsRoute: SettingsRoute,
   ChatAddressRoute: ChatAddressRoute,
   ContactInfoAddressRoute: ContactInfoAddressRoute,

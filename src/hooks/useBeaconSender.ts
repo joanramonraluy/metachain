@@ -28,12 +28,29 @@ export const sendBeacon = async () => {
         const bio = (bioRes && bioRes.status && bioRes.value) ? bioRes.value : '';
         console.log("📝 [BEACON] Bio:", bio || "(empty)");
 
-        // Get allow_noncontact_chats setting
-        const chatPermRes = await MDS.keypair.get('allow_noncontact_chats');
-        const allowNonContactChats = (chatPermRes && chatPermRes.status && chatPermRes.value !== undefined)
-            ? (chatPermRes.value === 'true')
-            : true; // Default to true
-        console.log("🔐 [BEACON] allowNonContactChats:", allowNonContactChats);
+        // Get allow_noncontact_chats setting - Check DB First
+        let allowNonContactChats = true;
+        try {
+            const sql = "SELECT allow_non_contact_chats FROM MY_PROFILE WHERE id=1 LIMIT 1";
+            const res = await new Promise<any>((resolve) => {
+                (MDS as any).sql(sql, (r: any) => resolve(r));
+            });
+
+            if (res && res.rows && res.rows.length > 0) {
+                const rawValue = res.rows[0].ALLOW_NON_CONTACT_CHATS ?? res.rows[0].allow_non_contact_chats;
+                allowNonContactChats = (rawValue === 1 || rawValue === "1" || rawValue === true || rawValue === "true");
+                console.log("🔐 [BEACON] Retrieved permission from DB:", allowNonContactChats);
+            } else {
+                // Fallback to Keypair
+                const chatPermRes = await MDS.keypair.get('allow_noncontact_chats');
+                allowNonContactChats = (chatPermRes && chatPermRes.status && chatPermRes.value !== undefined)
+                    ? (chatPermRes.value === 'true')
+                    : true; // Default to true
+                console.log("🔐 [BEACON] Retrieved permission from Keypair:", allowNonContactChats);
+            }
+        } catch (e) {
+            console.error("❌ [BEACON] Error getting permissions:", e);
+        }
 
         const beacon = {
             app: "metachain",

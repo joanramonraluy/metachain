@@ -610,7 +610,7 @@ function Settings() {
 
   const handleSaveExtendedProfile = async () => {
     try {
-      // Save Level 2 fields
+      // Save Level 2 fields to keypair
       await MDS.keypair.set('profile_location', location.trim());
       await MDS.keypair.set('profile_country', country.trim());
       await MDS.keypair.set('profile_languages', JSON.stringify(languages));
@@ -618,11 +618,26 @@ function Settings() {
       await MDS.keypair.set('profile_social_links', JSON.stringify(socialLinks));
       await MDS.keypair.set('profile_tags', JSON.stringify(tags));
 
-      // Save Level 3 fields
+      // Save Level 3 fields to keypair
       await MDS.keypair.set('profile_email', email.trim());
       await MDS.keypair.set('profile_phone', phone.trim());
 
-      console.log("✅ [Settings] Extended profile saved");
+      // Sync to MY_PROFILE table for Service Worker access
+      const updateSql = `
+        UPDATE MY_PROFILE SET
+          LOCATION = '${encodeURIComponent(location.trim())}',
+          COUNTRY = '${encodeURIComponent(country.trim())}',
+          LANGUAGES = '${encodeURIComponent(JSON.stringify(languages))}',
+          WEBSITE = '${encodeURIComponent(website.trim())}',
+          SOCIAL_LINKS = '${encodeURIComponent(JSON.stringify(socialLinks))}',
+          EMAIL = '${encodeURIComponent(email.trim())}',
+          PHONE = '${encodeURIComponent(phone.trim())}',
+          LAST_UPDATED = ${Date.now()}
+        WHERE id = 1
+      `;
+
+      await MDS.sql(updateSql);
+      console.log("✅ [Settings] Extended profile saved to keypair and MY_PROFILE");
       // Silent save - no popup needed for auto-save
     } catch (err) {
       console.error("❌ [Settings] Error saving extended profile:", err);
@@ -630,13 +645,30 @@ function Settings() {
     }
   };
 
-  const handleSavePrivacySettings = async () => {
+  const handleSavePrivacySettings = async (newL2?: VisibilityLevel, newL3?: VisibilityLevel) => {
     try {
-      await MDS.keypair.set('privacy_level2_visibility', level2Visibility);
-      await MDS.keypair.set('privacy_level3_visibility', level3Visibility);
+      const l2 = newL2 ?? level2Visibility;
+      const l3 = newL3 ?? level3Visibility;
+      console.log("💾 [Settings] Saving privacy settings - L2:", l2, "L3:", l3);
+
+      // Save to Keypair (for Frontend access)
+      await MDS.keypair.set('privacy_level2_visibility', l2);
+      await MDS.keypair.set('privacy_level3_visibility', l3);
       await MDS.keypair.set('privacy_personal_contacts', JSON.stringify(personalContacts));
 
-      console.log("✅ [Settings] Privacy settings saved");
+      // Save to DB (for Service Worker access)
+      const sql = `UPDATE MY_PROFILE SET privacy_l2='${l2}', privacy_l3='${l3}' WHERE id=1`;
+      await new Promise<void>((resolve) => {
+        // @ts-ignore
+        MDS.sql(sql, (res: any) => {
+          if (typeof res === 'object' && !res.status) {
+            console.error("❌ [Settings] SQL Update failed:", res);
+          }
+          resolve();
+        });
+      });
+
+      console.log("✅ [Settings] Privacy settings saved successfully (Keypair + DB)");
     } catch (err) {
       console.error("❌ [Settings] Error saving privacy settings:", err);
     }
@@ -672,6 +704,57 @@ function Settings() {
 
   return (
     <>
+      {/* Global autofill styling - force white background and dark text */}
+      <style>{`
+        input:-webkit-autofill,
+        input:-webkit-autofill:hover,
+        input:-webkit-autofill:focus,
+        input:-webkit-autofill:active,
+        textarea:-webkit-autofill,
+        textarea:-webkit-autofill:hover,
+        textarea:-webkit-autofill:focus,
+        select:-webkit-autofill,
+        select:-webkit-autofill:hover,
+        select:-webkit-autofill:focus {
+          -webkit-text-fill-color: #374151 !important;
+          -webkit-box-shadow: 0 0 0px 1000px #ffffff inset !important;
+          box-shadow: 0 0 0px 1000px #ffffff inset !important;
+          background-color: #ffffff !important;
+          transition: background-color 5000s ease-in-out 0s;
+        }
+        
+        /* Force white background on all checkboxes */
+        input[type="checkbox"] {
+          background-color: white !important;
+          -webkit-appearance: none;
+          -moz-appearance: none;
+          appearance: none;
+          border: 2px solid #d1d5db;
+          border-radius: 0.25rem;
+          width: 1rem;
+          height: 1rem;
+          cursor: pointer;
+          position: relative;
+        }
+        
+        /* Purple background with white checkmark when checked */
+        input[type="checkbox"]:checked {
+          background-color: #a855f7 !important;
+          border-color: #a855f7 !important;
+        }
+        
+        input[type="checkbox"]:checked::after {
+          content: '';
+          position: absolute;
+          left: 0.25rem;
+          top: 0.05rem;
+          width: 0.35rem;
+          height: 0.6rem;
+          border: solid white;
+          border-width: 0 2px 2px 0;
+          transform: rotate(45deg);
+        }
+      `}</style>
       {/* Edit Name Dialog */}
       {showEditDialog && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -838,6 +921,7 @@ function Settings() {
                               }}
                               className="w-full text-lg font-bold text-gray-900 bg-transparent border-b-2 border-transparent hover:border-gray-300 focus:border-blue-500 focus:outline-none transition-colors px-1 -mx-1"
                               placeholder="Your name"
+                              maxLength={50}
                             />
                             <p className="text-sm text-gray-500 mt-1">Visible to your contacts and discovered peers</p>
                           </div>
@@ -845,15 +929,21 @@ function Settings() {
 
                         {/* Bio */}
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Bio
-                          </label>
+                          <div className="flex items-center justify-between mb-2">
+                            <label className="block text-sm font-medium text-gray-700">
+                              Bio
+                            </label>
+                            <span className={`text-xs font-medium ${p2pBio.length > 280 ? 'text-red-500' : p2pBio.length > 250 ? 'text-yellow-600' : 'text-gray-400'}`}>
+                              {p2pBio.length}/280
+                            </span>
+                          </div>
                           <textarea
                             value={p2pBio}
                             onChange={(e) => setP2pBio(e.target.value)}
                             onBlur={handleSaveP2pProfile}
                             placeholder="Tell others about yourself..."
                             rows={3}
+                            maxLength={280}
                             className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white text-gray-700 resize-none"
                           />
                           <p className="text-xs text-gray-500 mt-1">Shared with all discovered peers • Auto-saves</p>
@@ -886,7 +976,8 @@ function Settings() {
                             onChange={(e) => setLocation(e.target.value)}
                             onBlur={handleSaveExtendedProfile}
                             placeholder="Barcelona, New York, etc."
-                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white text-gray-700"
+                            maxLength={100}
+                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white text-gray-700 autofill:bg-white autofill:text-gray-900 [&:-webkit-autofill]:!bg-white [&:-webkit-autofill]:!text-gray-900 [&:-webkit-autofill]:shadow-[inset_0_0_0px_1000px_rgb(255,255,255)]"
                           />
                           <p className="text-xs text-gray-500 mt-1">Visibility controlled in Privacy tab • Auto-saves</p>
                         </div>
@@ -911,7 +1002,7 @@ function Settings() {
                         {/* Languages */}
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Languages</label>
-                          <div className="border border-gray-300 rounded-lg p-3 bg-white max-h-48 overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-gray-100 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:bg-purple-400 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:hover:bg-purple-500">
+                          <div className="border border-gray-300 rounded-lg p-3 bg-white max-h-48 overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-gray-100 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:bg-purple-400 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb:hover]:bg-purple-500">
                             <div className="grid grid-cols-2 gap-2">
                               {LANGUAGES.map((lang) => (
                                 <label key={lang} className="flex items-center gap-2 cursor-pointer hover:bg-purple-50 p-1 rounded transition-colors">
@@ -927,7 +1018,8 @@ function Settings() {
                                       // Auto-save after a short delay
                                       setTimeout(handleSaveExtendedProfile, 100);
                                     }}
-                                    className="w-4 h-4 rounded border-2 border-purple-300 text-purple-600 focus:ring-2 focus:ring-purple-500 focus:ring-offset-0 checked:bg-purple-600 checked:border-purple-600"
+                                    className="w-4 h-4 rounded border-gray-300 bg-white focus:ring-2 focus:ring-blue-500"
+                                    style={{ accentColor: '#a855f7' }}
                                   />
                                   <span className="text-sm text-gray-700">{lang}</span>
                                 </label>
@@ -964,7 +1056,8 @@ function Settings() {
                             onChange={(e) => setWebsite(e.target.value)}
                             onBlur={handleSaveExtendedProfile}
                             placeholder="https://example.com"
-                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white text-gray-700"
+                            maxLength={200}
+                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white text-gray-700 autofill:bg-white autofill:text-gray-900 [&:-webkit-autofill]:!bg-white [&:-webkit-autofill]:!text-gray-900 [&:-webkit-autofill]:shadow-[inset_0_0_0px_1000px_rgb(255,255,255)]"
                           />
                           <p className="text-xs text-gray-500 mt-1">Visibility controlled in Privacy tab • Auto-saves</p>
                         </div>
@@ -979,7 +1072,8 @@ function Settings() {
                               onChange={(e) => setSocialLinks({ ...socialLinks, twitter: e.target.value })}
                               onBlur={handleSaveExtendedProfile}
                               placeholder="Twitter/X username"
-                              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white text-gray-700"
+                              maxLength={50}
+                              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white text-gray-700 autofill:bg-white autofill:text-gray-900 [&:-webkit-autofill]:!bg-white [&:-webkit-autofill]:!text-gray-900 [&:-webkit-autofill]:shadow-[inset_0_0_0px_1000px_rgb(255,255,255)]"
                             />
                             <input
                               type="text"
@@ -987,7 +1081,8 @@ function Settings() {
                               onChange={(e) => setSocialLinks({ ...socialLinks, linkedin: e.target.value })}
                               onBlur={handleSaveExtendedProfile}
                               placeholder="LinkedIn profile URL"
-                              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white text-gray-700"
+                              maxLength={200}
+                              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white text-gray-700 autofill:bg-white autofill:text-gray-900 [&:-webkit-autofill]:!bg-white [&:-webkit-autofill]:!text-gray-900 [&:-webkit-autofill]:shadow-[inset_0_0_0px_1000px_rgb(255,255,255)]"
                             />
                             <input
                               type="text"
@@ -995,7 +1090,8 @@ function Settings() {
                               onChange={(e) => setSocialLinks({ ...socialLinks, github: e.target.value })}
                               onBlur={handleSaveExtendedProfile}
                               placeholder="GitHub username"
-                              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white text-gray-700"
+                              maxLength={50}
+                              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white text-gray-700 autofill:bg-white autofill:text-gray-900 [&:-webkit-autofill]:!bg-white [&:-webkit-autofill]:!text-gray-900 [&:-webkit-autofill]:shadow-[inset_0_0_0px_1000px_rgb(255,255,255)]"
                             />
                           </div>
                           <p className="text-xs text-gray-500 mt-1">Visibility controlled in Privacy tab • Auto-saves</p>
@@ -1030,7 +1126,8 @@ function Settings() {
                             onChange={(e) => setEmail(e.target.value)}
                             onBlur={handleSaveExtendedProfile}
                             placeholder="your@email.com"
-                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 bg-white text-gray-700"
+                            maxLength={100}
+                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 bg-white text-gray-700 autofill:bg-white autofill:text-gray-900 [&:-webkit-autofill]:!bg-white [&:-webkit-autofill]:!text-gray-900 [&:-webkit-autofill]:shadow-[inset_0_0_0px_1000px_rgb(255,255,255)]"
                           />
                           <p className="text-xs text-gray-500 mt-1">Visibility controlled in Privacy tab • Auto-saves</p>
                         </div>
@@ -1044,7 +1141,8 @@ function Settings() {
                             onChange={(e) => setPhone(e.target.value)}
                             onBlur={handleSaveExtendedProfile}
                             placeholder="+1 234 567 8900"
-                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 bg-white text-gray-700"
+                            maxLength={30}
+                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 bg-white text-gray-700 autofill:bg-white autofill:text-gray-900 [&:-webkit-autofill]:!bg-white [&:-webkit-autofill]:!text-gray-900 [&:-webkit-autofill]:shadow-[inset_0_0_0px_1000px_rgb(255,255,255)]"
                           />
                           <p className="text-xs text-gray-500 mt-1">Visibility controlled in Privacy tab • Auto-saves</p>
                         </div>
@@ -1142,8 +1240,9 @@ function Settings() {
                               value="public"
                               checked={level2Visibility === 'public'}
                               onChange={(e) => {
-                                setLevel2Visibility(e.target.value as VisibilityLevel);
-                                handleSavePrivacySettings();
+                                const newValue = e.target.value as VisibilityLevel;
+                                setLevel2Visibility(newValue);
+                                handleSavePrivacySettings(newValue, undefined);
                               }}
                               className="mt-1"
                             />
@@ -1151,8 +1250,8 @@ function Settings() {
                               <div className="font-medium text-gray-900">Public Discovery</div>
                               <div className="text-sm text-gray-500 mt-1">Anyone who discovers you via P2P</div>
                               <div className="text-xs text-gray-400 mt-2 space-y-0.5">
-                                <div>✓ Public users</div>
-                                <div>✓ Chat contacts</div>
+                                <div>✓ Discovered users</div>
+                                <div>✓ Chat participants or Maxima contacts</div>
                                 <div>✓ Personal contacts</div>
                               </div>
                             </div>
@@ -1166,17 +1265,18 @@ function Settings() {
                               value="contacts"
                               checked={level2Visibility === 'contacts'}
                               onChange={(e) => {
-                                setLevel2Visibility(e.target.value as VisibilityLevel);
-                                handleSavePrivacySettings();
+                                const newValue = e.target.value as VisibilityLevel;
+                                setLevel2Visibility(newValue);
+                                handleSavePrivacySettings(newValue, undefined);
                               }}
                               className="mt-1"
                             />
                             <div className="flex-1">
-                              <div className="font-medium text-gray-900">Chat Contacts</div>
-                              <div className="text-sm text-gray-500 mt-1">Only people you have active chats with</div>
+                              <div className="font-medium text-gray-900">Chat Access</div>
+                              <div className="text-sm text-gray-500 mt-1">Anyone with chat access to you</div>
                               <div className="text-xs text-gray-400 mt-2 space-y-0.5">
-                                <div className="text-gray-300">✗ Public users</div>
-                                <div>✓ Chat contacts</div>
+                                <div className="text-gray-300">✗ Discovered users</div>
+                                <div>✓ Chat participants or Maxima contacts</div>
                                 <div>✓ Personal contacts</div>
                               </div>
                             </div>
@@ -1190,8 +1290,9 @@ function Settings() {
                               value="personal"
                               checked={level2Visibility === 'personal'}
                               onChange={(e) => {
-                                setLevel2Visibility(e.target.value as VisibilityLevel);
-                                handleSavePrivacySettings();
+                                const newValue = e.target.value as VisibilityLevel;
+                                setLevel2Visibility(newValue);
+                                handleSavePrivacySettings(newValue, undefined);
                               }}
                               className="mt-1"
                             />
@@ -1199,8 +1300,8 @@ function Settings() {
                               <div className="font-medium text-gray-900">Personal Contacts Only</div>
                               <div className="text-sm text-gray-500 mt-1">Only contacts you mark as personal ({personalContacts.length} selected)</div>
                               <div className="text-xs text-gray-400 mt-2 space-y-0.5">
-                                <div className="text-gray-300">✗ Public users</div>
-                                <div className="text-gray-300">✗ Chat contacts</div>
+                                <div className="text-gray-300">✗ Discovered users</div>
+                                <div className="text-gray-300">✗ Chat participants or Maxima contacts</div>
                                 <div>✓ Personal contacts</div>
                               </div>
                             </div>
@@ -1227,8 +1328,9 @@ function Settings() {
                               value="public"
                               checked={level3Visibility === 'public'}
                               onChange={(e) => {
-                                setLevel3Visibility(e.target.value as VisibilityLevel);
-                                handleSavePrivacySettings();
+                                const newValue = e.target.value as VisibilityLevel;
+                                setLevel3Visibility(newValue);
+                                handleSavePrivacySettings(undefined, newValue);
                               }}
                               className="mt-1"
                             />
@@ -1236,8 +1338,8 @@ function Settings() {
                               <div className="font-medium text-gray-900">Public Discovery</div>
                               <div className="text-sm text-gray-500 mt-1">Anyone who discovers you via P2P</div>
                               <div className="text-xs text-gray-400 mt-2 space-y-0.5">
-                                <div>✓ Public users</div>
-                                <div>✓ Chat contacts</div>
+                                <div>✓ Discovered users</div>
+                                <div>✓ Chat participants or Maxima contacts</div>
                                 <div>✓ Personal contacts</div>
                               </div>
                             </div>
@@ -1251,17 +1353,18 @@ function Settings() {
                               value="contacts"
                               checked={level3Visibility === 'contacts'}
                               onChange={(e) => {
-                                setLevel3Visibility(e.target.value as VisibilityLevel);
-                                handleSavePrivacySettings();
+                                const newValue = e.target.value as VisibilityLevel;
+                                setLevel3Visibility(newValue);
+                                handleSavePrivacySettings(undefined, newValue);
                               }}
                               className="mt-1"
                             />
                             <div className="flex-1">
-                              <div className="font-medium text-gray-900">Chat Contacts</div>
-                              <div className="text-sm text-gray-500 mt-1">Only people you have active chats with</div>
+                              <div className="font-medium text-gray-900">Chat Access</div>
+                              <div className="text-sm text-gray-500 mt-1">Anyone with chat access to you</div>
                               <div className="text-xs text-gray-400 mt-2 space-y-0.5">
-                                <div className="text-gray-300">✗ Public users</div>
-                                <div>✓ Chat contacts</div>
+                                <div className="text-gray-300">✗ Discovered users</div>
+                                <div>✓ Chat participants or Maxima contacts</div>
                                 <div>✓ Personal contacts</div>
                               </div>
                             </div>
@@ -1275,8 +1378,9 @@ function Settings() {
                               value="personal"
                               checked={level3Visibility === 'personal'}
                               onChange={(e) => {
-                                setLevel3Visibility(e.target.value as VisibilityLevel);
-                                handleSavePrivacySettings();
+                                const newValue = e.target.value as VisibilityLevel;
+                                setLevel3Visibility(newValue);
+                                handleSavePrivacySettings(undefined, newValue);
                               }}
                               className="mt-1"
                             />
@@ -1284,8 +1388,8 @@ function Settings() {
                               <div className="font-medium text-gray-900">Personal Contacts Only</div>
                               <div className="text-sm text-gray-500 mt-1">Only contacts you mark as personal ({personalContacts.length} selected)</div>
                               <div className="text-xs text-gray-400 mt-2 space-y-0.5">
-                                <div className="text-gray-300">✗ Public users</div>
-                                <div className="text-gray-300">✗ Chat contacts</div>
+                                <div className="text-gray-300">✗ Discovered users</div>
+                                <div className="text-gray-300">✗ Chat participants or Maxima contacts</div>
                                 <div>✓ Personal contacts</div>
                               </div>
                             </div>
@@ -1322,11 +1426,11 @@ function Settings() {
 
                         <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
                           <div className="flex-1">
-                            <div className="font-medium text-gray-900">Allow chats from non-contacts</div>
+                            <div className="font-medium text-gray-900">Allow Direct Messages from Anyone</div>
                             <p className="text-sm text-gray-500 mt-1">
                               {allowNonContactChats
-                                ? 'Anyone can send you direct messages'
-                                : 'Only your contacts can send you messages'}
+                                ? 'Users can message you immediately without approval'
+                                : 'Users must send a request and be approved'}
                             </p>
                           </div>
                           <button
@@ -1342,68 +1446,64 @@ function Settings() {
                           </button>
                         </div>
                       </div>
-                    </div>
-                  </section>
-                </>
-              )}
 
-              {/* ADVANCED TAB */}
-              {activeTab === 'advanced' && (
-                <>
-                  {/* APPLICATION MODE SECTION */}
-                  <section className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                    <div className="p-6 border-b border-gray-100 flex items-center gap-3">
-                      <Shield className={writeMode ? "text-green-500" : "text-yellow-500"} />
-                      <h2 className="text-xl font-semibold text-gray-800">Application Mode</h2>
-                    </div>
-                    <div className="p-6">
-                      <div className={`flex items-center gap-3 p-4 rounded-xl mb-4 ${writeMode ? 'bg-green-50 border border-green-100' : 'bg-yellow-50 border border-yellow-100'}`}>
-                        {writeMode ? (
-                          <div className="p-2 bg-green-100 rounded-full text-green-600">
-                            <Check size={20} />
+                      {/* Application Mode */}
+                      <div className="pt-6 border-t border-gray-200">
+                        <div className="flex items-center justify-between mb-4">
+                          <div>
+                            <h3 className="text-lg font-semibold text-gray-800">Application Mode</h3>
+                            <p className="text-sm text-gray-500">MiniDapp permissions for transactions</p>
                           </div>
-                        ) : (
-                          <div className="p-2 bg-yellow-100 rounded-full text-yellow-600">
-                            <AlertTriangle size={20} />
+                        </div>
+
+                        <div className={`flex items-center gap-3 p-4 rounded-xl mb-4 ${writeMode ? 'bg-green-50 border border-green-100' : 'bg-yellow-50 border border-yellow-100'}`}>
+                          {writeMode ? (
+                            <div className="p-2 bg-green-100 rounded-full text-green-600">
+                              <Check size={20} />
+                            </div>
+                          ) : (
+                            <div className="p-2 bg-yellow-100 rounded-full text-yellow-600">
+                              <AlertTriangle size={20} />
+                            </div>
+                          )}
+                          <div>
+                            <h3 className={`font-semibold ${writeMode ? 'text-green-800' : 'text-yellow-800'}`}>
+                              {writeMode ? 'Write Mode Active' : 'Read Mode Active'}
+                            </h3>
+                            <p className={`text-sm ${writeMode ? 'text-green-600' : 'text-yellow-600'}`}>
+                              {writeMode
+                                ? 'MetaChain has full permission to send messages and tokens.'
+                                : 'MetaChain needs your approval for every transaction.'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {!writeMode && (
+                          <div className="space-y-4">
+                            <p className="text-gray-600 text-sm leading-relaxed">
+                              To enable <strong>Write Mode</strong> and avoid repeated approval requests:
+                            </p>
+                            <ol className="list-decimal list-inside text-sm text-gray-600 space-y-2 pl-2">
+                              <li>Go to <strong>Minima</strong> main screen</li>
+                              <li>Open <strong>MiniDapps</strong></li>
+                              <li>Find <strong>MetaChain</strong></li>
+                              <li>Click the <strong>lock icon</strong> / permissions</li>
+                              <li>Select <strong>Write Mode</strong></li>
+                            </ol>
+
+                            <button
+                              onClick={async () => {
+                                console.log("🔄 [Settings] Manual refresh button clicked");
+                                await refreshWriteMode();
+                              }}
+                              className="w-full mt-2 py-2.5 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+                            >
+                              <RefreshCw size={18} />
+                              Check Permissions Again
+                            </button>
                           </div>
                         )}
-                        <div>
-                          <h3 className={`font-semibold ${writeMode ? 'text-green-800' : 'text-yellow-800'}`}>
-                            {writeMode ? 'Write Mode Active' : 'Read Mode Active'}
-                          </h3>
-                          <p className={`text-sm ${writeMode ? 'text-green-600' : 'text-yellow-600'}`}>
-                            {writeMode
-                              ? 'MetaChain has full permission to send messages and tokens.'
-                              : 'MetaChain needs your approval for every transaction.'}
-                          </p>
-                        </div>
                       </div>
-
-                      {!writeMode && (
-                        <div className="space-y-4">
-                          <p className="text-gray-600 text-sm leading-relaxed">
-                            To enable <strong>Write Mode</strong> and avoid repeated approval requests:
-                          </p>
-                          <ol className="list-decimal list-inside text-sm text-gray-600 space-y-2 pl-2">
-                            <li>Go to <strong>Minima</strong> main screen</li>
-                            <li>Open <strong>MiniDapps</strong></li>
-                            <li>Find <strong>MetaChain</strong></li>
-                            <li>Click the <strong>lock icon</strong> / permissions</li>
-                            <li>Select <strong>Write Mode</strong></li>
-                          </ol>
-
-                          <button
-                            onClick={async () => {
-                              console.log("🔄 [Settings] Manual refresh button clicked");
-                              await refreshWriteMode();
-                            }}
-                            className="w-full mt-2 py-2.5 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
-                          >
-                            <RefreshCw size={18} />
-                            Check Permissions Again
-                          </button>
-                        </div>
-                      )}
                     </div>
                   </section>
                 </>
@@ -1439,7 +1539,7 @@ function Settings() {
                                 value={discoveryInterval}
                                 onChange={(e) => setDiscoveryInterval(parseInt(e.target.value) || 0)}
                                 id="discoveryIntervalInput"
-                                className="w-full p-2 pl-3 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                                className="w-full p-2 pl-3 border border-gray-300 rounded-md bg-white text-gray-900 text-sm"
                                 onBlur={(e) => {
                                   const val = parseInt(e.target.value) || 60;
                                   const safeVal = val < 30 ? 30 : val;
@@ -1466,7 +1566,7 @@ function Settings() {
                                 value={discoveryLimit}
                                 onChange={(e) => setDiscoveryLimit(parseInt(e.target.value) || 0)}
                                 id="discoveryLimitInput"
-                                className="w-full p-2 pl-3 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                                className="w-full p-2 pl-3 border border-gray-300 rounded-md bg-white text-gray-900 text-sm"
                                 onBlur={(e) => {
                                   const val = parseInt(e.target.value) || 5;
                                   const safeVal = val < 1 ? 1 : (val > 50 ? 50 : val);
@@ -1479,7 +1579,7 @@ function Settings() {
                                 <span className="text-gray-400 text-xs">nodes</span>
                               </div>
                             </div>
-                            <p className="text-xs text-gray-400 mt-1">Number of peers to exchange data with per gossip.</p>
+                            <p className="text-xs text-gray-400 mt-1">Peers per gossip. Recommended: 5</p>
                           </div>
                         </div>
                       </div>
@@ -1674,8 +1774,8 @@ function Settings() {
                 </>
               )}
 
-              {/* NETWORK SECTION - Part of Advanced Tab */}
-              {activeTab === 'advanced' && (
+              {/* NETWORK TAB */}
+              {activeTab === 'network' && (
                 <>
                   {/* NETWORK SECTION */}
                   <section id="network" className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
@@ -1814,7 +1914,7 @@ function Settings() {
             </div>
           </div>
         </div>
-      </div>
+      </div >
     </>
   );
 }

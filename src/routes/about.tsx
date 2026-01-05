@@ -1,11 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router"
 import { Info as InfoIcon, Shield, Zap, Heart, Github, Globe, ExternalLink } from "lucide-react"
 
-export const Route = createFileRoute("/info")({
-  component: Info,
+export const Route = createFileRoute("/about")({
+  component: About,
 })
 
-function Info() {
+function About() {
   const appVersion = "1.0.0"; // You might want to pull this from package.json or config
 
   return (

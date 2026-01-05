@@ -24,6 +24,9 @@ export interface ExtendedProfile {
     phone?: string;
     // Chat permissions
     allowNonContactChats?: boolean;
+    // Privacy Status
+    privacy_l2?: string; // 'hidden' if restricted
+    privacy_l3?: string; // 'hidden' if restricted
 }
 
 // Pending profile requests
@@ -41,6 +44,13 @@ const pendingRequests = new Map<string, {
  */
 function normalizeKey(key: string): string {
     return key ? key.toLowerCase().trim() : "";
+}
+
+// Helper to convert UTF8 to Hex
+function utf8ToHex(str: string): string {
+    return Array.from(new TextEncoder().encode(str))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
 }
 
 export async function requestProfile(
@@ -85,13 +95,17 @@ export async function requestProfile(
                 timeout: timeoutId
             });
 
+            // Encode payload to HEX (Critical for Service Worker compatibility)
+            const jsonStr = JSON.stringify(request);
+            const hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
+
             // Send via Maxima using contact address (no need to be contacts!)
             MDS.cmd.maxima({
                 params: {
                     action: 'send',
                     to: peerAddress,  // Use full Maxima address instead of publickey
                     application: 'metachain',
-                    data: JSON.stringify(request)
+                    data: hexData
                 } as any
             }, (sendRes: any) => {
                 if (!sendRes.status) {
@@ -109,6 +123,9 @@ export async function requestProfile(
     });
 }
 
+// Debug module init
+console.log('🚀 [ProfileService] Module Initialized via import');
+
 /**
  * Handle incoming profile response
  * Called by minimaService when a profile_response message is received
@@ -118,12 +135,13 @@ export function handleProfileResponse(senderPublicKey: string, data: ExtendedPro
 
     const normalizedKey = normalizeKey(senderPublicKey);
     const pending = pendingRequests.get(normalizedKey);
+
     if (pending) {
         clearTimeout(pending.timeout);
         pendingRequests.delete(normalizedKey);
         pending.resolve(data);
     } else {
-        console.log(`ℹ️ [ProfileService] Ignoring duplicate/unsolicited profile response from ${senderPublicKey.substring(0, 10)} (request already handled)`);
+        console.log(`ℹ️ [ProfileService] Ignoring duplicate/unsolicited profile response from ${senderPublicKey.substring(0, 10)}`);
     }
 }
 

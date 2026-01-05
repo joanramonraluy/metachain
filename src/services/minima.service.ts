@@ -293,6 +293,7 @@ class MinimaService {
                 from_publickey VARCHAR(512) NOT NULL,
                 from_name VARCHAR(255),
                 from_avatar TEXT,
+                from_address VARCHAR(1024),
                 to_publickey VARCHAR(512) NOT NULL,
                 status VARCHAR(32) DEFAULT 'pending',
                 created_at BIGINT NOT NULL,
@@ -305,7 +306,37 @@ class MinimaService {
                                             } else {
                                                 console.log("📂 [DB] CONTACT_REQUESTS table initialized");
                                             }
-                                            resolve();
+
+                                            // Add from_address column if it doesn't exist (for existing tables)
+                                            const addFromAddressColumn = `ALTER TABLE CONTACT_REQUESTS ADD COLUMN IF NOT EXISTS from_address VARCHAR(1024)`;
+                                            MDS.sql(addFromAddressColumn, (res: any) => {
+                                                if (!res.status) {
+                                                    console.log("ℹ️ [DB] from_address column already exists or error:", res.error);
+                                                } else {
+                                                    console.log("📂 [DB] from_address column added/verified");
+                                                }
+                                            });
+
+                                            // Create table for Maxima contact requests
+                                            const createMaximaContactRequestsTable = `
+                CREATE TABLE IF NOT EXISTS MAXIMA_CONTACT_REQUESTS (
+                    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    from_publickey VARCHAR(512) NOT NULL,
+                    from_name VARCHAR(255),
+                    to_publickey VARCHAR(512) NOT NULL,
+                    status VARCHAR(32) DEFAULT 'pending',
+                    created_at BIGINT NOT NULL,
+                    updated_at BIGINT
+                )`;
+
+                                            MDS.sql(createMaximaContactRequestsTable, (res: any) => {
+                                                if (!res.status) {
+                                                    console.error("❌ [DB] Failed to create MAXIMA_CONTACT_REQUESTS table:", res.error);
+                                                } else {
+                                                    console.log("📂 [DB] MAXIMA_CONTACT_REQUESTS table initialized");
+                                                }
+                                                resolve();
+                                            });
                                         });
                                     });
                                 });
@@ -835,6 +866,8 @@ class MinimaService {
 
             try {
                 const json = JSON.parse(datastr) as any;
+                console.log(`📨 [MAXIMA-DEBUG] Processing msg type: ${json.type}, from: ${from}`);
+                console.log(`📨 [MAXIMA-DEBUG] Full Payload:`, json);
 
                 // Check if this is a group message (by app name OR content)
                 if (app === "metachain-group" || (json.messageType && json.groupId)) {
@@ -971,98 +1004,10 @@ class MinimaService {
                 }
 
                 if (json.type === "profile_request") {
-                    console.log("👤 [PROFILE] Request received from", from);
-
-                    // Respond immediately from the Frontend
-                    // This serves as a fallback/dev-mode handler when Service Worker isn't active
-                    try {
-                        // 1. Get info from DB
-                        const profileRes = await this.runSQL("SELECT * FROM MY_PROFILE LIMIT 1");
-                        const row = (profileRes.rows && profileRes.rows.length > 0) ? profileRes.rows[0] : {};
-
-                        // 2. Get info from Maxima (Name, Avatar)
-                        const maximaInfo = await MDS.cmd.maxima({ params: { action: "info" } });
-                        const myInfo = (maximaInfo.response as any) || {}
-                        const name = myInfo.name || "Unknown";
-                        const avatar = myInfo.icon ? decodeURIComponent(myInfo.icon) : "";
-
-                        // 3. Get keypair bio (since it's not in Maxima info explicitly usually)
-                        // Actually, let's use what we have or empty string
-                        let bio = "";
-
-                        // Parse extended fields
-                        let social = {};
-                        let languages = [];
-                        let extended_bio = "";
-                        let location = "";
-                        let country = "";
-                        let website = "";
-                        let email = "";
-                        let phone = "";
-                        let allowNonContactChats = true;
-
-                        if (row) {
-                            try { social = JSON.parse(decodeURIComponent(row.SOCIAL_LINKS || "{}")); } catch (e) { }
-                            try { languages = JSON.parse(decodeURIComponent(row.LANGUAGES || "[]")); } catch (e) { }
-                            extended_bio = decodeURIComponent(row.BIO_EXTENDED || "");
-                            location = decodeURIComponent(row.LOCATION || "");
-                            country = decodeURIComponent(row.COUNTRY || "");
-                            website = decodeURIComponent(row.WEBSITE || "");
-                            email = decodeURIComponent(row.EMAIL || "");
-                            phone = decodeURIComponent(row.PHONE || "");
-
-                            // Handle all possible value types: 1, "1", true, "true", or undefined
-                            const rawValue = row.ALLOW_NON_CONTACT_CHATS ?? row.allow_non_contact_chats;
-                            allowNonContactChats = (rawValue === 1 || rawValue === "1" || rawValue === true || rawValue === "true");
-                        }
-
-                        // Construct Response
-                        const responsePayload = {
-                            type: "profile_response",
-                            name: name,
-                            bio: bio, // We don't have easy access to p2p_bio alias here without keypair, leave empty or TODO
-                            avatar: avatar,
-                            extended_bio: extended_bio,
-                            location: location,
-                            country: country,
-                            website: website,
-                            social: social,
-                            languages: languages,
-                            email: email,
-                            phone: phone,
-                            allowNonContactChats: allowNonContactChats
-                        };
-
-                        const jsonStr = JSON.stringify(responsePayload);
-                        const hexData = "0x" + this.utf8ToHex(jsonStr).toUpperCase();
-
-                        const targetRecipient = json.requesterAddress || from;
-                        const isMxAddress = targetRecipient.startsWith("Mx") || targetRecipient.startsWith("MX");
-
-                        console.log("📤 [PROFILE] Sending response (Frontend-side) to", targetRecipient, "(Is Mx:", isMxAddress, ")");
-
-                        const sendParams: any = {
-                            action: "send",
-                            application: "metachain",
-                            data: hexData,
-                            poll: false
-                        };
-
-                        if (isMxAddress) {
-                            sendParams.to = targetRecipient;
-                        } else {
-                            // Ensure it is a valid hex public key (0x...)
-                            sendParams.publickey = targetRecipient;
-                        }
-
-                        await MDS.cmd.maxima({
-                            params: sendParams
-                        });
-                        console.log("✅ [PROFILE] Response sent successfully");
-
-                    } catch (e) {
-                        console.error("❌ [PROFILE] Error sending frontend profile response:", e);
-                    }
+                    console.log("👤 [PROFILE] Request received from", from, "- Delegating to Service Worker");
+                    // SECURITY: Profile requests are ONLY handled by the Service Worker
+                    // to ensure privacy filtering is applied correctly.
+                    // The Service Worker will check privacy settings and send the appropriate response.
                     return;
                 }
 
@@ -1078,7 +1023,7 @@ class MinimaService {
                 if (json.type === "contact_request") {
                     console.log("📨 [CONTACTS] Request received from", from);
                     // Save to database and THEN notify UI
-                    this.saveContactRequest(from, json.name || "Unknown", json.avatar || "", maximaData.to)
+                    this.saveContactRequest(from, json.name || "Unknown", json.avatar || "", maximaData.to, json.from_address)
                         .then(() => {
                             console.log("✅ [CONTACTS] Request saved, notifying UI...");
                             // Notify UI to show banner AFTER saving
@@ -1088,6 +1033,7 @@ class MinimaService {
                     return;
                 }
 
+                // Handle Contact Accepted
                 if (json.type === "contact_accepted") {
                     console.log("✅ [CONTACTS] Request accepted by", from);
 
@@ -1110,24 +1056,10 @@ class MinimaService {
                     }
 
 
-                    // They accepted our request - add them to our contacts
-                    // We need to get their Maxima address from the 'from' field
-                    // The 'from' is the publickey, we need to find their currentaddress
-                    // For now, we'll try to add using publickey and let it fail gracefully
-                    MDS.cmd.maxcontacts({ action: "list" } as any).then((res: any) => {
-                        const contacts = res.response?.contacts || [];
-                        const contact = contacts.find((c: any) => c.publickey === from);
-                        if (contact && contact.currentaddress) {
-                            MDS.cmd.maxcontacts({
-                                action: "add",
-                                contact: contact.currentaddress
-                            } as any).then(() => {
-                                console.log("✅ [CONTACTS] Added contact after acceptance");
-                            }).catch(err => {
-                                console.error("❌ [CONTACTS] Failed to add contact:", err);
-                            });
-                        }
-                    });
+                    // They accepted our request.
+                    // We DO NOT add them to contacts automatically anymore.
+                    // This must be a manual user action.
+                    console.log("✅ [CONTACTS] Received acceptance - chat is now open (not added to Maxima contacts)");
 
                     // Also update any pending outgoing request we had to 'accepted'
                     const escapeSql = (str: string) => str.replace(/'/g, "''");
@@ -1142,8 +1074,122 @@ class MinimaService {
                                           WHERE from_publickey='${safeMyKey}' AND to_publickey='${safeFrom}'`;
                     await this.runSQL(updateReqSql);
 
+                    // DUPLICATE CHECK: Check if we already received an accept message recently (last 10s)
+                    const checkDupSql = `SELECT * FROM CHAT_MESSAGES 
+                                         WHERE publickey='${safeFrom}' AND type='system' AND message='Chat request accepted' 
+                                         AND date > ${Date.now() - 10000}`;
+                    const dupRes = await this.runSQL(checkDupSql);
+
+                    if (dupRes.count === 0) {
+                        // Insert system message so the requester sees the acceptance
+                        const now = Date.now();
+                        const insertMsgSql = `
+                            INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date)
+                            VALUES ('', '${safeFrom}', 'System', 'system', 'Chat request accepted', '', 'received', 0, ${now})
+                        `;
+                        await this.runSQL(insertMsgSql);
+                        console.log("✅ [CONTACTS] Saved acceptance message for requester");
+                    } else {
+                        console.log("⚠️ [CONTACTS] Ignoring duplicate accept message");
+                    }
+
                     // Notify UI
                     this.newMessageCallbacks.forEach((cb) => cb({ ...json, type: 'contact_accepted', from } as any));
+                    return;
+                }
+
+                if (json.type === "contact_declined") {
+                    console.log("🚫 [CONTACTS] Request declined by", from);
+
+                    const escapeSql = (str: string) => str.replace(/'/g, "''");
+                    const safeFrom = escapeSql(from);
+
+                    // Update outgoing request status to 'declined'
+                    // We sent the request (from=ME, to=THEM).
+                    // So we update where to_publickey = FROM (sender of this decline msg)
+                    const updateReqSql = `UPDATE CONTACT_REQUESTS SET status='declined', updated_at=${Date.now()} 
+                                          WHERE to_publickey='${safeFrom}' AND status='pending'`;
+                    await this.runSQL(updateReqSql);
+
+                    // DUPLICATE CHECK: Check if we already received a decline message recently (last 10s)
+                    const checkDupSql = `SELECT * FROM CHAT_MESSAGES 
+                                         WHERE publickey='${safeFrom}' AND type='system' AND message='Contact request declined' 
+                                         AND date > ${Date.now() - 10000}`;
+                    const dupRes = await this.runSQL(checkDupSql);
+
+                    if (dupRes.count === 0) {
+                        // Insert system message: "Contact request declined" (received state)
+                        const chatMessageSql = `
+                            INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date)
+                            VALUES('', '${safeFrom}', 'System', 'system', 'Contact request declined', '', 'received', 0, ${Date.now()})
+                        `;
+                        await this.runSQL(chatMessageSql);
+                    } else {
+                        console.log("⚠️ [CONTACTS] Ignoring duplicate decline message");
+                    }
+
+                    // Notify UI
+                    this.newMessageCallbacks.forEach((cb) => cb({ ...json, type: 'contact_declined', from } as any));
+                    return;
+                }
+
+                // Maxima Contact Request handlers
+                if (json.type === "maxima_contact_request") {
+                    console.log("📨 [MAXIMA CONTACT] Request received from", from);
+                    const fromName = json.name || "Unknown";
+                    await this.saveMaximaContactRequest(from, fromName);
+                    this.newMessageCallbacks.forEach((cb) => cb({ ...json, type: 'maxima_contact_request', from } as any));
+                    return;
+                }
+
+                if (json.type === "maxima_contact_accepted") {
+                    console.log("✅ [MAXIMA CONTACT] Request accepted by", from);
+
+                    MDS.cmd.maxcontacts({ action: "list" } as any).then((res: any) => {
+                        const contacts = res.response?.contacts || [];
+                        const contact = contacts.find((c: any) => c.publickey === from);
+                        if (contact?.currentaddress) {
+                            MDS.cmd.maxcontacts({
+                                action: "add",
+                                contact: contact.currentaddress
+                            } as any);
+                        }
+                    });
+
+                    const escapeSql = (str: string) => str.replace(/'/g, "''");
+                    const safeFrom = escapeSql(from);
+                    const myInfo = await MDS.cmd.maxima({ params: { action: 'info' } });
+                    const myPublicKey = (myInfo.response as any).publickey;
+                    const safeMyKey = escapeSql(myPublicKey);
+
+                    const updateReqSql = `UPDATE MAXIMA_CONTACT_REQUESTS SET status='accepted', updated_at=${Date.now()} 
+                                          WHERE from_publickey='${safeMyKey}' AND to_publickey='${safeFrom}'`;
+                    await this.runSQL(updateReqSql);
+
+                    this.newMessageCallbacks.forEach((cb) => cb({ ...json, type: 'maxima_contact_accepted', from } as any));
+                    return;
+                }
+
+                if (json.type === "maxima_contact_declined") {
+                    console.log("🚫 [MAXIMA CONTACT] Request declined by", from);
+
+                    const escapeSql = (str: string) => str.replace(/'/g, "''");
+                    const safeFrom = escapeSql(from);
+
+                    const updateReqSql = `UPDATE MAXIMA_CONTACT_REQUESTS SET status='declined', updated_at=${Date.now()} 
+                                          WHERE to_publickey='${safeFrom}' AND status='pending'`;
+                    await this.runSQL(updateReqSql);
+
+                    this.newMessageCallbacks.forEach((cb) => cb({ ...json, type: 'maxima_contact_declined', from } as any));
+                    return;
+                }
+
+                // Handle Profile Response (for Extended Profile)
+                if (json.type === "profile_response") {
+                    console.log(`👤 [PROFILE] Response received from ${from}`);
+                    import('./profile.service').then(({ handleProfileResponse }) => {
+                        handleProfileResponse(from, json);
+                    }).catch(err => console.error("❌ [PROFILE] Failed to load profile service:", err));
                     return;
                 }
 
@@ -2824,16 +2870,21 @@ class MinimaService {
     /**
      * Send a contact request to another user
      */
-    async sendContactRequest(toAddress: string, myName: string, myAvatar: string): Promise<void> {
+    async sendChatRequest(toAddress: string, myName: string, myAvatar: string): Promise<void> {
         try {
             console.log(`📤 [Contact Request] Sending request to ${toAddress}`);
 
             const escapeSql = (str: string) => str.replace(/'/g, "''");
 
+            // Get my Maxima address to include in the request
+            const myMaximaInfo = await MDS.cmd.maxima({ params: { action: 'info' } });
+            const myAddress = (myMaximaInfo.response as any).contact;
+
             const payload = {
                 type: "contact_request",
                 name: myName,
                 avatar: myAvatar,
+                from_address: myAddress,  // Include sender's address for reply
                 timestamp: Date.now()
             };
 
@@ -2844,7 +2895,7 @@ class MinimaService {
                 action: "send",
                 application: "metachain",
                 data: hexData,
-                poll: true,  // Enable polling to ensure delivery
+                poll: false,  // Use poll:false for immediate delivery
             };
 
             // Determine the recipient's hex publickey - this is what we'll use consistently
@@ -2898,7 +2949,7 @@ class MinimaService {
             // Always insert the system message so it appears in the timeline
             const insertChatSql = `
                 INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date)
-                VALUES ('', '${safeHexPublicKey}', 'System', 'system', 'Contact request sent', '', 'sent', 0, ${now})
+                VALUES ('', '${safeHexPublicKey}', 'System', 'system', 'Chat request sent', '', 'sent', 0, ${now})
             `;
             await this.runSQL(insertChatSql);
             console.log("✅ [Contact Request] Chat entry created/updated for outgoing request");
@@ -2909,9 +2960,11 @@ class MinimaService {
             const myPublicKey = (myInfo.response as any).publickey;
             const safeMyPublicKey = escapeSql(myPublicKey);
 
+            // Use MERGE to handle existing rows (e.g. if we were previously declined, reset to pending)
             const insertRequestSql = `
-                INSERT INTO CONTACT_REQUESTS (from_publickey, to_publickey, from_name, status, created_at)
-                VALUES ('${safeMyPublicKey}', '${safeHexPublicKey}', '${escapeSql(myName)}', 'pending', ${now})
+                MERGE INTO CONTACT_REQUESTS (from_publickey, to_publickey, from_name, status, created_at, updated_at)
+                KEY(from_publickey, to_publickey)
+                VALUES ('${safeMyPublicKey}', '${safeHexPublicKey}', '${escapeSql(myName)}', 'pending', ${now}, ${now})
             `;
             await this.runSQL(insertRequestSql);
             console.log(`✅ [Contact Request] Outgoing request saved with to_publickey: ${recipientHexPublicKey}`);
@@ -2926,10 +2979,22 @@ class MinimaService {
      */
     async getChatPermission(): Promise<boolean> {
         try {
-            const res = await MDS.keypair.get('allow_noncontact_chats');
-            if (res && res.status && res.value !== undefined) {
-                return res.value === 'true';
+            // Check DB first (Source of Truth)
+            const sql = "SELECT allow_non_contact_chats FROM MY_PROFILE WHERE id=1 LIMIT 1";
+            const res = await this.runSQL(sql);
+
+            if (res && res.rows && res.rows.length > 0) {
+                const rawValue = res.rows[0].ALLOW_NON_CONTACT_CHATS ?? res.rows[0].allow_non_contact_chats;
+                // Handle 1/0, "true"/"false", boolean
+                return (rawValue === 1 || rawValue === "1" || rawValue === true || rawValue === "true");
             }
+
+            // Fallback to Keypair
+            const resKp = await MDS.keypair.get('allow_noncontact_chats');
+            if (resKp && resKp.status && resKp.value !== undefined) {
+                return resKp.value === 'true';
+            }
+
             return true; // Default to true if not set
         } catch (err) {
             console.error("❌ [Settings] Error getting chat permission:", err);
@@ -2956,8 +3021,13 @@ class MinimaService {
                 const row = res.rows[0];
                 const allowNonContactChats = row.ALLOW_NON_CONTACT_CHATS;
 
-                // Handle both boolean and integer values (1 = true, 0 = false)
-                const permissionGranted = (allowNonContactChats === true || allowNonContactChats === 1);
+                // Handle boolean, integer, AND string values (true/'true'/1/'1' = true, false/'false'/0/'0' = false)
+                const permissionGranted = (
+                    allowNonContactChats === true ||
+                    allowNonContactChats === 1 ||
+                    allowNonContactChats === 'true' ||
+                    allowNonContactChats === '1'
+                );
 
                 console.log(`✅ [CHAT-PERM] Contact ${contactPublicKey.substring(0, 10)}... allowNonContactChats: ${permissionGranted} (raw: ${allowNonContactChats})`);
                 return permissionGranted;
@@ -2974,7 +3044,7 @@ class MinimaService {
     /**
      * Save incoming contact request to database
      */
-    async saveContactRequest(fromPublicKey: string, fromName: string, fromAvatar: string, _toPublicKey: string): Promise<void> {
+    async saveChatRequest(fromPublicKey: string, fromName: string, fromAvatar: string, _toPublicKey: string, fromAddress?: string): Promise<void> {
         try {
             const now = Date.now();
 
@@ -2995,28 +3065,20 @@ class MinimaService {
             const safeFromName = escapeSql(fromName);
             const safeFromAvatar = escapeSql(fromAvatar);
             const safeToPublicKey = escapeSql(toPublicKey);
+            const safeFromAddress = fromAddress ? escapeSql(fromAddress) : '';
 
-            // Check if a PENDING request already exists
-            // If so, mark it as 'superseded' and create a new one
-            // This handles cases where old requests weren't properly declined
-            const checkSql = `SELECT * FROM CONTACT_REQUESTS WHERE from_publickey='${safeFromPublicKey}' AND to_publickey='${safeToPublicKey}' AND status='pending'`;
-            const existing = await this.runSQL(checkSql);
+            // Nuclear Option: Delete any existing request logic
+            // This replaces the complex 'supersede' and 'merge' logic which was causing duplicates/bugs
+            // Nuclear Option: Delete any existing request for this pair to ensure fresh state
+            // This prevents duplicates and ensures strict 'pending' status
+            const deleteSql = `DELETE FROM CONTACT_REQUESTS WHERE from_publickey='${safeFromPublicKey}' AND to_publickey='${safeToPublicKey}'`;
+            await this.runSQL(deleteSql);
 
-            if (existing.rows && existing.rows.length > 0) {
-                console.log("⚠️ [Contact Request] Pending request already exists, marking as superseded");
-                // Mark old request as superseded
-                const updateSql = `UPDATE CONTACT_REQUESTS SET status='superseded', updated_at=${now} WHERE from_publickey='${safeFromPublicKey}' AND to_publickey='${safeToPublicKey}' AND status='pending'`;
-                await this.runSQL(updateSql);
-            }
-
-            console.log("✅ [Contact Request] Saving new request");
-
-            const sql = `
-                INSERT INTO CONTACT_REQUESTS (from_publickey, from_name, from_avatar, to_publickey, status, created_at)
-                VALUES ('${safeFromPublicKey}', '${safeFromName}', '${safeFromAvatar}', '${safeToPublicKey}', 'pending', ${now})
-            `;
-
-            await this.runSQL(sql);
+            console.log("✅ [Contact Request] Inserting fresh request");
+            await this.runSQL(`
+                INSERT INTO CONTACT_REQUESTS (from_publickey, from_name, from_avatar, to_publickey, from_address, status, created_at, updated_at)
+                VALUES ('${safeFromPublicKey}', '${safeFromName}', '${safeFromAvatar}', '${safeToPublicKey}', '${safeFromAddress}', 'pending', ${now}, ${now})
+            `);
             console.log("✅ [Contact Request] Saved to database");
 
             // Send delivery confirmation back to sender
@@ -3042,12 +3104,13 @@ class MinimaService {
 
             // Create a chat entry so it appears in the chat list
             // Always insert the system message so it appears in the timeline
-            const insertChatSql = `
-                INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date)
-                VALUES ('', '${safeFromPublicKey}', 'System', 'system', '${safeFromName} sent a contact request', '', 'received', 0, ${now})
-            `;
-            await this.runSQL(insertChatSql);
-            console.log("✅ [Contact Request] Chat entry created/updated for incoming request");
+            // DUPLICATE FIX: Service worker already inserts "Contact request received", so we don't need this one.
+            // const insertChatSql = `
+            //     INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date)
+            //     VALUES ('', '${safeFromPublicKey}', 'System', 'system', '${safeFromName} sent a contact request', '', 'received', 0, ${now})
+            // `;
+            // await this.runSQL(insertChatSql);
+            console.log("✅ [Contact Request] Chat entry creation skipped (Service Worker handles it)");
         } catch (err) {
             console.error("❌ [Contact Request] Error saving request:", err);
             throw err;
@@ -3058,7 +3121,7 @@ class MinimaService {
      * Check if there's a pending contact request from me to this user
      * Searches by BOTH hex publickey AND Maxima address to handle both formats
      */
-    async checkPendingContactRequest(publickey: string): Promise<boolean> {
+    async checkPendingChatRequest(publickey: string): Promise<boolean> {
         try {
             console.log(`🔍 [checkPendingContactRequest] Checking for identifier: ${publickey}`);
             const escapeSql = (str: string) => str.replace(/'/g, "''");
@@ -3137,7 +3200,7 @@ class MinimaService {
     /**
      * Check if there's an incoming pending contact request FROM this user TO me
      */
-    async checkIncomingContactRequest(fromPublickey: string): Promise<boolean> {
+    async checkIncomingChatRequest(fromPublickey: string): Promise<boolean> {
         try {
             console.log(`🔍 [checkIncomingContactRequest] Checking for incoming request from: ${fromPublickey}`);
             const escapeSql = (str: string) => str.replace(/'/g, "''");
@@ -3174,7 +3237,7 @@ class MinimaService {
     /**
      * Get pending contact requests for current user
      */
-    async getContactRequests(myPublicKey: string): Promise<any[]> {
+    async getChatRequests(myPublicKey: string): Promise<any[]> {
         try {
             console.log("🔍 [Contact Request] Getting requests for:", myPublicKey);
             const escapeSql = (str: string) => str.replace(/'/g, "''");
@@ -3193,29 +3256,33 @@ class MinimaService {
     /**
      * Accept a contact request
      */
-    async acceptContactRequest(fromPublicKey: string, fromAddress: string): Promise<void> {
+    async acceptChatRequest(fromPublicKey: string, fromAddress: string): Promise<void> {
         try {
             console.log(`✅ [Contact Request] Accepting request from ${fromPublicKey}`);
 
-            // NOTE: We do NOT add them to Maxima contacts automatically anymore. 
-            // Accepting a request only authorizes the chat locally.
+            // 1. (Removed) Do NOT add to Maxima contacts automatically. 
+            // This is now a separate user action. 
+            // "Chat Accepted" != "Maxima Contact".
+            console.log(`✅ [Contact Request] Accepted chat permission only.`);
 
-            // 2. Update request status in DB
+            // 2. Get the request from DB to retrieve the sender's address
             const now = Date.now();
             const escapeSql = (str: string) => str.replace(/'/g, "''");
             const safeFromPublicKey = escapeSql(fromPublicKey);
+            const selectSql = `SELECT from_address FROM CONTACT_REQUESTS WHERE from_publickey='${safeFromPublicKey}' AND status='pending' LIMIT 1`;
+            const requestResult = await this.runSQL(selectSql);
+
+            const senderAddress = requestResult.rows && requestResult.rows.length > 0
+                ? requestResult.rows[0].FROM_ADDRESS
+                : fromAddress; // Fallback to parameter if not in DB
+
+            console.log(`📤[Contact Request] Sender address from DB: ${senderAddress || 'not found, using fallback'}`);
+
+            // 3. Update request status in DB
             const updateSql = `UPDATE CONTACT_REQUESTS SET status='accepted', updated_at=${now} WHERE from_publickey='${safeFromPublicKey}' AND status='pending'`;
             await this.runSQL(updateSql);
 
-            // 2.5. Add a system message to the chat
-            const chatMessageSql = `
-                INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date)
-                VALUES ('', '${safeFromPublicKey}', 'System', 'system', 'Contact request accepted', '', 'sent', 0, ${now})
-            `;
-            await this.runSQL(chatMessageSql);
-            console.log(`✅[Contact Request] Added system message to chat`);
-
-            // 3. Send acceptance message so they add us too
+            // 4. Send acceptance message so they add us too
             // Get my address to include in payload for migration
             const myInfo = await MDS.cmd.maxima({ params: { action: 'info' } });
             const myAddress = (myInfo.response as any).contact;
@@ -3229,26 +3296,41 @@ class MinimaService {
             const jsonStr = JSON.stringify(payload);
             const hexData = "0x" + this.utf8ToHex(jsonStr).toUpperCase();
 
-            console.log(`📤[Contact Request] Sending contact_accepted to ${fromAddress} `);
+            console.log(`📤[Contact Request] Sending contact_accepted to ${senderAddress} `);
             console.log(`📤[Contact Request] Payload: `, payload);
 
             const sendParams: any = {
                 action: "send",
                 application: "metachain",
                 data: hexData,
-                poll: false,
+                poll: false,  // Use poll:false like contact_request confirmation
             };
 
-            if (fromAddress.startsWith("Mx") || fromAddress.startsWith("MX")) {
-                sendParams.to = fromAddress;
-                console.log(`📤[Contact Request] Using Maxima address(to): ${fromAddress} `);
+            // Simple strategy: Use address if we have it, otherwise publickey
+            if (senderAddress && (senderAddress.startsWith("Mx") || senderAddress.startsWith("MX"))) {
+                sendParams.to = senderAddress.replace(/\s/g, "");
+                console.log(`📤[Contact Request] Sending via Maxima address: ${sendParams.to.substring(0, 20)}...`);
+            } else if (senderAddress && senderAddress.startsWith("0x")) {
+                sendParams.publickey = senderAddress;
+                console.log(`📤[Contact Request] Sending via publickey: ${senderAddress.substring(0, 20)}...`);
             } else {
-                sendParams.publickey = fromAddress;
-                console.log(`📤[Contact Request] Using hex publickey: ${fromAddress} `);
+                // Fallback to fromPublicKey
+                sendParams.publickey = fromPublicKey;
+                console.log(`📤[Contact Request] Fallback to publickey: ${fromPublicKey.substring(0, 20)}...`);
             }
 
             const sendResult = await MDS.cmd.maxima({ params: sendParams });
             console.log(`📤[Contact Request] Send result: `, sendResult);
+
+            // 5. Save system message locally so I see that I accepted it
+            // This ensures symmetry: Sender sees "Accepted", Receiver (me) currently only saw "Received".
+            // Now Receiver will see "Received" -> "Accepted".
+            const insertMsgSql = `
+                INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date)
+                VALUES ('', '${safeFromPublicKey}', 'System', 'system', 'Chat request accepted', '', 'sent', 0, ${now})
+            `;
+            await this.runSQL(insertMsgSql);
+            console.log("✅ [Contact Request] Local acceptance message saved");
 
             console.log("✅ [Contact Request] Request accepted and confirmation sent");
         } catch (err) {
@@ -3260,7 +3342,36 @@ class MinimaService {
     /**
      * Decline a contact request
      */
-    async declineContactRequest(fromPublicKey: string): Promise<void> {
+    /**
+     * Helper to resolve a public key (0x...) to a Maxima Address (Mx...) using DISCOVERED_PEERS
+     */
+    async resolveMaximaAddress(publicKey: string): Promise<string | null> {
+        if (!publicKey.startsWith('0x')) return publicKey; // Already an address or name?
+
+        const safeKey = publicKey.replace(/'/g, "''");
+        const sql = `SELECT ADDRESS FROM DISCOVERED_PEERS WHERE PUBLICKEY='${safeKey}' AND ADDRESS IS NOT NULL LIMIT 1`;
+
+        try {
+            const res = await this.runSQL(sql);
+            if (res.rows && res.rows.length > 0) {
+                const addr = res.rows[0].ADDRESS;
+                if (addr && (addr.startsWith('Mx') || addr.startsWith('MX'))) {
+                    console.log(`🔍 [ADDRESS-RESOLVER] Resolved ${publicKey.substring(0, 10)}... to ${addr.substring(0, 10)}...`);
+                    return addr;
+                }
+            }
+        } catch (err) {
+            console.error("❌ [ADDRESS-RESOLVER] Error resolving address:", err);
+        }
+
+        console.warn(`⚠️ [ADDRESS-RESOLVER] Could not resolve address for ${publicKey.substring(0, 10)}...`);
+        return null; // Could not resolve
+    }
+
+    /**
+     * Decline a contact request
+     */
+    async declineChatRequest(fromPublicKey: string): Promise<void> {
         try {
             const now = Date.now();
             const escapeSql = (str: string) => str.replace(/'/g, "''");
@@ -3272,14 +3383,529 @@ class MinimaService {
             // Add a system message to the chat
             const chatMessageSql = `
                 INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date)
-            VALUES('', '${safeFromPublicKey}', 'System', 'system', 'Contact request declined', '', 'sent', 0, ${now})
+            VALUES('', '${safeFromPublicKey}', 'System', 'system', 'Chat request declined', '', 'sent', 0, ${now})
                 `;
             await this.runSQL(chatMessageSql);
             console.log("✅ [Contact Request] Added system message to chat");
+
+            // Send "contact_declined" to the sender so they know to stop being pending
+            const payload = {
+                type: "contact_declined",
+                timestamp: now
+            };
+            const jsonStr = JSON.stringify(payload);
+            const hexData = "0x" + this.utf8ToHex(jsonStr).toUpperCase();
+
+            console.log(`📤 [Contact Request] Sending decline notification to ${fromPublicKey}`);
+
+            // Resolve Address for Non-Contacts
+            const mxAddress = await this.resolveMaximaAddress(fromPublicKey);
+
+            const sendParams: any = {
+                action: "send",
+                application: "metachain",
+                data: hexData,
+                poll: true  // Enable polling to ensure delivery in background
+            };
+
+            if (mxAddress) {
+                console.log(`📤 [Contact Request] Using resolved Maxima address: ${mxAddress}`);
+                sendParams.to = mxAddress;
+            } else {
+                console.warn(`⚠️ [Contact Request] Could not resolve address, falling back to publickey (may fail if not contact)`);
+                sendParams.publickey = fromPublicKey;
+            }
+
+            await MDS.cmd.maxima({ params: sendParams });
+            console.log("✅ [Contact Request] Decline notification sent");
+
         } catch (err) {
             console.error("❌ [Contact Request] Error declining request:", err);
             throw err;
         }
+    }
+
+    /**
+     * Cancel own outgoing contact request (sender-initiated)
+     */
+    async cancelChatRequest(toPublicKey: string): Promise<void> {
+        try {
+            const now = Date.now();
+            const escapeSql = (str: string) => str.replace(/'/g, "''");
+
+            // Get my own publickey
+            const myInfo = await MDS.cmd.maxima({ params: { action: 'info' } });
+            const myPublicKey = (myInfo.response as any).publickey;
+            const safeMyPublicKey = escapeSql(myPublicKey);
+            const safeToPublicKey = escapeSql(toPublicKey);
+
+            // Resolve address to check both PK and MX address
+            let safeToAddress = '';
+            console.log(`🔍 [CANCEL DEBUG] Input PublicKey: ${toPublicKey}`);
+
+            if (toPublicKey.startsWith('Mx') || toPublicKey.startsWith('MX')) {
+                safeToAddress = safeToPublicKey;
+                console.log(`🔍 [CANCEL DEBUG] Input IS Address: ${safeToAddress}`);
+            } else {
+                const addr = await this.resolveMaximaAddress(toPublicKey);
+                console.log(`🔍 [CANCEL DEBUG] Resolved Address: ${addr}`);
+                if (addr) safeToAddress = escapeSql(addr);
+            }
+
+            // 1. SELECT first to find the pending request (Robustness Fix)
+
+
+            const selectSql = `SELECT * FROM CONTACT_REQUESTS 
+                               WHERE from_publickey='${safeMyPublicKey}' 
+                               AND (to_publickey='${safeToPublicKey}' ${safeToAddress ? `OR to_publickey='${safeToAddress}'` : ''})
+                               AND status='pending'`;
+
+            console.log(`🔍 [CANCEL DEBUG] Search SQL: ${selectSql}`);
+            const pendingRows = await this.runSQL(selectSql);
+
+            if (pendingRows && pendingRows.rows && pendingRows.rows.length > 0) {
+                const foundToPk = pendingRows.rows[0].TO_PUBLICKEY;
+                console.log(`✅ [CANCEL DEBUG] Found pending request for: ${foundToPk}`);
+
+                // DELETE precisely what we found
+                const deleteSql = `DELETE FROM CONTACT_REQUESTS 
+                                   WHERE from_publickey='${safeMyPublicKey}' 
+                                   AND to_publickey='${foundToPk.replace(/'/g, "''")}' 
+                                   AND status='pending'`;
+
+                await this.runSQL(deleteSql);
+                console.log("✅ [Contact Request] Request cancelled locally (Selected & Deleted)");
+            } else {
+                console.warn("⚠️ [CANCEL DEBUG] No pending local request found to delete!");
+            }
+
+            console.log("✅ [Contact Request] Request cancelled locally");
+
+            // Send cancellation message to the user so they remove it too
+            const payload = {
+                type: "contact_cancelled",
+                timestamp: Date.now()
+            };
+            const jsonStr = JSON.stringify(payload);
+            const hexData = "0x" + this.utf8ToHex(jsonStr).toUpperCase();
+
+            const sendParams: any = {
+                action: "send",
+                application: "metachain",
+                data: hexData,
+                poll: true
+            };
+
+            if (toPublicKey.startsWith("Mx") || toPublicKey.startsWith("MX")) {
+                sendParams.to = toPublicKey.trim();
+            } else {
+                // Use the safeToAddress resolved earlier if available
+                if (safeToAddress && (safeToAddress.startsWith("Mx") || safeToAddress.startsWith("MX"))) {
+                    sendParams.to = safeToAddress.trim();
+                    console.log(`📤 [Contact Request] Sending cancellation to resolved address: ${safeToAddress}`);
+                } else {
+                    sendParams.publickey = toPublicKey.trim();
+                    console.warn(`⚠️ [Contact Request] Sending cancellation to publickey (address not resolved): ${toPublicKey}`);
+                }
+            }
+            try {
+                await MDS.cmd.maxima({ params: sendParams });
+                console.log("✅ [Contact Request] Cancellation sent to recipient");
+            } catch (sendErr) {
+                console.warn("⚠️ [Contact Request] Failed to send cancellation:", sendErr);
+            }
+
+            // Add a system message to the chat
+            const chatMessageSql = `
+                INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date)
+                VALUES('', '${safeToPublicKey}', 'System', 'system', 'Chat request cancelled', '', 'sent', 0, ${now})
+            `;
+            await this.runSQL(chatMessageSql);
+            console.log("✅ [Contact Request] Added cancellation message to chat");
+
+        } catch (err) {
+            console.error("❌ [Contact Request] Error cancelling request:", err);
+            throw err;
+        }
+    }
+
+    /* ----------------------------------------------------------------------------
+      MAXIMA CONTACT REQUESTS
+    ---------------------------------------------------------------------------- */
+
+    async sendMaximaContactRequest(toAddress: string, toPublicKey?: string): Promise<void> {
+        try {
+            console.log(`📤 [Maxima Contact] Sending request to ${toAddress}`);
+
+            let myName = "Unknown";
+            try {
+                const nameRes = await MDS.keypair.get("profile_name");
+                if (nameRes?.value) myName = nameRes.value;
+            } catch (err) {
+                console.log("Could not get profile name");
+            }
+
+            const myInfo = await MDS.cmd.maxima({ params: { action: 'info' } });
+            const myPublicKey = (myInfo.response as any).publickey;
+
+            let recipientHexPublicKey = toPublicKey ? toPublicKey.trim() : toAddress;
+
+            // If not provided, try to resolve (fallback)
+            if (!toPublicKey && (toAddress.startsWith("Mx") || toAddress.startsWith("MX"))) {
+                try {
+                    const contactsRes = await MDS.cmd.maxcontacts({ action: "list" } as any);
+                    const contact = ((contactsRes.response as any)?.contacts || []).find((c: any) =>
+                        c.currentaddress === toAddress
+                    );
+                    if (contact?.publickey) {
+                        recipientHexPublicKey = contact.publickey;
+                    }
+                } catch (err) {
+                    console.log(`⚠️ Could not resolve hex publickey:`, err);
+                }
+            }
+
+            const payload = {
+                type: "maxima_contact_request",
+                name: myName,
+                timestamp: Date.now()
+            };
+
+            const jsonStr = JSON.stringify(payload);
+            const hexData = "0x" + this.utf8ToHex(jsonStr).toUpperCase();
+
+            // IMPORTANT: Always use 'to' with Maxima address, not 'publickey'
+            // Maxima cannot send messages using only publickey if the contact is not added
+            const sendParams: any = {
+                action: "send",
+                application: "metachain",
+                data: hexData,
+                poll: false,
+                to: toAddress.replace(/\s/g, "")  // Always use Maxima address
+            };
+
+            console.log(`📤 [Maxima Contact] Sending to Address: ${toAddress.substring(0, 30)}...`);
+
+            const sendResult = await MDS.cmd.maxima({ params: sendParams as any });
+            console.log("✅ [Maxima Contact] Request sent command result:", sendResult);
+
+            const now = Date.now();
+            const escapeSql = (str: string) => str.replace(/'/g, "''");
+            const safeMyPk = escapeSql(myPublicKey);
+            const safeRecipPk = escapeSql(recipientHexPublicKey);
+            const safeMyName = escapeSql(myName);
+
+            // Insert system message for local echo
+            const chatSql = `INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) 
+                             VALUES('${safeMyName}', '${safeRecipPk}', 'System', 'system', 'Maxima contact request sent', '', 'sent', 0, ${now})`;
+            await this.runSQL(chatSql);
+
+            const deleteSql = `DELETE FROM MAXIMA_CONTACT_REQUESTS WHERE from_publickey='${safeMyPk}' AND to_publickey='${safeRecipPk}'`;
+            await this.runSQL(deleteSql);
+
+            const insertSql = `
+                INSERT INTO MAXIMA_CONTACT_REQUESTS (from_publickey, from_name, to_publickey, status, created_at, updated_at)
+                VALUES ('${safeMyPk}', '${safeMyName}', '${safeRecipPk}', 'pending', ${now}, ${now})
+            `;
+            await this.runSQL(insertSql);
+
+            console.log("✅ [Maxima Contact] Request sent and saved locally");
+        } catch (err) {
+            console.error("❌ [Maxima Contact] Error sending request:", err);
+            throw err;
+        }
+    }
+
+    async acceptMaximaContactRequest(fromPublicKey: string, fromAddress: string): Promise<void> {
+        try {
+            console.log(`✅ [Maxima Contact] Accepting request from ${fromPublicKey}`);
+
+            if (fromAddress) {
+                console.log(`📇 Adding ${fromAddress} to maxcontacts`);
+                await MDS.cmd.maxcontacts({
+                    action: "add",
+                    contact: fromAddress
+                } as any);
+                console.log(`✅ Added to maxcontacts`);
+            }
+
+            const now = Date.now();
+            const escapeSql = (str: string) => str.replace(/'/g, "''");
+            const safeFromPk = escapeSql(fromPublicKey);
+
+            const updateSql = `UPDATE MAXIMA_CONTACT_REQUESTS SET status='accepted', updated_at=${now} WHERE from_publickey='${safeFromPk}' AND status='pending'`;
+            await this.runSQL(updateSql);
+
+            const myInfo = await MDS.cmd.maxima({ params: { action: 'info' } });
+            const myAddress = (myInfo.response as any).contact;
+
+            // Save system message locally (mirroring acceptChatRequest)
+            const insertMsgSql = `
+                INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date)
+                VALUES ('', '${safeFromPk}', 'System', 'system', 'Maxima contact accepted', '', 'sent', 0, ${now})
+            `;
+            await this.runSQL(insertMsgSql);
+
+            const payload = {
+                type: "maxima_contact_accepted",
+                timestamp: Date.now(),
+                from_address: myAddress
+            };
+
+            const jsonStr = JSON.stringify(payload);
+            const hexData = "0x" + this.utf8ToHex(jsonStr).toUpperCase();
+
+            const sendParams: any = {
+                action: "send",
+                application: "metachain",
+                data: hexData,
+                poll: true
+            };
+
+            if (fromAddress.startsWith("Mx") || fromAddress.startsWith("MX")) {
+                sendParams.to = fromAddress.replace(/\s/g, ""); // Aggressive sanitization
+            } else {
+                sendParams.publickey = fromAddress;
+            }
+
+            await MDS.cmd.maxima({ params: sendParams });
+            console.log("✅ [Maxima Contact] Acceptance sent");
+        } catch (err) {
+            console.error("❌ [Maxima Contact] Error accepting request:", err);
+            throw err;
+        }
+    }
+
+    async declineMaximaContactRequest(fromPublicKey: string, _fromAddress: string): Promise<void> {
+        try {
+            console.log(`🚫 [Maxima Contact] Declining request from ${fromPublicKey}`);
+
+            const now = Date.now();
+            const escapeSql = (str: string) => str.replace(/'/g, "''");
+            const safeFromPk = escapeSql(fromPublicKey);
+
+            const updateSql = `UPDATE MAXIMA_CONTACT_REQUESTS SET status='declined', updated_at=${now} WHERE from_publickey='${safeFromPk}' AND status='pending'`;
+            await this.runSQL(updateSql);
+
+            // Save system message locally (mirroring declineChatRequest)
+            const insertMsgSql = `
+                INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date)
+                VALUES ('', '${safeFromPk}', 'System', 'system', 'Maxima contact declined', '', 'sent', 0, ${now})
+            `;
+            await this.runSQL(insertMsgSql);
+
+            const mxAddress = await this.resolveMaximaAddress(fromPublicKey);
+
+            const payload = {
+                type: "maxima_contact_declined",
+                timestamp: now
+            };
+
+            const jsonStr = JSON.stringify(payload);
+            const hexData = "0x" + this.utf8ToHex(jsonStr).toUpperCase();
+
+            const sendParams: any = {
+                action: "send",
+                application: "metachain",
+                data: hexData,
+                poll: true
+            };
+
+            if (mxAddress) {
+                sendParams.to = mxAddress.trim();
+            } else {
+                sendParams.publickey = fromPublicKey;
+            }
+
+            await MDS.cmd.maxima({ params: sendParams });
+            console.log("✅ [Maxima Contact] Decline sent");
+        } catch (err) {
+            console.error("❌ [Maxima Contact] Error declining:", err);
+            throw err;
+        }
+    }
+
+    /**
+     * Cancel own outgoing Maxima contact request (sender-initiated)
+     */
+    async cancelMaximaContactRequest(toPublicKey: string): Promise<void> {
+        try {
+            console.log(`🔍 [CANCEL MAXIMA DEBUG] Input PublicKey: ${toPublicKey}`);
+            const escapeSql = (str: string) => str.replace(/'/g, "''");
+
+            // Get my own publickey
+            const myInfo = await MDS.cmd.maxima({ params: { action: 'info' } });
+            const myPublicKey = (myInfo.response as any).publickey;
+            const safeMyPk = escapeSql(myPublicKey);
+            const safeToPk = escapeSql(toPublicKey);
+
+            // Resolve address to check both PK and MX address check
+            let safeToAddress = '';
+            if (toPublicKey.startsWith('Mx') || toPublicKey.startsWith('MX')) {
+                safeToAddress = safeToPk;
+                console.log(`🔍 [CANCEL MAXIMA DEBUG] Input IS Address: ${safeToAddress}`);
+            } else {
+                const addr = await this.resolveMaximaAddress(toPublicKey);
+                console.log(`🔍 [CANCEL MAXIMA DEBUG] Resolved Address: ${addr}`);
+                if (addr) safeToAddress = escapeSql(addr);
+            }
+
+            // 1. SELECT first to find the pending request (Robustness Fix)
+            const selectSql = `SELECT * FROM MAXIMA_CONTACT_REQUESTS 
+                               WHERE from_publickey='${safeMyPk}' 
+                               AND (to_publickey='${safeToPk}' ${safeToAddress ? `OR to_publickey='${safeToAddress}'` : ''})
+                               AND status='pending'`;
+
+            console.log(`🔍 [CANCEL MAXIMA DEBUG] Search SQL: ${selectSql}`);
+            const pendingRows = await this.runSQL(selectSql);
+
+            if (pendingRows && pendingRows.rows && pendingRows.rows.length > 0) {
+                const foundToPk = pendingRows.rows[0].TO_PUBLICKEY;
+                console.log(`✅ [CANCEL MAXIMA DEBUG] Found pending request for: ${foundToPk}`);
+
+                // DELETE precisely what we found
+                const deleteSql = `DELETE FROM MAXIMA_CONTACT_REQUESTS 
+                                   WHERE from_publickey='${safeMyPk}' 
+                                   AND to_publickey='${foundToPk.replace(/'/g, "''")}' 
+                                   AND status='pending'`;
+
+                await this.runSQL(deleteSql);
+                console.log("✅ [Maxima Contact] Request cancelled locally (Selected & Deleted)");
+            } else {
+                console.warn("⚠️ [CANCEL MAXIMA DEBUG] No pending local request found to delete!");
+            }
+
+            // 2. Send cancellation message to recipient
+            const payload = {
+                type: "maxima_contact_cancelled",
+                timestamp: Date.now()
+            };
+            const jsonStr = JSON.stringify(payload);
+            const hexData = "0x" + this.utf8ToHex(jsonStr).toUpperCase();
+
+            const sendParams: any = {
+                action: "send",
+                application: "metachain",
+                data: hexData,
+                poll: true
+            };
+
+            if (toPublicKey.startsWith("Mx") || toPublicKey.startsWith("MX")) {
+                sendParams.to = toPublicKey.trim();
+            } else {
+                // Use resolved address
+                if (safeToAddress && (safeToAddress.startsWith("Mx") || safeToAddress.startsWith("MX"))) {
+                    sendParams.to = safeToAddress.trim();
+                    console.log(`📤 [Maxima Contact] Sending cancellation to resolved address: ${safeToAddress}`);
+                } else {
+                    sendParams.publickey = toPublicKey.trim();
+                    console.warn(`⚠️ [Maxima Contact] Sending cancellation to publickey (address not resolved): ${toPublicKey}`);
+                }
+            }
+            try {
+                await MDS.cmd.maxima({ params: sendParams });
+                console.log("✅ [Maxima Contact] Cancellation sent to recipient");
+
+                // Insert visual system message locally
+                const now = Date.now();
+                const sqlLocal = `INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) 
+                                  VALUES('', '${safeToPk}', 'System', 'system', 'Maxima contact request cancelled', '', 'sent', 0, ${now})`;
+                await this.runSQL(sqlLocal);
+
+            } catch (sendErr) {
+                console.warn("⚠️ [Maxima Contact] Failed to send cancellation:", sendErr);
+            }
+
+        } catch (err) {
+            console.error("❌ [Maxima Contact] Error cancelling request:", err);
+            throw err;
+        }
+    }
+
+    async getMaximaContactRequests(myPublicKey: string): Promise<any[]> {
+        try {
+            const escapeSql = (str: string) => str.replace(/'/g, "''");
+            const safePk = escapeSql(myPublicKey);
+
+            const sql = `SELECT * FROM MAXIMA_CONTACT_REQUESTS WHERE to_publickey='${safePk}' AND status='pending' ORDER BY created_at DESC`;
+            const result = await this.runSQL(sql);
+            return result.rows || [];
+        } catch (err) {
+            console.error("❌ [Maxima Contact] Error getting requests:", err);
+            return [];
+        }
+    }
+
+    async saveMaximaContactRequest(fromPublicKey: string, fromName: string): Promise<void> {
+        try {
+            console.log("💾 [Maxima Contact] Saving request from:", fromPublicKey);
+
+            const myInfo = await MDS.cmd.maxima({ params: { action: 'info' } });
+            const myPublicKey = (myInfo.response as any).publickey;
+
+            const now = Date.now();
+            const escapeSql = (str: string) => str.replace(/'/g, "''");
+            const safeFromPk = escapeSql(fromPublicKey);
+            const safeFromName = escapeSql(fromName);
+            const safeMyPk = escapeSql(myPublicKey);
+
+            const deleteSql = `DELETE FROM MAXIMA_CONTACT_REQUESTS WHERE from_publickey='${safeFromPk}' AND to_publickey='${safeMyPk}'`;
+            await this.runSQL(deleteSql);
+
+            const insertSql = `
+                INSERT INTO MAXIMA_CONTACT_REQUESTS (from_publickey, from_name, to_publickey, status, created_at, updated_at)
+                VALUES ('${safeFromPk}', '${safeFromName}', '${safeMyPk}', 'pending', ${now}, ${now})
+            `;
+            await this.runSQL(insertSql);
+
+            console.log("✅ [Maxima Contact] Request saved");
+        } catch (err) {
+            console.error("❌ [Maxima Contact] Error saving request:", err);
+            throw err;
+        }
+    }
+    // ============================================================================
+    // BACKWARD COMPATIBILITY ALIASES (Refactoring Contact -> Chat Requests)
+    // ============================================================================
+
+    /** @deprecated Use sendChatRequest */
+    async sendContactRequest(toAddress: string, myName: string, myAvatar: string): Promise<void> {
+        return this.sendChatRequest(toAddress, myName, myAvatar);
+    }
+
+    /** @deprecated Use saveChatRequest */
+    async saveContactRequest(fromPublicKey: string, fromName: string, fromAvatar: string, _toPublicKey: string, fromAddress?: string): Promise<void> {
+        return this.saveChatRequest(fromPublicKey, fromName, fromAvatar, _toPublicKey, fromAddress);
+    }
+
+    /** @deprecated Use checkPendingChatRequest */
+    async checkPendingContactRequest(publickey: string): Promise<boolean> {
+        return this.checkPendingChatRequest(publickey);
+    }
+
+    /** @deprecated Use checkIncomingChatRequest */
+    async checkIncomingContactRequest(fromPublickey: string): Promise<boolean> {
+        return this.checkIncomingChatRequest(fromPublickey);
+    }
+
+    /** @deprecated Use getChatRequests */
+    async getContactRequests(myPublicKey: string): Promise<any[]> {
+        return this.getChatRequests(myPublicKey);
+    }
+
+    /** @deprecated Use acceptChatRequest */
+    async acceptContactRequest(fromPublicKey: string, fromAddress: string): Promise<void> {
+        return this.acceptChatRequest(fromPublicKey, fromAddress);
+    }
+
+    /** @deprecated Use declineChatRequest */
+    async declineContactRequest(fromPublicKey: string): Promise<void> {
+        return this.declineChatRequest(fromPublicKey);
+    }
+
+    /** @deprecated Use cancelChatRequest */
+    async cancelContactRequest(toPublicKey: string): Promise<void> {
+        return this.cancelChatRequest(toPublicKey);
     }
 }
 

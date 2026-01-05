@@ -3,6 +3,7 @@
 import Lottie from "lottie-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useEffect } from "react";
+import { safeUrl } from "../../utils/sanitization";
 
 // Dynamic import of all .json files
 const charmModules = import.meta.glob('../../assets/animations/*.json', { eager: true });
@@ -206,11 +207,28 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
           </motion.div>
         )}
 
-        {/* Text */}
+        {/* Text with Link Parsing */}
         {text && (
-          <p className={`text-[15px] leading-relaxed whitespace-pre-wrap break-words ${isTokenTransfer ? 'text-gray-700 font-medium' : 'text-gray-800'
+          <p className={`text-[15px] leading-relaxed whitespace-pre-wrap break-all ${isTokenTransfer ? 'text-gray-700 font-medium' : 'text-gray-800'
             }`}>
-            {text}
+            {text.split(/((?:https?:\/\/|www\.)[^\s]+)/g).map((part, i) => {
+              const url = safeUrl(part);
+              if (url) {
+                return (
+                  <a
+                    key={i}
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline"
+                    onClick={(e) => e.stopPropagation()} // Prevent bubble click handlers
+                  >
+                    {part}
+                  </a>
+                );
+              }
+              return part;
+            })}
           </p>
         )}
 
