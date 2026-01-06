@@ -98,17 +98,17 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
   let bubbleColor = "";
 
   if (status === 'failed') {
-    bubbleColor = "bg-red-50 border border-red-100 shadow-sm opacity-90 grayscale-[0.3]";
+    bubbleColor = "bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/50 shadow-sm opacity-90 grayscale-[0.3]";
   } else if (isCharm) {
     // Collectible Style: No border, radial glow effect
-    bubbleColor = "bg-radial-gradient from-purple-100/50 to-transparent shadow-none border-none p-0 overflow-visible";
+    bubbleColor = "bg-radial-gradient from-purple-100/50 dark:from-purple-900/30 to-transparent shadow-none border-none p-0 overflow-visible";
   } else if (isTokenTransfer) {
     // Transaction Card Style: Light Gradient, border, shadow
-    bubbleColor = "bg-gradient-to-br from-gray-50 via-white to-gray-50 border border-gray-200 shadow-md";
+    bubbleColor = "bg-gradient-to-br from-gray-50 via-white to-gray-50 dark:from-gray-800 dark:via-gray-700 dark:to-gray-800 border border-gray-200 dark:border-gray-600 shadow-md";
   } else if (fromMe) {
-    bubbleColor = "bg-blue-50 shadow-sm border border-blue-100";
+    bubbleColor = "bg-primary-50 dark:bg-primary-900/20 shadow-sm border border-primary-100 dark:border-primary-800/50";
   } else {
-    bubbleColor = "bg-white shadow-sm border border-gray-100";
+    bubbleColor = "bg-white dark:bg-gray-800 shadow-sm border border-gray-100 dark:border-gray-700";
   }
 
   const borderRadius = fromMe
@@ -159,7 +159,7 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
       </AnimatePresence>
 
       <div
-        className={`relative px-3 py-2 ${borderRadius} ${bubbleColor} min-w-[80px] overflow-visible`}
+        className={`relative px-3 py-2 ${borderRadius} ${bubbleColor} dark:text-gray-100 min-w-[80px] overflow-visible`}
         style={{ position: 'relative' }}
       >
         {/* Token Transfer Badge with enhanced styling */}
@@ -171,8 +171,8 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
                 <span className="text-lg">💸</span>
               </div>
               <div className="flex flex-col">
-                <span className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold">Transfer</span>
-                <span className="text-xs text-cyan-600 font-medium">
+                <span className="text-[10px] uppercase tracking-widest text-gray-500 dark:text-gray-400 font-semibold">Transfer</span>
+                <span className="text-xs text-cyan-600 dark:text-cyan-400 font-medium">
                   {status === 'pending' ? 'Processing...' : 'Confirmed'}
                 </span>
               </div>
@@ -183,7 +183,7 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
               <div className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-600 to-emerald-600 tracking-tight break-all">
                 {tokenAmount.amount}
               </div>
-              <div className="text-sm font-medium text-gray-500 mt-0.5 break-all">
+              <div className="text-sm font-medium text-gray-500 dark:text-gray-400 mt-0.5 break-all">
                 {tokenAmount.tokenName}
               </div>
             </div>
@@ -217,11 +217,11 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
         {/* Text with Link Parsing */}
         {text && (
           <p className={`leading-relaxed whitespace-pre-wrap break-all mt-2 ${isTokenTransfer
-            ? 'text-gray-600 font-normal border-t border-gray-200 pt-2 text-[15px]'
+            ? 'text-gray-600 dark:text-gray-300 font-normal border-t border-gray-200 dark:border-gray-600 pt-2 text-[15px]'
             : isJumboEmoji
               ? 'text-5xl leading-tight py-2' // Jumbo size for emojis
-              : 'text-gray-800 text-[15px]'
-            } ${isCharm ? 'text-center font-medium bg-white/50 backdrop-blur-sm px-3 py-1 rounded-full text-sm inline-block shadow-sm' : ''}`}>
+              : 'text-gray-800 dark:text-gray-100 text-[15px]'
+            } ${isCharm ? 'text-center font-medium bg-white/50 dark:bg-black/20 backdrop-blur-sm px-3 py-1 rounded-full text-sm inline-block shadow-sm' : ''}`}>
             {text.split(/((?:https?:\/\/|www\.)[^\s]+)/g).map((part, i) => {
               // Only render as link if it actually LOOKS like a URL (matches the split regex logic)
               if ((part.startsWith('http') || part.startsWith('www.')) && /^(?:https?:\/\/|www\.)[^\s]+$/.test(part)) {
@@ -232,8 +232,9 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
                       key={i}
                       href={url}
                       target="_blank"
+
                       rel="noopener noreferrer"
-                      className="text-blue-600 hover:underline"
+                      className="text-primary-600 dark:text-primary-400 hover:underline"
                       onClick={(e) => e.stopPropagation()} // Prevent bubble click handlers
                     >
                       {part}
@@ -264,7 +265,7 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
         )}
 
         {/* Status indicator */}
-        <div className={`text-xs mt-1 text-right flex items-center justify-end gap-1 ${fromMe ? (status === 'failed' ? 'text-red-500' : 'text-gray-600') : 'text-gray-400'
+        <div className={`text-xs mt-1 text-right flex items-center justify-end gap-1 ${fromMe ? (status === 'failed' ? 'text-red-500' : 'text-gray-600 dark:text-gray-400') : 'text-gray-400 dark:text-gray-500'
           }`}>
           {status === 'pending' && (
             <span className="flex items-center gap-1 bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded text-[10px] font-medium">
@@ -306,10 +307,10 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
               )}
               {status === 'read' && (
                 <div className="flex relative w-5 h-3.5">
-                  <svg className="w-3.5 h-3.5 text-blue-600 absolute left-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                  <svg className="w-3.5 h-3.5 text-primary-600 absolute left-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                   </svg>
-                  <svg className="w-3.5 h-3.5 text-blue-600 absolute left-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                  <svg className="w-3.5 h-3.5 text-primary-600 absolute left-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                   </svg>
                 </div>
@@ -360,7 +361,7 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
           </div>
 
           <div className="flex flex-col items-start min-w-0">
-            <span className="text-[11px] text-gray-500 ml-1 mb-0.5 truncate max-w-[200px]">
+            <span className="text-[11px] text-gray-500 dark:text-gray-400 ml-1 mb-0.5 truncate max-w-[200px]">
               {senderName}
             </span>
             {renderBubbleContent()}

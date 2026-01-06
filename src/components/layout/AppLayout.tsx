@@ -22,7 +22,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
   }, []);
 
   return (
-    <div className="flex bg-gray-100 text-gray-900 h-screen overflow-hidden">
+    <div className="flex bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 h-screen overflow-hidden transition-colors">
       <SideMenu isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
 
       <div className="flex-1 flex flex-col h-screen overflow-hidden relative">

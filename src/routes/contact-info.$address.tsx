@@ -148,6 +148,7 @@ function ContactInfoPage() {
                     let country = "";
                     let languages: string[] = [];
 
+
                     if (peer.EXTRA_DATA) {
                         try {
                             const extraObj = JSON.parse(peer.EXTRA_DATA);
@@ -159,6 +160,15 @@ function ContactInfoPage() {
                         } catch (e) {
                             console.warn("⚠️ [CONTACT] Failed to parse extra_data:", e);
                         }
+                    }
+
+                    // Extract permission from DB (Source of Truth for initial load)
+                    const dbPermission = peer.ALLOW_NON_CONTACT_CHATS;
+                    // Handle various SQL boolean formats (1, true, "1", "true")
+                    if (dbPermission !== undefined && dbPermission !== null) {
+                        const isAllowed = (dbPermission === 1 || dbPermission === "1" || dbPermission === true || dbPermission === "true");
+                        console.log("🔐 [CONTACT] Permission from DB:", isAllowed);
+                        setUserAllowsNonContactChats(isAllowed);
                     }
 
                     // Convert discovered peer to Contact format
@@ -526,6 +536,12 @@ function ContactInfoPage() {
             await minimaService.sendMaximaContactRequest(contact.currentaddress, contact.publickey);
             setMaximaRequestPending(true);
             console.log("✅ [Maxima Contact] Request sent");
+
+            // Navigate to chat immediately so user sees the "Request sent" system message
+            navigate({
+                to: "/chat/$address",
+                params: { address: contact.publickey }
+            });
         } catch (err: any) {
             console.error("❌ [Maxima Contact] Error sending request:", err);
             alert(`Error sending Maxima contact request: ${err.message || err}`);
@@ -623,19 +639,19 @@ function ContactInfoPage() {
 
     if (loading) {
         return (
-            <div className="h-screen flex items-center justify-center bg-gray-50">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+            <div className="h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
             </div>
         );
     }
 
     if (!contact) {
         return (
-            <div className="h-screen flex flex-col items-center justify-center bg-gray-50 p-4">
-                <p className="text-gray-500 mb-4">Contact not found</p>
+            <div className="h-screen flex flex-col items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
+                <p className="text-gray-500 dark:text-gray-400 mb-4">Contact not found</p>
                 <button
                     onClick={() => navigate({ to: "/" })}
-                    className="px-4 py-2 bg-blue-500 text-white rounded-lg"
+                    className="px-4 py-2 bg-primary-500 text-white rounded-lg"
                 >
                     Go Back
                 </button>
@@ -653,9 +669,9 @@ function ContactInfoPage() {
     const p2pBio = contact?.extradata?.description || "";
 
     return (
-        <div className="h-full overflow-y-auto bg-gray-50">
+        <div className="h-full overflow-y-auto bg-gray-50 dark:bg-gray-900 transition-colors">
             {/* Header */}
-            <div className="bg-white px-4 py-3 flex items-center gap-3 shadow-sm sticky top-0 z-10">
+            <div className="bg-white dark:bg-gray-800 px-4 py-3 flex items-center gap-3 shadow-sm sticky top-0 z-10 border-b border-gray-200 dark:border-gray-700 transition-colors">
                 <button
                     onClick={() => {
                         if (search.returnTo) {
@@ -664,11 +680,11 @@ function ContactInfoPage() {
                             navigate({ to: '/' });
                         }
                     }}
-                    className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-600"
+                    className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors text-gray-600 dark:text-gray-300"
                 >
                     <ArrowLeft size={24} />
                 </button>
-                <h1 className="text-lg font-semibold text-gray-800">Contact Info</h1>
+                <h1 className="text-lg font-semibold text-gray-800 dark:text-white">Contact Info</h1>
             </div>
 
             {/* Tab Navigation */}
@@ -683,11 +699,11 @@ function ContactInfoPage() {
                     <div className="space-y-6">
                         {/* Profile Loading Error */}
                         {profileError && (
-                            <div className="bg-white rounded-xl shadow-sm border border-red-100 p-6 text-center">
-                                <p className="text-red-600 mb-3">{profileError}</p>
+                            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-red-100 dark:border-red-900/30 p-6 text-center">
+                                <p className="text-red-600 dark:text-red-400 mb-3">{profileError}</p>
                                 <button
                                     onClick={handleRequestProfile}
-                                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                                    className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
                                 >
                                     Retry
                                 </button>
@@ -696,12 +712,12 @@ function ContactInfoPage() {
 
 
                         {/* Basic Profile Info */}
-                        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 flex flex-col items-center text-center">
+                        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-6 flex flex-col items-center text-center transition-colors">
                             <div className="relative mb-4">
                                 <img
                                     src={avatarUrl}
                                     alt={contactName}
-                                    className="w-24 h-24 rounded-full object-cover border-4 border-white shadow-md bg-gray-50"
+                                    className="w-24 h-24 rounded-full object-cover border-4 border-white dark:border-gray-700 shadow-md bg-gray-50 dark:bg-gray-900"
                                     onError={(e) => {
                                         (e.target as HTMLImageElement).src = defaultAvatar;
                                     }}
@@ -712,16 +728,16 @@ function ContactInfoPage() {
                                     </div>
                                 )}
                             </div>
-                            <h2 className="text-2xl font-bold text-gray-900 mb-1 px-4 break-words w-full text-center">{contactName}</h2>
+                            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-1 px-4 break-words w-full text-center">{contactName}</h2>
 
                             {displayLastSeen && (
-                                <div className="text-xs text-gray-400 mb-4 flex items-center gap-1 bg-gray-50 px-2 py-1 rounded">
+                                <div className="text-xs text-gray-400 dark:text-gray-500 mb-4 flex items-center gap-1 bg-gray-50 dark:bg-gray-900 px-2 py-1 rounded">
                                     <span className="w-1.5 h-1.5 rounded-full bg-gray-400"></span>
                                     Last seen: {new Date(displayLastSeen).toLocaleString()}
                                 </div>
                             )}
 
-                            <p className="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full font-mono mb-6 truncate max-w-xs cursor-pointer hover:bg-gray-200 transition-colors"
+                            <p className="text-sm text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-900 px-3 py-1 rounded-full font-mono mb-6 truncate max-w-xs cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
                                 onClick={() => copyToClipboard(contact?.publickey || "", "pk-main")}
                                 title="Click to copy public key"
                             >
@@ -730,24 +746,24 @@ function ContactInfoPage() {
 
                             {/* Extended Profile Details */}
                             {profileLoaded && (
-                                <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-4 text-left border-t border-gray-100 pt-6 mt-2">
+                                <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-4 text-left border-t border-gray-100 dark:border-gray-700 pt-6 mt-2">
 
                                     {/* Level 2 Privacy Warning */}
                                     {extendedProfile?.privacy_l2 === 'hidden' && (
-                                        <div className="md:col-span-2 bg-purple-50 p-2 rounded-lg text-center text-xs text-purple-700 font-medium">
+                                        <div className="md:col-span-2 bg-purple-50 dark:bg-purple-900/20 p-2 rounded-lg text-center text-xs text-purple-700 dark:text-purple-400 font-medium">
                                             Level 2 details hidden by user
                                         </div>
                                     )}
 
                                     {/* Bio */}
                                     {(contact?.extradata?.description || p2pBio) && (
-                                        <div className="bg-gray-50 p-3 rounded-lg flex items-start gap-3 md:col-span-2">
-                                            <div className="bg-white p-2 rounded-md shadow-sm text-purple-500 mt-0.5">
+                                        <div className="bg-gray-50 dark:bg-gray-900/50 p-3 rounded-lg flex items-start gap-3 md:col-span-2">
+                                            <div className="bg-white dark:bg-gray-800 p-2 rounded-md shadow-sm text-purple-500 dark:text-purple-400 mt-0.5">
                                                 <UserCheck size={18} />
                                             </div>
                                             <div className="flex-1 min-w-0">
-                                                <span className="block text-xs font-semibold text-gray-500 uppercase tracking-widest mb-0.5">Bio</span>
-                                                <p className="text-sm text-gray-700 italic break-words whitespace-pre-wrap">
+                                                <span className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-0.5">Bio</span>
+                                                <p className="text-sm text-gray-700 dark:text-gray-300 italic break-words whitespace-pre-wrap">
                                                     "{contact?.extradata?.description || p2pBio}"
                                                 </p>
                                             </div>
@@ -756,13 +772,13 @@ function ContactInfoPage() {
 
                                     {/* Location */}
                                     {(extendedProfile?.country || extendedProfile?.location) && (
-                                        <div className="bg-gray-50 p-3 rounded-lg flex items-start gap-3">
-                                            <div className="bg-white p-2 rounded-md shadow-sm text-blue-500 mt-0.5">
+                                        <div className="bg-gray-50 dark:bg-gray-900/50 p-3 rounded-lg flex items-start gap-3">
+                                            <div className="bg-white dark:bg-gray-800 p-2 rounded-md shadow-sm text-primary-500 dark:text-primary-400 mt-0.5">
                                                 <MapPin size={18} />
                                             </div>
                                             <div className="flex-1 min-w-0">
-                                                <span className="block text-xs font-semibold text-gray-500 uppercase tracking-widest mb-0.5">Location</span>
-                                                <span className="font-medium text-gray-900 break-words block">
+                                                <span className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-0.5">Location</span>
+                                                <span className="font-medium text-gray-900 dark:text-gray-100 break-words block">
                                                     {[extendedProfile?.location, extendedProfile?.country].filter(Boolean).join(", ")}
                                                 </span>
                                             </div>
@@ -771,15 +787,15 @@ function ContactInfoPage() {
 
                                     {/* Languages */}
                                     {extendedProfile?.languages && extendedProfile.languages.length > 0 && (
-                                        <div className="bg-gray-50 p-3 rounded-lg flex items-start gap-3">
-                                            <div className="bg-white p-2 rounded-md shadow-sm text-green-500 mt-0.5">
+                                        <div className="bg-gray-50 dark:bg-gray-900/50 p-3 rounded-lg flex items-start gap-3">
+                                            <div className="bg-white dark:bg-gray-800 p-2 rounded-md shadow-sm text-green-500 dark:text-green-400 mt-0.5">
                                                 <Globe size={18} />
                                             </div>
                                             <div>
-                                                <span className="block text-xs font-semibold text-gray-500 uppercase tracking-widest mb-0.5">Languages</span>
+                                                <span className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-0.5">Languages</span>
                                                 <div className="flex flex-wrap gap-1">
                                                     {extendedProfile.languages.map((lang: string, idx: number) => (
-                                                        <span key={idx} className="text-xs bg-white border border-gray-200 px-1.5 py-0.5 rounded text-gray-700 font-medium">
+                                                        <span key={idx} className="text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-1.5 py-0.5 rounded text-gray-700 dark:text-gray-300 font-medium">
                                                             {lang}
                                                         </span>
                                                     ))}
@@ -790,13 +806,13 @@ function ContactInfoPage() {
 
                                     {/* Website */}
                                     {extendedProfile?.website && safeUrl(extendedProfile.website) && (
-                                        <div className="bg-gray-50 p-3 rounded-lg flex items-start gap-3">
-                                            <div className="bg-white p-2 rounded-md shadow-sm text-blue-500 mt-0.5">
+                                        <div className="bg-gray-50 dark:bg-gray-900/50 p-3 rounded-lg flex items-start gap-3">
+                                            <div className="bg-white dark:bg-gray-800 p-2 rounded-md shadow-sm text-primary-500 dark:text-primary-400 mt-0.5">
                                                 <Globe size={18} />
                                             </div>
                                             <div className="flex-1 min-w-0 overflow-hidden">
-                                                <span className="block text-xs font-semibold text-gray-500 uppercase tracking-widest mb-0.5">Website</span>
-                                                <a href={safeUrl(extendedProfile.website)} target="_blank" rel="noopener noreferrer" className="font-medium text-blue-600 hover:underline truncate block">
+                                                <span className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-0.5">Website</span>
+                                                <a href={safeUrl(extendedProfile.website)} target="_blank" rel="noopener noreferrer" className="font-medium text-primary-600 dark:text-primary-400 hover:underline truncate block">
                                                     {extendedProfile.website}
                                                 </a>
                                             </div>
@@ -805,25 +821,25 @@ function ContactInfoPage() {
 
                                     {/* Social Links */}
                                     {extendedProfile?.social && Object.keys(extendedProfile.social).length > 0 && (
-                                        <div className="bg-gray-50 p-3 rounded-lg flex items-start gap-3">
-                                            <div className="bg-white p-2 rounded-md shadow-sm text-indigo-500 mt-0.5">
+                                        <div className="bg-gray-50 dark:bg-gray-900/50 p-3 rounded-lg flex items-start gap-3">
+                                            <div className="bg-white dark:bg-gray-800 p-2 rounded-md shadow-sm text-indigo-500 dark:text-indigo-400 mt-0.5">
                                                 <UserCheck size={18} />
                                             </div>
                                             <div className="flex-1 min-w-0 overflow-hidden">
-                                                <span className="block text-xs font-semibold text-gray-500 uppercase tracking-widest mb-0.5">Social</span>
+                                                <span className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-0.5">Social</span>
                                                 <div className="flex flex-col gap-1">
                                                     {extendedProfile.social.twitter && (
-                                                        <a href={`https://twitter.com/${extendedProfile.social.twitter}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs font-medium text-gray-700 hover:text-blue-500 truncate max-w-full">
+                                                        <a href={`https://twitter.com/${extendedProfile.social.twitter}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:text-primary-500 dark:hover:text-primary-400 truncate max-w-full">
                                                             <Twitter size={14} className="flex-shrink-0" /> <span className="truncate">@{extendedProfile.social.twitter}</span>
                                                         </a>
                                                     )}
                                                     {extendedProfile.social.linkedin && (
-                                                        <a href={`https://linkedin.com/in/${extendedProfile.social.linkedin}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs font-medium text-gray-700 hover:text-blue-700 truncate max-w-full">
+                                                        <a href={`https://linkedin.com/in/${extendedProfile.social.linkedin}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:text-primary-700 dark:hover:text-primary-400 truncate max-w-full">
                                                             <Linkedin size={14} className="flex-shrink-0" /> <span className="truncate">/in/{extendedProfile.social.linkedin}</span>
                                                         </a>
                                                     )}
                                                     {extendedProfile.social.github && (
-                                                        <a href={`https://github.com/${extendedProfile.social.github}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs font-medium text-gray-700 hover:text-gray-900 truncate max-w-full">
+                                                        <a href={`https://github.com/${extendedProfile.social.github}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white truncate max-w-full">
                                                             <Github size={14} className="flex-shrink-0" /> <span className="truncate">{extendedProfile.social.github}</span>
                                                         </a>
                                                     )}
@@ -844,26 +860,26 @@ function ContactInfoPage() {
                                     {isPersonalContact && (
                                         <>
                                             {extendedProfile?.email && (
-                                                <div className="bg-gray-50 p-3 rounded-lg flex items-start gap-3">
-                                                    <div className="bg-white p-2 rounded-md shadow-sm text-red-500 mt-0.5">
+                                                <div className="bg-gray-50 dark:bg-gray-900/50 p-3 rounded-lg flex items-start gap-3">
+                                                    <div className="bg-white dark:bg-gray-800 p-2 rounded-md shadow-sm text-red-500 dark:text-red-400 mt-0.5">
                                                         <Mail size={18} />
                                                     </div>
                                                     <div className="flex-1 min-w-0">
-                                                        <span className="block text-xs font-semibold text-gray-500 uppercase tracking-widest mb-0.5">Email</span>
-                                                        <a href={`mailto:${extendedProfile.email}`} className="font-medium text-blue-600 hover:underline break-all block">
+                                                        <span className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-0.5">Email</span>
+                                                        <a href={`mailto:${extendedProfile.email}`} className="font-medium text-primary-600 dark:text-primary-400 hover:underline break-all block">
                                                             {extendedProfile.email}
                                                         </a>
                                                     </div>
                                                 </div>
                                             )}
                                             {extendedProfile?.phone && (
-                                                <div className="bg-gray-50 p-3 rounded-lg flex items-start gap-3">
-                                                    <div className="bg-white p-2 rounded-md shadow-sm text-gray-500 mt-0.5">
+                                                <div className="bg-gray-50 dark:bg-gray-900/50 p-3 rounded-lg flex items-start gap-3">
+                                                    <div className="bg-white dark:bg-gray-800 p-2 rounded-md shadow-sm text-gray-500 dark:text-gray-400 mt-0.5">
                                                         <Phone size={18} />
                                                     </div>
                                                     <div className="flex-1 min-w-0">
-                                                        <span className="block text-xs font-semibold text-gray-500 uppercase tracking-widest mb-0.5">Phone</span>
-                                                        <a href={`tel:${extendedProfile.phone}`} className="font-medium text-blue-600 hover:underline break-all block">
+                                                        <span className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-0.5">Phone</span>
+                                                        <a href={`tel:${extendedProfile.phone}`} className="font-medium text-primary-600 dark:text-primary-400 hover:underline break-all block">
                                                             {extendedProfile.phone}
                                                         </a>
                                                     </div>
@@ -927,18 +943,18 @@ function ContactInfoPage() {
                                     }}
                                 />
 
-                                <div className="bg-white rounded-xl shadow-sm border border-red-100 overflow-hidden">
-                                    <div className="p-4 border-b border-red-50 bg-red-50/30">
-                                        <h3 className="text-sm font-semibold text-red-700 uppercase tracking-wider">Danger Zone</h3>
+                                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-red-100 dark:border-red-900/30 overflow-hidden">
+                                    <div className="p-4 border-b border-red-50 dark:border-red-900/30 bg-red-50/30 dark:bg-red-900/20">
+                                        <h3 className="text-sm font-semibold text-red-700 dark:text-red-400 uppercase tracking-wider">Danger Zone</h3>
                                     </div>
                                     <div className="p-4">
-                                        <p className="text-sm text-gray-600 mb-4">
+                                        <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
                                             Removing a contact will delete them from your Maxima contacts list. Chat history will be preserved.
                                         </p>
                                         <button
                                             onClick={handleRemoveContact}
                                             disabled={removingContact}
-                                            className="w-full px-4 py-2 bg-white border border-red-200 text-red-600 rounded-lg hover:bg-red-50 disabled:bg-red-50 disabled:text-red-300 disabled:cursor-not-allowed transition-colors font-medium flex items-center justify-center gap-2"
+                                            className="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 disabled:bg-red-50 disabled:text-red-300 disabled:cursor-not-allowed transition-colors font-medium flex items-center justify-center gap-2"
                                         >
                                             {removingContact ? "Removing..." : "Remove Contact"}
                                         </button>
@@ -946,8 +962,8 @@ function ContactInfoPage() {
                                 </div>
                             </>
                         ) : (
-                            <div className="bg-gray-50 rounded-xl p-8 text-center border border-dashed border-gray-300">
-                                <p className="text-gray-500">
+                            <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-8 text-center border border-dashed border-gray-300 dark:border-gray-700">
+                                <p className="text-gray-500 dark:text-gray-400">
                                     Only available for Maxima contacts.
                                 </p>
                             </div>
@@ -962,38 +978,38 @@ function ContactInfoPage() {
                 {activeTab === 'tech' && (
                     <div className="space-y-6">
                         {/* Public Key & Address */}
-                        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden transition-colors">
                             {/* Public Key */}
                             {displayPubkey && (
-                                <div className="p-4 hover:bg-gray-50 transition-colors group border-b border-gray-100">
+                                <div className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors group border-b border-gray-100 dark:border-gray-700">
                                     <div className="flex items-center justify-between mb-1">
-                                        <span className="text-sm font-medium text-gray-500">Public Key</span>
+                                        <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Public Key</span>
                                         <button
                                             onClick={() => copyToClipboard(displayPubkey, 'pubkey')}
-                                            className="text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-blue-50 rounded"
+                                            className="text-primary-600 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-primary-50 rounded"
                                             title="Copy"
                                         >
                                             {copiedField === 'pubkey' ? <Check size={16} /> : <Copy size={16} />}
                                         </button>
                                     </div>
-                                    <p className="text-sm font-mono text-gray-800 break-all">{displayPubkey}</p>
+                                    <p className="text-sm font-mono text-gray-800 dark:text-gray-200 break-all">{displayPubkey}</p>
                                 </div>
                             )}
 
                             {/* Minima Address */}
                             {contact?.extradata?.minimaaddress && (
-                                <div className="p-4 hover:bg-gray-50 transition-colors group">
+                                <div className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors group">
                                     <div className="flex items-center justify-between mb-1">
-                                        <span className="text-sm font-medium text-gray-500">Minima Address</span>
+                                        <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Minima Address</span>
                                         <button
                                             onClick={() => copyToClipboard(contact.extradata?.minimaaddress || "", 'minima')}
-                                            className="text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-blue-50 rounded"
+                                            className="text-primary-600 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-primary-50 rounded"
                                             title="Copy"
                                         >
                                             {copiedField === 'minima' ? <Check size={16} /> : <Copy size={16} />}
                                         </button>
                                     </div>
-                                    <p className="text-sm font-mono text-gray-800 break-all">{contact.extradata.minimaaddress}</p>
+                                    <p className="text-sm font-mono text-gray-800 dark:text-gray-200 break-all">{contact.extradata.minimaaddress}</p>
                                 </div>
                             )}
                         </div>
@@ -1007,17 +1023,17 @@ function ContactInfoPage() {
             {
                 showConfirmDelete && contact && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-                        <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 animate-in fade-in zoom-in duration-200">
-                            <h3 className="text-xl font-bold text-gray-900 mb-4">Remove Contact?</h3>
-                            <p className="text-gray-600 mb-6">
-                                Are you sure you want to remove <span className="font-semibold">{contact.extradata?.name || 'this contact'}</span>?
+                        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6 animate-in fade-in zoom-in duration-200 border border-gray-200 dark:border-gray-700">
+                            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Remove Contact?</h3>
+                            <p className="text-gray-600 dark:text-gray-300 mb-6">
+                                Are you sure you want to remove <span className="font-semibold text-gray-900 dark:text-white">{contact.extradata?.name || 'this contact'}</span>?
                                 <br /><br />
                                 The chat history will be preserved, but they will be removed from your contact list.
                             </p>
                             <div className="flex gap-3 justify-end">
                                 <button
                                     onClick={() => setShowConfirmDelete(false)}
-                                    className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition-colors"
+                                    className="px-4 py-2 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg font-medium transition-colors"
                                 >
                                     Cancel
                                 </button>

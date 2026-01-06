@@ -56,7 +56,7 @@ export default function InviteDialog({
                     <button
                         onClick={onSend}
                         disabled={isSending}
-                        className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium flex items-center justify-center gap-2 disabled:opacity-50"
+                        className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors font-medium flex items-center justify-center gap-2 disabled:opacity-50"
                     >
                         {isSending ? (
                             <>

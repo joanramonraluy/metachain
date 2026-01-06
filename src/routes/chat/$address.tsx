@@ -7,9 +7,10 @@ import CharmSelector from "../../components/chat/CharmSelector";
 import { Paperclip, Trash2, Info, BarChart, Archive, Star, Smile } from "lucide-react";
 import MessageBubble from "../../components/chat/MessageBubble";
 import TokenSelector from "../../components/chat/TokenSelector";
-import EmojiPicker, { EmojiClickData } from "emoji-picker-react";
+import EmojiPicker, { EmojiClickData, Theme } from "emoji-picker-react";
 import { minimaService } from "../../services/minima.service";
 import InviteDialog from "../../components/chat/InviteDialog";
+import { useTheme } from "../../context/ThemeContext";
 
 export const Route = createFileRoute("/chat/$address")({
   component: ChatPage,
@@ -75,6 +76,8 @@ function ChatPage() {
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
   const [showInviteDialog, setShowInviteDialog] = useState(false);
   const [inviteSending, setInviteSending] = useState(false);
+
+  const { mode, chatBackground } = useTheme();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -1192,9 +1195,9 @@ function ChatPage() {
       RENDER
   ---------------------------------------------------------------------------- */
   return (
-    <div className="h-screen flex flex-col bg-[#E5DDD5]">
+    <div className="h-screen flex flex-col bg-[#E5DDD5] dark:bg-gray-900">
       {/* HEADER - Fixed at top */}
-      <div className="bg-[#0088cc] text-white p-4 px-4 flex items-center gap-3 flex-shrink-0 shadow-sm z-30">
+      <div className="bg-primary-600 dark:bg-gray-800 text-white p-4 px-4 flex items-center gap-3 flex-shrink-0 shadow-sm z-30 transition-colors border-b border-primary-700 dark:border-gray-700">
         {/* Back button */}
         <button
           onClick={() => navigate({ to: '/' })}
@@ -1220,7 +1223,7 @@ function ChatPage() {
           <img
             src={getAvatar(contact)}
             alt="Avatar"
-            className="w-12 h-12 rounded-full object-cover bg-gray-200"
+            className="w-12 h-12 rounded-full object-cover bg-gray-200 dark:bg-gray-700"
           />
           <div className="flex flex-col leading-tight flex-1 min-w-0">
             <strong className="text-[16px] truncate font-semibold">
@@ -1278,9 +1281,9 @@ function ChatPage() {
 
           {/* Dropdown Menu */}
           {showMenu && (
-            <div className="absolute top-10 right-0 bg-gray-800 md:bg-white rounded-lg shadow-xl border border-gray-700 md:border-gray-200 min-w-[180px] z-50 animate-in slide-in-from-top-2 fade-in duration-200">
+            <div className="absolute top-10 right-0 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 min-w-[180px] z-50 animate-in slide-in-from-top-2 fade-in duration-200">
               <button
-                className="flex items-center gap-3 w-full p-3 hover:bg-gray-700 md:hover:bg-gray-100 text-gray-300 md:text-gray-700 rounded-t-lg transition-colors text-left"
+                className="flex items-center gap-3 w-full p-3 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-t-lg transition-colors text-left"
                 onClick={() => {
                   setShowMenu(false);
                   navigate({ to: `/contact-info/${address}`, search: { returnTo: `/chat/${address}` } });
@@ -1290,7 +1293,7 @@ function ChatPage() {
                 <span className="font-medium">Contact Info</span>
               </button>
               <button
-                className="flex items-center gap-3 w-full p-3 hover:bg-gray-700 md:hover:bg-gray-100 text-gray-300 md:text-gray-700 transition-colors text-left border-t border-gray-700 md:border-gray-200"
+                className="flex items-center gap-3 w-full p-3 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
                 onClick={() => {
                   setShowMenu(false);
                   setShowChatInfo(true);
@@ -1300,7 +1303,7 @@ function ChatPage() {
                 <span className="font-medium">Chat Info</span>
               </button>
               <button
-                className="flex items-center gap-3 w-full p-3 hover:bg-gray-700 md:hover:bg-gray-100 text-gray-300 md:text-gray-700 transition-colors text-left border-t border-gray-700 md:border-gray-200"
+                className="flex items-center gap-3 w-full p-3 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
                 onClick={() => {
                   setShowMenu(false);
                   handleToggleFavorite();
@@ -1310,7 +1313,7 @@ function ChatPage() {
                 <span className="font-medium">{isFavorite ? 'Unfavorite Chat' : 'Favorite Chat'}</span>
               </button>
               <button
-                className="flex items-center gap-3 w-full p-3 hover:bg-gray-700 md:hover:bg-blue-50 text-gray-300 md:text-[#0088cc] transition-colors text-left border-t border-gray-700 md:border-gray-200"
+                className="flex items-center gap-3 w-full p-3 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
                 onClick={() => {
                   setShowMenu(false);
                   handleToggleArchive();
@@ -1320,7 +1323,7 @@ function ChatPage() {
                 <span className="font-medium">{isArchived ? 'Unarchive Chat' : 'Archive Chat'}</span>
               </button>
               <button
-                className="flex items-center gap-3 w-full p-3 hover:bg-red-900/50 md:hover:bg-red-50 text-red-400 md:text-red-600 rounded-b-lg transition-colors text-left border-t border-gray-700 md:border-gray-200"
+                className="flex items-center gap-3 w-full p-3 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 rounded-b-lg transition-colors text-left border-t border-gray-100 dark:border-gray-700"
                 onClick={() => {
                   setShowMenu(false);
                   setShowDeleteConfirm(true);
@@ -1337,9 +1340,9 @@ function ChatPage() {
       {/* Delete Confirmation Dialog */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 md:bg-white rounded-xl shadow-2xl max-w-sm w-full p-6 animate-in zoom-in-95 fade-in duration-200 border border-gray-700 md:border-gray-200">
-            <h3 className="text-lg font-bold text-white md:text-gray-900 mb-2">Delete Chat?</h3>
-            <p className="text-gray-300 md:text-gray-600 mb-6">
+          <div className="bg-gray-800 md:bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-sm w-full p-6 animate-in zoom-in-95 fade-in duration-200 border border-gray-700 md:border-gray-200 dark:border-gray-700">
+            <h3 className="text-lg font-bold text-white md:text-gray-900 dark:text-white mb-2">Delete Chat?</h3>
+            <p className="text-gray-300 md:text-gray-600 dark:text-gray-300 mb-6">
               This will permanently delete all messages in this conversation. This action cannot be undone.
             </p>
             <div className="flex gap-3">
@@ -1375,7 +1378,7 @@ function ChatPage() {
       {/* Chat Info Dialog */}
       {showChatInfo && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 md:bg-white rounded-xl shadow-2xl max-w-md w-full p-6 animate-in zoom-in-95 fade-in duration-200 border border-gray-700 md:border-gray-200">
+          <div className="bg-gray-800 md:bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full p-6 animate-in zoom-in-95 fade-in duration-200 border border-gray-700 md:border-gray-200 dark:border-gray-700">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold text-white md:text-gray-900">Chat Statistics</h3>
               <button
@@ -1392,8 +1395,8 @@ function ChatPage() {
               {/* Total Messages */}
               <div className="flex items-center justify-between p-3 bg-gray-700/50 md:bg-gray-50 rounded-lg">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-blue-500/20 rounded-full flex items-center justify-center">
-                    <svg className="w-5 h-5 text-blue-400 md:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="w-10 h-10 bg-primary-500/20 rounded-full flex items-center justify-center">
+                    <svg className="w-5 h-5 text-primary-400 md:text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                     </svg>
                   </div>
@@ -1456,7 +1459,7 @@ function ChatPage() {
 
             <button
               onClick={() => setShowChatInfo(false)}
-              className="w-full mt-6 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+              className="w-full mt-6 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors font-medium"
             >
               Close
             </button>
@@ -1468,32 +1471,60 @@ function ChatPage() {
 
 
       {/* CHAT BODY - Scrollable */}
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto overflow-x-hidden flex flex-col p-2 sm:p-4 bg-gray-50 relative">
-        {/* Custom Background Pattern (Subtle Dot Grid) */}
-        <div
-          className="absolute inset-0 opacity-[0.4] pointer-events-none"
-          style={{
-            backgroundImage: `radial - gradient(#cbd5e1 1.5px, transparent 1.5px)`,
-            backgroundSize: '24px 24px'
-          }}
-        ></div>
+      <div
+        ref={scrollContainerRef}
+        className={`flex-1 overflow-y-auto overflow-x-hidden flex flex-col p-2 sm:p-4 pb-20 
+          ${chatBackground === 'diagonal' ? 'bg-gray-50 dark:bg-gray-900' :
+
+            chatBackground === 'default' ? 'bg-gray-50 dark:bg-gray-900' :
+              'bg-gray-50 dark:bg-gray-900' /* Base for patterns */
+          }`}
+      >
+        {/* Pattern Overlays */}
+        {chatBackground === 'dots' && (
+          <div
+            className="absolute inset-0 opacity-[0.05] dark:opacity-[0.1] pointer-events-none"
+            style={{
+              backgroundImage: `radial-gradient(#0f172a 1.5px, transparent 1.5px)`,
+              backgroundSize: '24px 24px'
+            }}
+          />
+        )}
+        {chatBackground === 'grid' && (
+          <div
+            className="absolute inset-0 opacity-[0.4] dark:opacity-[0.05] pointer-events-none"
+            style={{
+              backgroundImage: `linear-gradient(#cbd5e1 1px, transparent 1px), linear-gradient(to right, #cbd5e1 1px, transparent 1px)`,
+              backgroundSize: '20px 20px'
+            }}
+          />
+        )}
+        {chatBackground === 'diagonal' && (
+          <div
+            className="absolute inset-0 opacity-[0.4] dark:opacity-[0.1] pointer-events-none"
+            style={{
+              backgroundImage: `repeating-linear-gradient(45deg, #e2e8f0 0px, #e2e8f0 2px, transparent 2px, transparent 12px)`
+            }}
+          />
+        )}
+
 
         {/* Contact Request Banner */}
         {/* Contact Request Banner (Checking logic updated to use relaxed SQL) */}
         {(contactRequest || blockReason === 'incoming_restricted') && (
           <div className="sticky top-0 z-20 mb-4 mx-2 mt-2">
-            <div className="bg-blue-50/95 backdrop-blur-sm border border-blue-200 rounded-lg shadow-sm p-4 animate-in fade-in slide-in-from-top-2 duration-300">
+            <div className="bg-primary-50/95 dark:bg-gray-800/95 backdrop-blur-sm border border-primary-200 dark:border-gray-700 rounded-lg shadow-sm p-4 animate-in fade-in slide-in-from-top-2 duration-300">
               <div className="flex items-start gap-3">
-                <div className="flex-shrink-0 w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                  <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="flex-shrink-0 w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center">
+                  <svg className="w-5 h-5 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
                   </svg>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 mb-1">
+                  <p className="text-sm font-medium text-gray-900 dark:text-white mb-1">
                     {(contactRequest as any)?.type === 'maxima' ? 'Maxima Contact Request' : 'Chat Request'}
                   </p>
-                  <p className="text-sm text-gray-600 mb-3">
+                  <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">
                     <strong>{contact?.extradata?.name || contactRequest?.FROM_NAME || "Unknown"}</strong> {(contactRequest as any)?.type === 'maxima' ? 'wants to add you as a contact.' : 'wants to contact you.'}
                   </p>
 
@@ -1525,7 +1556,7 @@ function ChatPage() {
                         }
                       }}
                       disabled={processingRequest}
-                      className="flex-1 px-3 py-2 bg-white border border-blue-200 text-blue-600 text-sm font-medium rounded-lg hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="flex-1 px-3 py-2 bg-white dark:bg-gray-700 border border-primary-200 dark:border-gray-600 text-primary-600 dark:text-primary-400 text-sm font-medium rounded-lg hover:bg-primary-50 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {processingRequest ? "Processing..." : "Accept"}
                     </button>
@@ -1550,7 +1581,7 @@ function ChatPage() {
                         }
                       }}
                       disabled={processingRequest}
-                      className="flex-1 px-3 py-2 bg-white border border-gray-200 text-gray-600 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="flex-1 px-3 py-2 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 text-sm font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Decline
                     </button>
@@ -1564,14 +1595,14 @@ function ChatPage() {
         {/* Pending Outgoing Request Banner */}
         {isPendingOutgoing && !contactRequest && (
           <div className="sticky top-0 z-20 mb-4 mx-2 mt-2">
-            <div className="bg-blue-50/95 backdrop-blur-sm border border-blue-200 rounded-lg shadow-sm p-4">
+            <div className="bg-primary-50/95 dark:bg-gray-800/95 backdrop-blur-sm border border-primary-200 dark:border-gray-700 rounded-lg shadow-sm p-4">
               <div className="flex items-start gap-3">
-                <div className="flex-shrink-0 w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                <div className="flex-shrink-0 w-10 h-10 bg-primary-100 dark:bg-primary-900/20 rounded-full flex items-center justify-center">
                   <span className="text-xl">📨</span>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 mb-1">Chat Request Sent</p>
-                  <p className="text-sm text-gray-600">
+                  <p className="text-sm font-medium text-gray-900 dark:text-white mb-1">Chat Request Sent</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-300">
                     You have sent a request to <strong>{contact?.extradata?.name || "this user"}</strong>. Waiting for them to accept before you can chat.
                   </p>
                 </div>
@@ -1584,10 +1615,10 @@ function ChatPage() {
         {messages.filter(m => m.status === 'pending').length > 0 && (
           <div className="sticky top-0 z-20 mb-4 mx-2 mt-2">
             {messages.filter(m => m.status === 'pending').map((msg) => (
-              <div key={msg.timestamp} className="bg-blue-50/95 backdrop-blur-sm border border-blue-200 rounded-lg shadow-sm p-4 mb-2 animate-in fade-in slide-in-from-top-2 duration-300">
+              <div key={msg.timestamp} className="bg-primary-50/95 backdrop-blur-sm border border-primary-200 rounded-lg shadow-sm p-4 mb-2 animate-in fade-in slide-in-from-top-2 duration-300">
                 <div className="flex items-start gap-3">
-                  <div className="flex-shrink-0 w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                    <svg className="w-5 h-5 text-blue-600 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="flex-shrink-0 w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center">
+                    <svg className="w-5 h-5 text-primary-600 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                     </svg>
                   </div>
@@ -1600,7 +1631,7 @@ function ChatPage() {
                         ? `${msg.tokenAmount.amount} ${msg.tokenAmount.tokenName}`
                         : `${msg.amount} MINIMA`}
                       {' · '}
-                      <span className="text-blue-600 font-medium">Waiting for confirmation...</span>
+                      <span className="text-primary-600 font-medium">Waiting for confirmation...</span>
                     </p>
                   </div>
                 </div>
@@ -1611,7 +1642,7 @@ function ChatPage() {
 
         {messages.length === 0 && (
           <div className="flex-1 flex items-center justify-center z-0">
-            <div className="bg-[#FFF5C4] text-gray-800 text-[12.5px] p-3 rounded-lg shadow-sm text-center max-w-xs leading-relaxed select-none">
+            <div className="bg-[#FFF5C4] dark:bg-yellow-900/30 text-gray-800 dark:text-yellow-200 text-[12.5px] p-3 rounded-lg shadow-sm text-center max-w-xs leading-relaxed select-none border border-yellow-200 dark:border-yellow-800">
               <span className="text-yellow-600 mr-1">🔒</span>
               Messages are end-to-end encrypted. No one outside of this chat, not even MetaChain, can read or listen to them.
             </div>
@@ -1627,7 +1658,7 @@ function ChatPage() {
             <div key={`${msg.timestamp} -${msg.text || 'no-text'} -${i} `} className="flex flex-col w-full z-0 relative">
               {showDate && msg.timestamp && (
                 <div className="flex justify-center my-3 sticky top-2 z-10">
-                  <span className="text-xs text-gray-600 font-medium bg-[#E1F3FB] border border-white/50 px-3 py-1.5 rounded-lg shadow-sm uppercase tracking-wide backdrop-blur-sm">
+                  <span className="text-xs text-gray-600 dark:text-gray-300 font-medium bg-[#E1F3FB] dark:bg-gray-800 border border-white/50 dark:border-gray-700 px-3 py-1.5 rounded-lg shadow-sm uppercase tracking-wide backdrop-blur-sm">
                     {new Date(msg.timestamp).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
                   </span>
                 </div>
@@ -1636,10 +1667,10 @@ function ChatPage() {
                 // System message (centered)
                 <div className="flex justify-center my-2">
                   <span className={`text-xs px-3 py-1.5 rounded-full ${msg.text?.toLowerCase().includes('accepted')
-                    ? 'text-green-700 bg-green-100'
+                    ? 'text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/40'
                     : msg.text?.toLowerCase().includes('declined')
-                      ? 'text-red-700 bg-red-100'
-                      : 'text-gray-500 bg-gray-100'
+                      ? 'text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-900/40'
+                      : 'text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800'
                     }`}>
                     {msg.text}
                   </span>
@@ -1663,10 +1694,10 @@ function ChatPage() {
       </div>
 
       {/* INPUT BAR - Fixed at bottom */}
-      <div className="p-2 bg-[#F0F2F5] flex gap-2 items-center flex-shrink-0 z-10 relative">
+      <div className="p-2 bg-[#F0F2F5] dark:bg-gray-800/95 flex gap-2 items-center flex-shrink-0 z-10 relative border-t border-gray-200 dark:border-gray-700 transition-colors">
         {/* Attachment Menu Popover */}
         {showAttachments && (
-          <div ref={attachmentsRef} className="absolute bottom-16 left-2 bg-white rounded-xl shadow-xl border border-gray-100 p-2 flex flex-col gap-1 min-w-[160px] animate-in slide-in-from-bottom-2 fade-in duration-200">
+          <div ref={attachmentsRef} className="absolute bottom-16 left-2 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-100 dark:border-gray-700 p-2 flex flex-col gap-1 min-w-[160px] animate-in slide-in-from-bottom-2 fade-in duration-200">
             <button
               className="flex items-center gap-3 p-3 hover:bg-gray-50 rounded-lg transition-colors text-left"
               onClick={() => {
@@ -1675,7 +1706,7 @@ function ChatPage() {
               }}
             >
               <span className="w-8 h-8 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center">✨</span>
-              <span className="font-medium text-gray-700">Send Charm</span>
+              <span className="font-medium text-gray-700 dark:text-gray-200">Send Charm</span>
             </button>
             <button
               className="flex items-center gap-3 p-3 hover:bg-gray-50 rounded-lg transition-colors text-left"
@@ -1685,16 +1716,17 @@ function ChatPage() {
               }}
             >
               <span className="w-8 h-8 rounded-full bg-green-100 text-green-600 flex items-center justify-center">💸</span>
-              <span className="font-medium text-gray-700">Send Tokens</span>
+              <span className="font-medium text-gray-700 dark:text-gray-200">Send Tokens</span>
             </button>
           </div>
         )}
 
         {/* Emoji Picker Popover */}
         {showEmojiPicker && (
-          <div ref={emojiPickerRef} className="absolute bottom-16 left-2 z-50 animate-in slide-in-from-bottom-2 fade-in duration-200 shadow-2xl rounded-xl border border-gray-100 hidden sm:block">
+          <div ref={emojiPickerRef} className="absolute bottom-16 left-2 z-50 animate-in slide-in-from-bottom-2 fade-in duration-200 shadow-2xl rounded-xl border border-gray-100 dark:border-gray-700 hidden sm:block">
             <EmojiPicker
               onEmojiClick={onEmojiClick}
+              theme={mode === 'dark' ? Theme.DARK : Theme.LIGHT}
               width={320}
               height={400}
               searchDisabled={false}
@@ -1705,9 +1737,10 @@ function ChatPage() {
         )}
         {/* Mobile Emoji Picker (Full Width) */}
         {showEmojiPicker && (
-          <div ref={emojiPickerMobileRef} className="absolute bottom-16 left-0 right-0 mx-2 z-50 animate-in slide-in-from-bottom-2 fade-in duration-200 shadow-2xl rounded-xl border border-gray-100 sm:hidden">
+          <div ref={emojiPickerMobileRef} className="absolute bottom-16 left-0 right-0 mx-2 z-50 animate-in slide-in-from-bottom-2 fade-in duration-200 shadow-2xl rounded-xl border border-gray-100 dark:border-gray-700 sm:hidden">
             <EmojiPicker
               onEmojiClick={onEmojiClick}
+              theme={mode === 'dark' ? Theme.DARK : Theme.LIGHT}
               width="100%"
               height={350}
               searchDisabled={false}
@@ -1718,7 +1751,7 @@ function ChatPage() {
         )}
 
         <button
-          className={`p-3 rounded-full transition-colors ${showAttachments ? 'bg-gray-200 text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}
+          className={`p-3 rounded-full transition-colors ${showAttachments ? 'bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-white' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
           onClick={(e) => {
             e.stopPropagation(); // Stop propagation to prevent immediate close
             setShowEmojiPicker(false);
@@ -1730,7 +1763,7 @@ function ChatPage() {
         </button>
 
         <button
-          className={`p-3 rounded-full transition-colors ${showEmojiPicker ? 'bg-yellow-100 text-yellow-600' : 'text-gray-500 hover:text-gray-700'}`}
+          className={`p-3 rounded-full transition-colors ${showEmojiPicker ? 'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-600 dark:text-yellow-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
           onClick={(e) => {
             e.stopPropagation(); // Stop propagation to prevent immediate close
             setShowAttachments(false);
@@ -1741,10 +1774,10 @@ function ChatPage() {
           <Smile className="w-6 h-6" />
         </button>
 
-        <div className="flex-1 bg-white rounded-2xl flex items-center border border-gray-200 focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent shadow-sm px-4 py-2 transition-all">
+        <div className="flex-1 bg-white dark:bg-gray-700 rounded-2xl flex items-center border border-gray-200 dark:border-gray-600 focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-transparent shadow-sm px-4 py-2 transition-all">
           <input
             ref={inputRef}
-            className="flex-1 bg-transparent outline-none text-gray-900 placeholder-gray-500 text-[15px] max-h-32 py-1"
+            className="flex-1 bg-transparent outline-none text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 text-[15px] max-h-32 py-1"
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -1764,8 +1797,8 @@ function ChatPage() {
         <button
           className={`p-3 rounded-full transition-all duration-200 shadow-sm
             ${input.trim() && blockReason === 'none'
-              ? 'bg-[#0088cc] text-white hover:bg-[#0077b5] transform hover:scale-105'
-              : 'bg-gray-200 text-gray-400 cursor-default'
+              ? 'bg-primary-600 text-white hover:bg-primary-700 transform hover:scale-105'
+              : 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-default'
             }`}
           onClick={handleSendMessage}
           disabled={!input.trim() || blockReason !== 'none'}
@@ -1822,7 +1855,7 @@ function ChatPage() {
                     if (pendingAction) pendingAction();
                     setPendingAction(null);
                   }}
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 transition-colors"
+                  className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-xl font-medium hover:bg-primary-700 transition-colors"
                 >
                   Proceed
                 </button>

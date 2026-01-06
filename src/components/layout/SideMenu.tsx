@@ -58,9 +58,9 @@ export default function SideMenu({ isOpen, setIsOpen }: SideMenuProps) {
       {/* Sidebar */}
       <div
         ref={menuRef}
-        className={`fixed top-0 left-0 h-full bg-[#1c242f] text-white flex flex-col shadow-2xl z-50 transition-transform duration-300 ease-in-out
+        className={`fixed top-0 left-0 h-full bg-[#1c242f] dark:bg-gray-900 text-white flex flex-col shadow-2xl z-50 transition-transform duration-300 ease-in-out
           ${isOpen ? "translate-x-0" : "-translate-x-full"} 
-          md:relative md:translate-x-0 md:w-64 md:shadow-none md:border-r md:border-gray-800 w-72`}
+          md:relative md:translate-x-0 md:w-64 md:shadow-none md:border-r md:border-gray-800 dark:border-gray-800 w-72`}
       >
         {/* Header */}
         <div className="p-6 flex items-center justify-between border-b border-gray-700">
@@ -131,7 +131,7 @@ function MenuItem({
       to={to}
       onClick={onClick}
       className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${active
-        ? "bg-blue-600 text-white shadow-lg shadow-blue-900/20"
+        ? "bg-primary-600 text-white shadow-lg shadow-primary-900/20"
         : "text-gray-400 hover:bg-gray-800 hover:text-white"
         }`}
     >

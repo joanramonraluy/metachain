@@ -92,7 +92,7 @@ export default function CharmSelector({ onSend, onClose }: CharmSelectorProps) {
                 <button
                   key={c.id}
                   className={`p-3 rounded-lg border transition-all ${selectedCharm === c
-                    ? "bg-blue-900/50 border-blue-500 border-2"
+                    ? "bg-primary-900/50 border-primary-500 border-2"
                     : "border-gray-600 bg-gray-700 hover:bg-gray-600"
                     } `}
                   onClick={() => setSelectedCharm(c)}
@@ -114,7 +114,7 @@ export default function CharmSelector({ onSend, onClose }: CharmSelectorProps) {
                 <button
                   key={amt}
                   className={`px-4 py-2 rounded-md border transition-all font-medium ${selectedAmount === amt
-                    ? "bg-blue-900/50 border-blue-500 text-blue-300"
+                    ? "bg-primary-900/50 border-primary-500 text-primary-300"
                     : "border-gray-600 bg-gray-700 text-gray-300 hover:bg-gray-600"
                     } `}
                   onClick={() => setSelectedAmount(amt)}
@@ -124,7 +124,7 @@ export default function CharmSelector({ onSend, onClose }: CharmSelectorProps) {
               ))}
               <button
                 className={`px-4 py-2 rounded-md border transition-all font-medium ${selectedAmount === "custom"
-                  ? "bg-blue-900/50 border-blue-500 text-blue-300"
+                  ? "bg-primary-900/50 border-primary-500 text-primary-300"
                   : "border-gray-600 bg-gray-700 text-gray-300 hover:bg-gray-600"
                   } `}
                 onClick={() => setSelectedAmount("custom")}
@@ -135,7 +135,7 @@ export default function CharmSelector({ onSend, onClose }: CharmSelectorProps) {
             {selectedAmount === "custom" && (
               <input
                 type="number"
-                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-400 outline-none"
+                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 text-white rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent placeholder-gray-400 outline-none"
                 value={customAmount}
                 min={1}
                 placeholder="Enter amount"
@@ -155,7 +155,7 @@ export default function CharmSelector({ onSend, onClose }: CharmSelectorProps) {
               onClick={handleSend}
               disabled={!selectedCharm || !selectedAmount}
               className={`flex-1 px-4 py-2 rounded-lg transition-colors font-medium ${selectedCharm && selectedAmount
-                ? "bg-blue-600 hover:bg-blue-700 text-white"
+                ? "bg-primary-600 hover:bg-primary-700 text-white"
                 : "bg-gray-700 text-gray-500 cursor-not-allowed border border-gray-600"
                 } `}
             >

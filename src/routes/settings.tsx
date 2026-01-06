@@ -2,8 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useContext, useEffect, useState } from "react";
 import { MDS } from "@minima-global/mds";
 import { appContext } from "../AppContext";
-import { User, ChevronDown, ChevronUp, Copy, Check, Edit2, Globe, Shield, AlertTriangle, RefreshCw, Info } from "lucide-react";
+import { User, ChevronDown, ChevronUp, Copy, Check, Edit2, Globe, Shield, AlertTriangle, RefreshCw, Info, Paintbrush, Moon, Sun, Image as ImageIcon } from "lucide-react";
 import { sendBeacon } from "../hooks/useBeaconSender";
+import { useTheme, ThemeColor } from "../context/ThemeContext";
 import { SettingsTabs, SettingsTab } from "../components/SettingsTabs";
 
 export const Route = createFileRoute("/settings")({
@@ -12,6 +13,19 @@ export const Route = createFileRoute("/settings")({
 
 const defaultAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23cbd5e1'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E";
 
+// Countries and regions list
+// Theme colors for selection
+const THEME_OPTIONS: { id: ThemeColor; label: string; color: string }[] = [
+  { id: 'sky', label: 'Sky Blue', color: 'bg-sky-500' },
+  { id: 'cyan', label: 'Cyan Blue', color: 'bg-cyan-500' },
+  { id: 'teal', label: 'Modern Teal', color: 'bg-teal-600' },
+  { id: 'emerald', label: 'Calm Green', color: 'bg-emerald-600' },
+  { id: 'slate', label: 'Cool Slate', color: 'bg-slate-500' },
+  { id: 'gray', label: 'Mist Gray', color: 'bg-gray-500' },
+  { id: 'zinc', label: 'Copper Zinc', color: 'bg-[rgb(210,140,100)]' },
+  { id: 'neutral', label: 'Pure Neutral', color: 'bg-neutral-500' },
+  { id: 'stone', label: 'Warm Stone', color: 'bg-stone-500' },
+];
 // Countries and regions list
 const COUNTRIES = [
   "Afghanistan", "Albania", "Algeria", "Andorra", "Angola", "Argentina", "Armenia", "Australia", "Austria", "Azerbaijan",
@@ -52,6 +66,7 @@ const LANGUAGES = [
 
 function Settings() {
   const { loaded, writeMode, refreshWriteMode, refreshProfile } = useContext(appContext);
+  const { currentTheme, setTheme, mode, toggleMode, chatBackground, setChatBackground } = useTheme();
 
   // Tab State
   const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
@@ -745,6 +760,11 @@ function Settings() {
 
       setAllowNonContactChats(newValue);
       console.log('[Settings] Chat permission updated (keypair + MY_PROFILE):', newValue);
+
+      // Send beacon immediately to propagate permission change
+      console.log("[Settings] Sending beacon with updated permission...");
+      await sendBeacon();
+      console.log("[Settings] Beacon sent successfully");
     } catch (err) {
       console.error('[Settings] Error saving chat permission:', err);
     }
@@ -825,7 +845,7 @@ function Settings() {
                 type="text"
                 value={editNameValue}
                 onChange={(e) => setEditNameValue(e.target.value)}
-                className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:outline-none"
                 placeholder="Enter your name"
                 autoFocus
                 onKeyDown={(e) => {
@@ -844,7 +864,7 @@ function Settings() {
               </button>
               <button
                 onClick={handleSaveName}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors font-medium"
+                className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-md transition-colors font-medium"
               >
                 Save
               </button>
@@ -877,7 +897,7 @@ function Settings() {
                     }
                   }
                 }}
-                className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:file:bg-blue-900/30 dark:file:text-blue-300"
+                className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100 dark:file:bg-primary-900/30 dark:file:text-primary-300"
               />
             </div>
 
@@ -896,7 +916,7 @@ function Settings() {
               </button>
               <button
                 onClick={handleSaveAvatar}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors font-medium"
+                className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-md transition-colors font-medium"
               >
                 Save
               </button>
@@ -907,7 +927,7 @@ function Settings() {
 
 
 
-      <div className="h-full flex flex-col bg-gray-50">
+      <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-900 transition-colors">
         {/* Tabs Navigation */}
         <SettingsTabs activeTab={activeTab} onTabChange={setActiveTab} />
 
@@ -917,27 +937,131 @@ function Settings() {
 
             <div className="grid gap-6">
 
+              {/* APPEARANCE TAB */}
+              {activeTab === 'appearance' && (
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden transition-colors">
+                  <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <Paintbrush className="text-primary-500" size={24} />
+                      <div>
+                        <h2 className="text-xl font-bold text-gray-900 dark:text-white">App Theme</h2>
+                        <p className="text-gray-500 dark:text-gray-400 text-sm">Customize the accent color of the application</p>
+                      </div>
+                    </div>
+
+                    {/* Mode Toggle */}
+                    <button
+                      onClick={toggleMode}
+                      className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                    >
+                      {mode === 'dark' ? (
+                        <>
+                          <Sun size={20} className="text-amber-500" />
+                          <span className="font-medium text-gray-700 dark:text-gray-200">Light Mode</span>
+                        </>
+                      ) : (
+                        <>
+                          <Moon size={20} className="text-primary-600 dark:text-primary-400" />
+                          <span className="font-medium text-gray-700 dark:text-gray-200">Dark Mode</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  <div className="p-6">
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                      {THEME_OPTIONS.map((theme) => (
+                        <button
+                          key={theme.id}
+                          onClick={() => setTheme(theme.id)}
+                          className={`
+                            relative group flex flex-col items-center gap-3 p-4 rounded-xl border-2 transition-all
+                            ${currentTheme === theme.id
+                              ? 'border-primary-600 bg-primary-50/50 dark:bg-primary-900/20 dark:border-primary-500'
+                              : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                            }
+                          `}
+                        >
+                          <div className={`w-12 h-12 rounded-full shadow-lg ${theme.color} flex items-center justify-center transition-transform group-hover:scale-110`}>
+                            {currentTheme === theme.id && (
+                              <Check className="text-white w-6 h-6" strokeWidth={3} />
+                            )}
+                          </div>
+                          <span className={`font-medium ${currentTheme === theme.id ? 'text-primary-700 dark:text-primary-300' : 'text-gray-700 dark:text-gray-300'}`}>
+                            {theme.label}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Chat Background Selector */}
+                  <div className="p-6 border-t border-gray-100 dark:border-gray-700">
+                    <div className="flex items-center gap-3 mb-4">
+                      <ImageIcon className="text-primary-500" size={24} />
+                      <div>
+                        <h2 className="text-lg font-bold text-gray-900 dark:text-white">Chat Background</h2>
+                        <p className="text-gray-500 dark:text-gray-400 text-sm">Choose a background pattern for your chats</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      {[
+                        { id: 'default', label: 'Default', preview: 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700' },
+                        { id: 'dots', label: 'Polka Dots', preview: 'bg-gray-50 dark:bg-gray-900 bg-[radial-gradient(#cbd5e1_1.5px,transparent_1.5px)] dark:bg-[radial-gradient(#1e293b_1.5px,transparent_1.5px)] [background-size:12px_12px]' },
+                        { id: 'grid', label: 'Graph Grid', preview: 'bg-gray-50 dark:bg-gray-900 bg-[linear-gradient(to_right,#e5e7eb_1px,transparent_1px),linear-gradient(to_bottom,#e5e7eb_1px,transparent_1px)] dark:bg-[linear-gradient(to_right,#1f2937_1px,transparent_1px),linear-gradient(to_bottom,#1f2937_1px,transparent_1px)] [background-size:16px_16px]' },
+                        { id: 'diagonal', label: 'Diagonal Lines', preview: 'bg-gray-50 dark:bg-gray-900 bg-[repeating-linear-gradient(45deg,#e5e7eb_0px,#e5e7eb_2px,transparent_2px,transparent_10px)] dark:bg-[repeating-linear-gradient(45deg,#1f2937_0px,#1f2937_2px,transparent_2px,transparent_10px)]' }
+                      ].map((bg) => (
+                        <button
+                          key={bg.id}
+                          onClick={() => setChatBackground(bg.id as any)}
+                          className={`
+                            relative group flex flex-col items-center gap-3 p-4 rounded-xl border-2 transition-all
+                            ${chatBackground === bg.id
+                              ? 'border-primary-600 bg-primary-50/50 dark:bg-primary-900/20 dark:border-primary-500'
+                              : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                            }
+                          `}
+                        >
+                          <div className={`w-12 h-12 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 ${bg.preview} flex items-center justify-center overflow-hidden`}>
+                            {chatBackground === bg.id && (
+                              <div className="bg-primary-600 dark:bg-primary-500 rounded-full p-1">
+                                <Check className="text-white w-4 h-4" strokeWidth={3} />
+                              </div>
+                            )}
+                          </div>
+                          <span className={`font-medium ${chatBackground === bg.id ? 'text-primary-700 dark:text-primary-300' : 'text-gray-700 dark:text-gray-300'}`}>
+                            {bg.label}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+              )}
+
               {/* PROFILE TAB */}
               {activeTab === 'profile' && (
                 <>
                   {/* PROFILE SECTION */}
-                  <section className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                    <div className="p-6 border-b border-gray-100 flex items-center gap-3">
-                      <User className="text-blue-500" />
-                      <h2 className="text-xl font-semibold text-gray-800">Profile</h2>
+                  <section className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden transition-colors">
+                    <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex items-center gap-3">
+                      <User className="text-primary-500" />
+                      <h2 className="text-xl font-semibold text-gray-800 dark:text-white">Profile</h2>
                     </div>
 
                     {/* Level 1: Public Discovery Profile */}
-                    <div className="p-6 border-b border-gray-100">
+                    <div className="p-6 border-b border-gray-100 dark:border-gray-700">
                       <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-2">
-                          <Globe className="text-blue-500" size={20} />
-                          <h3 className="text-lg font-semibold text-gray-800">Discovery Profile (P2P)</h3>
+                          <Globe className="text-primary-500" size={20} />
+                          <h3 className="text-lg font-semibold text-gray-800 dark:text-white">Discovery Profile (P2P)</h3>
                         </div>
-                        <span className="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-semibold rounded-full">Level 1 - Public</span>
+                        <span className="px-3 py-1 bg-primary-100 text-primary-700 text-xs font-semibold rounded-full">Level 1 - Public</span>
                       </div>
 
-                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800 flex items-start gap-2 mb-6">
+                      <div className="bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800/50 rounded-lg p-3 text-sm text-primary-800 dark:text-primary-200 flex items-start gap-2 mb-6">
                         <Info size={16} className="mt-0.5 flex-shrink-0" />
                         <p>This information is shared publicly via P2P discovery beacons. It helps other users find and connect with you.</p>
                       </div>
@@ -954,14 +1078,14 @@ function Settings() {
                             />
                             <button
                               onClick={handleEditAvatar}
-                              className="absolute -bottom-1 -right-1 p-1.5 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors shadow-lg"
+                              className="absolute -bottom-1 -right-1 p-1.5 bg-primary-600 text-white rounded-full hover:bg-primary-700 transition-colors shadow-lg"
                               title="Change Avatar"
                             >
                               <Edit2 size={12} />
                             </button>
                           </div>
                           <div className="flex-1">
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Maxima Name</label>
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Maxima Name</label>
                             <input
                               type="text"
                               value={userName}
@@ -977,18 +1101,18 @@ function Settings() {
                                   }
                                 }
                               }}
-                              className="w-full text-lg font-bold text-gray-900 bg-transparent border-b-2 border-transparent hover:border-gray-300 focus:border-blue-500 focus:outline-none transition-colors px-1 -mx-1"
+                              className="w-full text-lg font-bold text-gray-900 dark:text-white bg-transparent border-b-2 border-transparent hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none transition-colors px-1 -mx-1"
                               placeholder="Your name"
                               maxLength={50}
                             />
-                            <p className="text-sm text-gray-500 mt-1">Visible to your contacts and discovered peers</p>
+                            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Visible to your contacts and discovered peers</p>
                           </div>
                         </div>
 
                         {/* Bio */}
                         <div>
                           <div className="flex items-center justify-between mb-2">
-                            <label className="block text-sm font-medium text-gray-700">
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                               Bio
                             </label>
                             <span className={`text-xs font-medium ${p2pBio.length > 280 ? 'text-red-500' : p2pBio.length > 250 ? 'text-yellow-600' : 'text-gray-400'}`}>
@@ -1002,19 +1126,19 @@ function Settings() {
                             placeholder="Tell others about yourself..."
                             rows={3}
                             maxLength={280}
-                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white text-gray-700 resize-none"
+                            className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all bg-white dark:bg-gray-700 text-gray-700 dark:text-white resize-none"
                           />
                           <p className="text-xs text-gray-500 mt-1">Shared with all discovered peers • Auto-saves</p>
                         </div>
 
                         {/* Country */}
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Country/Region</label>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Country/Region</label>
                           <select
                             value={country}
                             onChange={(e) => setCountry(e.target.value)}
                             onBlur={handleSaveExtendedProfile}
-                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-700"
+                            className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-gray-700 text-gray-700 dark:text-white"
                           >
                             <option value="">Select a country...</option>
                             {COUNTRIES.map((c) => (
@@ -1026,11 +1150,11 @@ function Settings() {
 
                         {/* Languages */}
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Languages</label>
-                          <div className="border border-gray-300 rounded-lg p-3 bg-white max-h-48 overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-gray-100 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:bg-blue-400 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb:hover]:bg-blue-500">
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Languages</label>
+                          <div className="border border-gray-300 dark:border-gray-600 rounded-lg p-3 bg-white dark:bg-gray-700 max-h-48 overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-gray-100 dark:[&::-webkit-scrollbar-track]:bg-gray-800 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:bg-primary-400 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb:hover]:bg-primary-500">
                             <div className="grid grid-cols-2 gap-2">
                               {LANGUAGES.map((lang) => (
-                                <label key={lang} className="flex items-center gap-2 cursor-pointer hover:bg-blue-50 p-1 rounded transition-colors">
+                                <label key={lang} className="flex items-center gap-2 cursor-pointer hover:bg-primary-50 dark:hover:bg-primary-900/10 p-1 rounded transition-colors">
                                   <input
                                     type="checkbox"
                                     checked={languages.includes(lang)}
@@ -1045,10 +1169,10 @@ function Settings() {
                                       // Pass updated value directly to avoid stale closure state in setTimeout/handler
                                       handleSaveExtendedProfile({ languages: newLangs });
                                     }}
-                                    className="w-4 h-4 rounded border-gray-300 bg-white focus:ring-2 focus:ring-blue-500"
+                                    className="w-4 h-4 rounded border-gray-300 dark:border-gray-500 bg-white dark:bg-gray-600 focus:ring-2 focus:ring-primary-500"
                                     style={{ accentColor: '#3b82f6' }}
                                   />
-                                  <span className="text-sm text-gray-700">{lang}</span>
+                                  <span className="text-sm text-gray-700 dark:text-gray-200">{lang}</span>
                                 </label>
                               ))}
                             </div>
@@ -1056,7 +1180,7 @@ function Settings() {
                           {languages.length > 0 && (
                             <div className="mt-2 flex flex-wrap gap-1">
                               {languages.map((lang) => (
-                                <span key={lang} className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full">
+                                <span key={lang} className="inline-flex items-center gap-1 px-2 py-1 bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300 text-xs rounded-full">
                                   {lang}
                                   <button
                                     onClick={() => {
@@ -1064,7 +1188,7 @@ function Settings() {
                                       setLanguages(newLangs);
                                       handleSaveExtendedProfile({ languages: newLangs });
                                     }}
-                                    className="hover:text-blue-900"
+                                    className="hover:text-primary-900 dark:hover:text-white"
                                   >
                                     ×
                                   </button>
@@ -1078,16 +1202,16 @@ function Settings() {
                     </div>
 
                     {/* Level 2: Semi-Private Information */}
-                    <div className="p-6 border-b border-gray-100">
+                    <div className="p-6 border-b border-gray-100 dark:border-gray-700">
                       <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-2">
                           <User className="text-purple-500" size={20} />
-                          <h3 className="text-lg font-semibold text-gray-800">Additional Information</h3>
+                          <h3 className="text-lg font-semibold text-gray-800 dark:text-white">Additional Information</h3>
                         </div>
                         <span className="px-3 py-1 bg-purple-100 text-purple-700 text-xs font-semibold rounded-full">Level 2 - Semi-Private</span>
                       </div>
 
-                      <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 text-sm text-purple-800 flex items-start gap-2 mb-4">
+                      <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800/50 rounded-lg p-3 text-sm text-purple-800 dark:text-purple-200 flex items-start gap-2 mb-4">
                         <Info size={16} className="mt-0.5 flex-shrink-0" />
                         <p>You can control who sees this information in the <strong>Privacy</strong> tab.</p>
                       </div>
@@ -1103,7 +1227,7 @@ function Settings() {
                             onBlur={handleSaveExtendedProfile}
                             placeholder="Barcelona, New York, etc."
                             maxLength={100}
-                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white text-gray-700 autofill:bg-white autofill:text-gray-900 [&:-webkit-autofill]:!bg-white [&:-webkit-autofill]:!text-gray-900 [&:-webkit-autofill]:shadow-[inset_0_0_0px_1000px_rgb(255,255,255)]"
+                            className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white dark:bg-gray-700 text-gray-700 dark:text-white autofill:bg-white autofill:text-gray-900 [&:-webkit-autofill]:!bg-white [&:-webkit-autofill]:!text-gray-900 [&:-webkit-autofill]:shadow-[inset_0_0_0px_1000px_rgb(255,255,255)] dark:[&:-webkit-autofill]:shadow-[inset_0_0_0px_1000px_rgb(55,65,81)] dark:[&:-webkit-autofill]:!text-white"
                           />
                           <p className="text-xs text-gray-500 mt-1">Visibility controlled in Privacy tab • Auto-saves</p>
                         </div>
@@ -1120,14 +1244,14 @@ function Settings() {
                             onBlur={handleSaveExtendedProfile}
                             placeholder="https://example.com"
                             maxLength={200}
-                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white text-gray-700 autofill:bg-white autofill:text-gray-900 [&:-webkit-autofill]:!bg-white [&:-webkit-autofill]:!text-gray-900 [&:-webkit-autofill]:shadow-[inset_0_0_0px_1000px_rgb(255,255,255)]"
+                            className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white dark:bg-gray-700 text-gray-700 dark:text-white autofill:bg-white autofill:text-gray-900 [&:-webkit-autofill]:!bg-white [&:-webkit-autofill]:!text-gray-900 [&:-webkit-autofill]:shadow-[inset_0_0_0px_1000px_rgb(255,255,255)] dark:[&:-webkit-autofill]:shadow-[inset_0_0_0px_1000px_rgb(55,65,81)] dark:[&:-webkit-autofill]:!text-white"
                           />
                           <p className="text-xs text-gray-500 mt-1">Visibility controlled in Privacy tab • Auto-saves</p>
                         </div>
 
                         {/* Social Links */}
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Social Links</label>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Social Links</label>
                           <div className="space-y-2">
                             <input
                               type="text"
@@ -1136,7 +1260,7 @@ function Settings() {
                               onBlur={handleSaveExtendedProfile}
                               placeholder="Twitter/X username"
                               maxLength={50}
-                              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white text-gray-700 autofill:bg-white autofill:text-gray-900 [&:-webkit-autofill]:!bg-white [&:-webkit-autofill]:!text-gray-900 [&:-webkit-autofill]:shadow-[inset_0_0_0px_1000px_rgb(255,255,255)]"
+                              className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white dark:bg-gray-700 text-gray-700 dark:text-white autofill:bg-white autofill:text-gray-900 [&:-webkit-autofill]:!bg-white [&:-webkit-autofill]:!text-gray-900 [&:-webkit-autofill]:shadow-[inset_0_0_0px_1000px_rgb(255,255,255)] dark:[&:-webkit-autofill]:shadow-[inset_0_0_0px_1000px_rgb(55,65,81)] dark:[&:-webkit-autofill]:!text-white"
                             />
                             <input
                               type="text"
@@ -1145,7 +1269,7 @@ function Settings() {
                               onBlur={handleSaveExtendedProfile}
                               placeholder="LinkedIn profile URL"
                               maxLength={200}
-                              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white text-gray-700 autofill:bg-white autofill:text-gray-900 [&:-webkit-autofill]:!bg-white [&:-webkit-autofill]:!text-gray-900 [&:-webkit-autofill]:shadow-[inset_0_0_0px_1000px_rgb(255,255,255)]"
+                              className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white dark:bg-gray-700 text-gray-700 dark:text-white autofill:bg-white autofill:text-gray-900 [&:-webkit-autofill]:!bg-white [&:-webkit-autofill]:!text-gray-900 [&:-webkit-autofill]:shadow-[inset_0_0_0px_1000px_rgb(255,255,255)] dark:[&:-webkit-autofill]:shadow-[inset_0_0_0px_1000px_rgb(55,65,81)] dark:[&:-webkit-autofill]:!text-white"
                             />
                             <input
                               type="text"
@@ -1154,7 +1278,7 @@ function Settings() {
                               onBlur={handleSaveExtendedProfile}
                               placeholder="GitHub username"
                               maxLength={50}
-                              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white text-gray-700 autofill:bg-white autofill:text-gray-900 [&:-webkit-autofill]:!bg-white [&:-webkit-autofill]:!text-gray-900 [&:-webkit-autofill]:shadow-[inset_0_0_0px_1000px_rgb(255,255,255)]"
+                              className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white dark:bg-gray-700 text-gray-700 dark:text-white autofill:bg-white autofill:text-gray-900 [&:-webkit-autofill]:!bg-white [&:-webkit-autofill]:!text-gray-900 [&:-webkit-autofill]:shadow-[inset_0_0_0px_1000px_rgb(255,255,255)] dark:[&:-webkit-autofill]:shadow-[inset_0_0_0px_1000px_rgb(55,65,81)] dark:[&:-webkit-autofill]:!text-white"
                             />
                           </div>
                           <p className="text-xs text-gray-500 mt-1">Visibility controlled in Privacy tab • Auto-saves</p>
@@ -1163,17 +1287,17 @@ function Settings() {
                     </div>
 
                     {/* Level 3: Private Contact Information */}
-                    <div className="p-6 border-b border-gray-100">
+                    <div className="p-6 border-b border-gray-100 dark:border-gray-700">
                       <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-2">
                           <Shield className="text-amber-600" size={20} />
-                          <h3 className="text-lg font-semibold text-gray-800">Private Contact Information</h3>
+                          <h3 className="text-lg font-semibold text-gray-800 dark:text-white">Private Contact Information</h3>
                         </div>
                         <span className="px-3 py-1 bg-amber-100 text-amber-700 text-xs font-semibold rounded-full">Level 3 - Private</span>
                       </div>
 
-                      <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
-                        <p className="text-sm text-amber-800 flex items-start gap-2">
+                      <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/50 rounded-lg p-3 mb-4">
+                        <p className="text-sm text-amber-800 dark:text-amber-200 flex items-start gap-2">
                           <Info size={16} className="mt-0.5 flex-shrink-0" />
                           <span>You can control who sees this information in the <strong>Privacy</strong> tab.</span>
                         </p>
@@ -1182,7 +1306,7 @@ function Settings() {
                       <div className="space-y-4">
                         {/* Email */}
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Email</label>
                           <input
                             type="email"
                             value={email}
@@ -1190,14 +1314,14 @@ function Settings() {
                             onBlur={handleSaveExtendedProfile}
                             placeholder="your@email.com"
                             maxLength={100}
-                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 bg-white text-gray-700 autofill:bg-white autofill:text-gray-900 [&:-webkit-autofill]:!bg-white [&:-webkit-autofill]:!text-gray-900 [&:-webkit-autofill]:shadow-[inset_0_0_0px_1000px_rgb(255,255,255)]"
+                            className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 bg-white dark:bg-gray-700 text-gray-700 dark:text-white autofill:bg-white autofill:text-gray-900 [&:-webkit-autofill]:!bg-white [&:-webkit-autofill]:!text-gray-900 [&:-webkit-autofill]:shadow-[inset_0_0_0px_1000px_rgb(255,255,255)] dark:[&:-webkit-autofill]:shadow-[inset_0_0_0px_1000px_rgb(55,65,81)] dark:[&:-webkit-autofill]:!text-white"
                           />
                           <p className="text-xs text-gray-500 mt-1">Visibility controlled in Privacy tab • Auto-saves</p>
                         </div>
 
                         {/* Phone */}
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Phone</label>
                           <input
                             type="tel"
                             value={phone}
@@ -1205,7 +1329,7 @@ function Settings() {
                             onBlur={handleSaveExtendedProfile}
                             placeholder="+1 234 567 8900"
                             maxLength={30}
-                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 bg-white text-gray-700 autofill:bg-white autofill:text-gray-900 [&:-webkit-autofill]:!bg-white [&:-webkit-autofill]:!text-gray-900 [&:-webkit-autofill]:shadow-[inset_0_0_0px_1000px_rgb(255,255,255)]"
+                            className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 bg-white dark:bg-gray-700 text-gray-700 dark:text-white autofill:bg-white autofill:text-gray-900 [&:-webkit-autofill]:!bg-white [&:-webkit-autofill]:!text-gray-900 [&:-webkit-autofill]:shadow-[inset_0_0_0px_1000px_rgb(255,255,255)] dark:[&:-webkit-autofill]:shadow-[inset_0_0_0px_1000px_rgb(55,65,81)] dark:[&:-webkit-autofill]:!text-white"
                           />
                           <p className="text-xs text-gray-500 mt-1">Visibility controlled in Privacy tab • Auto-saves</p>
                         </div>
@@ -1213,23 +1337,23 @@ function Settings() {
                     </div>
 
                     {/* Maxima Address - Full Width */}
-                    <div className="border-b border-gray-100">
+                    <div className="border-b border-gray-100 dark:border-gray-700">
                       <button
                         onClick={() => toggleAddress('maxima')}
-                        className="w-full flex items-center justify-between p-6 hover:bg-gray-50 transition-colors text-left"
+                        className="w-full flex items-center justify-between p-6 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-left"
                       >
-                        <span className="font-medium text-gray-700">My Maxima Address</span>
+                        <span className="font-medium text-gray-700 dark:text-gray-200">My Maxima Address</span>
                         {expandedAddress === 'maxima' ? <ChevronUp size={20} className="text-gray-500" /> : <ChevronDown size={20} className="text-gray-500" />}
                       </button>
 
                       {expandedAddress === 'maxima' && (
                         <div className="px-6 pb-6 pt-0">
-                          <p className="text-xs font-mono text-gray-600 break-all mb-3 bg-gray-50 p-3 rounded border border-gray-100">
+                          <p className="text-xs font-mono text-gray-600 dark:text-gray-400 break-all mb-3 bg-gray-50 dark:bg-gray-900 p-3 rounded border border-gray-100 dark:border-gray-700">
                             {maximaAddress || "Loading..."}
                           </p>
                           <button
                             onClick={() => copyToClipboard(maximaAddress, 'maxima')}
-                            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${copiedField === 'maxima' ? 'bg-green-100 text-green-700' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`}
+                            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${copiedField === 'maxima' ? 'bg-green-100 text-green-700' : 'bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 hover:bg-primary-100 dark:hover:bg-primary-900/40'}`}
                           >
                             {copiedField === 'maxima' ? <Check size={16} /> : <Copy size={16} />}
                             {copiedField === 'maxima' ? 'Copied!' : 'Copy Address'}
@@ -1242,20 +1366,20 @@ function Settings() {
                     <div>
                       <button
                         onClick={() => toggleAddress('minima')}
-                        className="w-full flex items-center justify-between p-6 hover:bg-gray-50 transition-colors text-left"
+                        className="w-full flex items-center justify-between p-6 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-left"
                       >
-                        <span className="font-medium text-gray-700">My Minima Address</span>
+                        <span className="font-medium text-gray-700 dark:text-gray-200">My Minima Address</span>
                         {expandedAddress === 'minima' ? <ChevronUp size={20} className="text-gray-500" /> : <ChevronDown size={20} className="text-gray-500" />}
                       </button>
 
                       {expandedAddress === 'minima' && (
                         <div className="px-6 pb-6 pt-0">
-                          <p className="text-xs font-mono text-gray-600 break-all mb-3 bg-gray-50 p-3 rounded border border-gray-100">
+                          <p className="text-xs font-mono text-gray-600 dark:text-gray-400 break-all mb-3 bg-gray-50 dark:bg-gray-900 p-3 rounded border border-gray-100 dark:border-gray-700">
                             {minimaAddress || "Loading..."}
                           </p>
                           <button
                             onClick={() => copyToClipboard(minimaAddress, 'minima')}
-                            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${copiedField === 'minima' ? 'bg-green-100 text-green-700' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`}
+                            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${copiedField === 'minima' ? 'bg-green-100 text-green-700' : 'bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 hover:bg-primary-100 dark:hover:bg-primary-900/40'}`}
                           >
                             {copiedField === 'minima' ? <Check size={16} /> : <Copy size={16} />}
                             {copiedField === 'minima' ? 'Copied!' : 'Copy Address'}
@@ -1270,16 +1394,16 @@ function Settings() {
               {/* PRIVACY TAB */}
               {activeTab === 'privacy' && (
                 <>
-                  <section className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                    <div className="p-6 border-b border-gray-100 flex items-center gap-3">
+                  <section className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden transition-colors">
+                    <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex items-center gap-3">
                       <Shield className="text-purple-500" />
-                      <h2 className="text-xl font-semibold text-gray-800">Privacy Settings</h2>
+                      <h2 className="text-xl font-semibold text-gray-800 dark:text-white">Privacy Settings</h2>
                     </div>
 
                     <div className="p-6 space-y-8">
                       {/* Introduction */}
-                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                        <p className="text-sm text-blue-800">
+                      <div className="bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800/50 rounded-lg p-4">
+                        <p className="text-sm text-primary-800 dark:text-primary-200">
                           <strong>Control who can see your information.</strong> Choose visibility settings for each level of your profile data.
                         </p>
                       </div>
@@ -1288,15 +1412,15 @@ function Settings() {
                       <div>
                         <div className="flex items-center justify-between mb-4">
                           <div>
-                            <h3 className="text-lg font-semibold text-gray-800">Level 2 - Semi-Private</h3>
-                            <p className="text-sm text-gray-500">Location, Website, Social Links</p>
+                            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">Level 2 - Semi-Private</h3>
+                            <p className="text-sm text-gray-500 dark:text-gray-400">Location, Website, Social Links</p>
                           </div>
                           <span className="px-3 py-1 bg-purple-100 text-purple-700 text-xs font-semibold rounded-full">Level 2</span>
                         </div>
 
                         <div className="space-y-3">
-                          <label className="flex items-start gap-3 p-4 border-2 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
-                            style={{ borderColor: level2Visibility === 'public' ? '#3b82f6' : '#e5e7eb' }}>
+                          <label className="flex items-start gap-3 p-4 border-2 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                            style={{ borderColor: level2Visibility === 'public' ? '#3b82f6' : 'currentColor' }}>
                             <input
                               type="radio"
                               name="level2"
@@ -1310,8 +1434,8 @@ function Settings() {
                               className="mt-1"
                             />
                             <div className="flex-1">
-                              <div className="font-medium text-gray-900">Public Discovery</div>
-                              <div className="text-sm text-gray-500 mt-1">Anyone who discovers you via P2P</div>
+                              <div className="font-medium text-gray-900 dark:text-white">Public Discovery</div>
+                              <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">Anyone who discovers you via P2P</div>
                               <div className="text-xs text-gray-400 mt-2 space-y-0.5">
                                 <div>✓ Discovered users</div>
                                 <div>✓ Chat participants or Maxima contacts</div>
@@ -1320,8 +1444,8 @@ function Settings() {
                             </div>
                           </label>
 
-                          <label className="flex items-start gap-3 p-4 border-2 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
-                            style={{ borderColor: level2Visibility === 'contacts' ? '#3b82f6' : '#e5e7eb' }}>
+                          <label className="flex items-start gap-3 p-4 border-2 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                            style={{ borderColor: level2Visibility === 'contacts' ? '#3b82f6' : 'currentColor' }}>
                             <input
                               type="radio"
                               name="level2"
@@ -1335,8 +1459,8 @@ function Settings() {
                               className="mt-1"
                             />
                             <div className="flex-1">
-                              <div className="font-medium text-gray-900">Chat Access</div>
-                              <div className="text-sm text-gray-500 mt-1">Anyone with chat access to you</div>
+                              <div className="font-medium text-gray-900 dark:text-white">Chat Access</div>
+                              <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">Anyone with chat access to you</div>
                               <div className="text-xs text-gray-400 mt-2 space-y-0.5">
                                 <div className="text-gray-300">✗ Discovered users</div>
                                 <div>✓ Chat participants or Maxima contacts</div>
@@ -1345,8 +1469,8 @@ function Settings() {
                             </div>
                           </label>
 
-                          <label className="flex items-start gap-3 p-4 border-2 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
-                            style={{ borderColor: level2Visibility === 'personal' ? '#3b82f6' : '#e5e7eb' }}>
+                          <label className="flex items-start gap-3 p-4 border-2 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                            style={{ borderColor: level2Visibility === 'personal' ? '#3b82f6' : 'currentColor' }}>
                             <input
                               type="radio"
                               name="level2"
@@ -1360,8 +1484,8 @@ function Settings() {
                               className="mt-1"
                             />
                             <div className="flex-1">
-                              <div className="font-medium text-gray-900">Personal Contacts Only</div>
-                              <div className="text-sm text-gray-500 mt-1">Only contacts you mark as personal ({personalContacts.length} selected)</div>
+                              <div className="font-medium text-gray-900 dark:text-white">Personal Contacts Only</div>
+                              <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">Only contacts you mark as personal ({personalContacts.length} selected)</div>
                               <div className="text-xs text-gray-400 mt-2 space-y-0.5">
                                 <div className="text-gray-300">✗ Discovered users</div>
                                 <div className="text-gray-300">✗ Chat participants or Maxima contacts</div>
@@ -1373,11 +1497,11 @@ function Settings() {
                       </div>
 
                       {/* Level 3 Visibility */}
-                      <div className="pt-6 border-t border-gray-200">
+                      <div className="pt-6 border-t border-gray-200 dark:border-gray-700">
                         <div className="flex items-center justify-between mb-4">
                           <div>
-                            <h3 className="text-lg font-semibold text-gray-800">Level 3 - Private</h3>
-                            <p className="text-sm text-gray-500">Email, Phone</p>
+                            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">Level 3 - Private</h3>
+                            <p className="text-sm text-gray-500 dark:text-gray-400">Email, Phone</p>
                           </div>
                           <span className="px-3 py-1 bg-amber-100 text-amber-700 text-xs font-semibold rounded-full">Level 3</span>
                         </div>
@@ -1469,8 +1593,8 @@ function Settings() {
                           </div>
                         </div>
 
-                        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                          <p className="text-sm text-gray-600">
+                        <div className="bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                          <p className="text-sm text-gray-600 dark:text-gray-300">
                             Personal Contacts management coming soon. You'll be able to select specific contacts from your Maxima contact list to mark as "personal" for enhanced privacy control.
                           </p>
                         </div>
@@ -1487,10 +1611,10 @@ function Settings() {
                           </div>
                         </div>
 
-                        <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-700">
                           <div className="flex-1">
-                            <div className="font-medium text-gray-900">Allow Direct Messages from Anyone</div>
-                            <p className="text-sm text-gray-500 mt-1">
+                            <div className="font-medium text-gray-900 dark:text-white">Allow Direct Messages from Anyone</div>
+                            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                               {allowNonContactChats
                                 ? 'Users can message you immediately without approval'
                                 : 'Users must send a request and be approved'}
@@ -1499,8 +1623,8 @@ function Settings() {
                           <button
                             onClick={handleToggleChatPermission}
                             disabled={privacyLoading}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${privacyLoading ? 'opacity-50 cursor-not-allowed' : ''
-                              } ${allowNonContactChats ? 'bg-blue-600' : 'bg-gray-200'}`}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 ${privacyLoading ? 'opacity-50 cursor-not-allowed' : ''
+                              } ${allowNonContactChats ? 'bg-primary-600' : 'bg-gray-200 dark:bg-gray-600'}`}
                           >
                             <span
                               className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${allowNonContactChats ? 'translate-x-6' : 'translate-x-1'
@@ -1519,7 +1643,7 @@ function Settings() {
                           </div>
                         </div>
 
-                        <div className={`flex items-center gap-3 p-4 rounded-xl mb-4 ${writeMode ? 'bg-green-50 border border-green-100' : 'bg-yellow-50 border border-yellow-100'}`}>
+                        <div className={`flex items-center gap-3 p-4 rounded-xl mb-4 ${writeMode ? 'bg-green-50 dark:bg-green-900/20 border border-green-100 dark:border-green-900/50' : 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-100 dark:border-yellow-900/50'}`}>
                           {writeMode ? (
                             <div className="p-2 bg-green-100 rounded-full text-green-600">
                               <Check size={20} />
@@ -1530,10 +1654,10 @@ function Settings() {
                             </div>
                           )}
                           <div>
-                            <h3 className={`font-semibold ${writeMode ? 'text-green-800' : 'text-yellow-800'}`}>
+                            <h3 className={`font-semibold ${writeMode ? 'text-green-800 dark:text-green-400' : 'text-yellow-800 dark:text-yellow-400'}`}>
                               {writeMode ? 'Write Mode Active' : 'Read Mode Active'}
                             </h3>
-                            <p className={`text-sm ${writeMode ? 'text-green-600' : 'text-yellow-600'}`}>
+                            <p className={`text-sm ${writeMode ? 'text-green-600 dark:text-green-300' : 'text-yellow-600 dark:text-yellow-300'}`}>
                               {writeMode
                                 ? 'MetaChain has full permission to send messages and tokens.'
                                 : 'MetaChain needs your approval for every transaction.'}
@@ -1543,10 +1667,10 @@ function Settings() {
 
                         {!writeMode && (
                           <div className="space-y-4">
-                            <p className="text-gray-600 text-sm leading-relaxed">
+                            <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed">
                               To enable <strong>Write Mode</strong> and avoid repeated approval requests:
                             </p>
-                            <ol className="list-decimal list-inside text-sm text-gray-600 space-y-2 pl-2">
+                            <ol className="list-decimal list-inside text-sm text-gray-600 dark:text-gray-300 space-y-2 pl-2">
                               <li>Go to <strong>Minima</strong> main screen</li>
                               <li>Open <strong>MiniDapps</strong></li>
                               <li>Find <strong>MetaChain</strong></li>
@@ -1559,7 +1683,7 @@ function Settings() {
                                 console.log("🔄 [Settings] Manual refresh button clicked");
                                 await refreshWriteMode();
                               }}
-                              className="w-full mt-2 py-2.5 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+                              className="w-full mt-2 py-2.5 bg-primary-600 text-white rounded-xl font-medium hover:bg-primary-700 transition-colors flex items-center justify-center gap-2"
                             >
                               <RefreshCw size={18} />
                               Check Permissions Again
@@ -1576,23 +1700,23 @@ function Settings() {
               {activeTab === 'discovery' && (
                 <>
                   {/* COMMUNITY & DISCOVERY SECTION */}
-                  <section id="community-discovery" className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden scroll-mt-4">
-                    <div className="p-6 border-b border-gray-100 flex items-center gap-3">
-                      <Globe className="text-blue-500" />
-                      <h2 className="text-xl font-semibold text-gray-800">Community & Discovery</h2>
+                  <section id="community-discovery" className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden scroll-mt-4 transition-colors">
+                    <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex items-center gap-3">
+                      <Globe className="text-primary-500" />
+                      <h2 className="text-xl font-semibold text-gray-800 dark:text-white">Community & Discovery</h2>
                     </div>
 
                     <div className="p-6 space-y-6">
                       {/* Discovery Configuration */}
-                      <div className="bg-white border border-gray-200 rounded-lg p-4">
+                      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
                         <div className="flex items-center justify-between mb-4">
-                          <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-200">Discovery Settings</h4>
-                          <span className="text-xs text-gray-500 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">Advanced</span>
+                          <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Discovery Settings</h4>
+                          <span className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">Advanced</span>
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Gossip Frequency (Seconds)</label>
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Gossip Frequency (Seconds)</label>
                             <div className="relative">
                               <input
                                 type="number"
@@ -1602,7 +1726,7 @@ function Settings() {
                                 value={discoveryInterval}
                                 onChange={(e) => setDiscoveryInterval(parseInt(e.target.value) || 0)}
                                 id="discoveryIntervalInput"
-                                className="w-full p-2 pl-3 border border-gray-300 rounded-md bg-white text-gray-900 text-sm"
+                                className="w-full p-2 pl-3 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-primary-500 focus:outline-none"
                                 onBlur={(e) => {
                                   const val = parseInt(e.target.value) || 60;
                                   const safeVal = val < 30 ? 30 : val;
@@ -1619,7 +1743,7 @@ function Settings() {
                           </div>
 
                           <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Gossip Peer Limit</label>
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Gossip Peer Limit</label>
                             <div className="relative">
                               <input
                                 type="number"
@@ -1629,7 +1753,7 @@ function Settings() {
                                 value={discoveryLimit}
                                 onChange={(e) => setDiscoveryLimit(parseInt(e.target.value) || 0)}
                                 id="discoveryLimitInput"
-                                className="w-full p-2 pl-3 border border-gray-300 rounded-md bg-white text-gray-900 text-sm"
+                                className="w-full p-2 pl-3 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-primary-500 focus:outline-none"
                                 onBlur={(e) => {
                                   const val = parseInt(e.target.value) || 5;
                                   const safeVal = val < 1 ? 1 : (val > 50 ? 50 : val);
@@ -1648,34 +1772,34 @@ function Settings() {
                       </div>
 
                       {/* MLS Server (for Development) */}
-                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                      <div className="bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800/50 rounded-lg p-4">
                         <div className="flex items-center gap-2 mb-3">
-                          <Info className="text-blue-600" size={20} />
-                          <h3 className="text-lg font-semibold text-blue-900">Use This Node as MLS Server</h3>
+                          <Info className="text-primary-600 dark:text-primary-400" size={20} />
+                          <h3 className="text-lg font-semibold text-primary-900 dark:text-primary-100">Use This Node as MLS Server</h3>
                         </div>
-                        <p className="text-sm text-blue-800 mb-3">
+                        <p className="text-sm text-primary-800 dark:text-primary-200 mb-3">
                           For development/testing, other nodes can use this node as their Static MLS server.
                         </p>
 
                         {p2pIdentity ? (
                           <>
-                            <div className="bg-white rounded border border-blue-200 p-3 mb-3">
-                              <p className="text-xs text-blue-600 mb-1 font-semibold">Your P2P Identity:</p>
-                              <p className="text-xs font-mono text-gray-800 break-all">{p2pIdentity}</p>
+                            <div className="bg-white dark:bg-gray-900 rounded border border-primary-200 dark:border-primary-800 p-3 mb-3">
+                              <p className="text-xs text-primary-600 dark:text-primary-400 mb-1 font-semibold">Your P2P Identity:</p>
+                              <p className="text-xs font-mono text-gray-800 dark:text-gray-200 break-all">{p2pIdentity}</p>
                             </div>
                             <button
                               onClick={() => copyToClipboard(p2pIdentity, 'p2p')}
-                              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${copiedField === 'p2p' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700 hover:bg-blue-200 border border-blue-300'}`}
+                              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${copiedField === 'p2p' ? 'bg-green-100 text-green-700' : 'bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300 hover:bg-primary-200 dark:hover:bg-primary-900/60 border border-primary-300 dark:border-primary-700'}`}
                             >
                               {copiedField === 'p2p' ? <Check size={16} /> : <Copy size={16} />}
                               {copiedField === 'p2p' ? 'Copied!' : 'Copy P2P Identity'}
                             </button>
-                            <p className="text-xs text-blue-700 mt-3">
+                            <p className="text-xs text-primary-700 mt-3">
                               💡 <strong>Note:</strong> Other nodes can paste this address in "Static MLS Server" below to use this node as their MLS.
                             </p>
                           </>
                         ) : (
-                          <p className="text-sm text-blue-700">Loading P2P identity...</p>
+                          <p className="text-sm text-primary-700">Loading P2P identity...</p>
                         )}
                       </div>
 
@@ -1737,7 +1861,7 @@ function Settings() {
                                     value={staticMLSServer}
                                     onChange={(e) => setStaticMLSServer(e.target.value)}
                                     placeholder="MxG...@IP:PORT"
-                                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none font-mono text-sm bg-white text-gray-700"
+                                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:outline-none font-mono text-sm bg-white text-gray-700"
                                   />
                                   <p className="text-xs text-gray-500">Static MLS configuration has been simplified. Enter your MLS address above.</p>
                                 </div>
@@ -1841,16 +1965,16 @@ function Settings() {
               {activeTab === 'network' && (
                 <>
                   {/* NETWORK SECTION */}
-                  <section id="network" className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                    <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+                  <section id="network" className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden transition-colors">
+                    <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <Globe className="text-green-500" />
-                        <h2 className="text-xl font-semibold text-gray-800">Network</h2>
+                        <h2 className="text-xl font-semibold text-gray-800 dark:text-white">Network</h2>
                       </div>
                       <button
                         onClick={fetchNetworkStatus}
                         disabled={networkLoading}
-                        className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50"
+                        className="p-2 text-gray-500 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 rounded-lg transition-colors disabled:opacity-50"
                         title="Refresh network status"
                       >
                         <RefreshCw size={18} className={networkLoading ? "animate-spin" : ""} />
@@ -1865,10 +1989,10 @@ function Settings() {
                         <>
                           {/* Health Status Badge */}
                           <div className={`flex items-center gap-3 p-4 rounded-xl mb-6 ${networkStatus.network?.connected > 3
-                            ? 'bg-green-50 border border-green-100'
+                            ? 'bg-green-50 dark:bg-green-900/20 border border-green-100 dark:border-green-900/50'
                             : networkStatus.network?.connected > 0
-                              ? 'bg-yellow-50 border border-yellow-100'
-                              : 'bg-red-50 border border-red-100'
+                              ? 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-100 dark:border-yellow-900/50'
+                              : 'bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/50'
                             }`}>
                             <div className={`p-2 rounded-full ${networkStatus.network?.connected > 3
                               ? 'bg-green-100 text-green-600'
@@ -1880,10 +2004,10 @@ function Settings() {
                             </div>
                             <div>
                               <h3 className={`font-semibold ${networkStatus.network?.connected > 3
-                                ? 'text-green-800'
+                                ? 'text-green-800 dark:text-green-400'
                                 : networkStatus.network?.connected > 0
-                                  ? 'text-yellow-800'
-                                  : 'text-red-800'
+                                  ? 'text-yellow-800 dark:text-yellow-400'
+                                  : 'text-red-800 dark:text-red-400'
                                 }`}>
                                 {networkStatus.network?.connected > 3
                                   ? 'Network running smoothly'
@@ -1892,10 +2016,10 @@ function Settings() {
                                     : 'No connection'}
                               </h3>
                               <p className={`text-sm ${networkStatus.network?.connected > 3
-                                ? 'text-green-600'
+                                ? 'text-green-600 dark:text-green-300'
                                 : networkStatus.network?.connected > 0
-                                  ? 'text-yellow-600'
-                                  : 'text-red-600'
+                                  ? 'text-yellow-600 dark:text-yellow-300'
+                                  : 'text-red-600 dark:text-red-300'
                                 }`}>
                                 {networkStatus.network?.connected > 3
                                   ? 'Connected to Minima network'
@@ -1909,60 +2033,60 @@ function Settings() {
                           {/* Network Metrics */}
                           <div className="space-y-4">
                             {/* Connections */}
-                            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                            <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                               <div className="flex items-center gap-3">
-                                <div className="p-2 bg-blue-100 rounded-lg text-blue-600">
+                                <div className="p-2 bg-primary-100 dark:bg-primary-900/30 rounded-lg text-primary-600 dark:text-primary-400">
                                   <Globe size={18} />
                                 </div>
-                                <span className="font-medium text-gray-700">Connections</span>
+                                <span className="font-medium text-gray-700 dark:text-gray-300">Connections</span>
                               </div>
-                              <span className="text-lg font-bold text-gray-900">
+                              <span className="text-lg font-bold text-gray-900 dark:text-white">
                                 {networkStatus.network?.connected || 0} nodes
                               </span>
                             </div>
 
                             {/* Current Block */}
-                            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                            <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                               <div className="flex items-center gap-3">
-                                <div className="p-2 bg-purple-100 rounded-lg text-purple-600">
+                                <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg text-purple-600 dark:text-purple-400">
                                   <span className="text-sm font-bold">⛓️</span>
                                 </div>
-                                <span className="font-medium text-gray-700">Current Block</span>
+                                <span className="font-medium text-gray-700 dark:text-gray-300">Current Block</span>
                               </div>
-                              <span className="text-lg font-bold text-gray-900">
+                              <span className="text-lg font-bold text-gray-900 dark:text-white">
                                 #{networkStatus.chain?.block?.toLocaleString() || 0}
                               </span>
                             </div>
 
                             {/* Last Block Time */}
-                            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                            <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                               <div className="flex items-center gap-3">
-                                <div className="p-2 bg-orange-100 rounded-lg text-orange-600">
+                                <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-lg text-orange-600 dark:text-orange-400">
                                   <span className="text-sm font-bold">🕐</span>
                                 </div>
-                                <span className="font-medium text-gray-700">Last Update</span>
+                                <span className="font-medium text-gray-700 dark:text-gray-300">Last Update</span>
                               </div>
-                              <span className="text-sm font-semibold text-gray-700">
+                              <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">
                                 {networkStatus.chain?.time || 'N/A'}
                               </span>
                             </div>
 
                             {/* Minima Version */}
-                            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                            <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                               <div className="flex items-center gap-3">
-                                <div className="p-2 bg-gray-200 rounded-lg text-gray-600">
+                                <div className="p-2 bg-gray-200 dark:bg-gray-600 rounded-lg text-gray-600 dark:text-gray-300">
                                   <Info size={18} />
                                 </div>
-                                <span className="font-medium text-gray-700">Version</span>
+                                <span className="font-medium text-gray-700 dark:text-gray-300">Version</span>
                               </div>
-                              <span className="text-sm font-semibold text-gray-700">
+                              <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">
                                 Minima {networkStatus.version || 'N/A'}
                               </span>
                             </div>
                           </div>
 
                           {/* Last Updated Timestamp */}
-                          <div className="mt-6 text-center text-xs text-gray-500">
+                          <div className="mt-6 text-center text-xs text-gray-500 dark:text-gray-400">
                             Updated {Math.floor((Date.now() - lastUpdated) / 1000)} seconds ago
                           </div>
                         </>

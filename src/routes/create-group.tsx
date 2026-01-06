@@ -90,7 +90,7 @@ function CreateGroupPage() {
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
-      <div className="bg-[#0088cc] text-white p-4 flex items-center gap-3 shadow-sm">
+      <div className="bg-primary-600 text-white p-4 flex items-center gap-3 shadow-sm">
         <button
           onClick={() => navigate({ to: "/" })}
           className="p-2 hover:bg-white/10 rounded-full transition-colors"
@@ -112,7 +112,7 @@ function CreateGroupPage() {
                 value={groupName}
                 onChange={(e) => setGroupName(e.target.value)}
                 placeholder="Enter group name"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0088cc] text-gray-900 bg-white placeholder-gray-400"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-gray-900 bg-white placeholder-gray-400"
                 maxLength={50}
               />
             </div>
@@ -125,7 +125,7 @@ function CreateGroupPage() {
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Enter group description"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0088cc] text-gray-900 bg-white placeholder-gray-400 resize-none"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-gray-900 bg-white placeholder-gray-400 resize-none"
                 rows={3}
                 maxLength={200}
               />
@@ -137,7 +137,7 @@ function CreateGroupPage() {
             <button
               onClick={handleCreateGroup}
               disabled={!groupName.trim() || selectedContacts.size === 0 || creating}
-              className="w-full py-3 bg-[#0088cc] text-white rounded-lg font-medium hover:bg-[#0077b5] transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed shadow-md"
+              className="w-full py-3 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed shadow-md"
             >
               {creating ? "Creating..." : selectedContacts.size > 0 ? `Create Group with ${selectedContacts.size} ${selectedContacts.size === 1 ? "member" : "members"}` : "Select members to continue"}
             </button>
@@ -153,7 +153,7 @@ function CreateGroupPage() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search contacts..."
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0088cc] text-gray-900 bg-white placeholder-gray-400 mb-4"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-gray-900 bg-white placeholder-gray-400 mb-4"
             />
 
             <div className="space-y-2 max-h-96 overflow-y-auto">
@@ -171,7 +171,7 @@ function CreateGroupPage() {
                       key={contact.publickey}
                       onClick={() => toggleContact(contact.publickey)}
                       className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors ${isSelected
-                        ? "bg-blue-50 border-2 border-[#0088cc]"
+                        ? "bg-primary-50 border-2 border-[#0088cc]"
                         : "bg-gray-50 border-2 border-transparent hover:bg-gray-100"
                         }`}
                     >
@@ -189,7 +189,7 @@ function CreateGroupPage() {
                         </p>
                       </div>
                       {isSelected && (
-                        <div className="w-6 h-6 bg-[#0088cc] rounded-full flex items-center justify-center">
+                        <div className="w-6 h-6 bg-primary-600 rounded-full flex items-center justify-center">
                           <Check size={16} className="text-white" />
                         </div>
                       )}

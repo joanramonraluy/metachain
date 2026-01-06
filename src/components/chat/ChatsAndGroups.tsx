@@ -163,8 +163,8 @@ export default function ChatsAndGroups() {
 
     if (!loaded || !dbReady || loading) {
         return (
-            <div className="flex items-center justify-center h-screen bg-white">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+            <div className="flex items-center justify-center h-screen bg-white dark:bg-gray-900">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
             </div>
         );
     }
@@ -282,15 +282,15 @@ export default function ChatsAndGroups() {
     const archivedCount = archivedChats.length + archivedGroups.length;
 
     return (
-        <div className="h-screen flex flex-col bg-gray-50 overflow-x-hidden">
+        <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-900 overflow-x-hidden">
             {/* Modern Tabs */}
-            <div className="bg-white flex-shrink-0 px-4 py-3 shadow-sm">
+            <div className="bg-white dark:bg-gray-800 flex-shrink-0 px-4 py-3 shadow-sm transition-colors">
                 <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
                     <button
                         onClick={() => setActiveTab('all')}
                         className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === 'all'
-                            ? 'bg-[#0088cc] text-white shadow-md'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                            ? 'bg-primary-600 text-white shadow-md'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'
                             }`}
                     >
                         <LayoutGrid size={16} className="flex-shrink-0" />
@@ -299,8 +299,8 @@ export default function ChatsAndGroups() {
                     <button
                         onClick={() => setActiveTab('individuals')}
                         className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === 'individuals'
-                            ? 'bg-[#0088cc] text-white shadow-md'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                            ? 'bg-primary-600 text-white shadow-md'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'
                             }`}
                     >
                         <MessageCircle size={16} className="flex-shrink-0" />
@@ -309,8 +309,8 @@ export default function ChatsAndGroups() {
                     <button
                         onClick={() => setActiveTab('groups')}
                         className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === 'groups'
-                            ? 'bg-[#0088cc] text-white shadow-md'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                            ? 'bg-primary-600 text-white shadow-md'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'
                             }`}
                     >
                         <Users size={16} className="flex-shrink-0" />
@@ -319,8 +319,8 @@ export default function ChatsAndGroups() {
                     <button
                         onClick={() => setActiveTab('requests')}
                         className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === 'requests'
-                            ? 'bg-[#0088cc] text-white shadow-md'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                            ? 'bg-primary-600 text-white shadow-md'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'
                             }`}
                     >
                         <Inbox size={16} className="flex-shrink-0" />
@@ -329,8 +329,8 @@ export default function ChatsAndGroups() {
                     <button
                         onClick={() => setActiveTab('favorites')}
                         className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === 'favorites'
-                            ? 'bg-[#0088cc] text-white shadow-md'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                            ? 'bg-primary-600 text-white shadow-md'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'
                             }`}
                     >
                         <Star size={16} className="flex-shrink-0" />
@@ -339,8 +339,8 @@ export default function ChatsAndGroups() {
                     <button
                         onClick={() => setActiveTab('archived')}
                         className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === 'archived'
-                            ? 'bg-[#0088cc] text-white shadow-md'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                            ? 'bg-primary-600 text-white shadow-md'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'
                             }`}
                     >
                         <Archive size={16} className="flex-shrink-0" />
@@ -350,7 +350,7 @@ export default function ChatsAndGroups() {
                     {activeTab === 'groups' && (
                         <button
                             onClick={() => navigate({ to: "/create-group" })}
-                            className="ml-auto p-2 bg-[#0088cc] text-white rounded-full hover:bg-[#0077b5] transition-all shadow-md hover:shadow-lg flex-shrink-0"
+                            className="ml-auto p-2 bg-primary-600 text-white rounded-full hover:bg-primary-700 transition-all shadow-md hover:shadow-lg flex-shrink-0"
                             title="Create Group"
                         >
                             <Plus size={20} />
@@ -361,19 +361,19 @@ export default function ChatsAndGroups() {
 
             <div className="flex-1 overflow-y-auto p-3">
                 {displayedChats.length === 0 && displayedGroups.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full text-gray-500 p-8 text-center">
-                        <div className="bg-blue-50 p-4 rounded-full mb-4">
+                    <div className="flex flex-col items-center justify-center h-full text-gray-500 dark:text-gray-400 p-8 text-center">
+                        <div className="bg-primary-50 dark:bg-primary-900/20 p-4 rounded-full mb-4">
                             {activeTab === 'groups' ? (
-                                <Users className="w-12 h-12 text-[#0088cc]" />
+                                <Users className="w-12 h-12 text-primary-600" />
                             ) : activeTab === 'requests' ? (
-                                <Inbox className="w-12 h-12 text-[#0088cc]" />
+                                <Inbox className="w-12 h-12 text-primary-600" />
                             ) : (
-                                <svg className="w-12 h-12 text-[#0088cc]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-12 h-12 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                                 </svg>
                             )}
                         </div>
-                        <h3 className="text-lg font-medium text-gray-900 mb-1">
+                        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-1">
                             {activeTab === 'groups' ? 'No groups yet' :
                                 activeTab === 'requests' ? 'No message requests' :
                                     'No chats yet'}
@@ -388,14 +388,14 @@ export default function ChatsAndGroups() {
                         {activeTab === 'groups' ? (
                             <button
                                 onClick={() => navigate({ to: "/create-group" })}
-                                className="px-6 py-2 bg-[#0088cc] text-white rounded-full font-medium hover:bg-[#0077b5] transition-colors shadow-sm"
+                                className="px-6 py-2 bg-primary-600 text-white rounded-full font-medium hover:bg-primary-700 transition-colors shadow-sm"
                             >
                                 Create Group
                             </button>
                         ) : (
                             <button
                                 onClick={() => navigate({ to: "/contacts" })}
-                                className="px-6 py-2 bg-[#0088cc] text-white rounded-full font-medium hover:bg-[#0077b5] transition-colors shadow-sm"
+                                className="px-6 py-2 bg-primary-600 text-white rounded-full font-medium hover:bg-primary-700 transition-colors shadow-sm"
                             >
                                 Start Messaging
                             </button>
@@ -411,24 +411,24 @@ export default function ChatsAndGroups() {
                                     navigate({ to: "/groups/$groupId", params: { groupId: group.group_id } });
                                 }}
                                 className={`rounded-xl p-4 cursor-pointer transition-all duration-200 ${(group.unreadCount || 0) > 0
-                                    ? 'bg-blue-50 shadow-md hover:shadow-lg border-2 border-blue-200'
-                                    : 'bg-white shadow-sm hover:shadow-md border border-gray-100'
+                                    ? 'bg-primary-50 dark:bg-primary-900/10 shadow-md hover:shadow-lg border-2 border-primary-200 dark:border-primary-800'
+                                    : 'bg-white dark:bg-gray-800 shadow-sm hover:shadow-md border border-gray-100 dark:border-gray-700'
                                     }`}
                             >
                                 <div className="flex items-center gap-3">
                                     <div className="relative flex-shrink-0">
-                                        <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-bold text-xl shadow-md">
+                                        <div className="w-14 h-14 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white font-bold text-xl shadow-md">
                                             {group.name.charAt(0).toUpperCase()}
                                         </div>
                                         {(group.unreadCount || 0) > 0 && (
-                                            <div className="absolute -top-1 -right-1 bg-blue-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center shadow-md">
+                                            <div className="absolute -top-1 -right-1 bg-primary-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center shadow-md">
                                                 {group.unreadCount}
                                             </div>
                                         )}
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-baseline justify-between gap-2 mb-1">
-                                            <h3 className="font-semibold text-gray-900 truncate text-base">
+                                            <h3 className="font-semibold text-gray-900 dark:text-white truncate text-base">
                                                 {group.name}
                                             </h3>
                                             <span className="text-xs text-gray-500 flex-shrink-0 font-medium">
@@ -436,7 +436,7 @@ export default function ChatsAndGroups() {
                                             </span>
                                         </div>
                                         {group.description && (
-                                            <p className="text-sm text-gray-600 truncate">{group.description}</p>
+                                            <p className="text-sm text-gray-600 dark:text-gray-300 truncate">{group.description}</p>
                                         )}
                                     </div>
                                 </div>
@@ -448,8 +448,8 @@ export default function ChatsAndGroups() {
                                 key={i}
                                 onClick={() => navigate({ to: "/chat/$address", params: { address: chat.publickey } })}
                                 className={`rounded-xl p-4 cursor-pointer transition-all duration-200 ${(chat.unreadCount || 0) > 0
-                                    ? 'bg-blue-50 shadow-md hover:shadow-lg border-2 border-blue-200'
-                                    : 'bg-white shadow-sm hover:shadow-md border border-gray-100'
+                                    ? 'bg-primary-50 dark:bg-primary-900/10 shadow-md hover:shadow-lg border-2 border-primary-200 dark:border-primary-800'
+                                    : 'bg-white dark:bg-gray-800 shadow-sm hover:shadow-md border border-gray-100 dark:border-gray-700'
                                     }`}
                             >
                                 <div className="flex items-center gap-3">
@@ -457,7 +457,7 @@ export default function ChatsAndGroups() {
                                         <img
                                             src={getAvatar(chat.publickey)}
                                             alt={getName(chat)}
-                                            className="w-14 h-14 rounded-full object-cover bg-gray-200 shadow-md"
+                                            className="w-14 h-14 rounded-full object-cover bg-gray-200 dark:bg-gray-700 shadow-md"
                                             onError={(e: any) => { e.target.src = defaultAvatar; }}
                                         />
                                         {chat.archived && (
@@ -466,14 +466,14 @@ export default function ChatsAndGroups() {
                                             </div>
                                         )}
                                         {(chat.unreadCount || 0) > 0 && (
-                                            <div className="absolute -top-1 -right-1 bg-blue-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center shadow-md">
+                                            <div className="absolute -top-1 -right-1 bg-primary-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center shadow-md">
                                                 {chat.unreadCount}
                                             </div>
                                         )}
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-baseline justify-between gap-2 mb-1">
-                                            <h3 className="font-semibold text-gray-900 truncate flex items-center gap-1.5 text-base">
+                                            <h3 className="font-semibold text-gray-900 dark:text-white truncate flex items-center gap-1.5 text-base">
                                                 {getName(chat)}
                                                 {chat.favorite && (
                                                     <Star size={16} fill="#fbbf24" stroke="#f59e0b" className="flex-shrink-0" />
@@ -483,8 +483,8 @@ export default function ChatsAndGroups() {
                                                 {formatTime(chat.lastMessageDate)}
                                             </span>
                                         </div>
-                                        <p className="text-sm text-gray-600 truncate">
-                                            {chat.username === "Me" && <span className="text-[#0088cc] font-medium mr-1">You:</span>}
+                                        <p className="text-sm text-gray-600 dark:text-gray-300 truncate">
+                                            {chat.username === "Me" && <span className="text-primary-600 dark:text-primary-400 font-medium mr-1">You:</span>}
                                             {chat.lastMessageType === "charm" ? "✨ Charm sent" :
                                                 chat.lastMessageType === "token" ? "💰 Token sent" :
                                                     chat.lastMessage || ""}
@@ -500,7 +500,7 @@ export default function ChatsAndGroups() {
             <div className="fixed bottom-6 right-6">
                 <button
                     onClick={() => activeTab === 'groups' ? navigate({ to: "/create-group" }) : navigate({ to: "/contacts" })}
-                    className="w-14 h-14 bg-[#0088cc] text-white rounded-full shadow-lg flex items-center justify-center hover:bg-[#0077b5] transition-transform hover:scale-105 active:scale-95"
+                    className="w-14 h-14 bg-primary-600 text-white rounded-full shadow-lg flex items-center justify-center hover:bg-primary-700 transition-transform hover:scale-105 active:scale-95"
                 >
                     {activeTab === 'groups' ? <Plus className="w-6 h-6" /> : (
                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">

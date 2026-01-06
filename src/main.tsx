@@ -9,6 +9,7 @@ import {
 import React from "react"
 import ReactDOM from "react-dom/client"
 import AppProvider from "./AppContext.tsx"
+import { ThemeProvider } from "./context/ThemeContext.tsx"
 import "./index.css"
 
 import { routeTree } from "./routeTree.gen"
@@ -51,7 +52,9 @@ if (!import.meta.env.DEV) {
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <AppProvider>
-      <RouterProvider router={router} />
+      <ThemeProvider>
+        <RouterProvider router={router} />
+      </ThemeProvider>
     </AppProvider>
   </React.StrictMode>
 )

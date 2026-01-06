@@ -33,22 +33,24 @@ const ContactActions: React.FC<ContactActionsProps> = ({
     onSendMaximaRequest
 }) => {
     return (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-            <div className="p-4 border-b border-gray-100 bg-gray-50/50">
-                <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider">Connection Status</h3>
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden transition-colors">
+            <div className="p-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/50">
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 uppercase tracking-wider">Connection Status</h3>
             </div>
             <div className="p-4">
                 {!isMaximaContact ? (
                     /* Show different actions based on user's chat permissions */
                     <div className="space-y-3">
                         <div className="flex items-center gap-2 mb-2">
-                            <UserPlus size={18} className="text-blue-600" />
-                            <span className="text-sm font-medium text-gray-900">Actions</span>
+                            <UserPlus size={18} className="text-primary-600" />
+                            <span className="text-sm font-medium text-gray-900 dark:text-white">Actions</span>
                         </div>
-                        <p className="text-xs text-gray-500 mb-3">
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
                             {userAllowsNonContactChats
                                 ? "This user accepts messages from anyone."
-                                : "This user only accepts chats from contacts. Send a chat request first."}
+                                : (hasChatHistory || requestStatus === 'accepted')
+                                    ? "This user restricts new chats, but you have an existing conversation."
+                                    : "This user only accepts chats from contacts. Send a chat request first."}
                         </p>
 
                         {/* Incoming Maxima Contact Request - ALWAYS VISIBLE */}
@@ -56,7 +58,7 @@ const ContactActions: React.FC<ContactActionsProps> = ({
                             <div className="space-y-2 mb-4">
                                 <button
                                     disabled={true}
-                                    className="w-full px-4 py-2 bg-purple-50 text-purple-600 border border-purple-200 rounded-lg font-medium flex items-center justify-center gap-2 cursor-default"
+                                    className="w-full px-4 py-2 bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-800 rounded-lg font-medium flex items-center justify-center gap-2 cursor-default"
                                 >
                                     <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
                                     Maxima Contact Request Received
@@ -76,7 +78,7 @@ const ContactActions: React.FC<ContactActionsProps> = ({
                             <>
                                 <button
                                     onClick={onNavigateChat}
-                                    className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium flex items-center justify-center gap-2"
+                                    className="w-full px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors font-medium flex items-center justify-center gap-2"
                                 >
                                     <span className="transform rotate-[-45deg]">➤</span>
                                     Send Message
@@ -87,7 +89,7 @@ const ContactActions: React.FC<ContactActionsProps> = ({
                                     <>
                                         <button
                                             disabled={true}
-                                            className="w-full px-4 py-2 bg-green-50 text-green-600 border border-green-200 rounded-lg font-medium flex items-center justify-center gap-2 cursor-default"
+                                            className="w-full px-4 py-2 bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 border border-green-200 dark:border-green-800 rounded-lg font-medium flex items-center justify-center gap-2 cursor-default"
                                         >
                                             <UserCheck size={18} />
                                             Chat Request Accepted
@@ -98,7 +100,7 @@ const ContactActions: React.FC<ContactActionsProps> = ({
                                             <div className="space-y-2 mt-4">
                                                 <button
                                                     disabled={true}
-                                                    className="w-full px-4 py-2 bg-purple-50 text-purple-600 border border-purple-200 rounded-lg font-medium flex items-center justify-center gap-2 cursor-default"
+                                                    className="w-full px-4 py-2 bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-800 rounded-lg font-medium flex items-center justify-center gap-2 cursor-default"
                                                 >
                                                     <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
                                                     Maxima Request Pending
@@ -106,7 +108,7 @@ const ContactActions: React.FC<ContactActionsProps> = ({
                                                 <button
                                                     onClick={onCancelMaximaRequest}
                                                     disabled={sendingMaximaRequest}
-                                                    className="w-full px-4 py-2 bg-white border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm"
+                                                    className="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors font-medium text-sm"
                                                 >
                                                     {sendingMaximaRequest ? "Cancelling..." : "Cancel Maxima Request"}
                                                 </button>
@@ -131,7 +133,7 @@ const ContactActions: React.FC<ContactActionsProps> = ({
                                     <div className="space-y-2">
                                         <button
                                             disabled={true}
-                                            className="w-full px-4 py-2 bg-yellow-50 text-yellow-600 border border-yellow-200 rounded-lg font-medium flex items-center justify-center gap-2 cursor-default"
+                                            className="w-full px-4 py-2 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 dark:text-yellow-400 border border-yellow-200 dark:border-yellow-800 rounded-lg font-medium flex items-center justify-center gap-2 cursor-default"
                                         >
                                             <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
                                             Request Pending
@@ -139,7 +141,7 @@ const ContactActions: React.FC<ContactActionsProps> = ({
                                         <button
                                             onClick={onCancelRequest}
                                             disabled={addingContact}
-                                            className="w-full px-4 py-2 bg-white border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed transition-colors font-medium flex items-center justify-center gap-2"
+                                            className="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 disabled:bg-gray-50 dark:disabled:bg-gray-800 disabled:text-gray-400 disabled:cursor-not-allowed transition-colors font-medium flex items-center justify-center gap-2"
                                         >
                                             {addingContact ? "Cancelling..." : "Cancel Request"}
                                         </button>
@@ -149,7 +151,7 @@ const ContactActions: React.FC<ContactActionsProps> = ({
                                     <button
                                         onClick={onSendContactRequest}
                                         disabled={addingContact}
-                                        className="w-full px-4 py-2 bg-white border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 disabled:bg-blue-50 disabled:text-blue-300 disabled:cursor-not-allowed transition-colors font-medium flex items-center justify-center gap-2"
+                                        className="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-primary-200 dark:border-primary-700 text-primary-600 dark:text-primary-400 rounded-lg hover:bg-primary-50 dark:hover:bg-gray-600 disabled:bg-primary-50 dark:disabled:bg-gray-800 disabled:text-primary-300 disabled:cursor-not-allowed transition-colors font-medium flex items-center justify-center gap-2"
                                     >
                                         <UserPlus size={18} />
                                         {addingContact ? "Sending..." : "Add to Contacts"}
@@ -171,7 +173,7 @@ const ContactActions: React.FC<ContactActionsProps> = ({
                                         <button
                                             onClick={onCancelRequest}
                                             disabled={addingContact}
-                                            className="w-full px-4 py-2 bg-white border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed transition-colors font-medium flex items-center justify-center gap-2"
+                                            className="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 disabled:bg-gray-50 dark:disabled:bg-gray-800 disabled:text-gray-400 disabled:cursor-not-allowed transition-colors font-medium flex items-center justify-center gap-2"
                                         >
                                             {addingContact ? "Cancelling..." : "Cancel Request"}
                                         </button>
@@ -181,7 +183,7 @@ const ContactActions: React.FC<ContactActionsProps> = ({
                                         <button
                                             onClick={onSendContactRequest}
                                             disabled={addingContact}
-                                            className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-blue-300 disabled:cursor-not-allowed transition-colors font-medium flex items-center justify-center gap-2"
+                                            className="w-full px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:bg-primary-300 disabled:cursor-not-allowed transition-colors font-medium flex items-center justify-center gap-2"
                                         >
                                             <UserPlus size={18} />
                                             {addingContact ? "Sending..." : "Send Chat Request"}
@@ -192,7 +194,7 @@ const ContactActions: React.FC<ContactActionsProps> = ({
                                 {/* Disabled Message Indicator */}
                                 <button
                                     disabled={true}
-                                    className="w-full px-4 py-2 mt-2 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors bg-gray-200 text-gray-400 cursor-not-allowed"
+                                    className="w-full px-4 py-2 mt-2 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed"
                                     title="This user only accepts chats from contacts"
                                 >
                                     <span className="transform rotate-[-45deg]">➤</span>
@@ -204,15 +206,15 @@ const ContactActions: React.FC<ContactActionsProps> = ({
                 ) : (
                     <div className="space-y-3">
                         <div className="flex items-center gap-2 mb-2">
-                            <UserCheck size={18} className="text-green-600" />
-                            <span className="text-sm font-medium text-gray-900">Connected</span>
+                            <UserCheck size={18} className="text-green-600 dark:text-green-400" />
+                            <span className="text-sm font-medium text-gray-900 dark:text-white">Connected</span>
                         </div>
-                        <p className="text-xs text-gray-500 mb-3">
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
                             You are connected with this user on Maxima.
                         </p>
                         <button
                             onClick={onNavigateChat}
-                            className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium flex items-center justify-center gap-2"
+                            className="w-full px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors font-medium flex items-center justify-center gap-2"
                         >
                             <span className="transform rotate-[-45deg]">➤</span>
                             Send Message

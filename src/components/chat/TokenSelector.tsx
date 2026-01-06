@@ -67,7 +67,7 @@ const TokenSelector: React.FC<TokenSelectorProps> = ({ onSend, onCancel }) => {
                             <div
                                 key={t.tokenid}
                                 onClick={() => setSelectedTokenId(t.tokenid)}
-                                className={`p-3 cursor-pointer flex justify-between items-center hover:bg-gray-600 transition-colors ${selectedTokenId === t.tokenid ? 'bg-blue-900/50 border-l-4 border-blue-500' : 'border-l-4 border-transparent'}`}
+                                className={`p-3 cursor-pointer flex justify-between items-center hover:bg-gray-600 transition-colors ${selectedTokenId === t.tokenid ? 'bg-primary-900/50 border-l-4 border-primary-500' : 'border-l-4 border-transparent'}`}
                             >
                                 <span className="font-medium text-white">{getTokenName(t)}</span>
                                 <span className="text-sm text-gray-400">{t.sendable}</span>
@@ -82,7 +82,7 @@ const TokenSelector: React.FC<TokenSelectorProps> = ({ onSend, onCancel }) => {
                         type="number"
                         value={amount}
                         onChange={(e) => setAmount(e.target.value)}
-                        className="w-full px-3 py-2 bg-gray-700 border border-gray-600 text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-400 outline-none"
+                        className="w-full px-3 py-2 bg-gray-700 border border-gray-600 text-white rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent placeholder-gray-400 outline-none"
                         placeholder="0.00"
                     />
                 </div>
@@ -96,7 +96,7 @@ const TokenSelector: React.FC<TokenSelectorProps> = ({ onSend, onCancel }) => {
                     </button>
                     <button
                         onClick={handleSend}
-                        className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium"
+                        className="flex-1 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors font-medium"
                     >
                         Send Token
                     </button>

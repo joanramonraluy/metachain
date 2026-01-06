@@ -164,15 +164,15 @@ export default function ChatList() {
 
     if (!loaded || loading) {
         return (
-            <div className="flex items-center justify-center h-screen bg-white">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+            <div className="flex items-center justify-center h-screen bg-white dark:bg-gray-900">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
             </div>
         );
     }
 
     if (error) {
         return (
-            <div className="flex items-center justify-center h-screen bg-white">
+            <div className="flex items-center justify-center h-screen bg-white dark:bg-gray-900">
                 <p className="text-red-500">⚠️ {error}</p>
             </div>
         );
@@ -280,11 +280,11 @@ export default function ChatList() {
     };
 
     return (
-        <div className="h-screen flex flex-col bg-gray-50 relative">
+        <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-900 relative">
             {/* Context Menu */}
             {contextMenu && (
                 <div
-                    className="fixed bg-white shadow-lg rounded-lg py-1 z-50 min-w-[160px] border border-gray-200"
+                    className="fixed bg-white dark:bg-gray-800 shadow-lg rounded-lg py-1 z-50 min-w-[160px] border border-gray-200 dark:border-gray-700"
                     style={{ top: contextMenu.y, left: contextMenu.x }}
                 >
                     <button
@@ -315,42 +315,42 @@ export default function ChatList() {
             )}
 
             {/* Tabs */}
-            <div className="bg-white border-b border-gray-200 flex-shrink-0">
+            <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex-shrink-0 transition-colors">
                 <div className="flex">
                     <button
                         onClick={() => setActiveTab('all')}
                         className={`flex-1 py-3 px-4 text-sm font-medium transition-colors relative ${activeTab === 'all'
-                            ? 'text-[#0088cc]'
-                            : 'text-gray-500 hover:text-gray-700'
+                            ? 'text-primary-600 dark:text-primary-400'
+                            : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
                             }`}
                     >
                         All {activeChats.length > 0 && `(${activeChats.length})`}
                         {activeTab === 'all' && (
-                            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#0088cc]"></div>
+                            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary-600"></div>
                         )}
                     </button>
                     <button
                         onClick={() => setActiveTab('favorites')}
                         className={`flex-1 py-3 px-4 text-sm font-medium transition-colors relative ${activeTab === 'favorites'
-                            ? 'text-[#0088cc]'
-                            : 'text-gray-500 hover:text-gray-700'
+                            ? 'text-primary-600 dark:text-primary-400'
+                            : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
                             }`}
                     >
                         ⭐ Favorites {favoriteChats.length > 0 && `(${favoriteChats.length})`}
                         {activeTab === 'favorites' && (
-                            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#0088cc]"></div>
+                            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary-600"></div>
                         )}
                     </button>
                     <button
                         onClick={() => setActiveTab('archived')}
                         className={`flex-1 py-3 px-4 text-sm font-medium transition-colors relative ${activeTab === 'archived'
-                            ? 'text-[#0088cc]'
-                            : 'text-gray-500 hover:text-gray-700'
+                            ? 'text-primary-600 dark:text-primary-400'
+                            : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
                             }`}
                     >
                         Archived {archivedChats.length > 0 && `(${archivedChats.length})`}
                         {activeTab === 'archived' && (
-                            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#0088cc]"></div>
+                            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary-600"></div>
                         )}
                     </button>
                 </div>
@@ -372,9 +372,9 @@ export default function ChatList() {
                                     })
                                 }
                                 onContextMenu={(e) => handleContextMenu(e, chat.publickey, chat.archived, chat.favorite)}
-                                className={`relative rounded-lg shadow-sm border p-3 hover:shadow-md cursor-pointer transition-all active:bg-gray-50 ${isNewChat(chat)
-                                    ? 'bg-blue-50 border-l-4 border-blue-500'
-                                    : 'bg-white border-gray-200'
+                                className={`relative rounded-lg shadow-sm border p-3 hover:shadow-md cursor-pointer transition-all active:bg-gray-50 dark:active:bg-gray-700 ${isNewChat(chat)
+                                    ? 'bg-primary-50 dark:bg-primary-900/10 border-l-4 border-l-primary-500 border-t-primary-200 border-r-primary-200 border-b-primary-200 dark:border-t-primary-800 dark:border-r-primary-800 dark:border-b-primary-800'
+                                    : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'
                                     }`}
 
                             >
@@ -384,14 +384,14 @@ export default function ChatList() {
                                         <img
                                             src={getAvatar(chat.publickey)}
                                             alt={getName(chat)}
-                                            className="w-12 h-12 rounded-full object-cover bg-gray-200"
+                                            className="w-12 h-12 rounded-full object-cover bg-gray-200 dark:bg-gray-700"
                                             onError={(e: any) => {
                                                 e.target.src = defaultAvatar;
                                             }}
                                         />
                                         {chat.archived && (
-                                            <div className="absolute -top-1 -right-1 bg-gray-100 rounded-full p-0.5 border border-white shadow-sm">
-                                                <Archive size={12} className="text-gray-500" />
+                                            <div className="absolute -top-1 -right-1 bg-gray-100 dark:bg-gray-700 rounded-full p-0.5 border border-white dark:border-gray-800 shadow-sm">
+                                                <Archive size={12} className="text-gray-500 dark:text-gray-400" />
                                             </div>
                                         )}
                                     </div>
@@ -399,25 +399,25 @@ export default function ChatList() {
                                     {/* Chat Info */}
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-baseline justify-between gap-2">
-                                            <h3 className="font-semibold text-gray-900 truncate flex items-center gap-1.5">
+                                            <h3 className="font-semibold text-gray-900 dark:text-gray-100 truncate flex items-center gap-1.5">
                                                 {getName(chat)}
                                                 {chat.favorite && (
                                                     <Star size={14} fill="#fbbf24" stroke="#f59e0b" className="flex-shrink-0" />
                                                 )}
                                                 {(chat.unreadCount || 0) > 0 && (
-                                                    <span className="ml-2 text-xs bg-blue-500 text-white px-2 py-0.5 rounded-full">
+                                                    <span className="ml-2 text-xs bg-primary-500 text-white px-2 py-0.5 rounded-full">
                                                         {chat.unreadCount}
                                                     </span>
                                                 )}
                                                 {/* Fallback for completely new chats with no messages yet (rare but possible if logic differs) */}
                                                 {!chat.lastOpened && (chat.unreadCount || 0) === 0 && (
-                                                    <span className="ml-2 text-xs bg-blue-500 text-white px-2 py-0.5 rounded-full">NEW</span>
+                                                    <span className="ml-2 text-xs bg-primary-500 text-white px-2 py-0.5 rounded-full">NEW</span>
                                                 )}
                                             </h3>
 
                                             {/* Time or Quick Archive Action */}
                                             <div className="flex items-center gap-2">
-                                                <span className="text-xs text-gray-500 flex-shrink-0">
+                                                <span className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">
                                                     {formatTime(chat.lastMessageDate)}
                                                 </span>
 
@@ -425,7 +425,7 @@ export default function ChatList() {
                                                 {isNewChat(chat) && !chat.archived && (
                                                     <button
                                                         onClick={(e) => handleArchive(chat.publickey, e)}
-                                                        className="p-1.5 bg-gray-100 hover:bg-gray-200 rounded-full text-gray-600 transition-colors"
+                                                        className="p-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-full text-gray-600 dark:text-gray-300 transition-colors"
                                                         title="Archive Chat"
                                                     >
                                                         <Archive size={14} />
@@ -433,9 +433,9 @@ export default function ChatList() {
                                                 )}
                                             </div>
                                         </div>
-                                        <p className="text-sm text-gray-600 truncate mt-0.5">
+                                        <p className="text-sm text-gray-600 dark:text-gray-300 truncate mt-0.5">
                                             {chat.username === "Me" && (
-                                                <span className="text-[#0088cc] mr-1">You:</span>
+                                                <span className="text-primary-600 dark:text-primary-400 mr-1">You:</span>
                                             )}
                                             {getLastMessagePreview(chat)}
                                         </p>
@@ -447,17 +447,17 @@ export default function ChatList() {
                         ))}
                     </div>
                 ) : (
-                    <div className="flex flex-col items-center justify-center h-full text-gray-500 p-8 text-center">
-                        <div className="bg-blue-50 p-4 rounded-full mb-4">
-                            <svg className="w-12 h-12 text-[#0088cc]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <div className="flex flex-col items-center justify-center h-full text-gray-500 dark:text-gray-400 p-8 text-center">
+                        <div className="bg-primary-50 dark:bg-primary-900/20 p-4 rounded-full mb-4">
+                            <svg className="w-12 h-12 text-primary-600 dark:text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                             </svg>
                         </div>
-                        <h3 className="text-lg font-medium text-gray-900 mb-1">No chats yet</h3>
+                        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-1">No chats yet</h3>
                         <p className="text-sm mb-6">Start a new conversation to see it here.</p>
                         <button
                             onClick={() => navigate({ to: "/contacts" })}
-                            className="px-6 py-2 bg-[#0088cc] text-white rounded-full font-medium hover:bg-[#0077b5] transition-colors shadow-sm"
+                            className="px-6 py-2 bg-primary-600 text-white rounded-full font-medium hover:bg-primary-700 transition-colors shadow-sm"
                         >
                             Start Messaging
                         </button>
@@ -469,7 +469,7 @@ export default function ChatList() {
             <div className="fixed bottom-6 right-6">
                 <button
                     onClick={() => navigate({ to: "/contacts" })}
-                    className="w-14 h-14 bg-[#0088cc] text-white rounded-full shadow-lg flex items-center justify-center hover:bg-[#0077b5] transition-transform hover:scale-105 active:scale-95"
+                    className="w-14 h-14 bg-primary-600 text-white rounded-full shadow-lg flex items-center justify-center hover:bg-primary-700 transition-transform hover:scale-105 active:scale-95"
                 >
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />

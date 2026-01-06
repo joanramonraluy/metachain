@@ -86,7 +86,7 @@ export default function GroupList() {
     if (!loaded || loading) {
         return (
             <div className="flex items-center justify-center h-screen bg-white">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
             </div>
         );
     }
@@ -129,14 +129,14 @@ export default function GroupList() {
                                     })
                                 }
                                 className={`relative rounded-lg shadow-sm border p-3 hover:shadow-md cursor-pointer transition-all active:bg-gray-50 ${(group.unreadCount || 0) > 0
-                                    ? 'bg-blue-50 border-l-4 border-blue-500'
+                                    ? 'bg-primary-50 border-l-4 border-primary-500'
                                     : 'bg-white border-gray-200'
                                     }`}
                             >
                                 <div className="flex items-center gap-3">
                                     {/* Group Avatar */}
                                     <div className="relative flex-shrink-0">
-                                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-bold text-lg">
+                                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white font-bold text-lg">
                                             {group.name.charAt(0).toUpperCase()}
                                         </div>
                                     </div>
@@ -147,7 +147,7 @@ export default function GroupList() {
                                             <h3 className="font-semibold text-gray-900 truncate flex items-center gap-1.5">
                                                 {group.name}
                                                 {(group.unreadCount || 0) > 0 && (
-                                                    <span className="ml-2 text-xs bg-blue-500 text-white px-2 py-0.5 rounded-full">
+                                                    <span className="ml-2 text-xs bg-primary-500 text-white px-2 py-0.5 rounded-full">
                                                         {group.unreadCount}
                                                     </span>
                                                 )}
@@ -169,7 +169,7 @@ export default function GroupList() {
                     </div>
                 ) : (
                     <div className="flex flex-col items-center justify-center h-full text-gray-500 p-8 text-center">
-                        <div className="bg-blue-50 p-4 rounded-full mb-4">
+                        <div className="bg-primary-50 p-4 rounded-full mb-4">
                             <Users className="w-12 h-12 text-[#0088cc]" />
                         </div>
                         <h3 className="text-lg font-medium text-gray-900 mb-1">No groups yet</h3>

@@ -134,18 +134,18 @@ function DiscoveryPage() {
 
 
     return (
-        <div className="flex flex-col h-full bg-gray-50">
+        <div className="flex flex-col h-full bg-gray-50 dark:bg-gray-900 transition-colors">
             {/* Header */}
-            <div className="bg-white border-b border-gray-200 px-6 py-4 shadow-sm flex justify-between items-center sticky top-0 z-10">
+            <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 shadow-sm flex justify-between items-center sticky top-0 z-10 transition-colors">
                 <div className="flex items-center gap-2">
-                    <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-                        <Globe className="text-blue-600" />
+                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                        <Globe className="text-primary-600" />
                         P2P Discovery
                     </h1>
                 </div>
                 <button
                     onClick={() => { setLoading(true); loadData(); }}
-                    className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors"
+                    className="p-2 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded-full transition-colors"
                     title="Refresh List"
                 >
                     <RefreshCw size={20} />
@@ -153,7 +153,7 @@ function DiscoveryPage() {
             </div>
 
             {/* Search & Filter Bar */}
-            <div className="bg-white border-b border-gray-200 px-6 py-4 shadow-sm space-y-3">
+            <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 shadow-sm space-y-3 transition-colors">
                 <div className="flex gap-2">
                     <div className="relative flex-1">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
@@ -162,7 +162,7 @@ function DiscoveryPage() {
                             placeholder="Search users by name, bio..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            className="w-full pl-10 pr-10 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-white text-gray-900"
+                            className="w-full pl-10 pr-10 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                         />
                         {searchQuery && (
                             <button
@@ -175,7 +175,7 @@ function DiscoveryPage() {
                     </div>
                     <button
                         onClick={() => setShowFilters(!showFilters)}
-                        className={`p-2 rounded-lg border transition-colors flex items-center gap-2 px-3 ${showFilters ? 'bg-blue-50 border-blue-200 text-blue-600' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                        className={`p-2 rounded-lg border transition-colors flex items-center gap-2 px-3 ${showFilters ? 'bg-primary-50 dark:bg-primary-900/20 border-primary-200 dark:border-primary-800 text-primary-600 dark:text-primary-400' : 'bg-white dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600'}`}
                     >
                         <Filter size={18} />
                         <span className="hidden sm:inline text-sm font-medium">Filters</span>
@@ -190,7 +190,7 @@ function DiscoveryPage() {
                             <select
                                 value={selectedCountry}
                                 onChange={(e) => setSelectedCountry(e.target.value)}
-                                className="w-full p-2 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                                className="w-full p-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white dark:bg-gray-700"
                             >
                                 <option value="">All Discovered Countries</option>
                                 {uniqueCountries.map(c => (
@@ -204,7 +204,7 @@ function DiscoveryPage() {
                             <select
                                 value={selectedLanguage}
                                 onChange={(e) => setSelectedLanguage(e.target.value)}
-                                className="w-full p-2 border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                                className="w-full p-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white dark:bg-gray-700"
                             >
                                 <option value="">All Discovered Languages</option>
                                 {uniqueLanguages.map(l => (
@@ -225,7 +225,7 @@ function DiscoveryPage() {
                 )}
             </div>
 
-            <div className="px-6 py-2 bg-blue-50 border-b border-blue-100 text-blue-700 text-xs flex items-center gap-2">
+            <div className="px-6 py-2 bg-primary-50 dark:bg-primary-900/10 border-b border-primary-100 dark:border-primary-900/50 text-primary-700 dark:text-primary-400 text-xs flex items-center gap-2">
                 <Info size={14} className="shrink-0" />
                 <span>Discovery is decentralized. It may take up to 60 seconds for all peers to appear.</span>
             </div>
@@ -235,17 +235,17 @@ function DiscoveryPage() {
                 {loading ? (
                     <div className="flex justify-center items-center h-64">
                         <div className="text-center">
-                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto mb-4"></div>
                             <p className="text-gray-600">Loading discovered peers...</p>
                         </div>
                     </div>
                 ) : filteredUsers.length === 0 ? (
                     <div className="text-center py-20 px-4">
-                        <div className="bg-gray-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <div className="bg-gray-100 dark:bg-gray-800 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
                             <Search className="text-gray-400" size={32} />
                         </div>
-                        <h3 className="text-lg font-medium text-gray-900">No profiles found</h3>
-                        <p className="text-gray-500 mt-2">
+                        <h3 className="text-lg font-medium text-gray-900 dark:text-white">No profiles found</h3>
+                        <p className="text-gray-500 dark:text-gray-400 mt-2">
                             {searchQuery || selectedCountry || selectedLanguage
                                 ? "Try adjusting your search or filters."
                                 : "Be the first to join the community!"}
@@ -253,7 +253,7 @@ function DiscoveryPage() {
                         {(searchQuery || selectedCountry || selectedLanguage) && (
                             <button
                                 onClick={() => { setSearchQuery(''); setSelectedCountry(''); setSelectedLanguage(''); }}
-                                className="mt-4 px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm font-medium"
+                                className="mt-4 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium"
                             >
                                 Clear Filters
                             </button>
@@ -261,9 +261,9 @@ function DiscoveryPage() {
                     </div>
                 ) : (
                     <>
-                        <div className="px-6 py-3 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
-                            <p className="text-sm text-gray-600">
-                                Showing <span className="font-bold text-blue-600">{filteredUsers.length}</span> of <span className="font-medium">{totalFound}</span> {totalFound === 1 ? 'profile' : 'profiles'}
+                        <div className="px-6 py-3 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center transition-colors">
+                            <p className="text-sm text-gray-600 dark:text-gray-400">
+                                Showing <span className="font-bold text-primary-600 dark:text-primary-400">{filteredUsers.length}</span> of <span className="font-medium">{totalFound}</span> {totalFound === 1 ? 'profile' : 'profiles'}
                             </p>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-6">
@@ -279,7 +279,7 @@ function DiscoveryPage() {
                                             navigate({ to: `/contact-info/${user.publickey || user.user_id}` })
                                         }
                                     }}
-                                    className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-all cursor-pointer hover:border-blue-200"
+                                    className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-5 hover:shadow-md transition-all cursor-pointer hover:border-primary-200 dark:hover:border-primary-700"
                                 >
                                     <div className="flex items-start justify-between mb-3">
                                         <div className="flex items-center gap-3 flex-1">
@@ -291,7 +291,7 @@ function DiscoveryPage() {
                                                         className="w-12 h-12 rounded-full object-cover shadow-sm border border-gray-100"
                                                     />
                                                 ) : (
-                                                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-lg shadow-sm">
+                                                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary-500 to-purple-600 flex items-center justify-center text-white font-bold text-lg shadow-sm">
                                                         {(user.alias || 'A').charAt(0).toUpperCase()}
                                                     </div>
                                                 )}
@@ -300,9 +300,9 @@ function DiscoveryPage() {
                                                 )}
                                             </div>
                                             <div className="flex-1 min-w-0">
-                                                <h3 className="font-bold text-gray-900 truncate">{user.alias || 'Anonymous'}</h3>
+                                                <h3 className="font-bold text-gray-900 dark:text-white truncate">{user.alias || 'Anonymous'}</h3>
                                                 {user.country && (
-                                                    <p className="text-xs text-blue-600 font-medium truncate mb-0.5">
+                                                    <p className="text-xs text-primary-600 dark:text-primary-400 font-medium truncate mb-0.5">
                                                         {user.country}
                                                     </p>
                                                 )}
@@ -314,7 +314,7 @@ function DiscoveryPage() {
                                     </div>
 
                                     {user.bio && (
-                                        <p className="text-gray-600 text-sm line-clamp-2 mb-3">
+                                        <p className="text-gray-600 dark:text-gray-400 text-sm line-clamp-2 mb-3">
                                             {user.bio}
                                         </p>
                                     )}
@@ -328,15 +328,15 @@ function DiscoveryPage() {
                                                 </span>
                                             ))}
                                             {user.languages.length > 2 && (
-                                                <span className="text-[10px] bg-gray-50 text-gray-500 px-1.5 py-0.5 rounded border border-gray-200">
+                                                <span className="text-[10px] bg-gray-50 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1.5 py-0.5 rounded border border-gray-200 dark:border-gray-600">
                                                     +{user.languages.length - 2}
                                                 </span>
                                             )}
                                         </div>
                                     )}
 
-                                    <div className="pt-3 border-t border-gray-100 flex justify-between items-center text-xs">
-                                        <span className="text-gray-500">
+                                    <div className="pt-3 border-t border-gray-100 dark:border-gray-700 flex justify-between items-center text-xs">
+                                        <span className="text-gray-500 dark:text-gray-400">
                                             {(() => {
                                                 if (!user.last_updated) return 'Unknown';
                                                 const now = Date.now();
@@ -355,7 +355,7 @@ function DiscoveryPage() {
                                         {user.is_online ? (
                                             <span className="bg-green-100 text-green-700 px-2 py-1 rounded-full font-medium">Online</span>
                                         ) : (
-                                            <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded-full font-medium">Offline</span>
+                                            <span className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-1 rounded-full font-medium">Offline</span>
                                         )}
                                     </div>
                                 </div>

@@ -320,9 +320,9 @@ function ChatPage() {
       RENDER
   ---------------------------------------------------------------------------- */
   return (
-    <div className="h-screen flex flex-col bg-[#E5DDD5]">
+    <div className="h-screen flex flex-col bg-[#E5DDD5] dark:bg-gray-900 transition-colors">
       {/* HEADER - Fixed at top */}
-      <div className="bg-[#0088cc] text-white p-4 px-4 flex items-center gap-3 flex-shrink-0 shadow-sm z-10">
+      <div className="bg-primary-600 dark:bg-gray-900 text-white p-4 px-4 flex items-center gap-3 flex-shrink-0 shadow-sm z-10 dark:border-b dark:border-gray-800 transition-colors">
         {/* Back button */}
         <button
           onClick={() => navigate({ to: '/' })}
@@ -335,7 +335,7 @@ function ChatPage() {
         </button>
 
         <div className="flex items-center gap-3 flex-1 min-w-0">
-          <div className="w-12 h-12 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold text-xl flex-shrink-0">
+          <div className="w-12 h-12 rounded-full bg-primary-500 flex items-center justify-center text-white font-bold text-xl flex-shrink-0">
             {contact?.extradata?.name?.charAt(0).toUpperCase() || "G"}
           </div>
           <div className="flex flex-col leading-tight flex-1 min-w-0">
@@ -418,7 +418,7 @@ function ChatPage() {
       )}
 
       {/* CHAT BODY - Scrollable */}
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto flex flex-col p-2 sm:p-4 bg-gray-50 relative">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto flex flex-col p-2 sm:p-4 bg-gray-50 dark:bg-gray-900 relative transition-colors">
         {/* Custom Background Pattern (Subtle Dot Grid) */}
         <div
           className="absolute inset-0 opacity-[0.4] pointer-events-none"
@@ -432,23 +432,23 @@ function ChatPage() {
         {messages.filter(m => m.status === 'pending').length > 0 && (
           <div className="sticky top-0 z-20 mb-4 mx-2 mt-2">
             {messages.filter(m => m.status === 'pending').map((msg) => (
-              <div key={msg.timestamp} className="bg-blue-50/95 backdrop-blur-sm border border-blue-200 rounded-lg shadow-sm p-4 mb-2 animate-in fade-in slide-in-from-top-2 duration-300">
+              <div key={msg.timestamp} className="bg-primary-50/95 dark:bg-primary-900/40 backdrop-blur-sm border border-primary-200 dark:border-primary-700 rounded-lg shadow-sm p-4 mb-2 animate-in fade-in slide-in-from-top-2 duration-300">
                 <div className="flex items-start gap-3">
-                  <div className="flex-shrink-0 w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                    <svg className="w-5 h-5 text-blue-600 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="flex-shrink-0 w-10 h-10 bg-primary-100 dark:bg-primary-800 rounded-full flex items-center justify-center">
+                    <svg className="w-5 h-5 text-primary-600 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                     </svg>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 mb-1">
+                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-1">
                       Sending {msg.tokenAmount ? 'Token' : 'Charm'}
                     </p>
-                    <p className="text-sm text-gray-600">
+                    <p className="text-sm text-gray-600 dark:text-gray-300">
                       {msg.tokenAmount
                         ? `${msg.tokenAmount.amount} ${msg.tokenAmount.tokenName}`
                         : `${msg.amount} MINIMA`}
                       {' · '}
-                      <span className="text-blue-600 font-medium">Waiting for confirmation...</span>
+                      <span className="text-primary-600 dark:text-primary-400 font-medium">Waiting for confirmation...</span>
                     </p>
                   </div>
                 </div>
@@ -459,7 +459,7 @@ function ChatPage() {
 
         {messages.length === 0 && (
           <div className="flex-1 flex items-center justify-center z-0">
-            <div className="bg-[#FFF5C4] text-gray-800 text-[12.5px] p-3 rounded-lg shadow-sm text-center max-w-xs leading-relaxed select-none">
+            <div className="bg-[#FFF5C4] dark:bg-yellow-900/30 text-gray-800 dark:text-yellow-100 text-[12.5px] p-3 rounded-lg shadow-sm text-center max-w-xs leading-relaxed select-none border border-yellow-200 dark:border-yellow-800">
               <span className="text-yellow-600 mr-1">🔒</span>
               Messages are end-to-end encrypted. No one outside of this chat, not even MetaChain, can read or listen to them.
             </div>
@@ -475,7 +475,7 @@ function ChatPage() {
             <div key={`${msg.timestamp} -${msg.text || 'no-text'} -${i} `} className="flex flex-col w-full z-0 relative">
               {showDate && msg.timestamp && (
                 <div className="flex justify-center my-3 sticky top-2 z-10">
-                  <span className="text-xs text-gray-600 font-medium bg-[#E1F3FB] border border-white/50 px-3 py-1.5 rounded-lg shadow-sm uppercase tracking-wide backdrop-blur-sm">
+                  <span className="text-xs text-gray-600 dark:text-gray-300 font-medium bg-[#E1F3FB] dark:bg-gray-800 border border-white/50 dark:border-gray-700 px-3 py-1.5 rounded-lg shadow-sm uppercase tracking-wide backdrop-blur-sm">
                     {new Date(msg.timestamp).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
                   </span>
                 </div>
@@ -503,10 +503,10 @@ function ChatPage() {
       </div>
 
       {/* INPUT BAR - Fixed at bottom */}
-      <div className="p-2 bg-[#F0F2F5] flex gap-2 items-center flex-shrink-0 z-10 relative">
-        <div className="flex-1 bg-white rounded-2xl flex items-center border border-gray-200 focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent shadow-sm px-4 py-2 transition-all">
+      <div className="p-2 bg-[#F0F2F5] dark:bg-gray-800 flex gap-2 items-center flex-shrink-0 z-10 relative border-t border-gray-200 dark:border-gray-700">
+        <div className="flex-1 bg-white dark:bg-gray-700 rounded-2xl flex items-center border border-gray-200 dark:border-gray-600 focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-transparent shadow-sm px-4 py-2 transition-all">
           <input
-            className="flex-1 bg-transparent outline-none text-gray-900 placeholder-gray-500 text-[15px] max-h-32 py-1"
+            className="flex-1 bg-transparent outline-none text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 text-[15px] max-h-32 py-1"
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -518,7 +518,7 @@ function ChatPage() {
         <button
           className={`p-3 rounded-full transition-all duration-200 shadow-sm
             ${input.trim()
-              ? 'bg-[#0088cc] text-white hover:bg-[#0077b5] transform hover:scale-105'
+              ? 'bg-primary-600 text-white hover:bg-primary-700 transform hover:scale-105'
               : 'bg-gray-200 text-gray-400 cursor-default'
             }`}
           onClick={handleSendMessage}
