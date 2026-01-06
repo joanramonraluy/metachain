@@ -898,10 +898,17 @@ function ChatPage() {
     try {
       // Use the FROM_PUBLICKEY from the request (hex format) instead of contact.publickey (which might be Maxima address)
       await minimaService.declineChatRequest(contactRequest.FROM_PUBLICKEY);
+
+      // Clear all request-related states immediately
       setContactRequest(null);
+      setIsPendingOutgoing(false); // Ensure this is cleared too if it was mistakenly set
+
       // Reload messages to show the system message
       await loadMessagesFromDB();
-      // alert("Contact request declined"); // Removed as per user request
+
+      // Re-verify pending status (in case there are other requests, but mainly to sync state)
+      checkPending(); // Add this!
+
     } catch (err: any) {
       console.error("Error declining request:", err);
       alert(`Failed to decline request: ${err.message || err}`);

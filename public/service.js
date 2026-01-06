@@ -1054,10 +1054,22 @@ MDS.init(function (msg) {
                         MDS.log("✅ [CONTACTS] Updated request status to declined");
                     });
 
-                    // Insert system message
-                    var sysMsgSql = "INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) "
-                        + "VALUES('', '" + safeFrom + "', 'System', 'system', 'Chat request declined', '', 'received', 0, " + now + ")";
-                    MDS.sql(sysMsgSql);
+                    // DUPLICATE CHECK: Check if message already exists recently
+                    // We check for both "Chat..." and "Contact..." variations to be safe
+                    var checkDupSql = "SELECT * FROM CHAT_MESSAGES WHERE publickey='" + safeFrom + "' AND type='system' " +
+                        "AND (message='Chat request declined' OR message='Contact request declined') AND date>" + (now - 10000);
+
+                    MDS.sql(checkDupSql, function (dupRes) {
+                        if (dupRes.count === 0) {
+                            // Insert system message
+                            var sysMsgSql = "INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) "
+                                + "VALUES('', '" + safeFrom + "', 'System', 'system', 'Chat request declined', '', 'received', 0, " + now + ")";
+                            MDS.sql(sysMsgSql);
+                            MDS.log("✅ [CONTACTS] Saved decline message");
+                        } else {
+                            MDS.log("⚠️ [CONTACTS] Ignoring duplicate decline message");
+                        }
+                    });
                     return;
                 }
 

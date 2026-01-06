@@ -1104,29 +1104,30 @@ class MinimaService {
                     const escapeSql = (str: string) => str.replace(/'/g, "''");
                     const safeFrom = escapeSql(from);
 
-                    // Update outgoing request status to 'declined'
-                    // We sent the request (from=ME, to=THEM).
-                    // So we update where to_publickey = FROM (sender of this decline msg)
-                    const updateReqSql = `UPDATE CONTACT_REQUESTS SET status='declined', updated_at=${Date.now()} 
-                                          WHERE to_publickey='${safeFrom}' AND status='pending'`;
-                    await this.runSQL(updateReqSql);
+                    // ROBUST FIX: Attempt to resolve Maxima Address from Public Key
+                    // to ensure we update the request regardless of how it was sent (Hex vs Mx Address).
+                    let addressClause = `to_publickey='${safeFrom}'`;
 
-                    // DUPLICATE CHECK: Check if we already received a decline message recently (last 10s)
-                    const checkDupSql = `SELECT * FROM CHAT_MESSAGES 
-                                         WHERE publickey='${safeFrom}' AND type='system' AND message='Contact request declined' 
-                                         AND date > ${Date.now() - 10000}`;
-                    const dupRes = await this.runSQL(checkDupSql);
-
-                    if (dupRes.count === 0) {
-                        // Insert system message: "Contact request declined" (received state)
-                        const chatMessageSql = `
-                            INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date)
-                            VALUES('', '${safeFrom}', 'System', 'system', 'Contact request declined', '', 'received', 0, ${Date.now()})
-                        `;
-                        await this.runSQL(chatMessageSql);
-                    } else {
-                        console.log("⚠️ [CONTACTS] Ignoring duplicate decline message");
+                    try {
+                        const discoverySql = `SELECT ADDRESS FROM DISCOVERED_PEERS WHERE PUBLICKEY='${safeFrom}' LIMIT 1`;
+                        const discoveryRes = await this.runSQL(discoverySql);
+                        if (discoveryRes.rows && discoveryRes.rows.length > 0) {
+                            const mxAddress = discoveryRes.rows[0].ADDRESS;
+                            console.log(`🔍 [CONTACTS] Resolved decline sender to Maxima Address: ${mxAddress}`);
+                            addressClause += ` OR to_publickey='${escapeSql(mxAddress)}'`;
+                        }
+                    } catch (e) {
+                        console.warn("⚠️ [CONTACTS] Failed to resolve address for decline check:", e);
                     }
+
+                    // Update local DB immediately with robust check
+                    const updateReqSql = `UPDATE CONTACT_REQUESTS SET status='declined', updated_at=${Date.now()} 
+                                          WHERE (${addressClause}) AND status='pending'`;
+
+                    await this.runSQL(updateReqSql);
+                    console.log("✅ [CONTACTS] Local request status updated to declined");
+
+                    // MESSAGE INSERTION REMAINS IN SERVICE WORKER (public/service.js)
 
                     // Notify UI
                     this.newMessageCallbacks.forEach((cb) => cb({ ...json, type: 'contact_declined', from } as any));
