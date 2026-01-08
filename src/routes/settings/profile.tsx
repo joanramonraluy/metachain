@@ -54,8 +54,7 @@ function RouteComponent() {
   const [bio, setBio] = useState('');
 
   // UI State for Dialogs/Accordions
-  const [showEditNameDialog, setShowEditNameDialog] = useState(false);
-  const [editNameValue, setEditNameValue] = useState("");
+
   const [showAvatarDialog, setShowAvatarDialog] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [expandedAddress, setExpandedAddress] = useState<'maxima' | 'minima' | null>(null);
@@ -127,28 +126,35 @@ function RouteComponent() {
 
   // --- Handlers ---
 
-  // 1. Save Maxima Name via Dialog
-  const handleOpenEditName = () => {
-    setEditNameValue(name);
-    setShowEditNameDialog(true);
-  };
-
+  // 1. Save Maxima Name Inline
   const handleSaveName = async () => {
-    if (!editNameValue.trim() || editNameValue === userName) {
-      setShowEditNameDialog(false);
+    if (!name.trim() || name === userName) {
+      // Revert if empty or unchanged
+      if (!name.trim()) setName(userName);
       return;
     }
 
     try {
       console.log("💾 [Profile] Saving name...");
-      await MDS.cmd.maxima({ params: { action: 'setname', name: editNameValue.trim() } } as any);
+      await MDS.cmd.maxima({ params: { action: 'setname', name: name.trim() } } as any);
+
+      // Update SELF in DISCOVERED_PEERS for immediate local feedback
+      const maximaInfo = await MDS.cmd.maxima({ params: { action: 'info' } as any });
+      if (maximaInfo.status && maximaInfo.response) {
+        const pubkey = (maximaInfo.response as any).publickey;
+        const escapedName = name.trim().replace(/'/g, "''");
+        const updateSelfSql = `UPDATE DISCOVERED_PEERS SET alias='${escapedName}' WHERE publickey='${pubkey}' AND source='SELF'`;
+        // @ts-ignore
+        MDS.sql(updateSelfSql);
+      }
+
       await refreshProfile();
-      setName(editNameValue.trim());
-      console.log("✅ [Profile] Name saved");
+      sendBeacon().catch(console.error);
+      // setName(name.trim()); // Optimistic update handled by state, context refresh follows
+      console.log("✅ [Profile] Name saved & Beacon sent & DB updated");
     } catch (error) {
       console.error("❌ [Profile] Failed to save name:", error);
-    } finally {
-      setShowEditNameDialog(false);
+      setName(userName); // Revert on error
     }
   };
 
@@ -263,33 +269,7 @@ function RouteComponent() {
   return (
     <div className="max-w-4xl mx-auto py-6 sm:px-6 lg:px-8">
 
-      {/* Edit Name Dialog */}
-      {showEditNameDialog && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl w-96 max-w-full mx-4">
-            <h3 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">Edit Display Name</h3>
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Display Name</label>
-              <input
-                type="text"
-                value={editNameValue}
-                onChange={(e) => setEditNameValue(e.target.value)}
-                className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:outline-none"
-                placeholder="Enter your name"
-                autoFocus
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleSaveName();
-                  if (e.key === 'Escape') setShowEditNameDialog(false);
-                }}
-              />
-            </div>
-            <div className="flex justify-end space-x-3">
-              <button onClick={() => setShowEditNameDialog(false)} className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors">Cancel</button>
-              <button onClick={handleSaveName} className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-md transition-colors font-medium">Save</button>
-            </div>
-          </div>
-        </div>
-      )}
+
 
       {/* Edit Avatar Dialog */}
       {showAvatarDialog && (
@@ -359,12 +339,23 @@ function RouteComponent() {
                 </div>
                 <div className="flex-1">
                   <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Maxima Name</label>
-                  <div
-                    onClick={handleOpenEditName}
-                    className="w-full text-lg font-bold text-gray-900 dark:text-white cursor-pointer hover:text-primary-600 transition-colors flex items-center gap-2 group"
-                  >
-                    {name}
-                    <Edit2 size={14} className="opacity-0 group-hover:opacity-100 text-gray-400" />
+                  <div className="relative group">
+                    <input
+                      type="text"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      onBlur={handleSaveName}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') e.currentTarget.blur();
+                        if (e.key === 'Escape') {
+                          setName(userName);
+                          e.currentTarget.blur();
+                        }
+                      }}
+                      className="w-full text-lg font-bold text-gray-900 dark:text-white bg-transparent border border-transparent rounded px-1 -ml-1 hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 transition-all outline-none"
+                      placeholder="Enter your name"
+                    />
+                    <Edit2 size={14} className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 text-gray-400 pointer-events-none transition-opacity" />
                   </div>
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Visible to your contacts and discovered peers</p>
                 </div>

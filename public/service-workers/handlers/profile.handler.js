@@ -33,6 +33,8 @@ function handleProfileRequest(pubkey, maxjson) {
 
                 if (res.status && res.rows && res.rows.length > 0) {
                     row = res.rows[0];
+                    // Log raw column values for debugging
+                    MDS.log("🔍 [PROFILE] RAW DB Values - PRIVACY_L2: " + row.PRIVACY_L2 + ", PRIVACY_L3: " + row.PRIVACY_L3);
                     // Read Privacy Settings from DB if available
                     if (row.PRIVACY_L2 || row.privacy_l2) level2Visibility = row.PRIVACY_L2 || row.privacy_l2;
                     if (row.PRIVACY_L3 || row.privacy_l3) level3Visibility = row.PRIVACY_L3 || row.privacy_l3;

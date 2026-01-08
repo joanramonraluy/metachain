@@ -851,15 +851,15 @@ function ContactInfoPage() {
                                     )}
 
 
-                                    {/* Level 3 Privacy Warning */}
-                                    {isPersonalContact && extendedProfile?.privacy_l3 === 'hidden' && (
-                                        <div className="md:col-span-2 bg-amber-50 p-2 rounded-lg text-center text-xs text-amber-700 font-medium">
+                                    {/* Level 3 Privacy Warning - Show when L3 is marked as hidden in response */}
+                                    {extendedProfile?.privacy_l3 === 'hidden' && (
+                                        <div className="md:col-span-2 bg-amber-50 dark:bg-amber-900/20 p-2 rounded-lg text-center text-xs text-amber-700 dark:text-amber-400 font-medium">
                                             Level 3 details hidden by user
                                         </div>
                                     )}
 
-                                    {/* Contact Details (Level 3) */}
-                                    {isPersonalContact && (
+                                    {/* Contact Details (Level 3) - Show when we receive the data (backend already handles privacy filtering) */}
+                                    {(extendedProfile?.email || extendedProfile?.phone) && (
                                         <>
                                             {extendedProfile?.email && (
                                                 <div className="bg-gray-50 dark:bg-gray-900/50 p-3 rounded-lg flex items-start gap-3">

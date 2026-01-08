@@ -794,6 +794,8 @@ function handleProfileRequest(pubkey, maxjson) {
 
                 if (res.status && res.rows && res.rows.length > 0) {
                     row = res.rows[0];
+                    // Log raw column values for debugging
+                    MDS.log("🔍 [PROFILE] RAW DB Values - PRIVACY_L2: " + row.PRIVACY_L2 + ", PRIVACY_L3: " + row.PRIVACY_L3);
                     // Read Privacy Settings from DB if available
                     if (row.PRIVACY_L2 || row.privacy_l2) level2Visibility = row.PRIVACY_L2 || row.privacy_l2;
                     if (row.PRIVACY_L3 || row.privacy_l3) level3Visibility = row.PRIVACY_L3 || row.privacy_l3;
@@ -1093,6 +1095,8 @@ function sendBackgroundBeacon() {
                     MDS.sql("SELECT * FROM MY_PROFILE WHERE id=1", function (permRes) {
                         var allowNonContactChats = true;
                         var avatar = "";
+                        var dbCountry = "";
+                        var dbLanguages = [];
 
                         if (permRes.status && permRes.rows && permRes.rows.length > 0) {
                             var row = permRes.rows[0];
@@ -1100,6 +1104,26 @@ function sendBackgroundBeacon() {
                             allowNonContactChats = (val === 1 || val === true || val === 'true' || val === '1');
                             // Get avatar from DB (same as working example line 1714)
                             avatar = row.AVATAR || row.avatar || "";
+                            // Get country from DB (with decoding like example line 1711)
+                            dbCountry = decodeURIComponent(row.COUNTRY || row.country || "");
+                            // Get languages from DB and parse as JSON array (like example line 1712-1713)
+                            try {
+                                dbLanguages = JSON.parse(decodeURIComponent(row.LANGUAGES || row.languages || "[]"));
+                            } catch (e) {
+                                dbLanguages = [];
+                            }
+                        }
+
+                        // Use DB values as primary, keypair as fallback
+                        var finalCountry = dbCountry || country;
+                        var finalLanguages = dbLanguages.length > 0 ? dbLanguages : [];
+                        // Try to parse keypair languages if DB is empty
+                        if (finalLanguages.length === 0 && languages) {
+                            try {
+                                finalLanguages = JSON.parse(languages);
+                            } catch (e) {
+                                finalLanguages = [];
+                            }
                         }
 
                         var beacon = {
@@ -1111,8 +1135,8 @@ function sendBackgroundBeacon() {
                             bio: bio,
                             address: myAddress,
                             allowNonContactChats: allowNonContactChats,
-                            country: country,
-                            languages: languages,
+                            country: finalCountry,
+                            languages: finalLanguages,
                             // Use maxima icon as primary, MY_PROFILE as fallback
                             avatar: myAvatar || avatar,
                             timestamp: Date.now()
