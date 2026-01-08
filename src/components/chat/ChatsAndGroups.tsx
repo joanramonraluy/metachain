@@ -169,10 +169,12 @@ export default function ChatsAndGroups() {
         );
     }
 
+    // Revert hide logic - User wants "Notes to Self"
     const activeChats = chats.filter(c => !c.archived);
 
     // Helper function to check if a chat is from a contact
     const isContact = (publickey: string) => {
+        if (publickey === myPublicKey) return true; // Self is always a contact
         const result = contacts.has(publickey);
         if (!result) {
             console.log('[ChatsAndGroups] publickey not in contacts:', publickey);
@@ -240,6 +242,8 @@ export default function ChatsAndGroups() {
     };
 
     const getName = (chat: ChatItem) => {
+        if (chat.publickey === myPublicKey) return "Notes to Self";
+
         const contact = contacts.get(chat.publickey);
         if (contact?.extradata?.name) return contact.extradata.name;
 
@@ -454,12 +458,18 @@ export default function ChatsAndGroups() {
                             >
                                 <div className="flex items-center gap-3">
                                     <div className="relative flex-shrink-0">
-                                        <img
-                                            src={getAvatar(chat.publickey)}
-                                            alt={getName(chat)}
-                                            className="w-14 h-14 rounded-full object-cover bg-gray-200 dark:bg-gray-700 shadow-md"
-                                            onError={(e: any) => { e.target.src = defaultAvatar; }}
-                                        />
+                                        {chat.publickey === myPublicKey ? (
+                                            <div className="w-14 h-14 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center shadow-sm">
+                                                <Inbox size={24} className="text-primary-600 dark:text-primary-400" />
+                                            </div>
+                                        ) : (
+                                            <img
+                                                src={getAvatar(chat.publickey)}
+                                                alt={getName(chat)}
+                                                className="w-14 h-14 rounded-full object-cover bg-gray-200 dark:bg-gray-700 shadow-md"
+                                                onError={(e: any) => { e.target.src = defaultAvatar; }}
+                                            />
+                                        )}
                                         {chat.archived && (
                                             <div className="absolute -top-1 -right-1 bg-gray-500 rounded-full p-1 shadow-md">
                                                 <Archive size={10} className="text-white" />

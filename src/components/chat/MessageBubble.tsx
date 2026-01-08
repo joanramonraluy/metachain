@@ -325,7 +325,7 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 10 }}
+      initial={isPending ? { opacity: 0, y: 10 } : false}
       animate={{
         opacity: isPending ? 0.85 : 1,
         y: 0,

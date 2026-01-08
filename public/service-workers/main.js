@@ -13,6 +13,7 @@
 MDS.init(function (msg) {
     // Initialization
     if (msg.event == "inited") {
+        MDS.log("🚀 [SW-VERSION-CHECK] Service Worker v2.1 FIX DEPLOYED - " + new Date().toISOString());
         initDatabase();
     }
 
@@ -157,7 +158,9 @@ MDS.init(function (msg) {
                 }
 
                 // ================== CHAT MESSAGES (Default) ==================
-                if (maxjson.message !== undefined) {
+                // FILTER: Only process actual chat message types
+                var validChatTypes = ["text", "image", "video", "audio", "file", "charm", "token", "gif", "sticker", "voice"];
+                if (validChatTypes.indexOf(maxjson.type) !== -1 && maxjson.message !== undefined) {
                     handleChatMessage(pubkey, maxjson);
                     return;
                 }

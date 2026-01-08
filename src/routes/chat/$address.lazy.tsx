@@ -854,13 +854,15 @@ function ChatPage() {
       targetApp = "maxima";
     }
 
-    const newMsg: ParsedMessage = { text: input, fromMe: true, charm: null, amount: null, timestamp: Date.now(), status: 'sent' };
+    const timestamp = Date.now();
+    const newMsg: ParsedMessage = { text: input, fromMe: true, charm: null, amount: null, timestamp, status: 'sent' };
     setMessages((prev) => [...prev, newMsg]);
 
     try {
-      // Use currentaddress (Maxima MX# address) instead of publickey to allow sending to non-contacts
-      // Pass targetApp (metachain or maxima)
-      await minimaService.sendMessage(contact.currentaddress, senderName, input, "text", "", 0, undefined, recipientName, targetApp);
+      // FIX: Use publickey (0x) for reliable DB storage, fallback to currentaddress for network
+      // This ensures messages are always stored with the same key format as the URL param
+      // FIX: Pass timestamp to prevent flicker (optimistic UI vs DB re-fetch mismatch)
+      await minimaService.sendMessage(contact.publickey || contact.currentaddress, senderName, input, "text", "", 0, timestamp, recipientName, targetApp);
     } catch (err) {
       console.error("[Send] Error sending message:", err);
     }
@@ -1659,7 +1661,7 @@ function ChatPage() {
           const showDate = currentDate !== prevDate;
 
           return (
-            <div key={`${msg.timestamp} -${msg.text || 'no-text'} -${i} `} className="flex flex-col w-full z-0 relative">
+            <div key={msg.timestamp} className="flex flex-col w-full z-0 relative">
               {showDate && msg.timestamp && (
                 <div className="flex justify-center my-3 sticky top-2 z-10">
                   <span className="text-xs text-gray-600 dark:text-gray-300 font-medium bg-[#E1F3FB] dark:bg-gray-800 border border-white/50 dark:border-gray-700 px-3 py-1.5 rounded-lg shadow-sm uppercase tracking-wide backdrop-blur-sm">

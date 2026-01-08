@@ -108,6 +108,16 @@ function initDatabase() {
             MDS.sql("ALTER TABLE CONTACT_REQUESTS ADD COLUMN IF NOT EXISTS from_address VARCHAR(1024)");
         });
 
+        // PERSONAL_CONTACTS table (Replaces keypair storage)
+        var personalContactsSql = "CREATE TABLE IF NOT EXISTS PERSONAL_CONTACTS ( "
+            + "  publickey VARCHAR(512) PRIMARY KEY, "
+            + "  created_at BIGINT "
+            + " )";
+
+        MDS.sql(personalContactsSql, function () {
+            MDS.log("💾 [DB] PERSONAL_CONTACTS initialized");
+        });
+
         // MAXIMA_CONTACT_REQUESTS table
         var maximaContactRequestsSql = "CREATE TABLE IF NOT EXISTS MAXIMA_CONTACT_REQUESTS ( "
             + "  id BIGINT AUTO_INCREMENT PRIMARY KEY, "

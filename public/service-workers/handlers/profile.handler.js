@@ -28,7 +28,7 @@ function handleProfileRequest(pubkey, maxjson) {
 
                 var profile = {};
                 var level2Visibility = "public";
-                var level3Visibility = "contacts";
+                var level3Visibility = "personal"; // Default to personal for safety
                 var row = {};
 
                 if (res.status && res.rows && res.rows.length > 0) {
@@ -37,27 +37,40 @@ function handleProfileRequest(pubkey, maxjson) {
                     MDS.log("🔍 [PROFILE] RAW DB Values - PRIVACY_L2: " + row.PRIVACY_L2 + ", PRIVACY_L3: " + row.PRIVACY_L3);
                     // Read Privacy Settings from DB if available
                     if (row.PRIVACY_L2 || row.privacy_l2) level2Visibility = row.PRIVACY_L2 || row.privacy_l2;
-                    if (row.PRIVACY_L3 || row.privacy_l3) level3Visibility = row.PRIVACY_L3 || row.privacy_l3;
+
+                    var rawL3 = row.PRIVACY_L3 || row.privacy_l3;
+                    if (rawL3 === 'contacts') {
+                        level3Visibility = 'personal'; // Enforcement: 'contacts' behaves as 'personal' for safety
+                    } else if (rawL3) {
+                        level3Visibility = rawL3;
+                    }
                 }
 
                 MDS.log("🔐 [PROFILE] Privacy Resolved (DB) - L2: " + level2Visibility + ", L3: " + level3Visibility);
 
-                MDS.cmd("keypair action:get key:privacy_personal_contacts", function (personalRes) {
+                // Check personal contacts via SQL (Migrated from Keypair)
+                MDS.sql("SELECT * FROM PERSONAL_CONTACTS", function (personalRes) {
                     var personalContacts = [];
-                    try {
-                        if (personalRes.status && personalRes.response && personalRes.response.value) {
-                            personalContacts = JSON.parse(personalRes.response.value);
+                    if (personalRes.status && personalRes.rows) {
+                        // Extract public keys
+                        for (var i = 0; i < personalRes.rows.length; i++) {
+                            personalContacts.push(personalRes.rows[i].PUBLICKEY);
                         }
-                    } catch (e) {
-                        MDS.log("⚠️ [PROFILE] Failed to parse personal contacts");
                     }
+                    MDS.log("🔍 [PROFILE-DEBUG] Personal Contacts (SQL): " + personalContacts.length);
 
                     var isPersonalContact = false;
                     for (var i = 0; i < personalContacts.length; i++) {
-                        if (personalContacts[i] === pubkey) {
+                        if (personalContacts[i].toLowerCase() === pubkey.toLowerCase()) {
                             isPersonalContact = true;
                             break;
                         }
+                    }
+
+                    if (isPersonalContact) {
+                        MDS.log("✅ [PROFILE] Requester is a PERSONAL contact!");
+                    } else {
+                        MDS.log("❌ [PROFILE-DEBUG] No match found for " + pubkey.substring(0, 10) + "... in Personal List");
                     }
 
                     // Step 3: Determine what to include

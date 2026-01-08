@@ -1,10 +1,10 @@
-import { MDS } from "@minima-global/mds";
 
-const PERSONAL_CONTACTS_KEY = 'privacy_personal_contacts';
+import { minimaService } from "./minima.service";
 
 /**
  * Service for managing personal contacts
- * Personal contacts are stored in keypair storage and used for privacy settings
+ * Personal contacts are stored in SQL table PERSONAL_CONTACTS (Migrated from keypair)
+ * used for privacy settings.
  */
 export const personalContactsService = {
     /**
@@ -12,10 +12,14 @@ export const personalContactsService = {
      */
     async getPersonalContacts(): Promise<string[]> {
         try {
-            const result = await MDS.keypair.get(PERSONAL_CONTACTS_KEY);
-            if (result?.status && result.value) {
-                return JSON.parse(result.value);
+            // First check SQL
+            const sql = "SELECT * FROM PERSONAL_CONTACTS";
+            const result = await minimaService.runSQL(sql);
+
+            if (result && result.rows) {
+                return result.rows.map((r: any) => r.PUBLICKEY);
             }
+
             return [];
         } catch (err) {
             console.error('[PersonalContacts] Error getting personal contacts:', err);
@@ -27,8 +31,14 @@ export const personalContactsService = {
      * Check if a contact is marked as personal
      */
     async isPersonalContact(publickey: string): Promise<boolean> {
-        const personalContacts = await this.getPersonalContacts();
-        return personalContacts.includes(publickey);
+        try {
+            const sql = `SELECT * FROM PERSONAL_CONTACTS WHERE publickey='${publickey}'`;
+            const result = await minimaService.runSQL(sql);
+            return result && result.rows && result.rows.length > 0;
+        } catch (e) {
+            console.error("Error checking personal contact", e);
+            return false;
+        }
     },
 
     /**
@@ -36,17 +46,17 @@ export const personalContactsService = {
      */
     async addPersonalContact(publickey: string): Promise<boolean> {
         try {
-            const personalContacts = await this.getPersonalContacts();
+            // Insert into SQL
+            const cleanKey = publickey.replace(/'/g, "''");
+            const sql = `INSERT IGNORE INTO PERSONAL_CONTACTS (publickey, created_at) VALUES ('${cleanKey}', ${Date.now()})`;
 
-            // Don't add if already exists
-            if (personalContacts.includes(publickey)) {
-                return true;
-            }
+            await minimaService.runSQL(sql);
 
-            personalContacts.push(publickey);
-            await MDS.keypair.set(PERSONAL_CONTACTS_KEY, JSON.stringify(personalContacts));
+            console.log('[PersonalContacts] Added personal contact (SQL):', publickey);
 
-            console.log('[PersonalContacts] Added personal contact:', publickey);
+            // Legacy cleanup (optional): Try to clear keypair so we don't have stale data?
+            // Leaving it alone is safer.
+
             return true;
         } catch (err) {
             console.error('[PersonalContacts] Error adding personal contact:', err);
@@ -59,12 +69,12 @@ export const personalContactsService = {
      */
     async removePersonalContact(publickey: string): Promise<boolean> {
         try {
-            const personalContacts = await this.getPersonalContacts();
-            const filtered = personalContacts.filter(pk => pk !== publickey);
+            const cleanKey = publickey.replace(/'/g, "''");
+            const sql = `DELETE FROM PERSONAL_CONTACTS WHERE publickey='${cleanKey}'`;
 
-            await MDS.keypair.set(PERSONAL_CONTACTS_KEY, JSON.stringify(filtered));
+            await minimaService.runSQL(sql);
 
-            console.log('[PersonalContacts] Removed personal contact:', publickey);
+            console.log('[PersonalContacts] Removed personal contact (SQL):', publickey);
             return true;
         } catch (err) {
             console.error('[PersonalContacts] Error removing personal contact:', err);

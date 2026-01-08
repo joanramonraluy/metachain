@@ -175,6 +175,10 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
             // This syncs the DB with the actual node state (handling offline approvals/denials)
             console.log("🧹 [AppContext] Running initial transaction cleanup...");
             minimaService.cleanupOrphanedPendingTransactions();
+
+            // Run chat migration to fix duplicate chats (Mx -> 0x)
+            console.log("🧹 [AppContext] Running legacy chat migration...");
+            minimaService.migrateLegacyChats();
           });
 
           // Start transaction polling service - DISABLED (replaced by MDS_PENDING event)

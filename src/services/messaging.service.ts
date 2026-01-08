@@ -157,6 +157,22 @@ export async function sendMessage(
                     }
 
                     console.log("✅ [MAXIMA] Message sent successfully via Mx address (non-contact)");
+
+                    // IMPORTANT: Insert message locally BEFORE returning!
+                    // Always insert even if timestamp is provided (flicker fix passes timestamp)
+                    chatService.insertMessage({
+                        roomname: recipientName || senderName,
+                        publickey: databasePublicKey,
+                        username: "Me",
+                        type,
+                        message,
+                        filedata,
+                        state: "sent",
+                        amount,
+                    });
+                    console.log("💾 [DB] Message saved locally for non-contact");
+
+
                     return retryResponse;
                 } else {
                     throw new Error(errorMessage);
@@ -174,20 +190,19 @@ export async function sendMessage(
         }
 
         // Only insert a new message if we're not updating an existing one
-        if (!existingTimestamp) {
-            chatService.insertMessage({
-                roomname: recipientName || senderName,
-                publickey: databasePublicKey,
-                username: "Me",
-                type,
-                message,
-                filedata,
-                state: isPending ? "pending" : "sent",
-                amount,
-            });
-        } else {
-            console.log(`ℹ️ [DB] Skipping message insertion - updating existing message with timestamp ${existingTimestamp}`);
-        }
+        // UPDATE: Allow insertion even if timestamp is provided (for UI sync), unless explicitly skipping? 
+        // For now, assume sendMessage implies we want to save it. 
+        // Logic: If we are sending, we should have a record. 'insertMessage' handles new rows.
+        chatService.insertMessage({
+            roomname: recipientName || senderName,
+            publickey: databasePublicKey,
+            username: "Me",
+            type,
+            message,
+            filedata,
+            state: isPending ? "pending" : "sent",
+            amount,
+        });
 
         return response;
     } catch (err) {

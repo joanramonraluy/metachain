@@ -583,7 +583,13 @@ WHERE(${addressClause}) AND status = 'pending'`;
                     return;
                 }
 
-                // Normal message
+                // Normal message - FILTER: Only process actual chat message types
+                const validChatTypes = ["text", "image", "video", "audio", "file", "charm", "token", "gif", "sticker", "voice"];
+                if (!validChatTypes.includes(json.type)) {
+                    console.log(`ℹ️ [MAXIMA] Ignoring non-chat type: ${json.type}`);
+                    return;
+                }
+
                 console.log("✅ [MAXIMA] Message received (saved by SW):", json.message);
 
                 // DB insertion and Delivery Receipt are handled by Service Worker
@@ -1753,6 +1759,88 @@ WHERE(${addressClause}) AND status = 'pending'`;
     /** @deprecated Use cancelChatRequest */
     async cancelContactRequest(toPublicKey: string): Promise<void> {
         return this.cancelChatRequest(toPublicKey);
+    }
+
+    /**
+     * Migration: Fix duplicate chats by converting Maxima Address (Mx...) keys to Hex Public Keys (0x...)
+     * using the DISCOVERED_PEERS table.
+     */
+    async migrateLegacyChats(): Promise<void> {
+        console.log("🧹 [MIGRATION] Checking for legacy chat keys (Mx addresses)...");
+
+        // Find distinct chat keys that look like Maxima Addresses
+        const sql = "SELECT DISTINCT publickey FROM CHAT_MESSAGES WHERE publickey LIKE 'Mx%'";
+        const res = await this.runSQL(sql);
+
+        if (!res.rows || res.rows.length === 0) {
+            console.log("✅ [MIGRATION] No legacy chat keys found.");
+            return;
+        }
+
+        console.log(`🧹 [MIGRATION] Found ${res.rows.length} legacy chat keys. Attempting to resolve...`);
+
+        for (const row of res.rows) {
+            const mxAddress = row.PUBLICKEY;
+            let resolvedPubkey = null;
+
+            // 1. Exact Match Check
+            const exactSql = `SELECT publickey FROM DISCOVERED_PEERS WHERE address = '${mxAddress}' LIMIT 1`;
+            const exactRes = await this.runSQL(exactSql);
+
+            if (exactRes.rows && exactRes.rows.length > 0) {
+                resolvedPubkey = exactRes.rows[0].PUBLICKEY;
+                console.log(`🔄 [MIGRATION] Exact match found! Resolving ${mxAddress} -> ${resolvedPubkey}`);
+            } else {
+                // 2. Fuzzy/Prefix Match Check
+                // Maxima addresses generally start with "Mx" + Base58IdentityKey + Location.
+                // The IDENTITY part should be stable. The location part (IP/Port) changes.
+                // We'll extract the first 45 chars as a "safe" prefix to match against.
+                // Example Start: MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60... (50+ chars)
+
+                if (mxAddress.length > 50) {
+                    const prefix = mxAddress.substring(0, 45); // Take a robust chunk
+                    console.log(`🔍 [MIGRATION] Exact match failed. Trying prefix match: ${prefix}...`);
+
+                    const fuzzySql = `SELECT publickey FROM DISCOVERED_PEERS WHERE address LIKE '${prefix}%' LIMIT 1`;
+                    const fuzzyRes = await this.runSQL(fuzzySql);
+
+                    if (fuzzyRes.rows && fuzzyRes.rows.length > 0) {
+                        resolvedPubkey = fuzzyRes.rows[0].PUBLICKEY;
+                        console.log(`✅ [MIGRATION] Fuzzy match found! Resolving ${mxAddress} -> ${resolvedPubkey}`);
+                    }
+                }
+            }
+
+            if (resolvedPubkey) {
+                await this.performChatMigration(mxAddress, resolvedPubkey);
+            } else {
+                console.warn(`⚠️ [MIGRATION] Could not resolve ${mxAddress} to a public key (peer not found).`);
+            }
+        }
+    }
+
+    private async performChatMigration(oldKey: string, newKey: string): Promise<void> {
+        console.log(`🔄 [MIGRATION] Migrating messages from ${oldKey} to ${newKey}...`);
+
+        // Update Messages
+        const msgSql = `UPDATE CHAT_MESSAGES SET publickey = '${newKey}' WHERE publickey = '${oldKey}'`;
+        await this.runSQL(msgSql);
+
+        // Update Status (Archived, Muted, etc) - Handle Conflicts
+        // If status exists for newKey, we might overwrite or merge. Simplest is DELETE old if NEW exists, else UPDATE.
+        const checkSql = `SELECT * FROM CHAT_STATUS WHERE publickey = '${newKey}'`;
+        const checkRes = await this.runSQL(checkSql);
+
+        if (checkRes.rows && checkRes.rows.length > 0) {
+            // New key already has status, just delete the old status to avoid constraint error
+            console.log(`ℹ️ [MIGRATION] Status for ${newKey} already exists. Deleting status for ${oldKey}.`);
+            await this.runSQL(`DELETE FROM CHAT_STATUS WHERE publickey = '${oldKey}'`);
+        } else {
+            console.log(`ℹ️ [MIGRATION] Moving status from ${oldKey} to ${newKey}.`);
+            await this.runSQL(`UPDATE CHAT_STATUS SET publickey = '${newKey}' WHERE publickey = '${oldKey}'`);
+        }
+
+        console.log(`✅ [MIGRATION] Migrated chat from ${oldKey} to ${newKey}`);
     }
 }
 

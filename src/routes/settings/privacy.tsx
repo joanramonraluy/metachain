@@ -40,7 +40,21 @@ function RouteComponent() {
         setLoading(false);
       }
     };
+
+    const loadContacts = async () => {
+      try {
+        const raw = await MDS.keypair.get('privacy_personal_contacts');
+        if (raw && raw.status && raw.value) {
+          const list = JSON.parse(raw.value);
+          if (Array.isArray(list)) _setPersonalContacts(list);
+        }
+      } catch (e) {
+        console.error("Failed to load personal contacts", e);
+      }
+    }
+
     loadSettings();
+    loadContacts();
   }, []);
 
   const handleSavePrivacySettings = async (l2?: VisibilityLevel, l3?: VisibilityLevel) => {
