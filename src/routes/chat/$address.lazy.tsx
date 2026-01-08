@@ -339,6 +339,7 @@ function ChatPage() {
         // Actually, if we found a request, we are done blocking.
         return;
       }
+      // NOTE: Don't clear contactRequest here - there might be a pending CHAT request
     } catch (err) {
       console.error("❌ [CHAT] Error checking Maxima requests:", err);
     }

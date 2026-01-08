@@ -618,6 +618,7 @@ export async function acceptMaximaContactRequest(fromPublicKey: string, fromAddr
 
         const updateSql = `UPDATE MAXIMA_CONTACT_REQUESTS SET status='accepted', updated_at=${now} WHERE from_publickey='${safeFromPk}' AND status='pending'`;
         await runSQL(updateSql);
+        // NOTE: Do NOT update CONTACT_REQUESTS here - keep the two request types separate
 
         const myAddress = await getMyMaximaAddress();
 

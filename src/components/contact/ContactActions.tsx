@@ -147,15 +147,20 @@ const ContactActions: React.FC<ContactActionsProps> = ({
                                         </button>
                                     </div>
                                 ) : (
-                                    /* If open to chats but not a contact/request, show Add option if not already added */
-                                    <button
-                                        onClick={onSendContactRequest}
-                                        disabled={addingContact}
-                                        className="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-primary-200 dark:border-primary-700 text-primary-600 dark:text-primary-400 rounded-lg hover:bg-primary-50 dark:hover:bg-gray-600 disabled:bg-primary-50 dark:disabled:bg-gray-800 disabled:text-primary-300 disabled:cursor-not-allowed transition-colors font-medium flex items-center justify-center gap-2"
-                                    >
-                                        <UserPlus size={18} />
-                                        {addingContact ? "Sending..." : "Add to Contacts"}
-                                    </button>
+                                    /* If open to chats but not a contact/request, show Maxima Contact Request option */
+                                    !maximaRequestPending && (
+                                        <button
+                                            onClick={onSendMaximaRequest}
+                                            disabled={sendingMaximaRequest}
+                                            className={`w-full px-4 py-2 rounded-lg transition-colors font-medium flex items-center justify-center gap-2 ${sendingMaximaRequest
+                                                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                                : 'bg-purple-600 text-white hover:bg-purple-700'
+                                                }`}
+                                        >
+                                            <UserPlus size={18} />
+                                            {sendingMaximaRequest ? "Sending..." : "Request Maxima Contact"}
+                                        </button>
+                                    )
                                 )}
                             </>
                         ) : (
