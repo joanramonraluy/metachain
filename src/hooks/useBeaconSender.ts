@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { MDS } from '@minima-global/mds';
+import { utf8ToHex } from '../services/database.service';
 
 // Export sendBeacon function so it can be called manually (e.g., after profile updates)
 export const sendBeacon = async () => {
@@ -82,9 +83,7 @@ export const sendBeacon = async () => {
 
         // Send via P2P (will be captured by MINIMALOG)
         const jsonStr = JSON.stringify(beacon);
-        const hexData = "0x" + Array.from(jsonStr)
-            .map(c => c.charCodeAt(0).toString(16).padStart(2, '0'))
-            .join('');
+        const hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
 
         console.log(`📤 [BEACON] Sending HEX: ${hexData.substring(0, 50)}... (${hexData.length} chars)`);
 

@@ -23,3 +23,11 @@ Thumbs.db
 
 # Examples folder
 examples/
+
+# Temporary development files
+grep_results.txt
+debug_plan.txt
+tsc_error.log
+*.log
+demo.txt
+*.backup

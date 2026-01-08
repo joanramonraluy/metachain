@@ -1,0 +1,8 @@
+src/services/messaging.service.ts(34,10): error TS6133: 'buildSendParams' is declared but its value is never read.
+src/services/minima.service.ts(8,5): error TS6133: 'resolveMaximaAddress' is declared but its value is never read.
+src/services/minima.service.ts(9,5): error TS6133: 'escapeSql' is declared but its value is never read.
+src/services/minima.service.ts(12,1): error TS6133: 'transactionService' is declared but its value is never read.
+src/services/minima.service.ts(13,1): error TS6133: 'messagingService' is declared but its value is never read.
+src/services/minima.service.ts(14,1): error TS6133: 'contactRequestsService' is declared but its value is never read.
+src/services/minima.service.ts(15,1): error TS6133: 'discoveryService' is declared but its value is never read.
+src/services/transaction.service.ts(8,1): error TS6192: All imports in import declaration are unused.

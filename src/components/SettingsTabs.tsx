@@ -1,19 +1,13 @@
 import { User, Shield, Globe, Network, Paintbrush } from 'lucide-react';
+import { Link } from '@tanstack/react-router';
 
-export type SettingsTab = 'profile' | 'appearance' | 'privacy' | 'discovery' | 'network';
-
-interface SettingsTabsProps {
-    activeTab: SettingsTab;
-    onTabChange: (tab: SettingsTab) => void;
-}
-
-export function SettingsTabs({ activeTab, onTabChange }: SettingsTabsProps) {
+export function SettingsTabs() {
     const tabs = [
-        { id: 'profile' as SettingsTab, label: 'Profile', icon: User },
-        { id: 'appearance' as SettingsTab, label: 'Appearance', icon: Paintbrush },
-        { id: 'privacy' as SettingsTab, label: 'Privacy', icon: Shield },
-        { id: 'discovery' as SettingsTab, label: 'Discovery', icon: Globe },
-        { id: 'network' as SettingsTab, label: 'Network', icon: Network },
+        { to: '/settings/profile', label: 'Profile', icon: User },
+        { to: '/settings/appearance', label: 'Appearance', icon: Paintbrush },
+        { to: '/settings/privacy', label: 'Privacy', icon: Shield },
+        { to: '/settings/discovery', label: 'Discovery', icon: Globe },
+        { to: '/settings/network', label: 'Network', icon: Network },
     ];
 
     return (
@@ -22,26 +16,19 @@ export function SettingsTabs({ activeTab, onTabChange }: SettingsTabsProps) {
                 <nav className="flex overflow-x-auto scrollbar-hide -mb-px">
                     {tabs.map((tab) => {
                         const Icon = tab.icon;
-                        const isActive = activeTab === tab.id;
 
                         return (
-                            <button
-                                key={tab.id}
-                                onClick={() => onTabChange(tab.id)}
-                                className={`
-                  flex items-center justify-center gap-1.5 sm:gap-2 
-                  px-4 sm:px-6 py-3 sm:py-4 
-                  font-medium text-xs sm:text-sm whitespace-nowrap
-                  border-b-2 transition-colors flex-1 sm:flex-none min-w-0
-                  ${isActive
-                                        ? 'border-primary-600 text-primary-600 dark:text-primary-400 bg-primary-50/30 dark:bg-primary-900/10'
-                                        : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50'
-                                    }
-                `}
+                            <Link
+                                key={tab.to}
+                                to={tab.to}
+                                className="flex items-center justify-center gap-1.5 sm:gap-2 px-4 sm:px-6 py-3 sm:py-4 font-medium text-xs sm:text-sm whitespace-nowrap border-b-2 transition-colors flex-1 sm:flex-none min-w-0 border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                                activeProps={{
+                                    className: 'border-primary-600 text-primary-600 dark:text-primary-400 bg-primary-50/30 dark:bg-primary-900/10'
+                                }}
                             >
                                 <Icon size={16} className="flex-shrink-0 sm:w-[18px] sm:h-[18px]" />
                                 <span className="truncate">{tab.label}</span>
-                            </button>
+                            </Link>
                         );
                     })}
                 </nav>

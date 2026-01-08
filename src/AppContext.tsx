@@ -1,5 +1,5 @@
 import { Block, MDS, MinimaEvents } from "@minima-global/mds"
-import { createContext, useCallback, useEffect, useRef, useState } from "react"
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react"
 import { minimaService } from "./services/minima.service"
 import useBeaconSender from "./hooks/useBeaconSender"
 
@@ -59,6 +59,7 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
         const pubkey = info.publickey || ""
 
         console.log(`✅ [AppContext] Profile fetched: Name=${name}`);
+        console.log(`🖼️ [AppContext] Profile Icon: "${icon}"`);
 
         setUserName(name)
         setMyPublicKey(pubkey)
@@ -216,4 +217,5 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
   return <appContext.Provider value={context}>{children}</appContext.Provider>
 }
 
+export const useAppContext = () => useContext(appContext)
 export default AppProvider

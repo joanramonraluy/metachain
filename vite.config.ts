@@ -14,11 +14,23 @@ export default defineConfig({
   publicDir: "public",
   build: {
     outDir: "build",
+    chunkSizeWarningLimit: 1000, // Lazy chunks can be larger since they load on-demand
     rollupOptions: {
       external: (id) => {
         // Exclude anything from examples directory
         if (id.includes('/examples/')) return true;
         return false;
+      },
+      output: {
+        manualChunks: {
+          // Vendor chunks - cached separately from app code
+          'vendor-react': ['react', 'react-dom'],
+          'vendor-router': ['@tanstack/react-router'],
+          'vendor-ui': ['framer-motion', 'lucide-react', 'emoji-picker-react'],
+          'vendor-minima': ['@minima-global/mds'],
+          // Large feature chunks
+          'feature-lottie': ['lottie-react'],
+        },
       },
       onwarn(warning, warn) {
         // Suppress eval warnings from lottie-web (safe usage)

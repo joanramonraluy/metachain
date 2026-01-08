@@ -138,7 +138,10 @@ const THEMES: Record<ThemeColor, Record<string, string>> = {
     },
 };
 
+import { useAppContext } from '../AppContext';
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
+    const { loaded } = useAppContext();
     const [currentTheme, setCurrentThemeState] = useState<ThemeColor>('sky');
     const [chatBackground, setChatBackgroundState] = useState<ChatBackground>('default');
     const [mode, setModeState] = useState<ThemeMode>(() => {
@@ -150,6 +153,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     });
 
     useEffect(() => {
+        if (!loaded) return;
+
         // Load theme from saving mechanism (Keypair preferred)
         MDS.keypair.get('app_theme', (res: any) => {
             if (res.status && res.value) {
@@ -194,7 +199,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
                 }
             }
         });
-    }, []);
+    }, [loaded]);
 
     const setMode = (newMode: ThemeMode) => {
         console.log(`[ThemeContext] Setting mode to: ${newMode}`);
@@ -210,7 +215,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
             console.log('[ThemeContext] Removed "dark" class');
         }
         console.log('[ThemeContext] Current classList after:', root.classList.value);
-        MDS.keypair.set('app_mode', newMode);
+        if (loaded) {
+            MDS.keypair.set('app_mode', newMode);
+        }
     };
 
     const toggleMode = () => {
@@ -232,12 +239,16 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         });
 
         // Save preference
-        MDS.keypair.set('app_theme', theme);
+        if (loaded) {
+            MDS.keypair.set('app_theme', theme);
+        }
     };
 
     const setChatBackground = (bg: ChatBackground) => {
         setChatBackgroundState(bg);
-        MDS.keypair.set('app_chat_bg', bg);
+        if (loaded) {
+            MDS.keypair.set('app_chat_bg', bg);
+        }
     };
 
     return (

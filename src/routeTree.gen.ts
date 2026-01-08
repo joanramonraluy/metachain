@@ -16,6 +16,12 @@ import { Route as CreateGroupRouteImport } from './routes/create-group'
 import { Route as ContactsRouteImport } from './routes/contacts'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as SettingsIndexRouteImport } from './routes/settings/index'
+import { Route as SettingsProfileRouteImport } from './routes/settings/profile'
+import { Route as SettingsPrivacyRouteImport } from './routes/settings/privacy'
+import { Route as SettingsNetworkRouteImport } from './routes/settings/network'
+import { Route as SettingsDiscoveryRouteImport } from './routes/settings/discovery'
+import { Route as SettingsAppearanceRouteImport } from './routes/settings/appearance'
 import { Route as GroupsGroupIdRouteImport } from './routes/groups.$groupId'
 import { Route as ContactInfoAddressRouteImport } from './routes/contact-info.$address'
 import { Route as ChatAddressRouteImport } from './routes/chat/$address'
@@ -34,7 +40,7 @@ const DiscoveryRoute = DiscoveryRouteImport.update({
   id: '/discovery',
   path: '/discovery',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any).lazy(() => import('./routes/discovery.lazy').then((d) => d.Route))
 const CreateGroupRoute = CreateGroupRouteImport.update({
   id: '/create-group',
   path: '/create-group',
@@ -55,21 +61,55 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SettingsIndexRoute = SettingsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsProfileRoute = SettingsProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsPrivacyRoute = SettingsPrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsNetworkRoute = SettingsNetworkRouteImport.update({
+  id: '/network',
+  path: '/network',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsDiscoveryRoute = SettingsDiscoveryRouteImport.update({
+  id: '/discovery',
+  path: '/discovery',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsAppearanceRoute = SettingsAppearanceRouteImport.update({
+  id: '/appearance',
+  path: '/appearance',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const GroupsGroupIdRoute = GroupsGroupIdRouteImport.update({
   id: '/groups/$groupId',
   path: '/groups/$groupId',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any).lazy(() =>
+  import('./routes/groups.$groupId.lazy').then((d) => d.Route),
+)
 const ContactInfoAddressRoute = ContactInfoAddressRouteImport.update({
   id: '/contact-info/$address',
   path: '/contact-info/$address',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any).lazy(() =>
+  import('./routes/contact-info.$address.lazy').then((d) => d.Route),
+)
 const ChatAddressRoute = ChatAddressRouteImport.update({
   id: '/chat/$address',
   path: '/chat/$address',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any).lazy(() => import('./routes/chat/$address.lazy').then((d) => d.Route))
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -78,10 +118,16 @@ export interface FileRoutesByFullPath {
   '/create-group': typeof CreateGroupRoute
   '/discovery': typeof DiscoveryRoute
   '/help': typeof HelpRoute
-  '/settings': typeof SettingsRoute
+  '/settings': typeof SettingsRouteWithChildren
   '/chat/$address': typeof ChatAddressRoute
   '/contact-info/$address': typeof ContactInfoAddressRoute
   '/groups/$groupId': typeof GroupsGroupIdRoute
+  '/settings/appearance': typeof SettingsAppearanceRoute
+  '/settings/discovery': typeof SettingsDiscoveryRoute
+  '/settings/network': typeof SettingsNetworkRoute
+  '/settings/privacy': typeof SettingsPrivacyRoute
+  '/settings/profile': typeof SettingsProfileRoute
+  '/settings/': typeof SettingsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -90,10 +136,15 @@ export interface FileRoutesByTo {
   '/create-group': typeof CreateGroupRoute
   '/discovery': typeof DiscoveryRoute
   '/help': typeof HelpRoute
-  '/settings': typeof SettingsRoute
   '/chat/$address': typeof ChatAddressRoute
   '/contact-info/$address': typeof ContactInfoAddressRoute
   '/groups/$groupId': typeof GroupsGroupIdRoute
+  '/settings/appearance': typeof SettingsAppearanceRoute
+  '/settings/discovery': typeof SettingsDiscoveryRoute
+  '/settings/network': typeof SettingsNetworkRoute
+  '/settings/privacy': typeof SettingsPrivacyRoute
+  '/settings/profile': typeof SettingsProfileRoute
+  '/settings': typeof SettingsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -103,10 +154,16 @@ export interface FileRoutesById {
   '/create-group': typeof CreateGroupRoute
   '/discovery': typeof DiscoveryRoute
   '/help': typeof HelpRoute
-  '/settings': typeof SettingsRoute
+  '/settings': typeof SettingsRouteWithChildren
   '/chat/$address': typeof ChatAddressRoute
   '/contact-info/$address': typeof ContactInfoAddressRoute
   '/groups/$groupId': typeof GroupsGroupIdRoute
+  '/settings/appearance': typeof SettingsAppearanceRoute
+  '/settings/discovery': typeof SettingsDiscoveryRoute
+  '/settings/network': typeof SettingsNetworkRoute
+  '/settings/privacy': typeof SettingsPrivacyRoute
+  '/settings/profile': typeof SettingsProfileRoute
+  '/settings/': typeof SettingsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -121,6 +178,12 @@ export interface FileRouteTypes {
     | '/chat/$address'
     | '/contact-info/$address'
     | '/groups/$groupId'
+    | '/settings/appearance'
+    | '/settings/discovery'
+    | '/settings/network'
+    | '/settings/privacy'
+    | '/settings/profile'
+    | '/settings/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -129,10 +192,15 @@ export interface FileRouteTypes {
     | '/create-group'
     | '/discovery'
     | '/help'
-    | '/settings'
     | '/chat/$address'
     | '/contact-info/$address'
     | '/groups/$groupId'
+    | '/settings/appearance'
+    | '/settings/discovery'
+    | '/settings/network'
+    | '/settings/privacy'
+    | '/settings/profile'
+    | '/settings'
   id:
     | '__root__'
     | '/'
@@ -145,6 +213,12 @@ export interface FileRouteTypes {
     | '/chat/$address'
     | '/contact-info/$address'
     | '/groups/$groupId'
+    | '/settings/appearance'
+    | '/settings/discovery'
+    | '/settings/network'
+    | '/settings/privacy'
+    | '/settings/profile'
+    | '/settings/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -154,7 +228,7 @@ export interface RootRouteChildren {
   CreateGroupRoute: typeof CreateGroupRoute
   DiscoveryRoute: typeof DiscoveryRoute
   HelpRoute: typeof HelpRoute
-  SettingsRoute: typeof SettingsRoute
+  SettingsRoute: typeof SettingsRouteWithChildren
   ChatAddressRoute: typeof ChatAddressRoute
   ContactInfoAddressRoute: typeof ContactInfoAddressRoute
   GroupsGroupIdRoute: typeof GroupsGroupIdRoute
@@ -211,6 +285,48 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/settings/': {
+      id: '/settings/'
+      path: '/'
+      fullPath: '/settings/'
+      preLoaderRoute: typeof SettingsIndexRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/profile': {
+      id: '/settings/profile'
+      path: '/profile'
+      fullPath: '/settings/profile'
+      preLoaderRoute: typeof SettingsProfileRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/privacy': {
+      id: '/settings/privacy'
+      path: '/privacy'
+      fullPath: '/settings/privacy'
+      preLoaderRoute: typeof SettingsPrivacyRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/network': {
+      id: '/settings/network'
+      path: '/network'
+      fullPath: '/settings/network'
+      preLoaderRoute: typeof SettingsNetworkRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/discovery': {
+      id: '/settings/discovery'
+      path: '/discovery'
+      fullPath: '/settings/discovery'
+      preLoaderRoute: typeof SettingsDiscoveryRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/appearance': {
+      id: '/settings/appearance'
+      path: '/appearance'
+      fullPath: '/settings/appearance'
+      preLoaderRoute: typeof SettingsAppearanceRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/groups/$groupId': {
       id: '/groups/$groupId'
       path: '/groups/$groupId'
@@ -235,6 +351,28 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface SettingsRouteChildren {
+  SettingsAppearanceRoute: typeof SettingsAppearanceRoute
+  SettingsDiscoveryRoute: typeof SettingsDiscoveryRoute
+  SettingsNetworkRoute: typeof SettingsNetworkRoute
+  SettingsPrivacyRoute: typeof SettingsPrivacyRoute
+  SettingsProfileRoute: typeof SettingsProfileRoute
+  SettingsIndexRoute: typeof SettingsIndexRoute
+}
+
+const SettingsRouteChildren: SettingsRouteChildren = {
+  SettingsAppearanceRoute: SettingsAppearanceRoute,
+  SettingsDiscoveryRoute: SettingsDiscoveryRoute,
+  SettingsNetworkRoute: SettingsNetworkRoute,
+  SettingsPrivacyRoute: SettingsPrivacyRoute,
+  SettingsProfileRoute: SettingsProfileRoute,
+  SettingsIndexRoute: SettingsIndexRoute,
+}
+
+const SettingsRouteWithChildren = SettingsRoute._addFileChildren(
+  SettingsRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
@@ -242,7 +380,7 @@ const rootRouteChildren: RootRouteChildren = {
   CreateGroupRoute: CreateGroupRoute,
   DiscoveryRoute: DiscoveryRoute,
   HelpRoute: HelpRoute,
-  SettingsRoute: SettingsRoute,
+  SettingsRoute: SettingsRouteWithChildren,
   ChatAddressRoute: ChatAddressRoute,
   ContactInfoAddressRoute: ContactInfoAddressRoute,
   GroupsGroupIdRoute: GroupsGroupIdRoute,

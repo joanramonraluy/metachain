@@ -1,0 +1,93 @@
+/**
+ * MetaChain Service Worker - Chat Message Handler
+ * Handles chat messages, read receipts, pings, pongs
+ */
+
+function handleChatMessage(pubkey, maxjson) {
+    MDS.log("💬 [CHAT] From: " + pubkey + " - " + (maxjson.message || "").substring(0, 30));
+
+    var now = Date.now();
+    var safePubkey = escapeSql(pubkey);
+    var safeUsername = escapeSql(maxjson.username || "Unknown");
+    var safeMessage = escapeSql(maxjson.message || "");
+    var safeFiledata = escapeSql(maxjson.filedata || "");
+    var msgType = maxjson.type || "text";
+    var amount = maxjson.amount || 0;
+
+    // Insert message to DB
+    var insertSql = "INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date) "
+        + "VALUES ('', '" + safePubkey + "', '" + safeUsername + "', '" + msgType + "', '" + safeMessage + "', '" + safeFiledata + "', 'received', " + amount + ", " + now + ")";
+
+    MDS.sql(insertSql, function (res) {
+        if (res.status) {
+            MDS.log("✅ [CHAT] Message saved from " + safeUsername);
+        } else {
+            MDS.log("❌ [CHAT] Save failed: " + res.error);
+        }
+    });
+}
+
+function handleReadReceipt(pubkey) {
+    MDS.log("📖 [READ-RECEIPT] Received from " + pubkey);
+    var sql = "UPDATE CHAT_MESSAGES SET state='read' WHERE publickey='" + pubkey + "' AND username='Me' AND state!='pending' AND state!='failed'";
+    MDS.sql(sql);
+}
+
+function handleDeliveryReceipt(pubkey) {
+    MDS.log("📬 [DELIVERY-RECEIPT] Ignoring (handled by UI)");
+}
+
+function handlePing(pubkey) {
+    MDS.log("📡 [PING] Received from " + pubkey);
+
+    var payload = {
+        message: "",
+        type: "pong",
+        username: "Me",
+        filedata: ""
+    };
+
+    var jsonStr = JSON.stringify(payload);
+    var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
+
+    // Smart Address Resolution for Non-Contacts
+    if (pubkey.startsWith('0x')) {
+        var safeKey = pubkey.replace(/'/g, "''");
+        var peerSql = "SELECT ADDRESS FROM DISCOVERED_PEERS WHERE PUBLICKEY='" + safeKey + "' AND ADDRESS IS NOT NULL LIMIT 1";
+
+        MDS.sql(peerSql, function (peerRes) {
+            var sendCmd;
+            if (peerRes && peerRes.status && peerRes.count > 0) {
+                var rawMx = peerRes.rows[0].ADDRESS;
+                var mxAddress = rawMx ? rawMx.replace(/[^a-zA-Z0-9@:._-]/g, "").trim() : null;
+
+                if (mxAddress && (mxAddress.startsWith('Mx') || mxAddress.startsWith('MX'))) {
+                    sendCmd = 'maxima action:send to:"' + mxAddress + '" application:metachain data:' + hexData + ' poll:false';
+                } else {
+                    sendCmd = "maxima action:send publickey:" + pubkey + " application:metachain data:" + hexData + " poll:false";
+                }
+            } else {
+                sendCmd = "maxima action:send publickey:" + pubkey + " application:metachain data:" + hexData + " poll:false";
+            }
+
+            MDS.cmd(sendCmd, function () {
+                MDS.log("✅ [PONG] Sent to " + pubkey.substring(0, 15) + "...");
+            });
+        });
+    } else {
+        var sendCmd;
+        if (pubkey.startsWith('Mx') || pubkey.startsWith('MX')) {
+            sendCmd = 'maxima action:send to:"' + pubkey.trim() + '" application:metachain data:' + hexData + ' poll:false';
+        } else {
+            sendCmd = "maxima action:send publickey:" + pubkey + " application:metachain data:" + hexData + " poll:false";
+        }
+        MDS.cmd(sendCmd, function () {
+            MDS.log("✅ [PONG] Sent to " + pubkey.substring(0, 15) + "...");
+        });
+    }
+}
+
+function handlePong(pubkey) {
+    MDS.log("📡 [PONG] Received from " + pubkey);
+    // Let the UI handle pong events
+}
