@@ -203,12 +203,18 @@ function handleProfileResponse(pubkey, maxjson) {
     // Serialize the full profile as extra_data
     var extraData = escapeSql(JSON.stringify(maxjson));
 
-    // Update bio and extra_data
-    var updateSql = "UPDATE DISCOVERED_PEERS SET bio='" + escapeSql(maxjson.bio || "") + "', extra_data='" + extraData + "', last_seen=" + now + " WHERE publickey='" + safePubkey + "'";
+    // CRITICAL: Extract allowNonContactChats from profile response
+    var allowNonContactChats = 1; // Default to true
+    if (maxjson.allowNonContactChats !== undefined && maxjson.allowNonContactChats !== null) {
+        allowNonContactChats = maxjson.allowNonContactChats ? 1 : 0;
+    }
+
+    // Update bio, extra_data, AND allow_non_contact_chats
+    var updateSql = "UPDATE DISCOVERED_PEERS SET bio='" + escapeSql(maxjson.bio || "") + "', extra_data='" + extraData + "', allow_non_contact_chats=" + allowNonContactChats + ", last_seen=" + now + " WHERE publickey='" + safePubkey + "'";
 
     MDS.sql(updateSql, function (res) {
         if (res.status) {
-            MDS.log("✅ [PROFILE] Extended profile saved for " + pubkey.substring(0, 15) + "...");
+            MDS.log("✅ [PROFILE] Extended profile saved for " + pubkey.substring(0, 15) + "... (allowNonContactChats: " + allowNonContactChats + ")");
         }
     });
 }

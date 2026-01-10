@@ -100,6 +100,14 @@ class MinimaService {
         return chatService.isContactMuted(publickey);
     }
 
+    blockContact(publickey: string): Promise<void> {
+        return chatService.blockContact(publickey);
+    }
+
+    unblockContact(publickey: string): Promise<void> {
+        return chatService.unblockContact(publickey);
+    }
+
     markChatAsFavorite(publickey: string): Promise<void> {
         return chatService.markChatAsFavorite(publickey);
     }
@@ -112,7 +120,7 @@ class MinimaService {
         return chatService.isChatFavorite(publickey);
     }
 
-    getChatStatus(publickey: string): Promise<{ archived: boolean; lastOpened: number | null; favorite: boolean }> {
+    getChatStatus(publickey: string): Promise<{ archived: boolean; lastOpened: number | null; favorite: boolean; blocked: boolean; blockedByThem: boolean }> {
         return chatService.getChatStatus(publickey);
     }
 
@@ -347,6 +355,18 @@ VALUES('${peer.pubkey}', '${escapedAlias}', '${escapedBio}', '${peer.address}', 
                     return;
                 }
 
+                // Handle Internal Sync - Peer Updated (for open chats to refresh blocking state)
+                if (json.type === "peer_updated") {
+                    console.log("🔄 [PEER] Updated:", json.peer?.alias);
+                    if (json.peer) {
+                        // Emit event for open chats to refresh their state
+                        window.dispatchEvent(new CustomEvent("peer_updated", {
+                            detail: json.peer
+                        }));
+                    }
+                    return;
+                }
+
                 if (json.type === "read") {
                     console.log("✅ [READ-RECEIPT] Received from", from);
                     // DB update is handled by Service Worker
@@ -389,7 +409,37 @@ VALUES('${peer.pubkey}', '${escapedAlias}', '${escapedBio}', '${peer.address}', 
                 }
 
                 if (json.type === "profile_response") {
-                    console.log(`👤 [PROFILE] Response received from ${from} - forwarding to ProfileService`);
+                    console.log(`👤 [PROFILE] Response received from ${from} - saving to Discovery DB`);
+
+                    // SAVE TO DISCOVERED_PEERS (Fix for "Unknown User")
+                    const now = Date.now();
+                    const escapedAlias = (json.name || 'Unknown').replace(/'/g, "''");
+                    const escapedBio = (json.bio || "").replace(/'/g, "''");
+                    // Use a safe default for allowChats if missing
+                    const allowChats = (json.allowNonContactChats !== undefined && json.allowNonContactChats !== null)
+                        ? (json.allowNonContactChats ? 1 : 0)
+                        : 1;
+
+                    // Parse potential avatar? (Not currently supported in DISCOVERED_PEERS schema, but name/bio are)
+
+                    const updateProfileSql = `MERGE INTO DISCOVERED_PEERS(publickey, alias, bio, last_seen, source, allow_non_contact_chats)
+                                              KEY(publickey)
+                                              VALUES('${from}', '${escapedAlias}', '${escapedBio}', ${now}, 'PROFILE_RESPONSE', ${allowChats})`;
+
+                    try {
+                        await this.runSQL(updateProfileSql);
+                        console.log(`✅ [PROFILE] Saved ${json.name} to Discovery DB`);
+
+                        // Notify UI via event so ChatPage can update immediately without waiting for timeout
+                        // Re-using 'peer_updated' event which ChatPage might listen to or we can add listener
+                        window.dispatchEvent(new CustomEvent('peer_updated', {
+                            detail: { ...json, publickey: from, alias: json.name }
+                        }));
+                    } catch (err) {
+                        console.error("❌ [PROFILE] Failed to save profile to DB:", err);
+                    }
+
+                    console.log(`👤 [PROFILE] Forwarding to ProfileService`);
                     // Use static service instance
                     profileService.handleProfileResponse(from, json);
                     return;
@@ -446,29 +496,23 @@ VALUES('${peer.pubkey}', '${escapedAlias}', '${escapedBio}', '${peer.address}', 
                     const safeMyKey = escapeSql(myPublicKey);
 
                     const updateReqSql = `UPDATE CONTACT_REQUESTS SET status = 'accepted', updated_at = ${Date.now()} 
-                                          WHERE from_publickey = '${safeMyKey}' AND to_publickey = '${safeFrom}'`;
-                    await this.runSQL(updateReqSql);
+                                          WHERE (from_publickey = '${safeMyKey}' AND to_publickey = '${safeFrom}')
+                                             OR (from_publickey = '${safeFrom}' AND to_publickey = '${safeMyKey}')`;
 
-                    // DUPLICATE CHECK: Check if we already received an accept message recently (last 10s)
-                    const checkDupSql = `SELECT * FROM CHAT_MESSAGES 
-                                         WHERE publickey = '${safeFrom}' AND type = 'system' AND message = 'Chat request accepted' 
-                                         AND date > ${Date.now() - 10000} `;
-                    const dupRes = await this.runSQL(checkDupSql);
+                    const checkRes = await this.runSQL(`SELECT count(*) as count FROM CONTACT_REQUESTS WHERE (from_publickey = '${safeMyKey}' AND to_publickey = '${safeFrom}') OR (from_publickey = '${safeFrom}' AND to_publickey = '${safeMyKey}')`);
+                    const count = (checkRes && checkRes.rows && checkRes.rows[0]) ? checkRes.rows[0].COUNT : 0;
 
-                    if (dupRes.count === 0) {
-                        // Insert system message so the requester sees the acceptance
-                        const now = Date.now();
-                        const insertMsgSql = `
-                            INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date)
-VALUES('', '${safeFrom}', 'System', 'system', 'Chat request accepted', '', 'received', 0, ${now})
-                        `;
-                        await this.runSQL(insertMsgSql);
-                        console.log("✅ [CONTACTS] Saved acceptance message for requester");
+                    if (count > 0) {
+                        await this.runSQL(updateReqSql);
                     } else {
-                        console.log("⚠️ [CONTACTS] Ignoring duplicate accept message");
+                        // Insert new accepted record if none exists
+                        console.log("⚠️ [CONTACTS] No pending request found - Creating new ACCEPTED record");
+                        const insertReqSql = `INSERT INTO CONTACT_REQUESTS (from_publickey, to_publickey, status, created_at, updated_at)
+                                              VALUES ('${safeMyKey}', '${safeFrom}', 'accepted', ${Date.now()}, ${Date.now()})`;
+                        await this.runSQL(insertReqSql);
                     }
 
-                    // Notify UI
+                    // Notify UI (Frontend only listens now)
                     chatService.notifyNewMessage({ ...json, type: 'contact_accepted', from });
                     return;
                 }
@@ -501,8 +545,6 @@ WHERE(${addressClause}) AND status = 'pending'`;
 
                     await this.runSQL(updateReqSql);
                     console.log("✅ [CONTACTS] Local request status updated to declined");
-
-                    // MESSAGE INSERTION REMAINS IN SERVICE WORKER (public/service.js)
 
                     // Notify UI
                     chatService.notifyNewMessage({ ...json, type: 'contact_declined', from });
@@ -557,6 +599,58 @@ WHERE(${addressClause}) AND status = 'pending'`;
                     await this.runSQL(updateReqSql);
 
                     chatService.notifyNewMessage({ ...json, type: 'maxima_contact_declined', from });
+                    return;
+                }
+
+                if (json.type === "contact_blocked") {
+                    console.log("🚫 [CONTACTS] Blocked by", from);
+                    // Update local DB
+                    const escapeSql = (str: string) => str.replace(/'/g, "''");
+                    const safeFrom = escapeSql(from);
+                    const updateSql = `MERGE INTO CHAT_STATUS (publickey, blocked_by_them) KEY(publickey) VALUES('${safeFrom}', TRUE)`;
+                    await this.runSQL(updateSql);
+
+                    // Notify UI
+                    chatService.notifyNewMessage({ ...json, type: 'contact_blocked', from });
+                    return;
+                }
+
+                if (json.type === "contact_unblocked") {
+                    console.log("🔓 [CONTACTS] Unblocked by", from);
+                    // Update local DB
+                    const escapeSql = (str: string) => str.replace(/'/g, "''");
+                    const safeFrom = escapeSql(from);
+                    const updateSql = `UPDATE CHAT_STATUS SET blocked_by_them=FALSE WHERE publickey='${safeFrom}'`;
+                    await this.runSQL(updateSql);
+
+                    // Notify UI
+                    chatService.notifyNewMessage({ ...json, type: 'contact_unblocked', from });
+                    return;
+                }
+
+                if (json.type === "contact_blocked") {
+                    console.log("🚫 [CONTACTS] Blocked by", from);
+                    // Update local DB
+                    const escapeSql = (str: string) => str.replace(/'/g, "''");
+                    const safeFrom = escapeSql(from);
+                    const updateSql = `MERGE INTO CHAT_STATUS (publickey, blocked_by_them) KEY(publickey) VALUES('${safeFrom}', TRUE)`;
+                    await this.runSQL(updateSql);
+
+                    // Notify UI
+                    chatService.notifyNewMessage({ ...json, type: 'contact_blocked', from });
+                    return;
+                }
+
+                if (json.type === "contact_unblocked") {
+                    console.log("🔓 [CONTACTS] Unblocked by", from);
+                    // Update local DB
+                    const escapeSql = (str: string) => str.replace(/'/g, "''");
+                    const safeFrom = escapeSql(from);
+                    const updateSql = `UPDATE CHAT_STATUS SET blocked_by_them=FALSE WHERE publickey='${safeFrom}'`;
+                    await this.runSQL(updateSql);
+
+                    // Notify UI
+                    chatService.notifyNewMessage({ ...json, type: 'contact_unblocked', from });
                     return;
                 }
 
@@ -1589,8 +1683,8 @@ WHERE(${addressClause}) AND status = 'pending'`;
     /**
      * Send a contact request to another user
      */
-    async sendChatRequest(toAddress: string, myName: string, myAvatar: string): Promise<void> {
-        return contactRequestsService.sendChatRequest(toAddress, myName, myAvatar);
+    async sendChatRequest(toAddress: string, myName: string, myAvatar: string, toPublicKey?: string): Promise<void> {
+        return contactRequestsService.sendChatRequest(toAddress, myName, myAvatar, toPublicKey);
     }
 
     /**

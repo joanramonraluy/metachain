@@ -4,11 +4,12 @@ import { useNavigate, createLazyFileRoute } from "@tanstack/react-router";
 import { MDS } from "@minima-global/mds";
 import { appContext } from "../../AppContext";
 import CharmSelector from "../../components/chat/CharmSelector";
-import { Paperclip, Trash2, Info, BarChart, Archive, Star, Smile } from "lucide-react";
+import { Paperclip, Trash2, User, BarChart, Archive, Star, Smile } from "lucide-react";
 import MessageBubble from "../../components/chat/MessageBubble";
 import TokenSelector from "../../components/chat/TokenSelector";
 import type { EmojiClickData } from "emoji-picker-react";
 import { minimaService } from "../../services/minima.service";
+import { requestProfile } from "../../services/profile.service";
 import InviteDialog from "../../components/chat/InviteDialog";
 import { useTheme } from "../../context/ThemeContext";
 
@@ -73,6 +74,9 @@ function ChatPage() {
   const [showChatInfo, setShowChatInfo] = useState(false);
   const [isArchived, setIsArchived] = useState(false);
   const [isFavorite, setIsFavorite] = useState(false);
+  // Add blocked state
+  const [isBlocked, setIsBlocked] = useState(false);
+  const [blockedByThem, setBlockedByThem] = useState(false);
 
 
   const [showReadModeWarning, setShowReadModeWarning] = useState(false);
@@ -165,17 +169,21 @@ function ChatPage() {
           console.log(`🔍 [CHAT] Resolving address: ${address}`);
           // Escape single quotes for SQL
           const safeMxAddress = address.replace(/'/g, "''");
-          const resolveSql = `SELECT PUBLICKEY FROM DISCOVERED_PEERS WHERE ADDRESS LIKE '%${safeMxAddress}%' LIMIT 1`;
-          try {
-            const resolveRes = await MDS.sql(resolveSql);
-            if (resolveRes.status && resolveRes.rows && resolveRes.rows.length > 0) {
-              resolvedPublicKey = resolveRes.rows[0].PUBLICKEY;
-              console.log(`✅ [CHAT] Resolved: ${resolvedPublicKey}`);
-            } else {
-              console.warn(`⚠️ [CHAT] Resolve failed: ${address}`);
-            }
-          } catch (e) {
-            console.error("❌ [CHAT] Resolve error:", e);
+          // Try exact match first
+          let resolveSql = `SELECT PUBLICKEY FROM DISCOVERED_PEERS WHERE ADDRESS = '${safeMxAddress}' LIMIT 1`;
+          let resolveRes = await MDS.sql(resolveSql);
+
+          if (!resolveRes.status || !resolveRes.rows || resolveRes.rows.length === 0) {
+            // Try LIKE if exact match fails (for safety)
+            resolveSql = `SELECT PUBLICKEY FROM DISCOVERED_PEERS WHERE ADDRESS LIKE '%${safeMxAddress}%' LIMIT 1`;
+            resolveRes = await MDS.sql(resolveSql);
+          }
+
+          if (resolveRes.status && resolveRes.rows && resolveRes.rows.length > 0) {
+            resolvedPublicKey = resolveRes.rows[0].PUBLICKEY;
+            console.log(`✅ [CHAT] Resolved: ${resolvedPublicKey}`);
+          } else {
+            console.warn(`⚠️ [CHAT] Resolve failed: ${address}`);
           }
         }
 
@@ -198,18 +206,22 @@ function ChatPage() {
         } else {
           // 2. If not found, try DISCOVERED_PEERS (using the RESOLVED key)
           console.log(`🔍 [CHAT] Checking Discovery DB: ${resolvedPublicKey}...`);
-          const sql = `SELECT * FROM DISCOVERED_PEERS WHERE publickey='${resolvedPublicKey}'`;
+          // Ensure we use the Hex Public Key if resolved, otherwise keep address
+          const queryKey = resolvedPublicKey.startsWith('0x') ? resolvedPublicKey : address;
+          const safeQueryKey = queryKey.replace(/'/g, "''");
+
+          const sql = `SELECT * FROM DISCOVERED_PEERS WHERE publickey='${safeQueryKey}'`;
           const discoveryRes = await MDS.sql(sql);
 
           if (discoveryRes.status && discoveryRes.rows && discoveryRes.rows.length > 0) {
             const peer = discoveryRes.rows[0];
             contactToSet = {
               publickey: peer.PUBLICKEY,
-              currentaddress: peer.ADDRESS,
+              currentaddress: peer.ADDRESS || address,
               extradata: {
                 name: peer.ALIAS || "Unknown",
-                minimaaddress: "", // Often not available in discovery unless we query specific column
-                icon: ""
+                minimaaddress: peer.ADDRESS || "",
+                icon: peer.ICON || ""
               }
             };
           } else {
@@ -228,6 +240,20 @@ function ChatPage() {
 
         if (contactToSet) {
           setContact(contactToSet);
+
+          // If contact was not found in Discovery (Unknown User), request profile proactively
+          // Only if we have a valid public key OR address to send to
+          if ((contactToSet.extradata?.name === "Unknown User" || !contactToSet.extradata?.name) && contactToSet.publickey) {
+            console.log("🔄 [CHAT] Contact unknown - requesting profile proactively");
+            requestProfile(contactToSet.currentaddress || address, contactToSet.publickey)
+              .then(() => {
+                console.log("✅ [CHAT] Profile requested for unknown contact");
+                // Re-fetch contact after profile response to update name
+                // Reduced timeout to feel snappier, but still present to allow round-trip
+                setTimeout(() => fetchContact(), 2000);
+              })
+              .catch(err => console.warn("⚠️ [CHAT] Profile request failed:", err));
+          }
         }
 
       } catch (err) {
@@ -240,17 +266,23 @@ function ChatPage() {
     }
   }, [address]);
 
-  // Check chat status (archived and favorite)
+  // Check chat status (archived, favorite, and blocked)
   const checkChatStatus = async () => {
     if (!contact?.publickey) return;
     try {
       const status = await minimaService.getChatStatus(contact.publickey);
+      // console.log("🔍 [UI DEBUG] Full Status Object:", status);
+      // console.log("🔍 [UI DEBUG] blockedByThem Value:", status.blockedByThem, "Type:", typeof status.blockedByThem);
       setIsArchived(status.archived);
       setIsFavorite(status.favorite);
+      setIsBlocked(status.blocked);
+      setBlockedByThem(status.blockedByThem);
     } catch (err) {
       console.error("❌ [CHAT] Check status error:", err);
     }
   };
+
+
 
   // State to track if there is a pending outgoing request (separate from blocking)
   const [isPendingOutgoing, setIsPendingOutgoing] = useState(false);
@@ -260,6 +292,17 @@ function ChatPage() {
     if (!contact?.publickey) return;
 
     console.log(`🔍 [CHAT] Checking pending request: ${contact.publickey}`);
+
+    // CRITICAL: Request updated profile to ensure we have the latest allowNonContactChats value
+    // This is especially important because DISCOVERED_PEERS might have stale beacon data
+    try {
+      console.log(`🔄 [CHAT] Requesting fresh profile for permission check...`);
+      await requestProfile(contact.currentaddress, contact.publickey);
+      // Give it a moment to process the response
+      await new Promise(resolve => setTimeout(resolve, 500));
+    } catch (err) {
+      console.warn(`⚠️ [CHAT] Could not request profile, using cached data:`, err);
+    }
 
     // Check for OUTGOING requests (I sent to them)
     // ... existing logic ...
@@ -292,28 +335,6 @@ function ChatPage() {
     const myAllowNonContacts = await minimaService.getChatPermission();
     console.log(`🔍 [CHAT] My allowNonContacts setting: ${myAllowNonContacts}`);
 
-    // Block chat in these scenarios:
-    // 1. Already Maxima contacts → NEVER block
-    // 2. Incoming request (THEY want to chat with ME) → Check MY permission
-    // 3. Outgoing request pending (I sent to THEM) → Allow (don't block while pending)
-    // 4. No contact, no pending → Check THEIR permission
-    // Verify previous chat history to see if they accepted a request
-    let hasAcceptedHistory = false;
-    const acceptMsgSql = `SELECT * FROM CHAT_MESSAGES WHERE publickey='${contact.publickey}' AND (message='Chat request accepted' OR message='Contact request accepted') AND type='system' LIMIT 1`;
-    try {
-      const acceptRes = await minimaService.runSQL(acceptMsgSql);
-      if (acceptRes && acceptRes.rows && acceptRes.rows.length > 0) {
-        hasAcceptedHistory = true;
-        console.log("🔓 [CHAT] Found accepted request history - Allowing chat.");
-      }
-    } catch (e) {
-      console.error("❌ [CHAT] Error checking history:", e);
-    }
-
-    let shouldBlock = false;
-
-
-
     // CRITICAL: Maxima Contact Requests take precedence over everything else
     // We check this FIRST to ensure the banner appears if a request exists.
     try {
@@ -344,37 +365,76 @@ function ChatPage() {
       console.error("❌ [CHAT] Error checking Maxima requests:", err);
     }
 
-    if (isContact || hasAcceptedHistory) {
-      // Already contacts OR they accepted our request previously - always allow
-      console.log("🔓 [CHAT] Allowing (Contact or Accepted History)");
+    // Block chat based on current privacy settings (not historical acceptance)
+    if (isContact) {
+      // Already Maxima contacts - always allow
+      console.log("🔓 [CHAT] Allowing (Maxima Contact)");
       setBlockReason('none');
     } else if (hasPendingIncoming) {
-      // Standard pending incoming (likely same as above but via Minima service)
-      if (!myAllowNonContacts) {
-        setBlockReason('incoming_restricted');
-        console.log("🔒 [CHAT] Blocking incoming request (MY non-contact chats disabled)");
-      } else {
+      // They sent ME a request - I should be able to REPLY to them
+      // My allowNonContactChats only affects who can send TO me, not who I can send TO
+      // Check if THEY allow non-contact chats (so I can send to them)
+      if (recipientAllowsNonContacts) {
         setBlockReason('none');
+        console.log("🔓 [CHAT] Allowing reply to incoming request (recipient allows non-contact chats)");
+      } else {
+        // They don't allow non-contact chats, so I can't send to them
+        // But they can send to me (they already did - the request)
+        setBlockReason('recipient_restricted');
+        console.log("🔒 [CHAT] Blocking reply (recipient doesn't allow non-contact chats)");
       }
     } else if (hasPendingOutgoing) {
-      // I sent them a request - ALWAYS block until accepted
-      console.log("🔒 [CHAT] Blocking (contact request pending approval)");
-      setBlockReason('pending');
-    } else {
-      // No contact, no pending request - check THEIR permission
-      if (!recipientAllowsNonContacts) {
-        // Recipient doesn't allow non-contact chats - BLOCK and require contact request
-        setBlockReason('recipient_restricted');
-        console.log("🔒 [CHAT] Blocking (recipient doesn't allow non-contact chats)");
+      // I sent THEM a request - check THEIR permission
+      // NEW LOGIC: If recipient allows non-contact chats, I can still send!
+      // The request was sent because at some point we thought they didn't allow it,
+      // but we should respect their current setting.
+      if (recipientAllowsNonContacts) {
+        console.log("🔓 [CHAT] Allowing (pending request but recipient allows non-contact chats)");
+        setBlockReason('none');
       } else {
-        // Recipient allows non-contact chats - allow direct messaging
+        console.log("🔒 [CHAT] Blocking (pending request, recipient doesn't allow non-contact chats)");
+        setBlockReason('recipient_restricted');
+      }
+    } else {
+      // No pending requests - check recipient's permission
+      if (recipientAllowsNonContacts) {
         console.log("🔓 [CHAT] Allowing (recipient allows non-contact chats)");
         setBlockReason('none');
+      } else {
+        console.log("🔒 [CHAT] Blocking (recipient doesn't allow non-contact chats)");
+        setBlockReason('recipient_restricted');
+      }
+
+      // FINAL CHECK: If there is an ACCEPTED request in DB, allow chat regardless of other flags
+      // This fixes the issue where accepting a request didn't immediately unblock the chat
+      if (myPublicKey && contact?.publickey) {
+        // DEBUG LOGS
+        console.log("🔍 [CHAT DEBUG] Override Check - MyPK:", myPublicKey, "ContactPK:", contact.publickey);
+        try {
+          const sMy = myPublicKey.replace(/'/g, "''");
+          const sPeer = contact.publickey.replace(/'/g, "''");
+          const sql = `SELECT * FROM CONTACT_REQUESTS 
+                     WHERE ((from_publickey='${sMy}' AND to_publickey='${sPeer}')
+                        OR (from_publickey='${sPeer}' AND to_publickey='${sMy}'))
+                     AND status='accepted'`;
+
+          console.log("🔍 [CHAT DEBUG] Override SQL:", sql);
+
+          const res = await new Promise<any>((resolve) => MDS.sql(sql, resolve));
+
+          console.log("🔍 [CHAT DEBUG] Override Res:", res);
+
+          if (res.status && res.rows && res.rows.length > 0) {
+            console.log("🔓 [CHAT] Override: Found ACCEPTED request in DB -> Allow");
+            setBlockReason('none');
+          }
+        } catch (sqlErr) {
+          console.warn("Error checking accepted status:", sqlErr);
+        }
+      } else {
+        console.log("⚠️ [CHAT DEBUG] Skipping Override - Missing Keys. MyPK:", !!myPublicKey, "ContactPK:", !!contact?.publickey);
       }
     }
-
-
-    console.log(`🔍 [CHAT] Final block status: ${shouldBlock}`);
 
     // If we just sent a request, reload messages to show the system message
     if ((searchParams as any)?.requestPending) {
@@ -419,24 +479,39 @@ function ChatPage() {
     if (!contact?.publickey || !myPublicKey) return;
 
     try {
-      const requests = await minimaService.getChatRequests(myPublicKey);
+      const [chatRequests, maximaRequests] = await Promise.all([
+        minimaService.getChatRequests(myPublicKey),
+        minimaService.getMaximaContactRequests(myPublicKey)
+      ]);
+
       console.log("🔍 [CHAT] Loading requests...");
       console.log("🔍 [CHAT] Contact address:", contact.publickey);
-      console.log("🔍 [CHAT] Pending requests:", requests);
+      console.log("🔍 [CHAT] Chat Pending:", chatRequests.length);
+      console.log("🔍 [CHAT] Maxima Pending:", maximaRequests.length);
+
+      // Tag Maxima requests so UI knows how to handle them
+      const taggedMaxima = maximaRequests.map((r: any) => ({ ...r, type: 'maxima' }));
+
+      // Merge all requests
+      const allRequests = [...chatRequests, ...taggedMaxima];
 
       // Simple solution: if there's only one pending request, show it
       // This works because users typically only have one pending request at a time
       // and they're viewing the chat with the person who sent it
       let pendingRequest = null;
 
-      if (requests.length === 1) {
+      if (allRequests.length === 1) {
         console.log("🔍 [CHAT] Found 1 pending request.");
-        pendingRequest = requests[0];
-      } else if (requests.length > 1) {
+        pendingRequest = allRequests[0];
+      } else if (allRequests.length > 1) {
         console.log("🔍 [CHAT] Multiple requests, matching...");
         // Try to match by hex publickey if contact has it
         if (contact.publickey.startsWith("0x")) {
-          pendingRequest = requests.find((r: any) => r.FROM_PUBLICKEY === contact.publickey);
+          // Check FROM_PUBLICKEY (Chat) or from_publickey (Maxima - casing might differ from SQL)
+          pendingRequest = allRequests.find((r: any) => {
+            const fromPk = r.FROM_PUBLICKEY || r.from_publickey;
+            return fromPk === contact.publickey;
+          });
         }
       }
 
@@ -642,6 +717,7 @@ function ChatPage() {
         console.log("🚫 [CHAT] Contact request declined, refreshing UI...");
         checkPending();
         loadContactRequest();
+        loadMessagesFromDB(); // Force reload to show "Declined" system message
       }
 
       // Handle contact accepted - CRITICAL for unblocking sender's chat
@@ -661,30 +737,22 @@ function ChatPage() {
           loadMessagesFromDB();
           loadContactRequest();
 
-          // FALLBACK: Ensure system message exists if SW missed it
-          if (contact.publickey) {
-            const now = Date.now();
-            const safeKey = contact.publickey.replace(/'/g, "''");
-            const checkSql = `SELECT * FROM CHAT_MESSAGES WHERE publickey='${safeKey}' AND (message='Contact request accepted' OR message='Chat request accepted') AND type='system' AND date > ${now - 60000}`;
+          // CRITICAL: Refresh pending state to ensure UI is correct
+          checkPending();
 
-            try {
-              const res = await minimaService.runSQL(checkSql);
-              if (!res.rows || res.rows.length === 0) {
-                console.log("🛡️ [CHAT] Manually saving 'Contact request accepted' (SW fallback)");
-                const insertSql = `
-                    INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date)
-                    VALUES ('', '${safeKey}', 'System', 'system', 'Chat request accepted', '', 'received', 0, ${now})
-                `;
-                await minimaService.runSQL(insertSql);
-                loadMessagesFromDB(); // Reload again after insertion
-              }
-            } catch (err) {
-              console.error("❌ [CHAT] Error checking/saving acceptance message:", err);
-            }
-          }
+          // Manual fallback removed for stability
+          console.log('✅ [CHAT] Chat fully unblocked and updated after acceptance');
 
           console.log('✅ [CHAT] Chat fully unblocked and updated after acceptance');
         }, 1000); // Increased timeout significantly to allow SW to finish
+        return;
+      }
+
+      // Handle Block/Unblock
+      if (payload.type === 'contact_blocked' || payload.type === 'contact_unblocked') {
+        console.log("🔒 [CHAT] Block status changed, refreshing...");
+        checkChatStatus();
+        loadMessagesFromDB(); // Reload to show the system message
         return;
       }
 
@@ -694,31 +762,11 @@ function ChatPage() {
         if (contact.publickey && myPublicKey) {
           console.log(`📨 [CHAT] From: ${contact.publickey.substring(0, 10)}`);
 
-          // FALLBACK: Manually save system message if Service Worker didn't catch it
-          const now = Date.now();
-          const safePublicKey = contact.publickey.replace(/'/g, "''");
-          const checkSql = `SELECT * FROM CHAT_MESSAGES WHERE publickey='${safePublicKey}' AND (message='Contact request received' OR message='Chat request received') AND type='system' AND date > ${now - 30000}`;
-
-          minimaService.runSQL(checkSql).then((res: any) => {
-            if (!res.rows || res.rows.length === 0) {
-              const insertSql = `
-                    INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date)
-                    VALUES ('', '${safePublicKey}', 'System', 'system', 'Chat request received', '', 'received', 0, ${now})
-                `;
-              minimaService.runSQL(insertSql).then(() => {
-                console.log("🛡️ [CHAT] Manually saved 'Contact request received' (SW fallback)");
-                loadMessagesFromDB();
-                loadContactRequest(); // ✅ Refresh banner to show the request
-              });
-            } else {
-              loadMessagesFromDB();
-              loadContactRequest(); // ✅ Refresh banner to show the request
-            }
-          }).catch((err: any) => {
-            console.error("❌ [CHAT] Error checking system message:", err);
+          // Trust the Service Worker to satisfy the insert
+          setTimeout(() => {
             loadMessagesFromDB();
-            loadContactRequest(); // ✅ Refresh banner even on error (to catch SW-saved requests)
-          });
+            loadContactRequest(); // Refresh banner
+          }, 500);
         }
         return;
       }
@@ -731,27 +779,19 @@ function ChatPage() {
         loadMessagesFromDB();
 
         // CRITICAL: Refresh the pending status to remove the banner and update blocking
-        // We need to re-run the checkPending logic. 
-        // Since we can't easily access the internal checkPending function from here without refactoring,
-        // we will manually trigger a simplified check or rely on the state update.
-        // BETTER: We'll refactor checkPending to be accessible. 
-        // For now, let's call the checking logic directly:
-
         if (contact && contact.publickey) {
-          minimaService.checkPendingChatRequest(contact.publickey).then(pending => {
-            setIsPendingOutgoing(pending);
-            console.log(`🔍 [CHAT] Updated pending status: ${pending}`);
-
-            // Also re-check permissions to enforce block
-            minimaService.getContactChatPermission(contact.publickey).then(allowed => {
-              if (!allowed && !pending) { // If not allowed AND no longer pending (which it shouldn't be if declined)
-                setBlockReason('no_permission'); // Set block reason
-                console.log("🔒 [CHAT] Blocked after decline (verified)");
-              } else {
-                setBlockReason('none'); // Should not be blocked if allowed or no longer pending
-              }
+          // CRITICAL: Request fresh profile to ensure allowNonContactChats is up-to-date
+          requestProfile(contact.currentaddress, contact.publickey)
+            .then(() => {
+              console.log("🔄 [CHAT] Profile refreshed after decline");
+              // After profile refresh, re-run full checkPending logic
+              checkPending();
+            })
+            .catch(err => {
+              console.warn("⚠️ [CHAT] Could not refresh profile after decline:", err);
+              // Even if profile refresh fails, still run checkPending
+              checkPending();
             });
-          });
         }
         return;
       }
@@ -798,6 +838,26 @@ function ChatPage() {
       minimaService.removeNewMessageCallback(handleNewMessage);
     };
   }, [contact, address, navigate]); // Re-run when contact or address changes
+
+  // Listen for peer_updated events from service worker (when beacon updates allowNonContactChats)
+  useEffect(() => {
+    const handlePeerUpdated = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      const peer = customEvent.detail;
+
+      // If it's the current contact, refresh state
+      if (peer?.pubkey === contact?.publickey) {
+        console.log("🔄 [CHAT] Peer updated (beacon received), refreshing state...");
+        checkPending();
+      }
+    };
+
+    window.addEventListener("peer_updated", handlePeerUpdated);
+
+    return () => {
+      window.removeEventListener("peer_updated", handlePeerUpdated);
+    };
+  }, [contact?.publickey, checkPending]);
 
   /* ----------------------------------------------------------------------------
       AUTOSCROLL
@@ -1117,7 +1177,6 @@ function ChatPage() {
         console.log("🗑️ [DELETE] Auto-declining pending incoming request before deleting chat");
         await minimaService.declineChatRequest(contact.publickey);
       }
-
       await minimaService.deleteAllMessages(contact.publickey);
       console.log("✅ Chat deleted successfully");
       // Navigate back to chat list
@@ -1302,8 +1361,20 @@ function ChatPage() {
                   navigate({ to: `/contact-info/${address}`, search: { returnTo: `/chat/${address}` } });
                 }}
               >
-                <Info size={18} />
-                <span className="font-medium">Contact Info</span>
+                <User size={18} className="text-gray-400 dark:text-gray-500" />
+                <span className="font-medium">Profile</span>
+              </button>
+              <button
+                className="flex items-center gap-3 w-full p-3 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
+                onClick={() => {
+                  setShowMenu(false);
+                  navigate({ to: `/contact-info/${address}`, search: { returnTo: `/chat/${address}`, tab: 'settings' } });
+                }}
+              >
+                <div className="w-[18px] h-[18px] flex items-center justify-center text-gray-400 dark:text-gray-500">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
+                </div>
+                <span className="font-medium">Actions</span>
               </button>
               <button
                 className="flex items-center gap-3 w-full p-3 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
@@ -1673,10 +1744,12 @@ function ChatPage() {
                 // System message (centered)
                 (<div className="flex justify-center my-2">
                   <span className={`text-xs px-3 py-1.5 rounded-full ${msg.text?.toLowerCase().includes('accepted')
-                    ? 'text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/40'
-                    : msg.text?.toLowerCase().includes('declined')
-                      ? 'text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-900/40'
-                      : 'text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800'
+                    ? 'text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/40' // Accepted = Green
+                    : msg.text?.toLowerCase().includes('declined') || msg.text?.toLowerCase().includes('blocked')
+                      ? 'text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-900/40' // Declined or Blocked = Red
+                      : msg.text?.toLowerCase().includes('unblocked')
+                        ? 'text-gray-600 dark:text-gray-300 bg-gray-200 dark:bg-gray-700' // Unblocked = Neutral/Gray
+                        : 'text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800' // Default
                     }`}>
                     {msg.text}
                   </span>
@@ -1790,27 +1863,29 @@ function ChatPage() {
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && blockReason === 'none' && handleSendMessage()}
+            onKeyDown={(e) => e.key === "Enter" && blockReason === 'none' && !isBlocked && handleSendMessage()}
             placeholder={
-              blockReason === 'pending' ? "Chat request pending..." :
-                blockReason === 'recipient_restricted' ? "Messaging disabled (Recipient only accepts contacts)" :
-                  blockReason === 'incoming_restricted' ? "Messaging disabled" :
-                    blockReason === 'no_permission' ? "Messaging disabled" :
-                      blockReason !== 'none' ? "Chat blocked" : // Fallback for any other blocked state
-                        "Type a message"
+              isBlocked ? "Unblock to send messages..." :
+                blockedByThem ? "You have been blocked by this user." :
+                  blockReason === 'pending' ? "Chat request pending..." :
+                    blockReason === 'recipient_restricted' ? "Messaging disabled (Recipient only accepts contacts)" :
+                      blockReason === 'incoming_restricted' ? "Messaging disabled" :
+                        blockReason === 'no_permission' ? "Messaging disabled" :
+                          blockReason !== 'none' ? "Chat blocked" :
+                            "Type a message"
             }
-            disabled={blockReason !== 'none'}
+            disabled={isBlocked || blockedByThem || blockReason !== 'none'}
           />
         </div>
 
         <button
           className={`p-3 rounded-full transition-all duration-200 shadow-sm
-            ${input.trim() && blockReason === 'none'
+            ${input.trim() && blockReason === 'none' && !isBlocked
               ? 'bg-primary-600 text-white hover:bg-primary-700 transform hover:scale-105'
               : 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-default'
             }`}
           onClick={handleSendMessage}
-          disabled={!input.trim() || blockReason !== 'none'}
+          disabled={!input.trim() || blockReason !== 'none' || isBlocked || blockedByThem}
         >
           <svg className="w-5 h-5 translate-x-0.5" viewBox="0 0 24 24" fill="currentColor">
             <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path>

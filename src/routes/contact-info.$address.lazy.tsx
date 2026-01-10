@@ -65,6 +65,105 @@ function ContactInfoPage() {
     const [activeTab, setActiveTab] = useState<ContactTab>('profile');
     const [showConfirmDelete, setShowConfirmDelete] = useState(false);
 
+    // Sync active tab with search params
+    useEffect(() => {
+        if (search.tab) {
+            setActiveTab(search.tab as ContactTab);
+        }
+    }, [search.tab]);
+
+    // Blocking state
+    const [isBlocked, setIsBlocked] = useState(false);
+
+
+
+
+
+    // Handle Block Toggle (Direct - No Confirmation)
+    const handleToggleBlock = async () => {
+        console.log("🔘 [CONTACT] handleToggleBlock clicked. Contact:", contact?.publickey, "isBlocked:", isBlocked);
+        if (!contact?.publickey) {
+            console.warn("⚠️ [CONTACT] No public key available for blocking");
+            return;
+        }
+
+        try {
+            // Helper to send system notification to the other user
+            const sendSystemNotification = async (type: string, msg: string) => {
+                const target = contact.currentaddress || contact.publickey;
+                if (!target) return;
+
+                console.log(`📤 [CONTACT] Sending ${type} notification to ${target}`);
+                const payload = { type, message: msg, timestamp: Date.now() };
+                const hexData = "0x" + Array.from(new TextEncoder().encode(JSON.stringify(payload)))
+                    .map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+
+                // Use raw Maxima send to avoid local chat bubble
+                await new Promise<void>((resolve) => {
+                    MDS.cmd.maxima({
+                        params: {
+                            action: "send",
+                            to: target,
+                            application: "metachain",
+                            data: hexData,
+                            poll: false
+                        } as any
+                    }).then(() => resolve());
+                });
+            };
+
+            if (isBlocked) {
+                // UNBLOCK
+                console.log("🔓 [CONTACT] Unblocking user...");
+
+                // 1. Send notification FIRST (before unblocking locally might be safer, or parallel)
+                // Actually, if we are unblocking, we can send it.
+                await sendSystemNotification("contact_unblocked", "User has unblocked you");
+
+                // 2. Local Unblock
+                await minimaService.unblockContact(contact.publickey);
+                setIsBlocked(false);
+
+                // Add System Message (Local)
+                await minimaService.insertMessage({
+                    roomname: contact.extradata?.name || "Unknown",
+                    publickey: contact.publickey,
+                    username: "Me",
+                    type: "system",
+                    message: "You unblocked this user",
+                    date: Date.now()
+                });
+
+                console.log("✅ [CONTACT] User unblocked");
+            } else {
+                // BLOCK (Direct)
+                console.log("🔒 [CONTACT] Blocking user...");
+
+                // 1. Send notification FIRST (Critical: cannot send after blocking)
+                await sendSystemNotification("contact_blocked", "User has blocked you");
+
+                // 2. Local Block
+                await minimaService.blockContact(contact.publickey);
+                setIsBlocked(true);
+
+                // Add System Message (Local)
+                await minimaService.insertMessage({
+                    roomname: contact.extradata?.name || "Unknown",
+                    publickey: contact.publickey,
+                    username: "Me",
+                    type: "system",
+                    message: "You blocked this user",
+                    date: Date.now()
+                });
+
+                console.log("✅ [CONTACT] User blocked");
+            }
+        } catch (err) {
+            console.error("❌ [CONTACT] Error toggling block:", err);
+            alert("Failed to update block status.");
+        }
+    };
+
 
     const defaultAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23cbd5e1'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E";
 
@@ -100,6 +199,26 @@ function ContactInfoPage() {
                 console.log("✅ [CONTACT] Found in Maxima:", c);
                 setContact(c);
                 setIsMaximaContact(true);
+
+                // FIX: Verify/Update DISCOVERED_PEERS to ensure Chat list resolves name correctly
+                // This acts as a fallback/cache for the ChatsAndGroups component
+                try {
+                    const safePk = c.publickey;
+                    const safeAddr = c.currentaddress?.replace(/'/g, "''") || '';
+                    const safeName = c.extradata?.name?.replace(/'/g, "''") || 'Unknown';
+                    // Don't overwrite existing bio if we don't have one here, but ensure record exists
+                    const now = Date.now();
+
+                    const upsertSql = `
+                        MERGE INTO DISCOVERED_PEERS (publickey, address, alias, last_seen)
+                        KEY(publickey)
+                        VALUES ('${safePk}', '${safeAddr}', '${safeName}', ${now})
+                    `;
+                    await MDS.sql(upsertSql);
+                    console.log("💾 [CONTACT] Synced Maxima contact to Discovery DB");
+                } catch (syncErr) {
+                    console.warn("⚠️ [CONTACT] Error syncing to Discovery DB:", syncErr);
+                }
 
                 // ALSO fetch bio from DISCOVERED_PEERS for P2P bio data
                 try {
@@ -334,7 +453,7 @@ function ContactInfoPage() {
 
     // Add contact state
     const [addingContact, setAddingContact] = useState(false);
-    const [requestStatus, setRequestStatus] = useState<'none' | 'pending' | 'accepted'>('none');
+    const [requestStatus, setRequestStatus] = useState<'none' | 'pending' | 'accepted' | 'declined'>('none');
     const [hasChatHistory, setHasChatHistory] = useState(false);
 
     // Maxima contact request state (MAXIMA_CONTACT_REQUESTS)
@@ -355,7 +474,7 @@ function ContactInfoPage() {
             const requestSql = `SELECT * FROM CHAT_MESSAGES 
                                 WHERE (publickey='${contact.publickey}' ${safeAddr ? `OR publickey='${safeAddr}'` : ''}) 
                                 AND (message='Contact request sent' OR message='Chat request sent' 
-                                  OR message='Contact request accepted' OR message='Chat request accepted' 
+                                  OR message='Chat request accepted' OR message='Contact accepted' OR message='User chat accepted'
                                   OR message='Contact request declined' OR message='Chat request declined' 
                                   OR message='Contact request cancelled' OR message='Chat request cancelled') 
                                 ORDER BY date DESC LIMIT 1`;
@@ -365,14 +484,14 @@ function ContactInfoPage() {
                 const msg = requestRes.rows[0].MESSAGE;
                 console.log(`🔍 [CONTACT DEBUG] Found status message in DB: "${msg}"`, requestRes.rows[0]);
 
-                if (msg === 'Contact request accepted' || msg === 'Chat request accepted') {
+                if (msg === 'Chat request accepted' || msg === 'User chat accepted' || msg === 'Contact accepted') {
                     // Fix: Chat acceptance is NOW decoupled from Maxima Contact list.
                     // We trust the message history.
                     setRequestStatus('accepted');
                 } else if (msg === 'Contact request sent' || msg === 'Chat request sent') {
                     setRequestStatus('pending');
                 } else if (msg === 'Contact request declined' || msg === 'Chat request declined') {
-                    setRequestStatus('none'); // Reset to none so user can try again
+                    setRequestStatus('declined'); // Explicitly set to declined to handle re-request logic
                 } else if (msg === 'Contact request cancelled' || msg === 'Chat request cancelled') {
                     setRequestStatus('none'); // Reset to none after cancellation
                 }
@@ -386,6 +505,7 @@ function ContactInfoPage() {
                                 WHERE publickey='${contact.publickey}' 
                                 AND type NOT IN ('system', 'read', 'delivery') 
                                 AND message NOT LIKE 'Contact request%' AND message NOT LIKE 'Chat request%' 
+                                AND state IN ('received', 'read')
                                 LIMIT 1`;
             const historyRes = await minimaService.runSQL(historySql);
 
@@ -454,6 +574,15 @@ function ContactInfoPage() {
         } catch (err) {
             console.error("❌ [CONTACT] Error checking Maxima requests:", err);
         }
+
+        // 4. Check Block Status
+        try {
+            const status = await minimaService.getChatStatus(contact.publickey);
+            setIsBlocked(!!status.blocked);
+        } catch (err) {
+            console.warn("⚠️ [CONTACT] Failed to fetch chat status:", err);
+        }
+
     }, [contact]);
 
     // Initial check and listener for updates
@@ -483,7 +612,7 @@ function ContactInfoPage() {
         }
         setAddingContact(true);
         try {
-            await minimaService.sendChatRequest(contact.currentaddress, userName || "Unknown", userAvatar || "");
+            await minimaService.sendChatRequest(contact.currentaddress, userName || "Unknown", userAvatar || "", contact.publickey);
             setRequestStatus('pending'); // Optimistic update
 
             // Navigate to chat
@@ -594,8 +723,28 @@ function ContactInfoPage() {
         try {
             console.log("🗑️ [CONTACT] Calling Maxima remove...");
 
+            console.log("🗑️ [CONTACT] Sending removal notification first...");
+
+            // Send removal notification to the removed contact
+            try {
+                const removalPayload = {
+                    type: "maxima_contact_removed",
+                    timestamp: Date.now()
+                };
+                const hexData = "0x" + Array.from(new TextEncoder().encode(JSON.stringify(removalPayload)))
+                    .map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+
+                await new Promise<any>((resolve) => {
+                    MDS.executeRaw(`maxima action:send publickey:${contact.publickey} application:metachain data:${hexData}`, resolve);
+                });
+                console.log("📤 [CONTACT] Removal notification sent");
+            } catch (notifyErr) {
+                console.warn("⚠️ [CONTACT] Could not send removal notification:", notifyErr);
+            }
+
             // Call Maxima to remove contact
             // Prefer ID if available, otherwise try publickey as contact
+            console.log("🗑️ [CONTACT] Calling Maxima remove...");
             const params: any = {
                 action: "remove"
             };
@@ -612,6 +761,21 @@ function ContactInfoPage() {
 
             if (response.status) {
                 console.log("✅ [CONTACT] Removed successfully");
+
+                // Insert local system message inside success block
+                /* Notification sent earlier */
+
+                // Insert local system message
+                try {
+                    const escapeSql = (str: string) => str.replace(/'/g, "''");
+                    const safePk = escapeSql(contact.publickey);
+                    const insertMsg = `INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date)
+                                       VALUES('', '${safePk}', 'System', 'system', 'You removed this contact', '', 'sent', 0, ${Date.now()})`;
+                    await MDS.sql(insertMsg);
+                    console.log("💾 [CONTACT] Local system message inserted");
+                } catch (sqlErr) {
+                    console.warn("⚠️ [CONTACT] Could not insert system message:", sqlErr);
+                }
 
                 // Optimistic UI update - Immediate feedback
                 setIsMaximaContact(false);
@@ -913,6 +1077,8 @@ function ContactInfoPage() {
                                 maximaRequestPending={maximaRequestPending}
                                 sendingMaximaRequest={sendingMaximaRequest}
                                 addingContact={addingContact}
+                                isBlocked={isBlocked}
+                                onToggleBlock={handleToggleBlock}
                                 onNavigateChat={() => {
                                     if (!contact?.publickey) return;
                                     navigate({ to: "/chat/$address", params: { address: contact.publickey } });
@@ -921,48 +1087,30 @@ function ContactInfoPage() {
                                 onSendContactRequest={handleSendContactRequest}
                                 onCancelMaximaRequest={handleCancelMaximaRequest}
                                 onSendMaximaRequest={handleSendMaximaRequest}
+                                onRemoveContact={handleRemoveContact}
+                                removingContact={removingContact}
                             />
                         )}
 
                         {isMaximaContact ? (
-                            <>
-                                <ContactPrivacy
-                                    isPersonalContact={isPersonalContact}
-                                    togglingPersonal={togglingPersonal}
-                                    onTogglePersonal={async () => {
-                                        if (!contact?.publickey) return;
-                                        setTogglingPersonal(true);
-                                        try {
-                                            const success = await personalContactsService.togglePersonalContact(contact.publickey);
-                                            if (success) {
-                                                setIsPersonalContact(!isPersonalContact);
-                                            }
-                                        } catch (err) {
-                                            console.error('[ContactInfo] Error toggling personal contact:', err);
-                                        } finally {
-                                            setTogglingPersonal(false);
+                            <ContactPrivacy
+                                isPersonalContact={isPersonalContact}
+                                togglingPersonal={togglingPersonal}
+                                onTogglePersonal={async () => {
+                                    if (!contact?.publickey) return;
+                                    setTogglingPersonal(true);
+                                    try {
+                                        const success = await personalContactsService.togglePersonalContact(contact.publickey);
+                                        if (success) {
+                                            setIsPersonalContact(!isPersonalContact);
                                         }
-                                    }}
-                                />
-
-                                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-red-100 dark:border-red-900/30 overflow-hidden">
-                                    <div className="p-4 border-b border-red-50 dark:border-red-900/30 bg-red-50/30 dark:bg-red-900/20">
-                                        <h3 className="text-sm font-semibold text-red-700 dark:text-red-400 uppercase tracking-wider">Danger Zone</h3>
-                                    </div>
-                                    <div className="p-4">
-                                        <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
-                                            Removing a contact will delete them from your Maxima contacts list. Chat history will be preserved.
-                                        </p>
-                                        <button
-                                            onClick={handleRemoveContact}
-                                            disabled={removingContact}
-                                            className="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 disabled:bg-red-50 disabled:text-red-300 disabled:cursor-not-allowed transition-colors font-medium flex items-center justify-center gap-2"
-                                        >
-                                            {removingContact ? "Removing..." : "Remove Contact"}
-                                        </button>
-                                    </div>
-                                </div>
-                            </>
+                                    } catch (err) {
+                                        console.error('[ContactInfo] Error toggling personal contact:', err);
+                                    } finally {
+                                        setTogglingPersonal(false);
+                                    }
+                                }}
+                            />
                         ) : (
                             <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-8 text-center border border-dashed border-gray-300 dark:border-gray-700">
                                 <p className="text-gray-500 dark:text-gray-400">
@@ -977,49 +1125,51 @@ function ContactInfoPage() {
                  * TAB 3: TECH DATA
                  * Contains Raw JSON Data
                  */}
-                {activeTab === 'tech' && (
-                    <div className="space-y-6">
-                        {/* Public Key & Address */}
-                        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden transition-colors">
-                            {/* Public Key */}
-                            {displayPubkey && (
-                                <div className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors group border-b border-gray-100 dark:border-gray-700">
-                                    <div className="flex items-center justify-between mb-1">
-                                        <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Public Key</span>
-                                        <button
-                                            onClick={() => copyToClipboard(displayPubkey, 'pubkey')}
-                                            className="text-primary-600 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-primary-50 rounded"
-                                            title="Copy"
-                                        >
-                                            {copiedField === 'pubkey' ? <Check size={16} /> : <Copy size={16} />}
-                                        </button>
+                {
+                    activeTab === 'tech' && (
+                        <div className="space-y-6">
+                            {/* Public Key & Address */}
+                            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden transition-colors">
+                                {/* Public Key */}
+                                {displayPubkey && (
+                                    <div className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors group border-b border-gray-100 dark:border-gray-700">
+                                        <div className="flex items-center justify-between mb-1">
+                                            <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Public Key</span>
+                                            <button
+                                                onClick={() => copyToClipboard(displayPubkey, 'pubkey')}
+                                                className="text-primary-600 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-primary-50 rounded"
+                                                title="Copy"
+                                            >
+                                                {copiedField === 'pubkey' ? <Check size={16} /> : <Copy size={16} />}
+                                            </button>
+                                        </div>
+                                        <p className="text-sm font-mono text-gray-800 dark:text-gray-200 break-all">{displayPubkey}</p>
                                     </div>
-                                    <p className="text-sm font-mono text-gray-800 dark:text-gray-200 break-all">{displayPubkey}</p>
-                                </div>
-                            )}
+                                )}
 
-                            {/* Minima Address */}
-                            {contact?.extradata?.minimaaddress && (
-                                <div className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors group">
-                                    <div className="flex items-center justify-between mb-1">
-                                        <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Minima Address</span>
-                                        <button
-                                            onClick={() => copyToClipboard(contact.extradata?.minimaaddress || "", 'minima')}
-                                            className="text-primary-600 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-primary-50 rounded"
-                                            title="Copy"
-                                        >
-                                            {copiedField === 'minima' ? <Check size={16} /> : <Copy size={16} />}
-                                        </button>
+                                {/* Minima Address */}
+                                {contact?.extradata?.minimaaddress && (
+                                    <div className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors group">
+                                        <div className="flex items-center justify-between mb-1">
+                                            <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Minima Address</span>
+                                            <button
+                                                onClick={() => copyToClipboard(contact.extradata?.minimaaddress || "", 'minima')}
+                                                className="text-primary-600 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-primary-50 rounded"
+                                                title="Copy"
+                                            >
+                                                {copiedField === 'minima' ? <Check size={16} /> : <Copy size={16} />}
+                                            </button>
+                                        </div>
+                                        <p className="text-sm font-mono text-gray-800 dark:text-gray-200 break-all">{contact.extradata.minimaaddress}</p>
                                     </div>
-                                    <p className="text-sm font-mono text-gray-800 dark:text-gray-200 break-all">{contact.extradata.minimaaddress}</p>
-                                </div>
-                            )}
+                                )}
+                            </div>
+
+
                         </div>
-
-
-                    </div>
-                )}
-            </div>
+                    )
+                }
+            </div >
 
             {/* Custom Confirmation Modal */}
             {

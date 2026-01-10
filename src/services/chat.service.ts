@@ -220,19 +220,57 @@ class ChatService {
         });
     }
 
-    getChatStatus(publickey: string): Promise<{ archived: boolean; lastOpened: number | null; favorite: boolean }> {
+    blockContact(publickey: string): Promise<void> {
+        return new Promise((resolve) => {
+            const sql = `
+                MERGE INTO CHAT_STATUS (publickey, blocked)
+                KEY (publickey)
+                VALUES ('${publickey}', TRUE)
+            `;
+            MDS.sql(sql, (res: any) => {
+                if (res.status) {
+                    console.log("🚫 [DB] Contact blocked:", publickey);
+                    // Notify any listeners
+                    this.notifyMuteStatusChange(); // Re-use mute notification or add new one? 
+                    // Let's add a generic status change or just rely on re-check
+                } else {
+                    console.error("❌ [DB] Failed to block contact:", res.error);
+                }
+                resolve();
+            });
+        });
+    }
+
+    unblockContact(publickey: string): Promise<void> {
+        return new Promise((resolve) => {
+            const sql = `UPDATE CHAT_STATUS SET blocked=FALSE WHERE publickey='${publickey}'`;
+            MDS.sql(sql, (res: any) => {
+                if (res.status) {
+                    console.log("✅ [DB] Contact unblocked:", publickey);
+                } else {
+                    console.error("❌ [DB] Failed to unblock contact:", res.error);
+                }
+                resolve();
+            });
+        });
+    }
+
+    getChatStatus(publickey: string): Promise<{ archived: boolean; lastOpened: number | null; favorite: boolean; blocked: boolean; blockedByThem: boolean }> {
         return new Promise((resolve) => {
             const sql = `SELECT * FROM CHAT_STATUS WHERE publickey='${publickey}'`;
             MDS.sql(sql, (res: any) => {
                 if (!res.status || !res.rows || res.rows.length === 0) {
-                    resolve({ archived: false, lastOpened: null, favorite: false });
+                    resolve({ archived: false, lastOpened: null, favorite: false, blocked: false, blockedByThem: false });
                     return;
                 }
                 const row = res.rows[0];
+                console.log("🔍 [DB DEBUG] Chat Status Row:", row); // DEBUG
                 resolve({
                     archived: row.ARCHIVED === true || row.ARCHIVED === 'TRUE' || row.ARCHIVED === 'true' || row.ARCHIVED === 1,
                     lastOpened: row.LAST_OPENED ? Number(row.LAST_OPENED) : null,
-                    favorite: row.FAVORITE === true || row.FAVORITE === 'TRUE' || row.FAVORITE === 'true' || row.FAVORITE === 1 || false
+                    favorite: row.FAVORITE === true || row.FAVORITE === 'TRUE' || row.FAVORITE === 'true' || row.FAVORITE === 1 || false,
+                    blocked: row.BLOCKED === true || row.BLOCKED === 'TRUE' || row.BLOCKED === 'true' || row.BLOCKED === 1 || false,
+                    blockedByThem: row.BLOCKED_BY_THEM === true || row.BLOCKED_BY_THEM === 'TRUE' || row.BLOCKED_BY_THEM === 'true' || row.BLOCKED_BY_THEM === 1 || false
                 });
             });
         });

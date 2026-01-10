@@ -193,11 +193,15 @@ function initDatabase() {
             + "  archived BOOLEAN NOT NULL DEFAULT FALSE, "
             + "  archived_date BIGINT, "
             + "  last_opened BIGINT, "
-            + "  favorite BOOLEAN NOT NULL DEFAULT FALSE "
+            + "  favorite BOOLEAN NOT NULL DEFAULT FALSE, "
+            + "  blocked BOOLEAN NOT NULL DEFAULT FALSE, "
+            + "  blocked_by_them BOOLEAN NOT NULL DEFAULT FALSE "
             + " )";
 
         MDS.sql(chatStatusSql, function () {
             MDS.sql("ALTER TABLE CHAT_STATUS ADD COLUMN IF NOT EXISTS favorite BOOLEAN NOT NULL DEFAULT FALSE");
+            MDS.sql("ALTER TABLE CHAT_STATUS ADD COLUMN IF NOT EXISTS blocked BOOLEAN NOT NULL DEFAULT FALSE");
+            MDS.sql("ALTER TABLE CHAT_STATUS ADD COLUMN IF NOT EXISTS blocked_by_them BOOLEAN NOT NULL DEFAULT FALSE");
         });
 
         // MY_PROFILE table
@@ -476,16 +480,40 @@ function handleChatMessage(pubkey, maxjson) {
     var msgType = maxjson.type || "text";
     var amount = maxjson.amount || 0;
 
-    // Insert message to DB
-    var insertSql = "INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date) "
-        + "VALUES ('', '" + safePubkey + "', '" + safeUsername + "', '" + msgType + "', '" + safeMessage + "', '" + safeFiledata + "', 'received', " + amount + ", " + now + ")";
-
-    MDS.sql(insertSql, function (res) {
-        if (res.status) {
-            MDS.log("✅ [CHAT] Message saved from " + safeUsername);
-        } else {
-            MDS.log("❌ [CHAT] Save failed: " + res.error);
+    // 1. CHECK IF BLOCKED
+    var checkBlockSql = "SELECT blocked FROM CHAT_STATUS WHERE publickey='" + safePubkey + "'";
+    MDS.sql(checkBlockSql, function (blockRes) {
+        var isBlocked = false;
+        if (blockRes.status && blockRes.rows && blockRes.rows.length > 0) {
+            var val = blockRes.rows[0].BLOCKED;
+            isBlocked = val === true || val === 'TRUE' || val === 'true' || val === 1;
         }
+
+        if (isBlocked) {
+            MDS.log("🚫 [CHAT] Message BLOCKED from: " + safeUsername + " (" + safePubkey + ")");
+            return; // Abort insertion
+        }
+
+        // 2. Insert message to DB if not blocked
+        var insertSql = "INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date) "
+            + "VALUES ('', '" + safePubkey + "', '" + safeUsername + "', '" + msgType + "', '" + safeMessage + "', '" + safeFiledata + "', 'received', " + amount + ", " + now + ")";
+
+        MDS.sql(insertSql, function (res) {
+            if (res.status) {
+                MDS.log("✅ [CHAT] Message saved from " + safeUsername);
+
+                // FIX: Auto-discover user on message receipt to fix "Unknown" in chat list
+                if (safeUsername && safeUsername !== "Unknown" && safeUsername !== "System") {
+                    var upsertPeer = "MERGE INTO DISCOVERED_PEERS (publickey, alias, last_seen) KEY(publickey) " +
+                        "VALUES ('" + safePubkey + "', '" + safeUsername + "', " + now + ")";
+                    MDS.sql(upsertPeer, function (pRes) {
+                        MDS.log("👤 [CHAT] Auto-discovered peer: " + safeUsername);
+                    });
+                }
+            } else {
+                MDS.log("❌ [CHAT] Save failed: " + res.error);
+            }
+        });
     });
 }
 
@@ -610,17 +638,9 @@ function handleContactDeclined(pubkey) {
         MDS.log("✅ [CONTACTS] Updated request status to declined");
     });
 
-    // Check for duplicate message
-    var checkDupSql = "SELECT * FROM CHAT_MESSAGES WHERE publickey='" + safeFrom + "' AND type='system' " +
-        "AND (message='Chat request declined' OR message='Contact request declined') AND date>" + (now - 10000);
-
-    MDS.sql(checkDupSql, function (dupRes) {
-        if (dupRes.count === 0) {
-            var sysMsgSql = "INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) "
-                + "VALUES('', '" + safeFrom + "', 'System', 'system', 'Chat request declined', '', 'received', 0, " + now + ")";
-            MDS.sql(sysMsgSql);
-        }
-    });
+    var sysMsgSql = "INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) "
+        + "VALUES('', '" + safeFrom + "', 'System', 'system', 'Chat request declined', '', 'received', 0, " + now + ")";
+    MDS.sql(sysMsgSql);
 }
 
 function handleContactCancelled(pubkey) {
@@ -649,26 +669,35 @@ function handleContactAccepted(pubkey, maxjson) {
         if (infoRes.status && infoRes.response) {
             var myPk = escapeSql(infoRes.response.publickey);
 
-            var updateSql = "UPDATE CONTACT_REQUESTS SET status='accepted', updated_at=" + now + " "
-                + "WHERE from_publickey='" + myPk + "' AND to_publickey='" + safeFrom + "' AND status='pending'";
+            // Check if record exists (in either direction) -> Robust update
+            var checkSql = "SELECT * FROM CONTACT_REQUESTS WHERE " +
+                "(from_publickey='" + myPk + "' AND to_publickey='" + safeFrom + "') OR " +
+                "(from_publickey='" + safeFrom + "' AND to_publickey='" + myPk + "')";
 
-            MDS.sql(updateSql, function () {
-                MDS.log("✅ [CONTACTS] Updated request status to accepted");
+            MDS.sql(checkSql, function (checkRes) {
+                if (checkRes.status && checkRes.rows && checkRes.rows.length > 0) {
+                    // Exists -> Force update to accepted
+                    var updateSql = "UPDATE CONTACT_REQUESTS SET status='accepted', updated_at=" + now + " "
+                        + "WHERE (from_publickey='" + myPk + "' AND to_publickey='" + safeFrom + "') OR "
+                        + "(from_publickey='" + safeFrom + "' AND to_publickey='" + myPk + "')";
+                    MDS.sql(updateSql, function () {
+                        MDS.log("✅ [CONTACTS] Updated request status to accepted");
+                    });
+                } else {
+                    // Does not exist -> Insert new accepted record
+                    var insertSql = "INSERT INTO CONTACT_REQUESTS (from_publickey, to_publickey, status, created_at, updated_at) "
+                        + "VALUES ('" + myPk + "', '" + safeFrom + "', 'accepted', " + now + ", " + now + ")";
+                    MDS.sql(insertSql, function () {
+                        MDS.log("✅ [CONTACTS] Created new accepted request record");
+                    });
+                }
             });
         }
     });
 
-    // Check for duplicate
-    var checkDupSql = "SELECT * FROM CHAT_MESSAGES WHERE publickey='" + safeFrom + "' AND type='system' " +
-        "AND message='Chat request accepted' AND date>" + (now - 10000);
-
-    MDS.sql(checkDupSql, function (dupRes) {
-        if (dupRes.count === 0) {
-            var sysMsgSql = "INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) "
-                + "VALUES('', '" + safeFrom + "', 'System', 'system', 'Chat request accepted', '', 'received', 0, " + now + ")";
-            MDS.sql(sysMsgSql);
-        }
-    });
+    var sysMsgSql = "INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) "
+        + "VALUES('', '" + safeFrom + "', 'System', 'system', 'Chat request accepted', '', 'received', 0, " + now + ")";
+    MDS.sql(sysMsgSql);
 }
 
 // ============================================================================
@@ -767,6 +796,51 @@ function handleMaximaContactCancelled(pubkey) {
 
     var sysMsgSql = "INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) "
         + "VALUES('', '" + safeFrom + "', 'System', 'system', 'Maxima contact cancelled', '', 'received', 0, " + now + ")";
+    MDS.sql(sysMsgSql);
+}
+
+function handleMaximaContactRemoved(pubkey, maxjson) {
+    MDS.log("🗑️ [MAXIMA CONTACT] Removed by " + pubkey);
+
+    var now = Date.now();
+    var safeFrom = escapeSql(pubkey);
+
+    // Insert system message
+    var sysMsgSql = "INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) "
+        + "VALUES('', '" + safeFrom + "', 'System', 'system', 'Contact removed', '', 'received', 0, " + now + ")";
+    MDS.sql(sysMsgSql);
+}
+
+// ============================================================================
+// HANDLER FOR BLOCKING
+// ============================================================================
+
+function handleContactBlocked(pubkey) {
+    MDS.log("🚫 [CONTACTS] Handling block from " + pubkey);
+    var now = Date.now();
+    var safeFrom = escapeSql(pubkey);
+
+    // Set blocked_by_them flag
+    var updateSql = "MERGE INTO CHAT_STATUS (publickey, blocked_by_them) KEY(publickey) VALUES('" + safeFrom + "', TRUE)";
+    MDS.sql(updateSql);
+
+    // Insert system message
+    var sysMsgSql = "INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) "
+        + "VALUES('', '" + safeFrom + "', 'System', 'system', 'This user has blocked you', '', 'received', 0, " + now + ")";
+    MDS.sql(sysMsgSql);
+}
+
+function handleContactUnblocked(pubkey) {
+    MDS.log("🔓 [CONTACTS] Handling unblock from " + pubkey);
+    var now = Date.now();
+    var safeFrom = escapeSql(pubkey);
+
+    // Clear blocked_by_them flag
+    var updateSql = "UPDATE CHAT_STATUS SET blocked_by_them=FALSE WHERE publickey='" + safeFrom + "'";
+    MDS.sql(updateSql);
+
+    var sysMsgSql = "INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) "
+        + "VALUES('', '" + safeFrom + "', 'System', 'system', 'This user has unblocked you', '', 'received', 0, " + now + ")";
     MDS.sql(sysMsgSql);
 }
 /**
@@ -974,12 +1048,18 @@ function handleProfileResponse(pubkey, maxjson) {
     // Serialize the full profile as extra_data
     var extraData = escapeSql(JSON.stringify(maxjson));
 
-    // Update bio and extra_data
-    var updateSql = "UPDATE DISCOVERED_PEERS SET bio='" + escapeSql(maxjson.bio || "") + "', extra_data='" + extraData + "', last_seen=" + now + " WHERE publickey='" + safePubkey + "'";
+    // CRITICAL: Extract allowNonContactChats from profile response
+    var allowNonContactChats = 1; // Default to true
+    if (maxjson.allowNonContactChats !== undefined && maxjson.allowNonContactChats !== null) {
+        allowNonContactChats = maxjson.allowNonContactChats ? 1 : 0;
+    }
+
+    // Update bio, extra_data, AND allow_non_contact_chats
+    var updateSql = "UPDATE DISCOVERED_PEERS SET bio='" + escapeSql(maxjson.bio || "") + "', extra_data='" + extraData + "', allow_non_contact_chats=" + allowNonContactChats + ", last_seen=" + now + " WHERE publickey='" + safePubkey + "'";
 
     MDS.sql(updateSql, function (res) {
         if (res.status) {
-            MDS.log("✅ [PROFILE] Extended profile saved for " + pubkey.substring(0, 15) + "...");
+            MDS.log("✅ [PROFILE] Extended profile saved for " + pubkey.substring(0, 15) + "... (allowNonContactChats: " + allowNonContactChats + ")");
         }
     });
 }
@@ -1043,23 +1123,6 @@ function saveBeaconWithBio(beacon, source, escapedAlias, bio, cleanAddress, allo
         if (res.status) {
             MDS.log("✅ [BEACON] Saved: " + beacon.alias);
             promoteToUserRegistry(beacon, now);
-
-            // Notify Frontend
-            if (MY_MAXIMA_PK) {
-                var syncPayload = {
-                    app: "metachain",
-                    type: "peer_discovered",
-                    peer: {
-                        pubkey: beacon.pubkey,
-                        alias: beacon.alias,
-                        bio: bio,
-                        address: beacon.address,
-                        allowNonContactChats: allowNonContactChats
-                    }
-                };
-                var syncHex = "0x" + utf8ToHex(JSON.stringify(syncPayload)).toUpperCase();
-                MDS.cmd("maxima action:send publickey:" + MY_MAXIMA_PK + " application:metachain data:" + syncHex + " poll:false");
-            }
 
             // Reactive gossip
             if (source === 'P2P' || source === 'MAXIMA') {
@@ -1529,6 +1592,21 @@ MDS.init(function (msg) {
 
                 if (maxjson.type === "maxima_contact_cancelled") {
                     handleMaximaContactCancelled(pubkey);
+                    return;
+                }
+
+                if (maxjson.type === "maxima_contact_removed") {
+                    handleMaximaContactRemoved(pubkey, maxjson);
+                    return;
+                }
+
+                if (maxjson.type === "contact_blocked") {
+                    handleContactBlocked(pubkey);
+                    return;
+                }
+
+                if (maxjson.type === "contact_unblocked") {
+                    handleContactUnblocked(pubkey);
                     return;
                 }
 

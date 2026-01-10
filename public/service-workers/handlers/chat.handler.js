@@ -14,16 +14,40 @@ function handleChatMessage(pubkey, maxjson) {
     var msgType = maxjson.type || "text";
     var amount = maxjson.amount || 0;
 
-    // Insert message to DB
-    var insertSql = "INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date) "
-        + "VALUES ('', '" + safePubkey + "', '" + safeUsername + "', '" + msgType + "', '" + safeMessage + "', '" + safeFiledata + "', 'received', " + amount + ", " + now + ")";
-
-    MDS.sql(insertSql, function (res) {
-        if (res.status) {
-            MDS.log("✅ [CHAT] Message saved from " + safeUsername);
-        } else {
-            MDS.log("❌ [CHAT] Save failed: " + res.error);
+    // 1. CHECK IF BLOCKED
+    var checkBlockSql = "SELECT blocked FROM CHAT_STATUS WHERE publickey='" + safePubkey + "'";
+    MDS.sql(checkBlockSql, function (blockRes) {
+        var isBlocked = false;
+        if (blockRes.status && blockRes.rows && blockRes.rows.length > 0) {
+            var val = blockRes.rows[0].BLOCKED;
+            isBlocked = val === true || val === 'TRUE' || val === 'true' || val === 1;
         }
+
+        if (isBlocked) {
+            MDS.log("🚫 [CHAT] Message BLOCKED from: " + safeUsername + " (" + safePubkey + ")");
+            return; // Abort insertion
+        }
+
+        // 2. Insert message to DB if not blocked
+        var insertSql = "INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date) "
+            + "VALUES ('', '" + safePubkey + "', '" + safeUsername + "', '" + msgType + "', '" + safeMessage + "', '" + safeFiledata + "', 'received', " + amount + ", " + now + ")";
+
+        MDS.sql(insertSql, function (res) {
+            if (res.status) {
+                MDS.log("✅ [CHAT] Message saved from " + safeUsername);
+
+                // FIX: Auto-discover user on message receipt to fix "Unknown" in chat list
+                if (safeUsername && safeUsername !== "Unknown" && safeUsername !== "System") {
+                    var upsertPeer = "MERGE INTO DISCOVERED_PEERS (publickey, alias, last_seen) KEY(publickey) " +
+                        "VALUES ('" + safePubkey + "', '" + safeUsername + "', " + now + ")";
+                    MDS.sql(upsertPeer, function (pRes) {
+                        MDS.log("👤 [CHAT] Auto-discovered peer: " + safeUsername);
+                    });
+                }
+            } else {
+                MDS.log("❌ [CHAT] Save failed: " + res.error);
+            }
+        });
     });
 }
 

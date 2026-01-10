@@ -157,6 +157,21 @@ MDS.init(function (msg) {
                     return;
                 }
 
+                if (maxjson.type === "maxima_contact_removed") {
+                    handleMaximaContactRemoved(pubkey, maxjson);
+                    return;
+                }
+
+                if (maxjson.type === "contact_blocked") {
+                    handleContactBlocked(pubkey);
+                    return;
+                }
+
+                if (maxjson.type === "contact_unblocked") {
+                    handleContactUnblocked(pubkey);
+                    return;
+                }
+
                 // ================== CHAT MESSAGES (Default) ==================
                 // FILTER: Only process actual chat message types
                 var validChatTypes = ["text", "image", "video", "audio", "file", "charm", "token", "gif", "sticker", "voice"];

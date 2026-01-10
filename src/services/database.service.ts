@@ -141,6 +141,8 @@ export async function initDB(): Promise<void> {
                 const alterSql4 = "ALTER TABLE CHAT_STATUS ADD COLUMN IF NOT EXISTS last_opened BIGINT";
                 const alterSql5 = "ALTER TABLE CHAT_STATUS ADD COLUMN IF NOT EXISTS muted BOOLEAN DEFAULT FALSE";
                 const alterSql6 = "ALTER TABLE CHAT_STATUS ADD COLUMN IF NOT EXISTS favorite BOOLEAN DEFAULT FALSE";
+                const alterSql7 = "ALTER TABLE CHAT_STATUS ADD COLUMN IF NOT EXISTS blocked BOOLEAN DEFAULT FALSE";
+                const alterSql8 = "ALTER TABLE CHAT_STATUS ADD COLUMN IF NOT EXISTS blocked_by_them BOOLEAN DEFAULT FALSE";
 
                 MDS.sql(alterSql1, (alterRes: any) => {
                     if (alterRes.status) console.log("📂 [DB] app_installed column added/verified");
@@ -159,6 +161,12 @@ export async function initDB(): Promise<void> {
                 });
                 MDS.sql(alterSql6, (alterRes: any) => {
                     if (alterRes.status) console.log("📂 [DB] favorite column added/verified");
+                });
+                MDS.sql(alterSql7, (alterRes: any) => {
+                    if (alterRes.status) console.log("📂 [DB] blocked column added/verified");
+                });
+                MDS.sql(alterSql8, (alterRes: any) => {
+                    if (alterRes.status) console.log("📂 [DB] blocked_by_them column added/verified");
                 });
             }
         });
@@ -346,6 +354,13 @@ export async function initDB(): Promise<void> {
                                                 console.error("❌ [DB] Failed to create MAXIMA_CONTACT_REQUESTS table:", res.error);
                                             } else {
                                                 console.log("📂 [DB] MAXIMA_CONTACT_REQUESTS table initialized");
+
+                                                // Ensure DISCOVERED_PEERS has allow_non_contact_chats (Crucial for contact info perm detection)
+                                                // This is also done in SW, but we must ensure it exists here too if SW hasn't run.
+                                                const alterDiscoverySql = "ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS allow_non_contact_chats BOOLEAN DEFAULT TRUE";
+                                                MDS.sql(alterDiscoverySql, (alterRes: any) => {
+                                                    if (alterRes.status) console.log("📂 [DB] Verified DISCOVERED_PEERS allow_non_contact_chats column");
+                                                });
                                             }
                                             resolve();
                                         });

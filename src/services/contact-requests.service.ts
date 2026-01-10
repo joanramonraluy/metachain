@@ -127,9 +127,9 @@ export async function getContactChatPermission(contactPublicKey: string): Promis
    CHAT REQUESTS (MetaChain)
 ---------------------------------------------------------------------------- */
 
-export async function sendChatRequest(toAddress: string, myName: string, myAvatar: string): Promise<void> {
+export async function sendChatRequest(toAddress: string, myName: string, myAvatar: string, toPublicKey?: string): Promise<void> {
     try {
-        console.log(`📤 [Contact Request] Sending request to ${toAddress}`);
+        console.log(`📤 [Contact Request] Sending request to ${toAddress} (pk: ${toPublicKey || 'auto-resolve'})`);
 
         const myAddress = await getMyMaximaAddress();
 
@@ -151,7 +151,8 @@ export async function sendChatRequest(toAddress: string, myName: string, myAvata
             poll: false,
         };
 
-        let recipientHexPublicKey = await resolveHexPublicKey(toAddress);
+        // Use provided publickey if available, otherwise try to resolve
+        let recipientHexPublicKey = toPublicKey || await resolveHexPublicKey(toAddress);
 
         if (toAddress.startsWith("Mx") || toAddress.startsWith("MX")) {
             sendParams.to = toAddress;
@@ -310,6 +311,7 @@ export async function checkIncomingChatRequest(fromPublickey: string): Promise<b
 
         console.log(`[Contact Request] Incoming check for ${fromPublickey.substring(0, 10)}: ${hasIncoming}`);
         return hasIncoming;
+
     } catch (err) {
         console.error("❌ [Contact Request] Error checking incoming request:", err);
         return false;
@@ -379,12 +381,17 @@ export async function acceptChatRequest(fromPublicKey: string, fromAddress: stri
 
         await MDS.cmd.maxima({ params: sendParams });
 
-        // Save system message locally
-        const insertMsgSql = `
-            INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date)
-            VALUES ('', '${safeFromPublicKey}', 'System', 'system', 'Chat request accepted', '', 'sent', 0, ${now})
-        `;
-        await runSQL(insertMsgSql);
+        // Save system message locally (if not duplicate within 10s)
+        const checkDupSql = `SELECT * FROM CHAT_MESSAGES WHERE publickey='${safeFromPublicKey}' AND message='User chat accepted' AND date > ${now - 10000}`;
+        const dupRes = await runSQL(checkDupSql);
+
+        if (!dupRes.rows || dupRes.rows.length === 0) {
+            const insertMsgSql = `
+                INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date)
+                VALUES ('', '${safeFromPublicKey}', 'System', 'system', 'User chat accepted', '', 'sent', 0, ${now})
+            `;
+            await runSQL(insertMsgSql);
+        }
         console.log("✅ [Contact Request] Request accepted and confirmation sent");
     } catch (err) {
         console.error("❌ [Contact Request] Error accepting request:", err);

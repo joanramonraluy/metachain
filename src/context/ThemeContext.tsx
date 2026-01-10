@@ -145,9 +145,24 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const [currentTheme, setCurrentThemeState] = useState<ThemeColor>('sky');
     const [chatBackground, setChatBackgroundState] = useState<ChatBackground>('default');
     const [mode, setModeState] = useState<ThemeMode>(() => {
-        // Check system preference immediately for initial state
-        if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-            return 'dark';
+        // 1. Check local storage for immediate restore (fastest)
+        if (typeof window !== 'undefined') {
+            const cached = localStorage.getItem('app_mode');
+            if (cached === 'light' || cached === 'dark') {
+                // Apply class immediately to prevent flash
+                if (cached === 'dark') {
+                    document.documentElement.classList.add('dark');
+                } else {
+                    document.documentElement.classList.remove('dark');
+                }
+                return cached;
+            }
+
+            // 2. Fallback to system preference
+            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                document.documentElement.classList.add('dark');
+                return 'dark';
+            }
         }
         return 'light';
     });
@@ -172,15 +187,21 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
             }
         });
 
-        // Load mode preference
+        // Load mode preference (Sync MDS with LocalStorage)
         MDS.keypair.get('app_mode', (res: any) => {
             if (res.status && res.value) {
-                setMode(res.value as ThemeMode);
+                const storedMode = res.value as ThemeMode;
+                // If MDS has a different value than what we loaded from localStorage, update it
+                if (storedMode !== mode) {
+                    setMode(storedMode);
+                }
             } else {
-                // If no saved preference, we already set the correct default in useState
-                // But we should ensure the class is added if it's dark
-                if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-                    setMode('dark');
+                // If no saved preference in Keypair, stick with what we initialized (System or Default)
+                // But safeguard to ensure class matches state
+                if (mode === 'dark') {
+                    document.documentElement.classList.add('dark');
+                } else {
+                    document.documentElement.classList.remove('dark');
                 }
             }
         });
@@ -205,16 +226,17 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         console.log(`[ThemeContext] Setting mode to: ${newMode}`);
         setModeState(newMode);
         const root = document.documentElement;
-        console.log('[ThemeContext] Current classList before:', root.classList.value);
 
         if (newMode === 'dark') {
             root.classList.add('dark');
-            console.log('[ThemeContext] Added "dark" class');
         } else {
             root.classList.remove('dark');
-            console.log('[ThemeContext] Removed "dark" class');
         }
-        console.log('[ThemeContext] Current classList after:', root.classList.value);
+
+        // Persist to LocalStorage (Instant)
+        localStorage.setItem('app_mode', newMode);
+
+        // Persist to MDS (Permanent)
         if (loaded) {
             MDS.keypair.set('app_mode', newMode);
         }

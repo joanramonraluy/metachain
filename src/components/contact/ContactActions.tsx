@@ -15,6 +15,10 @@ interface ContactActionsProps {
     onSendContactRequest: () => void;
     onCancelMaximaRequest: () => void;
     onSendMaximaRequest: () => void;
+    isBlocked: boolean;
+    onToggleBlock: () => void;
+    onRemoveContact?: () => void;
+    removingContact?: boolean;
 }
 
 const ContactActions: React.FC<ContactActionsProps> = ({
@@ -30,7 +34,11 @@ const ContactActions: React.FC<ContactActionsProps> = ({
     onCancelRequest,
     onSendContactRequest,
     onCancelMaximaRequest,
-    onSendMaximaRequest
+    onSendMaximaRequest,
+    isBlocked,
+    onToggleBlock,
+    onRemoveContact,
+    removingContact = false
 }) => {
     return (
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden transition-colors">
@@ -73,7 +81,7 @@ const ContactActions: React.FC<ContactActionsProps> = ({
                         )}
 
                         {/* Consolidated Action Logic */}
-                        {(userAllowsNonContactChats || requestStatus === 'accepted' || hasChatHistory || maximaIncomingRequest) ? (
+                        {((userAllowsNonContactChats || requestStatus === 'accepted' || hasChatHistory || maximaIncomingRequest) && requestStatus !== 'declined') ? (
                             /* Case 1: Chat is Enabled (Open or Accepted or History or Incoming Request) */
                             <>
                                 <button
@@ -224,8 +232,56 @@ const ContactActions: React.FC<ContactActionsProps> = ({
                             <span className="transform rotate-[-45deg]">➤</span>
                             Send Message
                         </button>
+
+                        {/* Remove Contact Section */}
+                        {onRemoveContact && (
+                            <div className="pt-4 mt-4 border-t border-gray-100 dark:border-gray-700">
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mb-3 leading-relaxed">
+                                    Removing a contact will delete them from your Maxima contacts list. Chat history will be preserved.
+                                </p>
+                                <button
+                                    onClick={onRemoveContact}
+                                    disabled={removingContact}
+                                    className="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-red-600 dark:text-red-400 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium flex items-center justify-center gap-2 text-sm"
+                                >
+                                    {removingContact ? "Removing..." : "Remove Contact"}
+                                </button>
+                            </div>
+                        )}
                     </div>
                 )}
+                {/* Block / Unblock Action - Always visible unless removing */}
+                <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
+                    {!isBlocked && (
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3 leading-relaxed">
+                            Blocking this user will prevent them from sending you messages.
+                        </p>
+                    )}
+                    <button
+                        onClick={onToggleBlock}
+                        className={`w-full px-4 py-2 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors border text-sm ${isBlocked
+                            ? 'bg-white dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600'
+                            : 'bg-white dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-red-600 dark:text-red-400 hover:bg-gray-50 dark:hover:bg-gray-600'
+                            }`}
+                    >
+                        {isBlocked ? (
+                            <>
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg>
+                                Unblock User
+                            </>
+                        ) : (
+                            <>
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
+                                Block User
+                            </>
+                        )}
+                    </button>
+                    {isBlocked && (
+                        <p className="text-xs text-center text-red-500 mt-2">
+                            You have blocked this user. You will not receive messages from them.
+                        </p>
+                    )}
+                </div>
             </div>
         </div>
     );

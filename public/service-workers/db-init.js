@@ -45,11 +45,15 @@ function initDatabase() {
             + "  archived BOOLEAN NOT NULL DEFAULT FALSE, "
             + "  archived_date BIGINT, "
             + "  last_opened BIGINT, "
-            + "  favorite BOOLEAN NOT NULL DEFAULT FALSE "
+            + "  favorite BOOLEAN NOT NULL DEFAULT FALSE, "
+            + "  blocked BOOLEAN NOT NULL DEFAULT FALSE, "
+            + "  blocked_by_them BOOLEAN NOT NULL DEFAULT FALSE "
             + " )";
 
         MDS.sql(chatStatusSql, function () {
             MDS.sql("ALTER TABLE CHAT_STATUS ADD COLUMN IF NOT EXISTS favorite BOOLEAN NOT NULL DEFAULT FALSE");
+            MDS.sql("ALTER TABLE CHAT_STATUS ADD COLUMN IF NOT EXISTS blocked BOOLEAN NOT NULL DEFAULT FALSE");
+            MDS.sql("ALTER TABLE CHAT_STATUS ADD COLUMN IF NOT EXISTS blocked_by_them BOOLEAN NOT NULL DEFAULT FALSE");
         });
 
         // MY_PROFILE table

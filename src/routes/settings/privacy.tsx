@@ -89,7 +89,7 @@ function RouteComponent() {
       await MDS.keypair.set('profile_chat_permission_allow_all', newValue ? "true" : "false");
       const sql = `UPDATE MY_PROFILE SET allow_non_contact_chats = ${newValue} WHERE id = 1`;
       // @ts-ignore
-      MDS.sql(sql);
+      await MDS.sql(sql);
     } catch (e) {
       console.error("Failed to save chat permission", e);
       setAllowNonContactChats(!newValue); // Revert on error

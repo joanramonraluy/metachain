@@ -1,4 +1,4 @@
-import { User, Settings, Database } from 'lucide-react';
+import { User, SlidersHorizontal, Database } from 'lucide-react';
 
 export type ContactTab = 'profile' | 'settings' | 'tech';
 
@@ -10,7 +10,7 @@ interface ContactTabsProps {
 export function ContactTabs({ activeTab, onTabChange }: ContactTabsProps) {
     const tabs = [
         { id: 'profile' as ContactTab, label: 'Profile', icon: User },
-        { id: 'settings' as ContactTab, label: 'Actions', icon: Settings },
+        { id: 'settings' as ContactTab, label: 'Actions', icon: SlidersHorizontal },
         { id: 'tech' as ContactTab, label: 'Tech Data', icon: Database },
     ];
 

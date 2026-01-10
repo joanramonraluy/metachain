@@ -55,17 +55,9 @@ function handleContactDeclined(pubkey) {
         MDS.log("✅ [CONTACTS] Updated request status to declined");
     });
 
-    // Check for duplicate message
-    var checkDupSql = "SELECT * FROM CHAT_MESSAGES WHERE publickey='" + safeFrom + "' AND type='system' " +
-        "AND (message='Chat request declined' OR message='Contact request declined') AND date>" + (now - 10000);
-
-    MDS.sql(checkDupSql, function (dupRes) {
-        if (dupRes.count === 0) {
-            var sysMsgSql = "INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) "
-                + "VALUES('', '" + safeFrom + "', 'System', 'system', 'Chat request declined', '', 'received', 0, " + now + ")";
-            MDS.sql(sysMsgSql);
-        }
-    });
+    var sysMsgSql = "INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) "
+        + "VALUES('', '" + safeFrom + "', 'System', 'system', 'Chat request declined', '', 'received', 0, " + now + ")";
+    MDS.sql(sysMsgSql);
 }
 
 function handleContactCancelled(pubkey) {
@@ -94,26 +86,35 @@ function handleContactAccepted(pubkey, maxjson) {
         if (infoRes.status && infoRes.response) {
             var myPk = escapeSql(infoRes.response.publickey);
 
-            var updateSql = "UPDATE CONTACT_REQUESTS SET status='accepted', updated_at=" + now + " "
-                + "WHERE from_publickey='" + myPk + "' AND to_publickey='" + safeFrom + "' AND status='pending'";
+            // Check if record exists (in either direction) -> Robust update
+            var checkSql = "SELECT * FROM CONTACT_REQUESTS WHERE " +
+                "(from_publickey='" + myPk + "' AND to_publickey='" + safeFrom + "') OR " +
+                "(from_publickey='" + safeFrom + "' AND to_publickey='" + myPk + "')";
 
-            MDS.sql(updateSql, function () {
-                MDS.log("✅ [CONTACTS] Updated request status to accepted");
+            MDS.sql(checkSql, function (checkRes) {
+                if (checkRes.status && checkRes.rows && checkRes.rows.length > 0) {
+                    // Exists -> Force update to accepted
+                    var updateSql = "UPDATE CONTACT_REQUESTS SET status='accepted', updated_at=" + now + " "
+                        + "WHERE (from_publickey='" + myPk + "' AND to_publickey='" + safeFrom + "') OR "
+                        + "(from_publickey='" + safeFrom + "' AND to_publickey='" + myPk + "')";
+                    MDS.sql(updateSql, function () {
+                        MDS.log("✅ [CONTACTS] Updated request status to accepted");
+                    });
+                } else {
+                    // Does not exist -> Insert new accepted record
+                    var insertSql = "INSERT INTO CONTACT_REQUESTS (from_publickey, to_publickey, status, created_at, updated_at) "
+                        + "VALUES ('" + myPk + "', '" + safeFrom + "', 'accepted', " + now + ", " + now + ")";
+                    MDS.sql(insertSql, function () {
+                        MDS.log("✅ [CONTACTS] Created new accepted request record");
+                    });
+                }
             });
         }
     });
 
-    // Check for duplicate
-    var checkDupSql = "SELECT * FROM CHAT_MESSAGES WHERE publickey='" + safeFrom + "' AND type='system' " +
-        "AND message='Chat request accepted' AND date>" + (now - 10000);
-
-    MDS.sql(checkDupSql, function (dupRes) {
-        if (dupRes.count === 0) {
-            var sysMsgSql = "INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) "
-                + "VALUES('', '" + safeFrom + "', 'System', 'system', 'Chat request accepted', '', 'received', 0, " + now + ")";
-            MDS.sql(sysMsgSql);
-        }
-    });
+    var sysMsgSql = "INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) "
+        + "VALUES('', '" + safeFrom + "', 'System', 'system', 'Chat request accepted', '', 'received', 0, " + now + ")";
+    MDS.sql(sysMsgSql);
 }
 
 // ============================================================================
@@ -212,5 +213,50 @@ function handleMaximaContactCancelled(pubkey) {
 
     var sysMsgSql = "INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) "
         + "VALUES('', '" + safeFrom + "', 'System', 'system', 'Maxima contact cancelled', '', 'received', 0, " + now + ")";
+    MDS.sql(sysMsgSql);
+}
+
+function handleMaximaContactRemoved(pubkey, maxjson) {
+    MDS.log("🗑️ [MAXIMA CONTACT] Removed by " + pubkey);
+
+    var now = Date.now();
+    var safeFrom = escapeSql(pubkey);
+
+    // Insert system message
+    var sysMsgSql = "INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) "
+        + "VALUES('', '" + safeFrom + "', 'System', 'system', 'Contact removed', '', 'received', 0, " + now + ")";
+    MDS.sql(sysMsgSql);
+}
+
+// ============================================================================
+// HANDLER FOR BLOCKING
+// ============================================================================
+
+function handleContactBlocked(pubkey) {
+    MDS.log("🚫 [CONTACTS] Handling block from " + pubkey);
+    var now = Date.now();
+    var safeFrom = escapeSql(pubkey);
+
+    // Set blocked_by_them flag
+    var updateSql = "MERGE INTO CHAT_STATUS (publickey, blocked_by_them) KEY(publickey) VALUES('" + safeFrom + "', TRUE)";
+    MDS.sql(updateSql);
+
+    // Insert system message
+    var sysMsgSql = "INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) "
+        + "VALUES('', '" + safeFrom + "', 'System', 'system', 'This user has blocked you', '', 'received', 0, " + now + ")";
+    MDS.sql(sysMsgSql);
+}
+
+function handleContactUnblocked(pubkey) {
+    MDS.log("🔓 [CONTACTS] Handling unblock from " + pubkey);
+    var now = Date.now();
+    var safeFrom = escapeSql(pubkey);
+
+    // Clear blocked_by_them flag
+    var updateSql = "UPDATE CHAT_STATUS SET blocked_by_them=FALSE WHERE publickey='" + safeFrom + "'";
+    MDS.sql(updateSql);
+
+    var sysMsgSql = "INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) "
+        + "VALUES('', '" + safeFrom + "', 'System', 'system', 'This user has unblocked you', '', 'received', 0, " + now + ")";
     MDS.sql(sysMsgSql);
 }

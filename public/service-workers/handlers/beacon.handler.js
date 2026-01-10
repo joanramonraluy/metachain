@@ -59,23 +59,6 @@ function saveBeaconWithBio(beacon, source, escapedAlias, bio, cleanAddress, allo
             MDS.log("✅ [BEACON] Saved: " + beacon.alias);
             promoteToUserRegistry(beacon, now);
 
-            // Notify Frontend
-            if (MY_MAXIMA_PK) {
-                var syncPayload = {
-                    app: "metachain",
-                    type: "peer_discovered",
-                    peer: {
-                        pubkey: beacon.pubkey,
-                        alias: beacon.alias,
-                        bio: bio,
-                        address: beacon.address,
-                        allowNonContactChats: allowNonContactChats
-                    }
-                };
-                var syncHex = "0x" + utf8ToHex(JSON.stringify(syncPayload)).toUpperCase();
-                MDS.cmd("maxima action:send publickey:" + MY_MAXIMA_PK + " application:metachain data:" + syncHex + " poll:false");
-            }
-
             // Reactive gossip
             if (source === 'P2P' || source === 'MAXIMA') {
                 sendWelcomePackage(beacon.pubkey, beacon.alias);
