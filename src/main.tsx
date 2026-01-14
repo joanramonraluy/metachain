@@ -10,7 +10,13 @@ import React from "react"
 import ReactDOM from "react-dom/client"
 import AppProvider from "./AppContext.tsx"
 import { ThemeProvider } from "./context/ThemeContext.tsx"
+import { checkMinimaStructure } from "./services/debug_structure";
 import "./index.css"
+
+// Debug
+setTimeout(() => {
+  checkMinimaStructure();
+}, 5000);
 
 import { routeTree } from "./routeTree.gen"
 

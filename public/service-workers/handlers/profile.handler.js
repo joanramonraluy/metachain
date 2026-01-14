@@ -121,67 +121,76 @@ function handleProfileRequest(pubkey, maxjson) {
                         MDS.cmd("keypair action:get key:p2p_bio", function (bioRes) {
                             var bio = (bioRes.status && bioRes.response && bioRes.response.value) ? bioRes.response.value : "";
 
-                            // Step 6: Construct filtered response
-                            var responsePayload = {
-                                type: "profile_response",
-                                // Level 1 - Always included
-                                name: name,
-                                bio: bio,
-                                avatar: avatar,
-                                allowNonContactChats: profile.allowNonContactChats
-                            };
-
-                            // Level 2 - Conditionally included
-                            if (includeLevel2) {
-                                responsePayload.location = profile.location;
-                                responsePayload.country = profile.country;
-                                responsePayload.website = profile.website;
-                                responsePayload.social = profile.social;
-                                responsePayload.languages = profile.languages;
-                            } else {
-                                responsePayload.privacy_l2 = "hidden";
-                            }
-
-                            // Level 3 - Conditionally included
-                            if (includeLevel3) {
-                                responsePayload.email = profile.email;
-                                responsePayload.phone = profile.phone;
-                                MDS.log("✅ [PROFILE] Level 3 added to response - Email: " + (responsePayload.email || "EMPTY") + ", Phone: " + (responsePayload.phone || "EMPTY"));
-                            } else {
-                                responsePayload.privacy_l3 = "hidden";
-                                MDS.log("⚠️ [PROFILE] Level 3 NOT added to response");
-                            }
-
-                            MDS.log("📦 [PROFILE] Final response payload: " + JSON.stringify(responsePayload));
-                            var jsonStr = JSON.stringify(responsePayload);
-                            var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
-
-                            // Step 7: Prepare target address
-                            var targetAddress = null;
-                            if (maxjson.requesterAddress) {
-                                var rawAddr = maxjson.requesterAddress + "";
-                                var parts = rawAddr.split(":");
-                                if (parts.length >= 2) {
-                                    var part1 = parts[0].replace(/[^a-zA-Z0-9@.-]/g, "").trim();
-                                    var part2 = parts[1].replace(/[^0-9]/g, "").trim();
-                                    targetAddress = part1 + ":" + part2;
-                                } else {
-                                    targetAddress = rawAddr.replace(/[^a-zA-Z0-9@.:-]/g, "");
+                            // Step 5.5: Get Minima Wallet Address
+                            MDS.cmd("getaddress", function (addrRes) {
+                                var minimaAddress = "";
+                                if (addrRes.status && addrRes.response && addrRes.response.miniaddress) {
+                                    minimaAddress = addrRes.response.miniaddress;
                                 }
-                            }
 
-                            var sendCommand = "";
-                            if (targetAddress && (targetAddress.startsWith("Mx") || targetAddress.startsWith("MX"))) {
-                                MDS.log("📤 [PROFILE] Sending filtered response to address: " + targetAddress);
-                                sendCommand = "maxima action:send to:" + targetAddress + " application:metachain data:" + hexData + " poll:false";
-                            } else {
-                                MDS.log("📤 [PROFILE] Sending filtered response to pubkey: " + pubkey.substring(0, 10) + "...");
-                                sendCommand = "maxima action:send publickey:" + pubkey + " application:metachain data:" + hexData + " poll:false";
-                            }
+                                // Step 6: Construct filtered response
+                                var responsePayload = {
+                                    type: "profile_response",
+                                    // Level 1 - Always included
+                                    name: name,
+                                    bio: bio,
+                                    avatar: avatar,
+                                    allowNonContactChats: profile.allowNonContactChats,
+                                    minimaaddress: minimaAddress // ALWAYS INCLUDE WALLET ADDRESS
+                                };
 
-                            // Step 8: Send Response
-                            MDS.cmd(sendCommand, function (sendRes) {
-                                MDS.log("✅ [PROFILE] Response Sent. Status: " + sendRes.status);
+                                // Level 2 - Conditionally included
+                                if (includeLevel2) {
+                                    responsePayload.location = profile.location;
+                                    responsePayload.country = profile.country;
+                                    responsePayload.website = profile.website;
+                                    responsePayload.social = profile.social;
+                                    responsePayload.languages = profile.languages;
+                                } else {
+                                    responsePayload.privacy_l2 = "hidden";
+                                }
+
+                                // Level 3 - Conditionally included
+                                if (includeLevel3) {
+                                    responsePayload.email = profile.email;
+                                    responsePayload.phone = profile.phone;
+                                    MDS.log("✅ [PROFILE] Level 3 added to response - Email: " + (responsePayload.email || "EMPTY") + ", Phone: " + (responsePayload.phone || "EMPTY"));
+                                } else {
+                                    responsePayload.privacy_l3 = "hidden";
+                                    MDS.log("⚠️ [PROFILE] Level 3 NOT added to response");
+                                }
+
+                                MDS.log("📦 [PROFILE] Final response payload: " + JSON.stringify(responsePayload));
+                                var jsonStr = JSON.stringify(responsePayload);
+                                var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
+
+                                // Step 7: Prepare target address
+                                var targetAddress = null;
+                                if (maxjson.requesterAddress) {
+                                    var rawAddr = maxjson.requesterAddress + "";
+                                    var parts = rawAddr.split(":");
+                                    if (parts.length >= 2) {
+                                        var part1 = parts[0].replace(/[^a-zA-Z0-9@.-]/g, "").trim();
+                                        var part2 = parts[1].replace(/[^0-9]/g, "").trim();
+                                        targetAddress = part1 + ":" + part2;
+                                    } else {
+                                        targetAddress = rawAddr.replace(/[^a-zA-Z0-9@.:-]/g, "");
+                                    }
+                                }
+
+                                var sendCommand = "";
+                                if (targetAddress && (targetAddress.startsWith("Mx") || targetAddress.startsWith("MX"))) {
+                                    MDS.log("📤 [PROFILE] Sending filtered response to address: " + targetAddress);
+                                    sendCommand = "maxima action:send to:" + targetAddress + " application:metachain data:" + hexData + " poll:false";
+                                } else {
+                                    MDS.log("📤 [PROFILE] Sending filtered response to pubkey: " + pubkey.substring(0, 10) + "...");
+                                    sendCommand = "maxima action:send publickey:" + pubkey + " application:metachain data:" + hexData + " poll:false";
+                                }
+
+                                // Step 8: Send Response
+                                MDS.cmd(sendCommand, function (sendRes) {
+                                    MDS.log("✅ [PROFILE] Response Sent. Status: " + sendRes.status);
+                                });
                             });
                         });
                     });

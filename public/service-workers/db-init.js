@@ -38,6 +38,7 @@ function initDatabase() {
 
         // Add columns if missing
         MDS.sql("ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS amount INT NOT NULL DEFAULT 0");
+        MDS.sql("ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS original_timestamp BIGINT");
 
         // CHAT_STATUS table
         var chatStatusSql = "CREATE TABLE IF NOT EXISTS CHAT_STATUS ( "
@@ -94,6 +95,7 @@ function initDatabase() {
             MDS.sql("ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS bio VARCHAR(512)");
             MDS.sql("ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS allow_non_contact_chats BOOLEAN DEFAULT TRUE");
             MDS.sql("ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS extra_data CLOB");
+            MDS.sql("ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS avatar TEXT");
         });
 
         // CONTACT_REQUESTS table

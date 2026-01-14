@@ -186,6 +186,7 @@ function initDatabase() {
 
         // Add columns if missing
         MDS.sql("ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS amount INT NOT NULL DEFAULT 0");
+        MDS.sql("ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS original_timestamp BIGINT");
 
         // CHAT_STATUS table
         var chatStatusSql = "CREATE TABLE IF NOT EXISTS CHAT_STATUS ( "
@@ -242,6 +243,7 @@ function initDatabase() {
             MDS.sql("ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS bio VARCHAR(512)");
             MDS.sql("ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS allow_non_contact_chats BOOLEAN DEFAULT TRUE");
             MDS.sql("ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS extra_data CLOB");
+            MDS.sql("ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS avatar TEXT");
         });
 
         // CONTACT_REQUESTS table
@@ -495,8 +497,13 @@ function handleChatMessage(pubkey, maxjson) {
         }
 
         // 2. Insert message to DB if not blocked
-        var insertSql = "INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date) "
-            + "VALUES ('', '" + safePubkey + "', '" + safeUsername + "', '" + msgType + "', '" + safeMessage + "', '" + safeFiledata + "', 'received', " + amount + ", " + now + ")";
+        var txpowid = maxjson.txpowid ? escapeSql(maxjson.txpowid) : null;
+        var initialState = txpowid ? 'sent' : 'received'; // 'sent' triggers blink on receiver side if txpowid exists
+        var txpowidVal = txpowid ? "'" + txpowid + "'" : "NULL";
+        var originalTimestamp = maxjson.timestamp ? maxjson.timestamp : 0;
+
+        var insertSql = "INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, txpowid, original_timestamp) "
+            + "VALUES ('', '" + safePubkey + "', '" + safeUsername + "', '" + msgType + "', '" + safeMessage + "', '" + safeFiledata + "', '" + initialState + "', " + amount + ", " + now + ", " + txpowidVal + ", " + originalTimestamp + ")";
 
         MDS.sql(insertSql, function (res) {
             if (res.status) {
@@ -504,12 +511,20 @@ function handleChatMessage(pubkey, maxjson) {
 
                 // FIX: Auto-discover user on message receipt to fix "Unknown" in chat list
                 if (safeUsername && safeUsername !== "Unknown" && safeUsername !== "System") {
-                    var upsertPeer = "MERGE INTO DISCOVERED_PEERS (publickey, alias, last_seen) KEY(publickey) " +
-                        "VALUES ('" + safePubkey + "', '" + safeUsername + "', " + now + ")";
+                    var safeAvatar = escapeSql(maxjson.avatar || "");
+                    var safeAddress = escapeSql(maxjson.from_address || "");
+
+                    var upsertPeer = "MERGE INTO DISCOVERED_PEERS (publickey, alias, avatar, address, last_seen, source, allow_non_contact_chats) KEY(publickey) " +
+                        "VALUES ('" + safePubkey + "', '" + safeUsername + "', '" + safeAvatar + "', '" + safeAddress + "', " + now + ", 'MSG', 1)";
                     MDS.sql(upsertPeer, function (pRes) {
                         MDS.log("👤 [CHAT] Auto-discovered peer: " + safeUsername);
                     });
                 }
+
+                // 3. SEND DELIVERY RECEIPT (New Logic)
+                // We must send a receipt back to the sender so they get the double-check
+                sendDeliveryReceipt(pubkey);
+
             } else {
                 MDS.log("❌ [CHAT] Save failed: " + res.error);
             }
@@ -517,14 +532,48 @@ function handleChatMessage(pubkey, maxjson) {
     });
 }
 
+// Helper to send delivery receipt from Service Worker
+function sendDeliveryReceipt(toPublicKey) {
+    // Prevent sending receipts to self or system
+    if (toPublicKey === 'Me' || toPublicKey === 'System') return;
+
+    var payload = {
+        message: "",
+        type: "delivery_receipt",
+        username: "Me",
+        filedata: ""
+    };
+
+    var jsonStr = JSON.stringify(payload);
+    var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
+
+    // We reuse the smart sending logic from handlePing or simple send
+    // Simple send is enough for receipt, or we can look up address if needed commonly
+    // For now, let's use the simplest robust method: send to publickey
+
+    // NOTE: If we want to support Mx addresses for non-contacts, we'd query DB
+    // But for simplicity in this handler, we trust the publickey source
+
+    var sendCmd = "maxima action:send publickey:" + toPublicKey + " application:metachain data:" + hexData + " poll:false";
+    MDS.cmd(sendCmd, function (res) {
+        if (res.status) MDS.log("✅ [DELIVERY] Sent receipt to " + toPublicKey.substring(0, 10));
+    });
+}
+
 function handleReadReceipt(pubkey) {
     MDS.log("📖 [READ-RECEIPT] Received from " + pubkey);
-    var sql = "UPDATE CHAT_MESSAGES SET state='read' WHERE publickey='" + pubkey + "' AND username='Me' AND state!='pending' AND state!='failed'";
+    // Update 'sent' OR 'delivered' messages to 'read'. 
+    // Exclude 'pending' (not sent yet) and 'failed'.
+    var sql = "UPDATE CHAT_MESSAGES SET state='read' WHERE publickey='" + pubkey + "' AND username='Me' AND state!='pending' AND state!='failed' AND state!='read'";
     MDS.sql(sql);
 }
 
 function handleDeliveryReceipt(pubkey) {
-    MDS.log("📬 [DELIVERY-RECEIPT] Ignoring (handled by UI)");
+    MDS.log("📬 [DELIVERY-RECEIPT] Received from " + pubkey);
+    // Update 'sent' messages to 'delivered'. 
+    // Do NOT overwrite 'read' status (as read > delivered).
+    var sql = "UPDATE CHAT_MESSAGES SET state='delivered' WHERE publickey='" + pubkey + "' AND username='Me' AND state='sent'";
+    MDS.sql(sql);
 }
 
 function handlePing(pubkey) {
@@ -966,67 +1015,76 @@ function handleProfileRequest(pubkey, maxjson) {
                         MDS.cmd("keypair action:get key:p2p_bio", function (bioRes) {
                             var bio = (bioRes.status && bioRes.response && bioRes.response.value) ? bioRes.response.value : "";
 
-                            // Step 6: Construct filtered response
-                            var responsePayload = {
-                                type: "profile_response",
-                                // Level 1 - Always included
-                                name: name,
-                                bio: bio,
-                                avatar: avatar,
-                                allowNonContactChats: profile.allowNonContactChats
-                            };
-
-                            // Level 2 - Conditionally included
-                            if (includeLevel2) {
-                                responsePayload.location = profile.location;
-                                responsePayload.country = profile.country;
-                                responsePayload.website = profile.website;
-                                responsePayload.social = profile.social;
-                                responsePayload.languages = profile.languages;
-                            } else {
-                                responsePayload.privacy_l2 = "hidden";
-                            }
-
-                            // Level 3 - Conditionally included
-                            if (includeLevel3) {
-                                responsePayload.email = profile.email;
-                                responsePayload.phone = profile.phone;
-                                MDS.log("✅ [PROFILE] Level 3 added to response - Email: " + (responsePayload.email || "EMPTY") + ", Phone: " + (responsePayload.phone || "EMPTY"));
-                            } else {
-                                responsePayload.privacy_l3 = "hidden";
-                                MDS.log("⚠️ [PROFILE] Level 3 NOT added to response");
-                            }
-
-                            MDS.log("📦 [PROFILE] Final response payload: " + JSON.stringify(responsePayload));
-                            var jsonStr = JSON.stringify(responsePayload);
-                            var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
-
-                            // Step 7: Prepare target address
-                            var targetAddress = null;
-                            if (maxjson.requesterAddress) {
-                                var rawAddr = maxjson.requesterAddress + "";
-                                var parts = rawAddr.split(":");
-                                if (parts.length >= 2) {
-                                    var part1 = parts[0].replace(/[^a-zA-Z0-9@.-]/g, "").trim();
-                                    var part2 = parts[1].replace(/[^0-9]/g, "").trim();
-                                    targetAddress = part1 + ":" + part2;
-                                } else {
-                                    targetAddress = rawAddr.replace(/[^a-zA-Z0-9@.:-]/g, "");
+                            // Step 5.5: Get Minima Wallet Address
+                            MDS.cmd("getaddress", function (addrRes) {
+                                var minimaAddress = "";
+                                if (addrRes.status && addrRes.response && addrRes.response.miniaddress) {
+                                    minimaAddress = addrRes.response.miniaddress;
                                 }
-                            }
 
-                            var sendCommand = "";
-                            if (targetAddress && (targetAddress.startsWith("Mx") || targetAddress.startsWith("MX"))) {
-                                MDS.log("📤 [PROFILE] Sending filtered response to address: " + targetAddress);
-                                sendCommand = "maxima action:send to:" + targetAddress + " application:metachain data:" + hexData + " poll:false";
-                            } else {
-                                MDS.log("📤 [PROFILE] Sending filtered response to pubkey: " + pubkey.substring(0, 10) + "...");
-                                sendCommand = "maxima action:send publickey:" + pubkey + " application:metachain data:" + hexData + " poll:false";
-                            }
+                                // Step 6: Construct filtered response
+                                var responsePayload = {
+                                    type: "profile_response",
+                                    // Level 1 - Always included
+                                    name: name,
+                                    bio: bio,
+                                    avatar: avatar,
+                                    allowNonContactChats: profile.allowNonContactChats,
+                                    minimaaddress: minimaAddress // ALWAYS INCLUDE WALLET ADDRESS
+                                };
 
-                            // Step 8: Send Response
-                            MDS.cmd(sendCommand, function (sendRes) {
-                                MDS.log("✅ [PROFILE] Response Sent. Status: " + sendRes.status);
+                                // Level 2 - Conditionally included
+                                if (includeLevel2) {
+                                    responsePayload.location = profile.location;
+                                    responsePayload.country = profile.country;
+                                    responsePayload.website = profile.website;
+                                    responsePayload.social = profile.social;
+                                    responsePayload.languages = profile.languages;
+                                } else {
+                                    responsePayload.privacy_l2 = "hidden";
+                                }
+
+                                // Level 3 - Conditionally included
+                                if (includeLevel3) {
+                                    responsePayload.email = profile.email;
+                                    responsePayload.phone = profile.phone;
+                                    MDS.log("✅ [PROFILE] Level 3 added to response - Email: " + (responsePayload.email || "EMPTY") + ", Phone: " + (responsePayload.phone || "EMPTY"));
+                                } else {
+                                    responsePayload.privacy_l3 = "hidden";
+                                    MDS.log("⚠️ [PROFILE] Level 3 NOT added to response");
+                                }
+
+                                MDS.log("📦 [PROFILE] Final response payload: " + JSON.stringify(responsePayload));
+                                var jsonStr = JSON.stringify(responsePayload);
+                                var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
+
+                                // Step 7: Prepare target address
+                                var targetAddress = null;
+                                if (maxjson.requesterAddress) {
+                                    var rawAddr = maxjson.requesterAddress + "";
+                                    var parts = rawAddr.split(":");
+                                    if (parts.length >= 2) {
+                                        var part1 = parts[0].replace(/[^a-zA-Z0-9@.-]/g, "").trim();
+                                        var part2 = parts[1].replace(/[^0-9]/g, "").trim();
+                                        targetAddress = part1 + ":" + part2;
+                                    } else {
+                                        targetAddress = rawAddr.replace(/[^a-zA-Z0-9@.:-]/g, "");
+                                    }
+                                }
+
+                                var sendCommand = "";
+                                if (targetAddress && (targetAddress.startsWith("Mx") || targetAddress.startsWith("MX"))) {
+                                    MDS.log("📤 [PROFILE] Sending filtered response to address: " + targetAddress);
+                                    sendCommand = "maxima action:send to:" + targetAddress + " application:metachain data:" + hexData + " poll:false";
+                                } else {
+                                    MDS.log("📤 [PROFILE] Sending filtered response to pubkey: " + pubkey.substring(0, 10) + "...");
+                                    sendCommand = "maxima action:send publickey:" + pubkey + " application:metachain data:" + hexData + " poll:false";
+                                }
+
+                                // Step 8: Send Response
+                                MDS.cmd(sendCommand, function (sendRes) {
+                                    MDS.log("✅ [PROFILE] Response Sent. Status: " + sendRes.status);
+                                });
                             });
                         });
                     });

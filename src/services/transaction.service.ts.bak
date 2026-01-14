@@ -182,34 +182,99 @@ export async function findPendingTransactionByStateId(stateId: string): Promise<
 // This is needed because the initial txpowid from MDS_PENDING might change after PoW/Mining.
 // Helper to find transaction ID in history by timestamp (state var 0)
 // This is needed because the initial txpowid from MDS_PENDING might change after PoW/Mining.
-// Helper to find transaction ID in history by timestamp (state var 0)
-// This is needed because the initial txpowid from MDS_PENDING might change after PoW/Mining.
 async function findTxPoWIDInHistoryByTimestamp(timestamp: string | number): Promise<string | null> {
     const tsStr = String(timestamp);
     try {
-        // 1. Get our address first to search raw txpows (more robust than history action:list)
-        const addressRes: any = await new Promise((resolve) => {
-            MDS.cmd.getaddress((res: any) => resolve(res));
-        });
+        let myAddress = '';
 
-        if (!addressRes.status || !addressRes.response || !addressRes.response.miniaddress) {
-            console.warn(`⚠️ [TX-FIND] Could not get miniaddress to search history.`);
-            return null;
+        // 1. Try to get the address from Maxima Info (this is the one we advertise)
+        try {
+            const maximaRes: any = await new Promise((resolve) => {
+                MDS.cmd.maxima({ params: { action: "info" } }, (res: any) => resolve(res));
+            });
+
+            if (maximaRes.status && maximaRes.response && maximaRes.response.contact) {
+                myAddress = maximaRes.response.contact;
+                console.log(`🕵️ [TX-FIND] Using Maxima profile address for history search: ${myAddress}`);
+            }
+        } catch (err) {
+            console.warn(`⚠️ [TX-FIND] Failed to fetch Maxima profile address`, err);
         }
-        const myAddress = addressRes.response.miniaddress;
 
-        // 2. Search txpow by address (last 50 should be enough for recent txs)
-        const txpowRes: any = await new Promise((resolve) => {
+        // 2. If no profile address, get a generic one (fallback)
+        if (!myAddress) {
+            const addressRes: any = await new Promise((resolve) => {
+                MDS.cmd.getaddress((res: any) => resolve(res));
+            });
+
+            if (!addressRes.status || !addressRes.response || !addressRes.response.miniaddress) {
+                console.warn(`⚠️ [TX-FIND] Could not get miniaddress to search history.`);
+                return null;
+            }
+            myAddress = addressRes.response.miniaddress;
+        }
+
+        // 3. Search txpow by address (last 50 should be enough for recent txs)
+        let txpowRes: any = await new Promise((resolve) => {
             MDS.executeRaw(`txpow address:${myAddress} max:50`, (res: any) => resolve(res));
         });
 
+        // 4. If nothing found on profile address, try the GLOBAL history.
+        // Incoming funds might have been sent to a fresh address (from getaddress), 
+        // which we can't guess. 'history' command searches the entire wallet.
+        if (!txpowRes.status || !txpowRes.response || (Array.isArray(txpowRes.response) && txpowRes.response.length === 0)) {
+            try {
+                console.log(`🕵️ [TX-FIND] Transaction not found on profile address. Searching global history...`);
+                const historyRes: any = await new Promise((resolve) => {
+                    MDS.executeRaw('history action:list', (res: any) => resolve(res));
+                });
+
+                if (historyRes.status && historyRes.response && historyRes.response.historylist) {
+                    const historyList = historyRes.response.historylist;
+                    for (const tx of historyList) {
+                        // History items might differ in structure, but usually have 'body' or we fetch full
+                        if (tx.body?.txn?.state) {
+                            const state = tx.body.txn.state;
+                            if (Array.isArray(state)) {
+                                const timeState = state.find((s: any) => s.port === 0 && (String(s.data) === tsStr || String(s.data) === `"${tsStr}"`));
+                                if (timeState) {
+                                    console.log(`✅ [TX-FIND] Found transaction in GLOBAL history for timestamp ${tsStr}: ${tx.txpowid}`);
+                                    return tx.txpowid;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // If we searched global history and didn't find it, we can pretty much give up.
+                // But let's let it fall through just in case logic below adds value (though unlikely given txpowRes check)
+            } catch (e) {
+                console.warn("⚠️ [TX-FIND] Global history search failed", e);
+            }
+        }
+
         if (!txpowRes.status || !txpowRes.response) {
+            // Also check mempool explicitly just in case 'txpow address' misses pending ones
+            const mempoolRes: any = await new Promise((resolve) => MDS.executeRaw('mempool', (res: any) => resolve(res)));
+            if (mempoolRes.status && mempoolRes.response && mempoolRes.response.txpowlist) {
+                const memPoolTxs = mempoolRes.response.txpowlist;
+                for (const tx of memPoolTxs) {
+                    const state = tx.body?.txn?.state;
+                    if (state && Array.isArray(state)) {
+                        const timeState = state.find((s: any) => s.port === 0 && (String(s.data) === tsStr || String(s.data) === `"${tsStr}"`));
+                        if (timeState) {
+                            console.log(`✅ [TX-FIND] Found transaction in MEMPOOL for timestamp ${tsStr}: ${tx.txpowid}`);
+                            return tx.txpowid;
+                        }
+                    }
+                }
+            }
             return null;
         }
 
         const txList = Array.isArray(txpowRes.response) ? txpowRes.response : [txpowRes.response];
 
-        // 3. Iterate
+        // 4. Iterate
         for (const tx of txList) {
             const state = tx.body?.txn?.state;
             if (state && Array.isArray(state)) {
@@ -224,85 +289,6 @@ async function findTxPoWIDInHistoryByTimestamp(timestamp: string | number): Prom
         }
     } catch (e) {
         console.error("❌ [TX-FIND] Error searching history:", e);
-    }
-    return null;
-}
-
-// NEW HELPER: Specific for Incoming Transactions (Receiver Side)
-// Incoming funds might arrive at a fresh address or profile address, not just the one returned by getaddress.
-// Checks Profile address first, then fallback to Global History search.
-async function findIncomingTxPoWIDInHistory(timestamp: string | number): Promise<string | null> {
-    const tsStr = String(timestamp);
-    try {
-        let profileAddress = '';
-
-        // 1. Try to get the address from Maxima Info (Profile Address)
-        try {
-            const maximaRes: any = await new Promise((resolve) => {
-                MDS.cmd.maxima({ params: { action: "info" } }, (res: any) => resolve(res));
-            });
-            if (maximaRes.status && maximaRes.response && maximaRes.response.contact) {
-                profileAddress = maximaRes.response.contact;
-            }
-        } catch (err) {
-            console.warn(`⚠️ [INCOMING-FIND] Failed to fetch Maxima profile address`, err);
-        }
-
-        // 2. Search txpow by PROFILE address first (most likely for incoming chats)
-        if (profileAddress) {
-            const txpowRes: any = await new Promise((resolve) => {
-                MDS.executeRaw(`txpow address:${profileAddress} max:50`, (res: any) => resolve(res));
-            });
-
-            if (txpowRes.status && txpowRes.response) {
-                const txList = Array.isArray(txpowRes.response) ? txpowRes.response : [txpowRes.response];
-                for (const tx of txList) {
-                    const state = tx.body?.txn?.state;
-                    if (state && Array.isArray(state)) {
-                        const timeState = state.find((s: any) => s.port === 0 && (String(s.data) === tsStr || String(s.data) === `"${tsStr}"`));
-                        if (timeState) {
-                            console.log(`✅ [INCOMING-FIND] Found incoming transaction on profile address: ${tx.txpowid}`);
-                            return tx.txpowid;
-                        }
-                    }
-                }
-            }
-        }
-
-        // 3. GLOBAL HISTORY SEARCH (Fallback if not found on profile address)
-        // This is expensive but necessary for receiver to find txs sent to any of their addresses.
-        try {
-            const historyRes: any = await new Promise((resolve) => {
-                MDS.executeRaw('history action:list', (res: any) => resolve(res));
-            });
-
-            if (historyRes.status && historyRes.response && historyRes.response.txpows) {
-                const historyList = historyRes.response.txpows;
-                console.log(`[INCOMING-DEBUG] Searched global history, found ${historyList.length} items`);
-
-                for (const tx of historyList) {
-                    if (tx.body?.txn?.state) {
-                        const state = tx.body.txn.state;
-                        // console.log(`[INCOMING-DEBUG] Checking tx ${tx.txpowid} state:`, JSON.stringify(state));
-
-                        if (Array.isArray(state)) {
-                            const timeState = state.find((s: any) => s.port === 0 && (String(s.data) === tsStr || String(s.data) === `"${tsStr}"`));
-                            if (timeState) {
-                                console.log(`✅ [INCOMING-FIND] Found incoming transaction in GLOBAL history: ${tx.txpowid}`);
-                                return tx.txpowid;
-                            }
-                        }
-                    }
-                }
-            } else {
-                console.log(`[INCOMING-DEBUG] Global history list is empty or invalid (no txpows found)`, historyRes);
-            }
-        } catch (e) {
-            console.warn("⚠️ [INCOMING-FIND] Global history search failed", e);
-        }
-
-    } catch (e) {
-        console.error("❌ [INCOMING-FIND] Error searching incoming history:", e);
     }
     return null;
 }
@@ -427,65 +413,37 @@ export async function check3BlockConfirmation(txpowid: string): Promise<'confirm
             // 'history' command returns the last N transactions.
             const historyRes: any = await new Promise((resolve) => MDS.executeRaw('history action:list', (res: any) => resolve(res)));
             if (historyRes.status && historyRes.response) {
-                const historyTxs = historyRes.response.txpows || []; // FIXED: historylist -> txpows
+                const historyTxs = historyRes.response.historylist || [];
+                // Compare lowercase
                 const foundInHistory = historyTxs.find((tx: any) =>
                     (tx.txpowid && tx.txpowid.toLowerCase() === txpowid.toLowerCase())
                 );
 
                 if (foundInHistory) {
+                    console.log(`✅ [TX-CONFIRM] Found ${txpowid} in history fallback`);
+
                     // Check if it has block number
-                    const txBlock = foundInHistory.details?.block;
+                    const txBlock = foundInHistory.details?.block || foundInHistory.header?.block;
+
                     if (txBlock) {
-                        console.log(`✅ [TX-CONFIRM] Found ${txpowid} in history (block ${txBlock})`);
                         // Quick check confirmations
                         const statusResponse: any = await new Promise((resolve) => MDS.cmd.status((res: any) => resolve(res)));
                         if (statusResponse.status && statusResponse.response?.chain?.block) {
-                            const currentBlock = statusResponse.response.chain.block;
-                            const diff = parseInt(currentBlock) - parseInt(txBlock);
-                            if (diff >= 3) return 'confirmed';
+                            const currentBlock = parseInt(statusResponse.response.chain.block);
+                            const txBlockInt = parseInt(txBlock);
+                            const diff = currentBlock - txBlockInt;
+
+                            console.log(`📊 [TX-CONFIRM] Block depth: ${diff} (Current: ${currentBlock}, Tx: ${txBlockInt})`);
+
+                            if (diff >= 3) {
+                                return 'confirmed';
+                            }
                         }
+
+                        // If logic reaches here, we found it but it's not confirmed yet
                         return 'pending';
                     }
                 }
-            }
-
-            // Fallback 3: Check Address History (similar to getMyTransactionHistory)
-            // This is the most reliable way when 'txpow txpowid' fails for recent transactions
-            try {
-                const addressResponse: any = await new Promise((resolve) => MDS.cmd.getaddress((res: any) => resolve(res)));
-                if (addressResponse.status && addressResponse.response?.miniaddress) {
-                    const myAddress = addressResponse.response.miniaddress;
-                    // console.log(`🔍 [TX-CONFIRM-FALLBACK] Searching address history: ${myAddress}`);
-
-                    const addressTxPowRes: any = await new Promise((resolve) => MDS.executeRaw(`txpow address:${myAddress} max:20`, (res: any) => resolve(res)));
-
-                    if (addressTxPowRes.status && addressTxPowRes.response) {
-                        const txList = Array.isArray(addressTxPowRes.response) ? addressTxPowRes.response : [addressTxPowRes.response];
-                        const foundTx = txList.find((tx: any) => tx.txpowid && tx.txpowid.toLowerCase() === txpowid.toLowerCase());
-
-                        if (foundTx) {
-                            // Found it! Now verify block status.
-                            if (!foundTx.inblock && !foundTx.isblock) {
-                                // console.log(`✅ [TX-CONFIRM-FALLBACK] Found ${txpowid} in address history but it is NOT in a block yet.`);
-                                return 'pending';
-                            }
-
-                            const txBlock = foundTx.header?.block;
-                            if (txBlock) {
-                                console.log(`✅ [TX-CONFIRM-FALLBACK] Found ${txpowid} in address history (block ${txBlock})`);
-                                const statusResponse: any = await new Promise((resolve) => MDS.cmd.status((res: any) => resolve(res)));
-                                if (statusResponse.status && statusResponse.response?.chain?.block) {
-                                    const currentBlock = statusResponse.response.chain.block;
-                                    const diff = parseInt(currentBlock) - parseInt(txBlock);
-                                    if (diff >= 3) return 'confirmed';
-                                }
-                                return 'pending';
-                            }
-                        }
-                    }
-                }
-            } catch (fallbackErr) {
-                console.warn(`⚠️ [TX-CONFIRM] Check address fallback failed:`, fallbackErr);
             }
 
             return 'not_found';
@@ -496,16 +454,9 @@ export async function check3BlockConfirmation(txpowid: string): Promise<'confirm
             return 'not_found';
         }
 
-        const txpow = txResponse.response;
-
-        // matches the 'working' example code which relies on header.block age.
-        // if (!txpow.inblock && !txpow.isblock) {
-        //     // console.log(`🔍 [TX-CONFIRM] ${txpowid} is in mempool (not inblock/isblock).`);
-        //     return 'pending';
-        // }
-
-        const txBlock = txpow.header?.block;
+        const txBlock = txResponse.response.header?.block;
         if (txBlock === undefined || txBlock === null) {
+            // Transaction is in mempool but not in a block yet
             return 'pending';
         }
 
@@ -518,7 +469,7 @@ export async function check3BlockConfirmation(txpowid: string): Promise<'confirm
 
         if (!statusResponse.status || !statusResponse.response) {
             console.log(`⚠️ [TX-CONFIRM] Could not get blockchain status`);
-            return 'pending';
+            return 'pending'; // Assume pending if we can't check
         }
 
         const currentBlock = statusResponse.response.chain?.block;
@@ -529,7 +480,7 @@ export async function check3BlockConfirmation(txpowid: string): Promise<'confirm
 
         // Compare blocks and check for 3 confirmations
         const blockDifference = parseInt(currentBlock) - parseInt(txBlock);
-        console.log(`🔍 [TX-CONFIRM] Transaction ${txpowid}: mined in/ref ${txBlock}, current ${currentBlock}, confirmations: ${blockDifference}`);
+        console.log(`🔍 [TX-CONFIRM] Transaction ${txpowid}: block ${txBlock}, current ${currentBlock}, confirmations: ${blockDifference}`);
         return blockDifference >= 3 ? 'confirmed' : 'pending';
 
     } catch (err) {
@@ -537,9 +488,10 @@ export async function check3BlockConfirmation(txpowid: string): Promise<'confirm
         return 'pending';
     }
 }
+
 /**
-         * Get all transactions that are in 'sent' status (waiting for confirmations)
-         */
+ * Get all transactions that are in 'sent' status (waiting for confirmations)
+ */
 export async function getSentTransactions(): Promise<any[]> {
     const sql = `SELECT * FROM TRANSACTIONS WHERE status='sent' AND txpowid NOT LIKE 'PENDING_%' ORDER BY created_at ASC`;
 
@@ -558,35 +510,19 @@ export async function getSentTransactions(): Promise<any[]> {
 
 export async function getMyTransactionHistory(): Promise<Map<string, { txpowid: string, timestamp: number }>> {
     try {
-        console.log('🔍 [HISTORY] Fetching transaction history from blockchain...');
+        console.log('🔍 [HISTORY] Fetching transaction history from blockchain (Global)...');
 
-        const addressResponse: any = await new Promise((resolve) => {
-            MDS.cmd.getaddress((res: any) => {
-                resolve(res);
-            });
+        const historyRes: any = await new Promise((resolve) => {
+            MDS.executeRaw('history action:list', (res: any) => resolve(res));
         });
 
-        if (!addressResponse.status || !addressResponse.response) {
-            console.error('❌ [HISTORY] Failed to get address');
-            return new Map();
-        }
-
-        const myAddress = addressResponse.response.miniaddress;
-        console.log(`🔍 [HISTORY] Querying txpows for address: ${myAddress}`);
-
-        const txpowResponse: any = await new Promise((resolve) => {
-            MDS.executeRaw(`txpow address:${myAddress} max:100`, (res: any) => {
-                resolve(res);
-            });
-        });
-
-        if (!txpowResponse.status || !txpowResponse.response) {
+        if (!historyRes.status || !historyRes.response || !historyRes.response.historylist) {
             console.warn('⚠️ [HISTORY] No transaction history found');
             return new Map();
         }
 
         const historyMap = new Map<string, { txpowid: string, timestamp: number }>();
-        const txpows = Array.isArray(txpowResponse.response) ? txpowResponse.response : [txpowResponse.response];
+        const txpows = historyRes.response.historylist;
 
         for (const txpow of txpows) {
             try {
@@ -595,6 +531,7 @@ export async function getMyTransactionHistory(): Promise<Map<string, { txpowid: 
                 if (state && Array.isArray(state) && state.length >= 2) {
                     const charmChainId = state[1]?.data;
 
+                    // Check for MetaChain ID (204)
                     if (charmChainId === '204') {
                         const stateId = state[0]?.data;
                         const txpowid = txpow.txpowid;
@@ -602,7 +539,8 @@ export async function getMyTransactionHistory(): Promise<Map<string, { txpowid: 
 
                         if (stateId && txpowid) {
                             historyMap.set(stateId, { txpowid, timestamp });
-                            console.log(`✅ [HISTORY] Found MetaChain tx: ${stateId} -> ${txpowid} (Time: ${timestamp})`);
+                            // Duplicate check logging to avoid spam if many
+                            // console.log(`✅ [HISTORY] Found MetaChain tx: ${stateId} -> ${txpowid} (Time: ${timestamp})`);
                         }
                     }
                 }
@@ -723,9 +661,20 @@ export async function sendToken(tokenId: string, amount: string, address: string
         }
 
         console.log(`💸 [WALLET] Command parameters:`, JSON.stringify(sendParams, null, 2));
-        console.log(`💸 [WALLET] Executing MDS.cmd.send...`);
+        console.log(`💸 [WALLET] Executing MDS.cmd.send (Manual Promise)...`);
 
-        const response = await (MDS.cmd as any).send(sendParams);
+        // Use Manual Promise to ensure compatibility with all MDS versions
+        const response: any = await new Promise((resolve) => {
+            if (typeof (MDS.cmd as any).send === 'function') {
+                (MDS.cmd as any).send(sendParams, (res: any) => resolve(res));
+            } else {
+                // Fallback if .send isn't a function (shouldn't happen with valid library)
+                console.warn("⚠️ [WALLET] MDS.cmd.send is not a function? Trying executeRaw...");
+                const stateStr = stateId ? `state:{"0":"${stateId}","1":"204"}` : "";
+                const cmd = `send amount:${amount} address:${address} tokenid:${tokenId} ${stateStr}`;
+                MDS.executeRaw(cmd, (res: any) => resolve(res));
+            }
+        });
 
         console.log(`💸 [WALLET] Raw response:`, JSON.stringify(response, null, 2));
 
@@ -759,11 +708,6 @@ export async function sendToken(tokenId: string, amount: string, address: string
                 console.warn("⚠️ [WALLET] Command is pending approval (Read Mode).");
                 console.log("🔍 [DEBUG] Full Pending Response Structure:", JSON.stringify(response, null, 2));
 
-                return {
-                    ...response,
-                    txpowid,
-                    pendinguid
-                };
                 return {
                     ...response,
                     txpowid,
@@ -908,26 +852,29 @@ export function startConfirmationChecker(): void {
                         console.log(`✅ [TX-CONFIRM] Transaction ${tx.txpowid} is now confirmed (3+ blocks)`);
                         await updateTransactionStatus(tx.txpowid, 'confirmed');
                     } else if (status === 'not_found') {
-                        // TxPoWID might have changed (e.g. mining PoW updated the hash).
-                        // Try to find the NEW txpowid by searching history for the state variable (timestamp).
-                        if (tx.message_timestamp) {
-                            console.log(`🕵️ [TX-CONFIRM] Transaction ${tx.txpowid} not found. Searching history for timestamp ${tx.message_timestamp}...`);
-                            const newTxPoWID = await findTxPoWIDInHistoryByTimestamp(tx.message_timestamp);
+                        // RECOVERY LOGIC (Self-Healing) for Outgoing Transactions
+                        // The transaction might have been re-mined with a different ID.
+                        const txTime = parseInt(tx.message_timestamp) || parseInt(tx.created_at) || 0;
+                        if (txTime > 0) {
+                            console.log(`🕵️ [TX-CONFIRM] Outgoing ID ${tx.txpowid} not found. Searching history by timestamp ${txTime}...`);
+                            const recoveredId = await findTxPoWIDInHistoryByTimestamp(txTime);
 
-                            if (newTxPoWID && newTxPoWID !== tx.txpowid) {
-                                console.log(`🔄 [TX-CONFIRM] Found new ID for timestamp ${tx.message_timestamp}: ${newTxPoWID}. Updating TRANSACTIONS table.`);
+                            if (recoveredId && recoveredId !== tx.txpowid) {
+                                console.log(`🔄 [TX-CONFIRM] Recovered ID for outgoing tx ${txTime}: ${recoveredId}. Updating DB.`);
 
-                                // Update DB with new ID
-                                await runSQL(`UPDATE TRANSACTIONS SET txpowid='${newTxPoWID}' WHERE txpowid='${tx.txpowid}'`);
-
-                                // Check confirmation for this new ID immediately
-                                const newStatus = await check3BlockConfirmation(newTxPoWID);
-                                if (newStatus === 'confirmed') {
-                                    console.log(`✅ [TX-CONFIRM] Recovered transaction confirmed!`);
-                                    // We update the OLD txpowid's record effectively by updating with the NEW ID now
-                                    await updateTransactionStatus(newTxPoWID, 'confirmed');
+                                // Update TRANSACTIONS table
+                                // If we have pendinguid, use it (safer). If not, update by old txpowid.
+                                if (tx.pendinguid && tx.pendinguid !== 'NULL') {
+                                    await updateTransactionTxpowid(tx.pendinguid, recoveredId);
                                 } else {
-                                    console.log(`⏳ [TX-CONFIRM] Recovered transaction found but status is ${newStatus}`);
+                                    await runSQL(`UPDATE TRANSACTIONS SET txpowid='${recoveredId}' WHERE txpowid='${tx.txpowid}'`);
+                                }
+
+                                // Check confirmation immediately for the new ID
+                                const newStatus = await check3BlockConfirmation(recoveredId);
+                                if (newStatus === 'confirmed') {
+                                    console.log(`✅ [TX-CONFIRM] Recovered outgoing transaction confirmed!`);
+                                    await updateTransactionStatus(recoveredId, 'confirmed');
                                 }
                                 continue;
                             }
@@ -935,7 +882,6 @@ export function startConfirmationChecker(): void {
 
                         // Check age
                         const now = Date.now();
-                        const txTime = parseInt(tx.message_timestamp) || parseInt(tx.created_at) || 0;
                         const age = now - txTime;
                         const isOld = age > 10 * 60 * 1000; // 10 minutes
 
@@ -952,148 +898,100 @@ export function startConfirmationChecker(): void {
                 }
             }
 
-            // Also check CHAT_MESSAGES for sent token messages AND charms
-            const sentMessagesSql = `SELECT * FROM CHAT_MESSAGES WHERE state='sent' AND (type='token' OR type='charm') ORDER BY date ASC`;
+            // -------------------------------------------------------------------------
+            // 2. CHECK SENT MESSAGES (Cascading updates from TRANSACTIONS table & Incoming)
+            // -------------------------------------------------------------------------
+            const sentMessagesSql = `SELECT * FROM CHAT_MESSAGES WHERE state = 'sent' AND (type='token' OR type='charm')`;
             const sentMessagesRes = await runSQL(sentMessagesSql);
-            const rawSentMessages = sentMessagesRes.rows || [];
 
-            // Normalize message rows
-            const sentMessages = rawSentMessages.map((row: any) => {
-                const newRow: any = {};
-                for (const key in row) {
-                    newRow[key.toLowerCase()] = row[key];
-                }
-                return newRow;
-            });
+            if (sentMessagesRes.rows && sentMessagesRes.rows.length > 0) {
+                console.log(`🔍 [TX-CONFIRM] Checking ${sentMessagesRes.rows.length} sent message(s) for confirmations...`);
 
-            if (sentMessages.length > 0) {
-                console.log(`🔍 [TX-CONFIRM] Checking ${sentMessages.length} sent message(s) for confirmations...`);
+                // Create a map of pending outgoing transactions (from step 1) for quick lookup
+                const txMap = new Map();
+                sentTxs.forEach(tx => {
+                    txMap.set(String(tx.message_timestamp), tx);
+                });
 
-                for (const msg of sentMessages) {
-                    // Skip if message doesn't have a valid date
-                    if (!msg.date || msg.date === 'undefined') {
-                        console.log(`⚠️ [TX-CONFIRM] Skipping message with invalid date: ${msg.date}`);
-                        continue;
-                    }
+                for (const msg of sentMessagesRes.rows) {
+                    // Normalize message keys
+                    const safeMsg = Object.keys(msg).reduce((acc, key) => {
+                        acc[key.toLowerCase()] = msg[key];
+                        return acc;
+                    }, {} as any);
 
-                    // Extract txpowid from the transaction tracking
-                    const txSql = `SELECT txpowid FROM TRANSACTIONS WHERE message_timestamp=${msg.date} AND status='sent'`;
-                    const txRes = await runSQL(txSql);
+                    const isOutgoing = safeMsg.username === 'Me' || safeMsg.username === 'me';
 
-                    if (txRes.rows && txRes.rows.length > 0) {
-                        // Normalize TX result too
-                        const txRow = txRes.rows[0];
-                        const txpowid = txRow.TXPOWID || txRow.txpowid; // Handle both cases for single row access
+                    if (isOutgoing) {
+                        // --- OUTGOING MESSAGES ---
+                        // Check against the TRANSACTIONS table (which tracks *our* sends)
+                        const matchingTx = txMap.get(String(safeMsg.date));
 
-                        console.log(`👉 [TX-CONFIRM] Message ${msg.date} matches TX ${txpowid}`);
-                        const status = await check3BlockConfirmation(txpowid);
-
-                        if (status === 'confirmed') {
-                            console.log(`✅ [TX-CONFIRM] Message ${msg.date} is now confirmed (3+ blocks)`);
-                            await updateMessageState(msg.publickey, msg.date, 'confirmed');
-                        } else if (status === 'not_found') {
-                            // TxPoWID might have changed (e.g. mining PoW updated the hash).
-                            // Try to find the NEW txpowid by searching history for the state variable (timestamp).
-                            console.log(`🕵️ [TX-CONFIRM] Transaction ${txpowid} not found. Searching history for timestamp ${msg.date}...`);
-
-                            const newTxPoWID = await findTxPoWIDInHistoryByTimestamp(msg.date);
-                            if (newTxPoWID && newTxPoWID !== txpowid) {
-                                console.log(`🔄 [TX-CONFIRM] Found new ID for message ${msg.date}: ${newTxPoWID}. Updating DB.`);
-
-                                // Update DB with new ID
-                                await runSQL(`UPDATE TRANSACTIONS SET txpowid='${newTxPoWID}' WHERE txpowid='${txpowid}'`);
-
-                                // Check confirmation for this new ID immediately
-                                const newStatus = await check3BlockConfirmation(newTxPoWID);
-                                if (newStatus === 'confirmed') {
-                                    console.log(`✅ [TX-CONFIRM] recovered transaction confirmed!`);
-                                    await updateMessageState(msg.publickey, msg.date, 'confirmed');
-                                } else {
-                                    console.log(`⏳ [TX-CONFIRM] Recovered transaction found but status is ${newStatus}`);
-                                }
-                                continue; // Skip the timeout check for this iteration
+                        if (matchingTx) {
+                            // If transaction is confirmed, update message
+                            if (matchingTx.status === 'confirmed') {
+                                await updateMessageState(safeMsg.publickey, safeMsg.date, 'confirmed');
+                            } else if (matchingTx.status === 'rejected') {
+                                await updateMessageState(safeMsg.publickey, safeMsg.date, 'failed');
                             }
-
-                            const now = Date.now();
-                            const msgTime = parseInt(msg.date) || 0;
-                            const age = now - msgTime;
-                            if (age > 10 * 60 * 1000) { // 10 mins
-                                console.log(`🗑️ [TX-CONFIRM] Message ${msg.date} transaction lost. Failing message.`);
-                                await updateMessageState(msg.publickey, msg.date, 'failed');
+                        } else {
+                            // No matching pending transaction. Check if there's *any* transaction (maybe already confirmed?)
+                            const anyTx = await getTransactionByMessageTimestamp(safeMsg.date);
+                            if (anyTx) {
+                                if (anyTx.status === 'confirmed') {
+                                    await updateMessageState(safeMsg.publickey, safeMsg.date, 'confirmed');
+                                } else if (anyTx.status === 'rejected') {
+                                    await updateMessageState(safeMsg.publickey, safeMsg.date, 'failed');
+                                }
+                            } else {
+                                // Timeout logic for lost outgoing messages
+                                const timeDiff = Date.now() - safeMsg.date;
+                                if (timeDiff > 10 * 60 * 1000) { // 10 minutes
+                                    console.warn(`⚠️ [TX-CONFIRM] Message ${safeMsg.date} has no transaction record after 10m. Marking failed.`);
+                                    await updateMessageState(safeMsg.publickey, safeMsg.date, 'failed');
+                                }
                             }
                         }
                     } else {
-                        // Fallback: Check if there is a 'confirmed' transaction for this message
-                        const confirmedTxSql = `SELECT txpowid FROM TRANSACTIONS WHERE message_timestamp=${msg.date} AND status='confirmed'`;
-                        const confirmedTxRes = await runSQL(confirmedTxSql);
-                        if (confirmedTxRes.rows && confirmedTxRes.rows.length > 0) {
-                            console.log(`✅ [TX-CONFIRM] Message ${msg.date} already has a confirmed transaction. Updating message state.`);
-                            await updateMessageState(msg.publickey, msg.date, 'confirmed');
-                        } else {
-                            // NEW FALLBACK: Check if the message ITSELF has a txpowid (Incoming transactions)
-                            // Incoming messages are inserted with state='sent' to trigger UI blink, but have no entry in TRANSACTIONS table.
-                            if (msg.txpowid && msg.txpowid !== 'null' && msg.txpowid !== 'undefined') {
-                                console.log(`👉 [TX-CONFIRM-INCOMING] Message ${msg.date} has direct txpowid ${msg.txpowid}. Checking confirmation...`);
-                                const status = await check3BlockConfirmation(msg.txpowid);
+                        // --- INCOMING MESSAGES ---
+                        // These rely on the 'txpowid' column we just added
+                        if (safeMsg.txpowid && safeMsg.txpowid !== 'null') {
+                            console.log(`👉 [TX-CONFIRM-IN] Checking incoming msg from ${safeMsg.username} (ID: ${safeMsg.txpowid})`);
+                            try {
+                                const status = await check3BlockConfirmation(safeMsg.txpowid);
 
                                 if (status === 'confirmed') {
-                                    console.log(`✅ [TX-CONFIRM-INCOMING] Incoming message ${msg.date} confirmed!`);
-                                    await updateMessageState(msg.publickey, msg.date, 'confirmed');
+                                    console.log(`✅ [TX-CONFIRM-IN] Incoming message ${safeMsg.date} confirmed!`);
+                                    await updateMessageState(safeMsg.publickey, safeMsg.date, 'confirmed');
                                 } else if (status === 'not_found') {
-                                    // RECOVERY LOGIC FOR INCOMING (Using Separate Helper):
-                                    const searchTimestamp = msg.original_timestamp || msg.date;
-                                    console.log(`🕵️ [TX-CONFIRM-INCOMING] Tx ${msg.txpowid} not found. Searching INCOMING history for timestamp ${searchTimestamp} (Received: ${msg.date})...`);
+                                    // RECOVERY LOGIC (Self-Healing)
+                                    // If incoming transaction ID is not found, it might have changed (like outgoing ones).
+                                    // Try to recover it from history using the timestamp.
+                                    console.log(`🕵️ [TX-CONFIRM-IN] Incoming ID ${safeMsg.txpowid} not found. Searching history...`);
 
-                                    const newTxPoWID = await findIncomingTxPoWIDInHistory(searchTimestamp);
-                                    if (newTxPoWID && newTxPoWID !== msg.txpowid) {
-                                        console.log(`🔄 [TX-CONFIRM-INCOMING] Found new ID for incoming message ${msg.date}: ${newTxPoWID}. Updating Chat DB.`);
+                                    const recoveredId = await findTxPoWIDInHistoryByTimestamp(safeMsg.date);
+                                    if (recoveredId && recoveredId !== safeMsg.txpowid) {
+                                        console.log(`🔄 [TX-CONFIRM-IN] Recovered ID for msg ${safeMsg.date}: ${recoveredId}. Updating DB.`);
+                                        // Update the CHAT_MESSAGES table with the new ID
+                                        await runSQL(`UPDATE CHAT_MESSAGES SET txpowid='${recoveredId}' WHERE date=${safeMsg.date} AND publickey='${safeMsg.publickey}'`);
 
-                                        // Update CHAT_MESSAGES directly since there is no TRANSACTIONS row
-                                        await runSQL(`UPDATE CHAT_MESSAGES SET txpowid='${newTxPoWID}' WHERE publickey='${msg.publickey}' AND date=${msg.date}`);
-
-                                        // Check confirmation for this new ID immediately
-                                        const newStatus = await check3BlockConfirmation(newTxPoWID);
+                                        // Check confirmation immediately
+                                        const newStatus = await check3BlockConfirmation(recoveredId);
                                         if (newStatus === 'confirmed') {
-                                            console.log(`✅ [TX-CONFIRM-INCOMING] Recovered incoming transaction confirmed!`);
-                                            await updateMessageState(msg.publickey, msg.date, 'confirmed');
-                                        } else {
-                                            console.log(`⏳ [TX-CONFIRM-INCOMING] Recovered incoming tx found but status is ${newStatus}`);
+                                            console.log(`✅ [TX-CONFIRM-IN] Recovered transaction confirmed!`);
+                                            await updateMessageState(safeMsg.publickey, safeMsg.date, 'confirmed');
                                         }
-                                    } else {
-                                        console.log(`⏳ [TX-CONFIRM-INCOMING] Not found in history yet.`);
+                                        continue;
                                     }
-                                } else if (status === 'pending') {
-                                    // ZOMBIE CHECK: If pending for > 5 minutes, force a recovery search
-                                    // The specific ID might be effectively dead/stuck, but a re-mined one exists.
-                                    const now = Date.now();
-                                    const msgTime = parseInt(msg.date) || 0;
-                                    const age = now - msgTime;
 
-                                    if (age > 5 * 60 * 1000) { // 5 minutes
-                                        console.log(`🕵️ [TX-CONFIRM-INCOMING] Tx ${msg.txpowid} is pending for ${Math.floor(age / 1000)}s (Zombie?). Forcing recovery search...`);
-                                        const searchTimestamp = msg.original_timestamp || msg.date;
-                                        const newTxPoWID = await findIncomingTxPoWIDInHistory(searchTimestamp);
-
-                                        if (newTxPoWID && newTxPoWID !== msg.txpowid) {
-                                            console.log(`🔄 [TX-CONFIRM-INCOMING] Found NEW ID for zombie transaction ${msg.date}: ${newTxPoWID}. Updating DB.`);
-                                            // Update DB
-                                            await runSQL(`UPDATE CHAT_MESSAGES SET txpowid='${newTxPoWID}' WHERE publickey='${msg.publickey}' AND date=${msg.date}`);
-
-                                            // Check immediately
-                                            const newStatus = await check3BlockConfirmation(newTxPoWID);
-                                            if (newStatus === 'confirmed') {
-                                                console.log(`✅ [TX-CONFIRM-INCOMING] Recovered zombie transaction confirmed!`);
-                                                await updateMessageState(msg.publickey, msg.date, 'confirmed');
-                                            }
-                                        } else {
-                                            console.log(`⏳ [TX-CONFIRM-INCOMING] No better ID found. Still pending.`);
-                                        }
-                                    } else {
-                                        console.log(`⏳ [TX-CONFIRM-INCOMING] Status is ${status}`);
+                                    const timeDiff = Date.now() - safeMsg.date;
+                                    if (timeDiff > 10 * 60 * 1000) {
+                                        console.warn(`❌ [TX-CONFIRM-IN] Incoming ID ${safeMsg.txpowid} not found after 10m. Marking failed.`);
+                                        await updateMessageState(safeMsg.publickey, safeMsg.date, 'failed');
                                     }
                                 }
-                            } else {
-                                // console.log(`⚠️ [TX-CONFIRM] No sent/confirmed transaction found for message ${msg.date}`);
+                            } catch (e) {
+                                console.error(`❌ [TX-CONFIRM-IN] Error checking incoming msg:`, e);
                             }
                         }
                     }

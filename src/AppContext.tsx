@@ -179,6 +179,10 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
             // Run chat migration to fix duplicate chats (Mx -> 0x)
             console.log("🧹 [AppContext] Running legacy chat migration...");
             minimaService.migrateLegacyChats();
+
+            // Start confirmation checker for 3-block confirmations
+            console.log("⏰ [AppContext] Starting transaction confirmation checker...");
+            minimaService.startConfirmationChecker();
           });
 
           // Start transaction polling service - DISABLED (replaced by MDS_PENDING event)

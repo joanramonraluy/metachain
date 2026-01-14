@@ -105,7 +105,8 @@ export async function initDB(): Promise<void> {
                 filedata TEXT,
                 state VARCHAR(32) DEFAULT 'delivered',
                 amount DECIMAL(30,8) DEFAULT 0,
-                date BIGINT NOT NULL
+                date BIGINT NOT NULL,
+                txpowid VARCHAR(256)
             )`;
 
         MDS.sql(createMessagesTable, (res: any) => {
@@ -113,6 +114,12 @@ export async function initDB(): Promise<void> {
                 console.error("❌ [DB] Failed to create CHAT_MESSAGES table:", res.error);
             } else {
                 console.log("📂 [DB] CHAT_MESSAGES table initialized");
+
+                // Migration: Add txpowid column if not exists (for receiver-side confirmation)
+                const alterSql = "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS txpowid VARCHAR(256)";
+                MDS.sql(alterSql, (alterRes: any) => {
+                    if (alterRes.status) console.log("📂 [DB] txpowid column added/verified in CHAT_MESSAGES");
+                });
             }
         });
 

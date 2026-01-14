@@ -44,13 +44,13 @@ export async function sendMessage(
     type: string = "text",
     filedata: string = "",
     amount: number = 0,
-    existingTimestamp?: number,
+    messageTimestamp: number = Date.now(),
     recipientName?: string,
-    targetApplication: string = "metachain"
-) {
+    targetApplication: string = "metachain",
+    saveToDb: boolean = true,
+    txpowid?: string
+): Promise<any> {
     try {
-        const messageTimestamp = existingTimestamp || Date.now();
-
         // RESOLVE IDENTIFIER: If sending to a Maxima address (Mx...), try to find the Hex Public Key (0x...)
         let databasePublicKey = toPublicKey;
 
@@ -86,12 +86,29 @@ export async function sendMessage(
             }
         }
 
+        // Get extra info for "first contact" resolution (auto-discovery)
+        let myAvatar = "";
+        let myAddress = "";
+        try {
+            const avatarRes = await MDS.keypair.get("profile_avatar");
+            if (avatarRes && avatarRes.status && avatarRes.value) {
+                myAvatar = avatarRes.value;
+            }
+            const myInfo = await MDS.cmd.maxima({ params: { action: 'info' } });
+            myAddress = (myInfo.response as any).contact;
+        } catch (e) {
+            console.warn("⚠️ [MAXIMA] Failed to fetch profile info for payload:", e);
+        }
+
         const payload: any = {
             message,
             type,
             username: senderName,
             filedata,
-            timestamp: messageTimestamp
+            timestamp: messageTimestamp,
+            avatar: myAvatar,
+            from_address: myAddress,
+            txpowid: txpowid || undefined // Include txpowid if provided
         };
 
         if (type === "charm" && amount > 0) {
@@ -160,18 +177,19 @@ export async function sendMessage(
 
                     // IMPORTANT: Insert message locally BEFORE returning!
                     // Always insert even if timestamp is provided (flicker fix passes timestamp)
-                    chatService.insertMessage({
-                        roomname: recipientName || senderName,
-                        publickey: databasePublicKey,
-                        username: "Me",
-                        type,
-                        message,
-                        filedata,
-                        state: "sent",
-                        amount,
-                    });
-                    console.log("💾 [DB] Message saved locally for non-contact");
-
+                    if (saveToDb) {
+                        chatService.insertMessage({
+                            roomname: recipientName || senderName,
+                            publickey: databasePublicKey,
+                            username: "Me",
+                            type,
+                            message,
+                            filedata,
+                            state: "sent",
+                            amount,
+                        });
+                        console.log("💾 [DB] Message saved locally for non-contact");
+                    }
 
                     return retryResponse;
                 } else {
@@ -193,16 +211,18 @@ export async function sendMessage(
         // UPDATE: Allow insertion even if timestamp is provided (for UI sync), unless explicitly skipping? 
         // For now, assume sendMessage implies we want to save it. 
         // Logic: If we are sending, we should have a record. 'insertMessage' handles new rows.
-        chatService.insertMessage({
-            roomname: recipientName || senderName,
-            publickey: databasePublicKey,
-            username: "Me",
-            type,
-            message,
-            filedata,
-            state: isPending ? "pending" : "sent",
-            amount,
-        });
+        if (saveToDb) {
+            chatService.insertMessage({
+                roomname: recipientName || senderName,
+                publickey: databasePublicKey,
+                username: "Me",
+                type,
+                message,
+                filedata,
+                state: isPending ? "pending" : "sent",
+                amount,
+            });
+        }
 
         return response;
     } catch (err) {
@@ -253,7 +273,8 @@ export async function sendReadReceipt(toPublicKey: string) {
         console.log("✅ [READ-RECEIPT] Sent successfully");
 
         // Mark received messages as read locally
-        const sql = `UPDATE CHAT_MESSAGES SET state = 'read' WHERE publickey = '${toPublicKey}' AND username != 'Me' AND state != 'read' AND state != 'pending'`;
+        // CRITICAL: Don't mark as 'read' if the message has an active transaction (pending/sent)
+        const sql = `UPDATE CHAT_MESSAGES SET state = 'read' WHERE publickey = '${toPublicKey}' AND username != 'Me' AND state != 'read' AND state != 'pending' AND state != 'sent'`;
         MDS.sql(sql, (res: any) => {
             console.log("✅ [DB] Marked received messages as read locally:", res);
         });

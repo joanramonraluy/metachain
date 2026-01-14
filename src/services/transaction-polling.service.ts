@@ -123,11 +123,11 @@ class TransactionPollingService {
         // Update transaction status in database
         await minimaService.updateTransactionStatus(txpowid, 'confirmed');
 
-        // Update message status to 'sent' and timestamp to blockchain confirmation time
+        // Update message status to 'confirmed' and timestamp to blockchain confirmation time
         // Use blockchain timestamp if available, otherwise fall back to current time
         const confirmationTime = blockchainTimestamp || Date.now();
         console.log(`🕐 [TxPolling] Using confirmation timestamp: ${confirmationTime} (blockchain: ${!!blockchainTimestamp})`);
-        await minimaService.updateMessageState(PUBLICKEY, MESSAGE_TIMESTAMP, 'sent', confirmationTime);
+        await minimaService.updateMessageState(PUBLICKEY, MESSAGE_TIMESTAMP, 'confirmed', confirmationTime);
 
         // Parse metadata
         let metadata: any = {};

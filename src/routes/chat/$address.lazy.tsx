@@ -3,12 +3,13 @@ import { useEffect, useRef, useState, useContext, useCallback, Suspense, lazy } 
 import { useNavigate, createLazyFileRoute } from "@tanstack/react-router";
 import { MDS } from "@minima-global/mds";
 import { appContext } from "../../AppContext";
-import CharmSelector from "../../components/chat/CharmSelector";
-import { Paperclip, Trash2, User, BarChart, Archive, Star, Smile } from "lucide-react";
+import TransferSelector from "../../components/chat/TransferSelector";
+import { Trash2, User, BarChart, Archive, Star, Smile, Wallet } from "lucide-react";
 import MessageBubble from "../../components/chat/MessageBubble";
-import TokenSelector from "../../components/chat/TokenSelector";
+
 import type { EmojiClickData } from "emoji-picker-react";
 import { minimaService } from "../../services/minima.service";
+import { transactionService } from "../../services/transaction.service";
 import { requestProfile } from "../../services/profile.service";
 import InviteDialog from "../../components/chat/InviteDialog";
 import { useTheme } from "../../context/ThemeContext";
@@ -65,10 +66,9 @@ function ChatPage() {
   const [contact, setContact] = useState<Contact | null>(null);
   const [messages, setMessages] = useState<ParsedMessage[]>([]);
   const [input, setInput] = useState("");
-  const [showCharmSelector, setShowCharmSelector] = useState(false);
+  const [showTransferSelector, setShowTransferSelector] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const [showTokenSelector, setShowTokenSelector] = useState(false);
-  const [showAttachments, setShowAttachments] = useState(false);
+
   const [showMenu, setShowMenu] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showChatInfo, setShowChatInfo] = useState(false);
@@ -78,9 +78,12 @@ function ChatPage() {
   const [isBlocked, setIsBlocked] = useState(false);
   const [blockedByThem, setBlockedByThem] = useState(false);
 
-
+  // Restore Read Mode state (Parent Managed)
   const [showReadModeWarning, setShowReadModeWarning] = useState(false);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
+
+
+
   const [showInviteDialog, setShowInviteDialog] = useState(false);
   const [inviteSending, setInviteSending] = useState(false);
 
@@ -89,7 +92,7 @@ function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const attachmentsRef = useRef<HTMLDivElement>(null); // Ref for attachments menu container
+  // const attachmentsRef = useRef<HTMLDivElement>(null); // Ref for attachments menu container
   const emojiPickerRef = useRef<HTMLDivElement>(null); // Ref for emoji picker (Desktop)
   const emojiPickerMobileRef = useRef<HTMLDivElement>(null); // Ref for emoji picker (Mobile)
   const navigate = useNavigate();
@@ -97,11 +100,6 @@ function ChatPage() {
   // Handle click outside to close popovers
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      // If clicking outside attachments menu
-      if (showAttachments && attachmentsRef.current && !attachmentsRef.current.contains(event.target as Node)) {
-        setShowAttachments(false);
-      }
-
       // If clicking outside emoji picker
       const target = event.target as Node;
       const isOutsideDesktop = !emojiPickerRef.current || !emojiPickerRef.current.contains(target);
@@ -116,7 +114,7 @@ function ChatPage() {
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [showAttachments, showEmojiPicker]);
+  }, [showEmojiPicker]);
 
   // Auto-focus input on mount
   useEffect(() => {
@@ -159,6 +157,7 @@ function ChatPage() {
       GET CONTACT INFO
   ---------------------------------------------------------------------------- */
   useEffect(() => {
+    let mounted = true;
     const fetchContact = async () => {
       try {
         let contactToSet: Contact | null = null;
@@ -202,6 +201,45 @@ function ChatPage() {
           if (!c.publickey && resolvedPublicKey.startsWith("0x")) {
             c.publickey = resolvedPublicKey;
           }
+
+          // FIX: Look up in DISCOVERED_PEERS to get extended info (minimaaddress, bio, etc.)
+          // because maxcontacts only has basic info.
+          if (c.publickey) {
+            const safeKey = c.publickey.replace(/'/g, "''");
+            const discSql = `SELECT * FROM DISCOVERED_PEERS WHERE publickey='${safeKey}'`;
+            const discRes = await MDS.sql(discSql);
+
+            if (discRes.status && discRes.rows && discRes.rows.length > 0) {
+              const peer = discRes.rows[0];
+              // console.log(`✅ [CHAT] Merging extended info from DISCOVERED_PEERS for ${c.extradata?.name}`);
+
+              let parsedExtra: any = {};
+              try {
+                if (peer.EXTRA_DATA) {
+                  parsedExtra = typeof peer.EXTRA_DATA === 'string' ? JSON.parse(peer.EXTRA_DATA) : peer.EXTRA_DATA;
+                }
+              } catch (e) { console.warn("Error parsing extra", e); }
+
+              // Initialize extradata if missing
+              if (!c.extradata) c.extradata = {};
+
+              // MERGE: Prioritize DISCOVERED_PEERS data for Minima Address
+              if (parsedExtra.minimaaddress) {
+                c.extradata.minimaaddress = parsedExtra.minimaaddress;
+                // console.log(`💳 [CHAT] Injected Wallet Address: ${c.extradata.minimaaddress}`);
+              }
+
+              // Maybe merge icon/avatar if missing?
+              if (!c.extradata.icon && peer.ICON) c.extradata.icon = peer.ICON;
+            }
+          }
+
+          // FIX: If stored minimaaddress is invalid (starts with MxG.. which is Maxima ID), clear it
+          if (c.extradata?.minimaaddress && c.extradata.minimaaddress.startsWith("MxG")) {
+            console.warn("⚠️ [CHAT] Found contact with INVALID minimaaddress (MxG...), clearing it for safety.");
+            if (c.extradata) c.extradata.minimaaddress = "";
+          }
+
           contactToSet = c;
         } else {
           // 2. If not found, try DISCOVERED_PEERS (using the RESOLVED key)
@@ -215,12 +253,23 @@ function ChatPage() {
 
           if (discoveryRes.status && discoveryRes.rows && discoveryRes.rows.length > 0) {
             const peer = discoveryRes.rows[0];
+
+            // Fix: Parse EXTRA_DATA to find real wallet address. Do NOT use peer.ADDRESS (Maxima Identity)
+            let parsedExtra: any = {};
+            try {
+              if (peer.EXTRA_DATA) {
+                parsedExtra = typeof peer.EXTRA_DATA === 'string' ? JSON.parse(peer.EXTRA_DATA) : peer.EXTRA_DATA;
+              }
+            } catch (e) {
+              console.warn("⚠️ [CHAT] Failed to parse extra_data from discovery", e);
+            }
+
             contactToSet = {
               publickey: peer.PUBLICKEY,
               currentaddress: peer.ADDRESS || address,
               extradata: {
                 name: peer.ALIAS || "Unknown",
-                minimaaddress: peer.ADDRESS || "",
+                minimaaddress: parsedExtra.minimaaddress || "", // Only use if explicitly in extra_data
                 icon: peer.ICON || ""
               }
             };
@@ -241,29 +290,41 @@ function ChatPage() {
         if (contactToSet) {
           setContact(contactToSet);
 
-          // If contact was not found in Discovery (Unknown User), request profile proactively
+          // If contact was not found in Discovery (Unknown User) OR missing Minima Address, request profile proactively
           // Only if we have a valid public key OR address to send to
-          if ((contactToSet.extradata?.name === "Unknown User" || !contactToSet.extradata?.name) && contactToSet.publickey) {
-            console.log("🔄 [CHAT] Contact unknown - requesting profile proactively");
+          const isUnknown = contactToSet.extradata?.name === "Unknown User" || !contactToSet.extradata?.name;
+          const isMissingAddress = !contactToSet.extradata?.minimaaddress;
+
+          if ((isUnknown || isMissingAddress) && contactToSet.publickey) {
+            console.log(`🔄 [CHAT] Contact incomplete (Unknown: ${isUnknown}, Missing Address: ${isMissingAddress}) - requesting profile proactively`);
             requestProfile(contactToSet.currentaddress || address, contactToSet.publickey)
-              .then(() => {
-                console.log("✅ [CHAT] Profile requested for unknown contact");
-                // Re-fetch contact after profile response to update name
-                // Reduced timeout to feel snappier, but still present to allow round-trip
-                setTimeout(() => fetchContact(), 2000);
-              })
               .catch(err => console.warn("⚠️ [CHAT] Profile request failed:", err));
           }
         }
 
       } catch (err) {
-        console.error("❌ [CHAT] Contact load error:", err);
+        if (mounted) console.error("❌ [CHAT] Contact load error:", err);
       }
     };
 
     if (address) {
       fetchContact();
     }
+
+    // LISTEN FOR PROFILE UPDATES
+    const handlePeerUpdate = (e: CustomEvent) => {
+      const updatedPeer = e.detail;
+      console.log("🔄 [CHAT] Received peer_updated event:", updatedPeer);
+      console.log("🔄 [CHAT] Triggering contact refresh due to peer update.");
+      fetchContact();
+    };
+
+    window.addEventListener('peer_updated' as any, handlePeerUpdate);
+
+    return () => {
+      mounted = false;
+      window.removeEventListener('peer_updated' as any, handlePeerUpdate);
+    };
   }, [address]);
 
   // Check chat status (archived, favorite, and blocked)
@@ -295,6 +356,7 @@ function ChatPage() {
 
     // CRITICAL: Request updated profile to ensure we have the latest allowNonContactChats value
     // This is especially important because DISCOVERED_PEERS might have stale beacon data
+    /*
     try {
       console.log(`🔄 [CHAT] Requesting fresh profile for permission check...`);
       await requestProfile(contact.currentaddress, contact.publickey);
@@ -303,6 +365,7 @@ function ChatPage() {
     } catch (err) {
       console.warn(`⚠️ [CHAT] Could not request profile, using cached data:`, err);
     }
+    */
 
     // Check for OUTGOING requests (I sent to them)
     // ... existing logic ...
@@ -459,6 +522,21 @@ function ChatPage() {
     // return () => clearInterval(intervalId); 
   }, [contact, checkPending]);
 
+  // Listen for balance updates to reload messages when transaction status changes
+  // This ensures messages show updated pending/sent/confirmed status in real-time
+  useEffect(() => {
+    const handleBalanceUpdate = () => {
+      console.log('🔄 [CHAT] Balance updated - reloading messages to update transaction status');
+      loadMessagesFromDB();
+    };
+
+    const removeListener = minimaService.onBalanceUpdate(handleBalanceUpdate);
+
+    return () => {
+      removeListener();
+    };
+  }, []);
+
   // Listen for archive and favorite status changes
   useEffect(() => {
     const handleStatusChange = () => {
@@ -561,7 +639,8 @@ function ChatPage() {
             try {
               const tokenData = JSON.parse(row.MESSAGE || "{}");
               tokenAmount = { amount: tokenData.amount, tokenName: tokenData.tokenName };
-              // displayText = `I sent you ${tokenData.amount} ${tokenData.tokenName} `; // Removed to avoid redundancy with card UI
+              // Fallback text in case UI fails
+              displayText = `${Number(tokenData.amount)} ${tokenData.tokenName}`;
             } catch (err) {
               console.error("❌ [CHAT-DB] Token parse error:", err);
               displayText = row.MESSAGE || "";
@@ -572,28 +651,72 @@ function ChatPage() {
 
           // Safer status parsing - do NOT default to 'sent' blindly
           let parsedStatus: any = row.STATE;
+
           if (!parsedStatus || parsedStatus === 'null' || parsedStatus === 'undefined') {
             // If state is missing, default based on type AND sender
             const username = row.USERNAME;
             parsedStatus = (isCharm || isToken) && username === "Me" ? 'pending' : 'sent';
           }
 
-          const parsed = {
-            text: displayText,
-            fromMe: row.USERNAME === "Me",
-            charm: charmObj,
-            amount: isCharm ? Number(row.AMOUNT || 0) : null,
-            timestamp: Number(row.DATE || 0),
-            status: parsedStatus,
-            tokenAmount,
-            isSystem: row.TYPE === 'system', // Mark system messages
-          };
+          // DEBUG LOG: See what we are loading
+          if (isToken) {
+            console.log(`🔎 [CHAT-DB] Loaded Token: ID=${row.DATE}, Status=${parsedStatus}, Amount=${tokenAmount?.amount}`);
+          }
 
-          return parsed;
+          // CRITICAL FIX: If it's a token/charm from me, we MUST verify against the TRANSACTIONS table
+          // because CHAT_MESSAGES might default to 'sent' or be outdated, while TRANSACTIONS knows the real "pending" state.
+          // We can use the timestamp (row.DATE) which corresponds to message_timestamp in TRANSACTIONS?
+          // Let's assume we can check async or rely on what we have. 
+          // Since this is inside a map, we can't await easily without Promise.all.
+          // For now, let's map it, and then do a second pass or Promise.all the list.
+
+          return {
+            id: row.ID,
+            displayText,
+            parsedStatus,
+            isToken,
+            isCharm,
+            tokenAmount,
+            username: row.USERNAME,
+            date: row.DATE,
+            message: row.MESSAGE,
+            amount: row.AMOUNT,
+            fromMe: row.USERNAME === "Me",
+            charm: charmObj
+          };
         });
 
-        // Don't filter out system messages - we want to show "Contact request sent/accepted"
-        const deduplicatedMessages = deduplicateMessages(parsedMessages);
+        // Phase 2: Async Status Verification for Pending/Sent Transactions
+        // Match the sidebar logic: check TRANSACTIONS table for pending/sent status
+        const finalMessages = await Promise.all(parsedMessages.map(async (msg: any) => {
+          let finalStatus = msg.parsedStatus;
+
+          // Only check if it looks like a transaction from me
+          if ((msg.isToken || msg.isCharm) && msg.fromMe) {
+            // Check TRANSACTIONS table using the message timestamp as stateId
+            const tx = await transactionService.findPendingTransactionByStateId(msg.date);
+            if (tx) {
+              // If we find a transaction with pending or sent status, show as pending in UI
+              if (tx.status === 'pending' || tx.status === 'sent') {
+                console.log(`🔄 [CHAT-DB] Found ${tx.status.toUpperCase()} tx for message ${msg.date}. Showing as 'pending' in UI.`);
+                finalStatus = 'pending';
+              }
+            }
+          }
+
+          return {
+            id: msg.id,
+            text: msg.displayText,
+            fromMe: msg.fromMe,
+            charm: msg.charm,
+            amount: msg.amount,
+            timestamp: Number(msg.date),
+            status: finalStatus,
+            tokenAmount: msg.tokenAmount
+          } as ParsedMessage;
+        }));
+
+        const deduplicatedMessages = deduplicateMessages(finalMessages);
         setMessages(deduplicatedMessages);
       }
     } catch (err) {
@@ -896,8 +1019,8 @@ function ChatPage() {
   const handleSendMessage = async () => {
     if (blockReason !== 'none') return; // Cannot send while blocked
     if (!input.trim()) return;
-    if (!contact?.currentaddress) {
-      console.error("[Send] Cannot send: no Maxima address for contact");
+    if (!contact?.currentaddress && !contact?.publickey) {
+      console.error("[Send] Cannot send: no Maxima address or Public Key for contact");
       return;
     }
 
@@ -987,7 +1110,16 @@ function ChatPage() {
       SEND CHARM
   ---------------------------------------------------------------------------- */
   const executeSendCharm = async (charmId: string, amount: number) => {
-    if (!contact?.publickey || !contact?.extradata?.minimaaddress) return;
+    console.log(`DEBUG: executeSendCharm called. charmId=${charmId}, amount=${amount}`);
+
+    if (!contact?.publickey || !contact?.extradata?.minimaaddress) {
+      console.error("DEBUG: executeSendCharm ABORTED. Missing contact info:", {
+        hasPublicKey: !!contact?.publickey,
+        hasMinimaAddress: !!contact?.extradata?.minimaaddress
+      });
+      alert("Cannot send: Contact missing Public Key or Minima Address.");
+      return;
+    }
     // Use sender's name (from context) for payload, recipient's name for roomname
     const senderName = userName || "Me";
     const recipientName = contact?.extradata?.name || "Unknown";
@@ -998,10 +1130,15 @@ function ChatPage() {
     try {
       console.log("⏳ [ChatPage] Sending charm (pending indicator will be shown)...");
 
+      // FIX: Ensure address is valid for Minima (remove @host if present)
+      let destAddress = contact.extradata.minimaaddress;
+      if (destAddress && destAddress.includes('@')) {
+        destAddress = destAddress.split('@')[0];
+      }
 
       const response = await minimaService.sendCharmWithTokens(
         contact.publickey,
-        contact.extradata.minimaaddress,
+        destAddress,
         senderName,
         recipientName,
         charmId,
@@ -1032,44 +1169,68 @@ function ChatPage() {
     }
   };
 
-  const handleSendCharm = async ({ charmId, amount }: { charmId: string; charmLabel?: string; charmAnimation?: any; amount: number }) => {
-    if (blockReason !== 'none') return; // Cannot send while blocked
-    if (!charmId || !amount) return;
-    if (!contact?.publickey) return;
-    if (!contact?.extradata?.minimaaddress) {
-      alert("This contact does not have a Minima address in their profile. Cannot send tokens with charm.");
-      return;
-    }
 
-    setShowCharmSelector(false);
-
-    // Check for Write Mode
-    if (!writeMode) {
-      setPendingAction(() => () => executeSendCharm(charmId, amount));
-      setShowReadModeWarning(true);
-      return;
-    }
-
-    await executeSendCharm(charmId, amount);
-  };
 
   /* ----------------------------------------------------------------------------
       SEND TOKEN
   ---------------------------------------------------------------------------- */
   const executeSendToken = async (tokenId: string, amount: string, tokenName: string) => {
-    if (!contact?.extradata?.minimaaddress || !contact?.publickey) return;
+    console.log(`DEBUG: executeSendToken called. tokenId=${tokenId}, amount=${amount}`);
+
+    if (!contact?.extradata?.minimaaddress || !contact?.publickey) {
+      console.error("DEBUG: executeSendToken ABORTED. Missing info:", {
+        hasPublicKey: !!contact?.publickey,
+        hasMinimaAddress: !!contact?.extradata?.minimaaddress
+      });
+      alert("Cannot send: Contact missing Public Key or Minima Address.");
+      return;
+    }
 
     const tempTimestamp = Date.now();
     // Use sender's name (from context), not recipient's name
     const senderName = userName || "Me";
     const tokenData = JSON.stringify({ amount, tokenName });
 
-    // Optimistic UI update REMOVED - we will show a separate pending indicator instead
-    console.log("⏳ [ChatPage] Sending token (pending indicator will be shown)...");
+    // Optimistic UI update - Show pending immediately
+    const optimisticMsg: ParsedMessage = {
+      text: "",
+      fromMe: true,
+      charm: null,
+      amount: Number(amount),
+      timestamp: tempTimestamp,
+      status: 'pending',
+      tokenAmount: { amount, tokenName }
+    };
+    setMessages(prev => [...prev, optimisticMsg]);
+    console.log("⏳ [ChatPage] Added optimistic pending token message.");
+
+    // CRITICAL: Save optimistic message to database so UPDATE statements can find it later
+    // This ensures that when MDS_PENDING updates the status to 'sent', the message exists in the DB
+    // IMPORTANT: Keep valid JSON (double quotes) but escape single quotes for SQL
+    const escapedTokenData = tokenData.replace(/'/g, "''");
+    // Note: Include all required columns (roomname, type, filedata) matching chat.service.ts pattern
+    const insertSql = `INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date) VALUES ('', '${contact.publickey}', 'Me', 'token', '${escapedTokenData}', '', 'pending', ${amount}, ${tempTimestamp})`;
+
+    await new Promise<void>((resolve) => {
+      MDS.sql(insertSql, (res: any) => {
+        if (res.status) {
+          console.log(`💾 [ChatPage] Saved optimistic message to DB: ${tempTimestamp}`);
+        } else {
+          console.error("❌ [ChatPage] Failed to save optimistic message to DB:", res);
+        }
+        resolve();
+      });
+    });
+
+    // FIX: Ensure address is valid for Minima (remove @host if present)
+    let destAddress = contact.extradata.minimaaddress;
+    if (destAddress && destAddress.includes('@')) {
+      destAddress = destAddress.split('@')[0];
+    }
 
     try {
       // 1. Send the token via Minima with stateId (timestamp)
-      const tokenResponse = await minimaService.sendToken(tokenId, amount, contact.extradata.minimaaddress, tokenName, tempTimestamp);
+      const tokenResponse = await minimaService.sendToken(tokenId, amount, destAddress, tokenName, tempTimestamp);
 
       // Check if token send is pending
       const isTokenPending = tokenResponse && (tokenResponse.pending || (tokenResponse.error && tokenResponse.error.toString().toLowerCase().includes("pending")));
@@ -1112,7 +1273,8 @@ function ChatPage() {
         }
 
         // Reload messages from DB to show the pending message
-        await loadMessagesFromDB();
+        // Delay slightly to ensure optimistic UI has a chance to render (fix for instant confirm perception)
+        setTimeout(() => loadMessagesFromDB(), 500);
 
         // Don't send the Maxima message yet, keep it pending
         return;
@@ -1121,7 +1283,7 @@ function ChatPage() {
       // 2. Only send a chat message confirming the transaction if token was sent successfully
       console.log("✅ [ChatPage] Token sent successfully. Now sending notification message via Maxima...");
       const recipientName = contact?.extradata?.name || "Unknown";
-      const msgResponse = await minimaService.sendMessage(contact.publickey, senderName, tokenData, 'token', "", 0, undefined, recipientName);
+      const msgResponse = await minimaService.sendMessage(contact.publickey, senderName, tokenData, 'token', "", 0, tempTimestamp, recipientName, "metachain", true, txpowid);
 
       // Check if message send is pending (shouldn't happen if token wasn't pending, but just in case)
       const isMsgPending = msgResponse && (msgResponse.pending || (msgResponse.error && msgResponse.error.toString().toLowerCase().includes("pending")));
@@ -1137,8 +1299,12 @@ function ChatPage() {
         await loadMessagesFromDB();
       }
 
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to send token:", err);
+
+      // FIX: Notify user of failure
+      alert(`Sent failed: ${err.message || 'Unknown error'}`);
+
       // Reload to ensure consistent state
       loadMessagesFromDB();
     }
@@ -1146,22 +1312,52 @@ function ChatPage() {
 
 
 
-  const handleSendToken = async (tokenId: string, amount: string, tokenName: string) => {
-    if (!contact?.extradata?.minimaaddress) {
-      alert("This contact does not have a Minima address in their profile. Cannot send tokens.");
+  /* ----------------------------------------------------------------------------
+      HANDLE TRANSFER
+  ---------------------------------------------------------------------------- */
+  const handleTransfer = async (data: { tokenId: string; amount: string; tokenName: string; charmId?: string }) => {
+    // Debugging trace
+    console.log("📍 [TRACE 1] handleTransfer entered. Data:", JSON.stringify(data));
+    console.log("📍 [TRACE 1] WriteMode:", writeMode);
+    console.log("📍 [TRACE 1] FULL CONTACT OBJECT:", JSON.stringify(contact, null, 2));
+
+    // SAFE check
+    if (!contact || !contact.extradata || !contact.extradata.minimaaddress) {
+      console.error("📍 [TRACE ABORT] Missing contact or minimaaddress. Contact keys:", contact ? Object.keys(contact) : 'null');
+      if (contact?.extradata) console.error("📍 [TRACE ABORT] Extradata keys:", Object.keys(contact.extradata));
+
+      alert("This contact does not have a Minima address in their profile. Cannot send value.");
       return;
     }
 
-    setShowTokenSelector(false);
+    console.log("📍 [TRACE 2] Info check passed. Closing selector...");
 
-    // Check for Write Mode
+    // CLOSE SELECTOR FIRST (Critical for z-index/focus stability)
+    setShowTransferSelector(false);
+
+    console.log("📍 [TRACE 3] Selector close signal sent.");
+
+    const action = async () => {
+      console.log("📍 [TRACE ACTION] Executing Transfer Action (Async)...");
+      if (data.charmId) {
+        // Send as Charm
+        await executeSendCharm(data.charmId, Number(data.amount));
+      } else {
+        // Send as Token
+        await executeSendToken(data.tokenId, data.amount, data.tokenName);
+      }
+    };
+
+    // Check for Read Mode (Parent Managed)
     if (!writeMode) {
-      setPendingAction(() => () => executeSendToken(tokenId, amount, tokenName));
+      console.log("DEBUG: Read Mode detected. Showing warning.");
+      setPendingAction(() => action);
       setShowReadModeWarning(true);
       return;
     }
 
-    await executeSendToken(tokenId, amount, tokenName);
+    console.log("DEBUG: Write Mode detected. Proceeding directly.");
+    await action();
   };
 
   /* ----------------------------------------------------------------------------
@@ -1700,15 +1896,13 @@ function ChatPage() {
                     </svg>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 mb-1">
-                      Sending {msg.tokenAmount ? 'Token' : 'Charm'}
+                    <p className="text-sm text-gray-900 leading-tight">
+                      Sending {msg.tokenAmount
+                        ? <span className="font-semibold">{msg.tokenAmount.amount} {msg.tokenAmount.tokenName}</span>
+                        : <span className="font-semibold">{msg.amount} MINIMA</span>}
                     </p>
-                    <p className="text-sm text-gray-600 break-all">
-                      {msg.tokenAmount
-                        ? `${msg.tokenAmount.amount} ${msg.tokenAmount.tokenName}`
-                        : `${msg.amount} MINIMA`}
-                      {' · '}
-                      <span className="text-primary-600 font-medium">Waiting for confirmation...</span>
+                    <p className="text-xs text-primary-600 font-medium mt-0.5">
+                      Waiting for confirmation...
                     </p>
                   </div>
                 </div>
@@ -1773,31 +1967,6 @@ function ChatPage() {
       </div>
       {/* INPUT BAR - Fixed at bottom */}
       <div className="p-2 bg-[#F0F2F5] dark:bg-gray-800/95 flex gap-2 items-center flex-shrink-0 z-10 relative border-t border-gray-200 dark:border-gray-700 transition-colors">
-        {/* Attachment Menu Popover */}
-        {showAttachments && (
-          <div ref={attachmentsRef} className="absolute bottom-16 left-2 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-100 dark:border-gray-700 p-2 flex flex-col gap-1 min-w-[160px] animate-in slide-in-from-bottom-2 fade-in duration-200">
-            <button
-              className="flex items-center gap-3 p-3 hover:bg-gray-50 rounded-lg transition-colors text-left"
-              onClick={() => {
-                setShowAttachments(false);
-                setShowCharmSelector(true);
-              }}
-            >
-              <span className="w-8 h-8 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center">✨</span>
-              <span className="font-medium text-gray-700 dark:text-gray-200">Send Charm</span>
-            </button>
-            <button
-              className="flex items-center gap-3 p-3 hover:bg-gray-50 rounded-lg transition-colors text-left"
-              onClick={() => {
-                setShowAttachments(false);
-                setShowTokenSelector(true);
-              }}
-            >
-              <span className="w-8 h-8 rounded-full bg-green-100 text-green-600 flex items-center justify-center">💸</span>
-              <span className="font-medium text-gray-700 dark:text-gray-200">Send Tokens</span>
-            </button>
-          </div>
-        )}
 
         {/* Emoji Picker Popover */}
         {showEmojiPicker && (
@@ -1833,22 +2002,26 @@ function ChatPage() {
         )}
 
         <button
-          className={`p-3 rounded-full transition-colors ${showAttachments ? 'bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-white' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
+          className={`p-3 rounded-full transition-colors text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200`}
           onClick={(e) => {
-            e.stopPropagation(); // Stop propagation to prevent immediate close
+            e.stopPropagation();
             setShowEmojiPicker(false);
-            setShowAttachments(!showAttachments);
+            // Small timeout to prevent UI flicker/bar effect
+            setTimeout(() => {
+              if (inputRef.current) inputRef.current.blur(); // Dismiss keyboard
+              setShowTransferSelector(true);
+            }, 50);
           }}
-          title="Attachments"
+          title="Send Value"
         >
-          <Paperclip className="w-6 h-6" />
+          <Wallet className="w-6 h-6" />
         </button>
 
         <button
           className={`p-3 rounded-full transition-colors ${showEmojiPicker ? 'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-600 dark:text-yellow-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
           onClick={(e) => {
             e.stopPropagation(); // Stop propagation to prevent immediate close
-            setShowAttachments(false);
+            // setShowAttachments(false); // Removed
             setShowEmojiPicker(!showEmojiPicker);
           }}
           title="Emojis"
@@ -1892,30 +2065,27 @@ function ChatPage() {
           </svg>
         </button>
       </div>
-      {showCharmSelector && (
-        <CharmSelector
-          onSend={handleSendCharm}
-          onClose={() => setShowCharmSelector(false)}
-        />
-      )}
-      {showTokenSelector && (
-        <TokenSelector
-          onSend={handleSendToken}
-          onCancel={() => setShowTokenSelector(false)}
-        />
-      )}
+      {
+        showTransferSelector && (
+          <TransferSelector
+            onSend={handleTransfer}
+            onCancel={() => setShowTransferSelector(false)}
+          />
+        )
+      }
+
       {/* Read Mode Warning Dialog */}
       {showReadModeWarning && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-xl animate-in fade-in zoom-in duration-200">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4 backdrop-blur-sm">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl max-w-sm w-full p-6 shadow-xl animate-in fade-in zoom-in duration-200 border border-gray-100 dark:border-gray-800">
             <div className="flex flex-col items-center text-center gap-4">
-              <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center text-yellow-600">
+              <div className="w-12 h-12 bg-yellow-100 dark:bg-yellow-900/30 rounded-full flex items-center justify-center text-yellow-600 dark:text-yellow-500">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                 </svg>
               </div>
-              <h3 className="text-lg font-bold text-gray-900">Read Mode Active</h3>
-              <p className="text-gray-600 text-sm leading-relaxed">
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white">Read Mode Active</h3>
+              <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed">
                 The application is in <strong>Read Mode</strong>. This transaction will appear in <strong>Pending Commands</strong> in Minima.
                 <br /><br />
                 You will need to approve it there to complete the transfer.
@@ -1926,7 +2096,7 @@ function ChatPage() {
                     setShowReadModeWarning(false);
                     setPendingAction(null);
                   }}
-                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-xl font-medium hover:bg-gray-50 transition-colors"
+                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-xl font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
                 >
                   Cancel
                 </button>
@@ -1936,7 +2106,7 @@ function ChatPage() {
                     if (pendingAction) pendingAction();
                     setPendingAction(null);
                   }}
-                  className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-xl font-medium hover:bg-primary-700 transition-colors"
+                  className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-xl font-medium hover:bg-primary-700 transition-colors shadow-lg shadow-primary-500/30"
                 >
                   Proceed
                 </button>
@@ -1945,6 +2115,8 @@ function ChatPage() {
           </div>
         </div>
       )}
-    </div>
+
+
+    </div >
   )
 }

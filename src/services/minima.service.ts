@@ -24,9 +24,27 @@ class MinimaService {
     private processedMsgIds = new Set<string>();
     private instanceId = Math.floor(Math.random() * 10000);
 
+    // Event system for light-weight UI updates (bypassing React Context complexity)
+    private balanceUpdateListeners = new Set<() => void>();
+
     constructor() {
         console.log(`🔧[MinimaService] Instance created: #${this.instanceId} `);
         // Singleton pattern could be used, or just export an instance
+    }
+
+    /* ----------------------------------------------------------------------------
+       EVENT LISTENERS (Balance)
+    ---------------------------------------------------------------------------- */
+    onBalanceUpdate(cb: () => void) {
+        this.balanceUpdateListeners.add(cb);
+        return () => this.balanceUpdateListeners.delete(cb);
+    }
+
+    notifyBalanceUpdate() {
+        console.log("💰 [SERVICE] Notifying listeners of balance update...");
+        this.balanceUpdateListeners.forEach(cb => cb());
+        // Also dispatch window event for components not using the service subscription
+        window.dispatchEvent(new CustomEvent('minima_balance_update'));
     }
 
     /* ----------------------------------------------------------------------------
@@ -188,6 +206,9 @@ class MinimaService {
             // we simply run the cleanup logic which checks ALL pending transactions against the blockchain history.
             // This is more robust and handles both "app closed" and "live update" scenarios uniformly.
             await this.cleanupOrphanedPendingTransactions();
+
+            // Notify UI to refresh balance immediately
+            this.notifyBalanceUpdate();
 
         } catch (err) {
             console.error('❌ [NEWBALANCE] Error handling balance change:', err);
@@ -421,10 +442,13 @@ VALUES('${peer.pubkey}', '${escapedAlias}', '${escapedBio}', '${peer.address}', 
                         : 1;
 
                     // Parse potential avatar? (Not currently supported in DISCOVERED_PEERS schema, but name/bio are)
+                    const extraData = JSON.stringify(json);
+                    const escapedExtraData = extraData.replace(/'/g, "''");
 
-                    const updateProfileSql = `MERGE INTO DISCOVERED_PEERS(publickey, alias, bio, last_seen, source, allow_non_contact_chats)
+                    // CRITICAL: We MUST save the 'extra_data' column because that's where 'minimaaddress' lives!
+                    const updateProfileSql = `MERGE INTO DISCOVERED_PEERS(publickey, alias, bio, extra_data, last_seen, source, allow_non_contact_chats)
                                               KEY(publickey)
-                                              VALUES('${from}', '${escapedAlias}', '${escapedBio}', ${now}, 'PROFILE_RESPONSE', ${allowChats})`;
+                                              VALUES('${from}', '${escapedAlias}', '${escapedBio}', '${escapedExtraData}', ${now}, 'PROFILE_RESPONSE', ${allowChats})`;
 
                     try {
                         await this.runSQL(updateProfileSql);
@@ -712,9 +736,12 @@ WHERE(${addressClause}) AND status = 'pending'`;
         amount: number = 0,
         existingTimestamp?: number,
         recipientName?: string,
-        targetApplication: string = "metachain"
+        targetApplication: string = "metachain",
+        saveToDb: boolean = true,
+        txpowid?: string
     ) {
-        return messagingService.sendMessage(toPublicKey, senderName, message, type, filedata, amount, existingTimestamp, recipientName, targetApplication);
+        if (!this.initialized) await this.init();
+        return messagingService.sendMessage(toPublicKey, senderName, message, type, filedata, amount, existingTimestamp, recipientName, targetApplication, saveToDb, txpowid);
     }
 
     async updateMessageState(publickey: string, timestamp: number, state: string, newTimestamp?: number) {
@@ -802,11 +829,42 @@ WHERE(${addressClause}) AND status = 'pending'`;
             // Check if this transaction is in the blockchain (confirmed)
             const confirmedTxData = confirmedTxs.get(MESSAGE_TIMESTAMP.toString());
 
+            let isConfirmedFallback = false;
+            let fallbackTxpowData: { txpowid: string, timestamp: number } | null = null;
+
             if (confirmedTxData) {
-                const { txpowid: confirmedTxpowid, timestamp: confirmedTimestamp } = confirmedTxData;
+                isConfirmedFallback = true;
+                fallbackTxpowData = confirmedTxData;
+            } else if (TXPOWID && TXPOWID !== 'null') {
+                // FALLBACK: If not found in general history (maybe address mismatch), check by specific TXPOWID
+                try {
+                    const txpowCheck: any = await new Promise((resolve) => {
+                        // Use 'txpow txpowid:...'
+                        (MDS.cmd as any)(`txpow txpowid:${TXPOWID}`, (res: any) => resolve(res));
+                    });
+
+                    if (txpowCheck.status && txpowCheck.response) {
+                        const txp = txpowCheck.response;
+                        if (txp.isinblock) {
+                            console.log(`✅ [CLEANUP] Fallback: Transaction ${TXPOWID} is IN BLOCK! (Address scan missed it)`);
+                            isConfirmedFallback = true;
+                            // Construct data object typical of history map
+                            fallbackTxpowData = {
+                                txpowid: TXPOWID,
+                                timestamp: txp.header?.timemilli ? Number(txp.header.timemilli) : Date.now()
+                            };
+                        }
+                    }
+                } catch (e) {
+                    console.warn(`⚠️ [CLEANUP] Fallback check failed for ${TXPOWID}`, e);
+                }
+            }
+
+            if (isConfirmedFallback && fallbackTxpowData) {
+                const { txpowid: confirmedTxpowid, timestamp: confirmedTimestamp } = fallbackTxpowData;
 
                 // Transaction is confirmed in blockchain!
-                console.log(`✅[CLEANUP] Transaction ${MESSAGE_TIMESTAMP} confirmed as ${confirmedTxpowid} at ${confirmedTimestamp} `);
+                console.log(`✅ [CLEANUP] Transaction ${MESSAGE_TIMESTAMP} confirmed as ${confirmedTxpowid} at ${confirmedTimestamp}`);
 
                 // Update txpowid if we only had pendinguid
                 if (!TXPOWID || TXPOWID === 'null') {
@@ -816,8 +874,8 @@ WHERE(${addressClause}) AND status = 'pending'`;
                 // Mark as confirmed
                 await this.updateTransactionStatus(confirmedTxpowid, 'confirmed');
 
-                // Update message state to 'sent' AND update timestamp to blockchain confirmation time
-                await this.updateMessageState(PUBLICKEY, MESSAGE_TIMESTAMP, 'sent', confirmedTimestamp);
+                // Update message state to 'confirmed' AND update timestamp to blockchain confirmation time
+                await this.updateMessageState(PUBLICKEY, MESSAGE_TIMESTAMP, 'confirmed', confirmedTimestamp);
 
                 // Send Maxima notification (in case it wasn't sent yet)
                 const { TYPE, METADATA } = tx;
@@ -830,7 +888,7 @@ WHERE(${addressClause}) AND status = 'pending'`;
 
                 if (TYPE === 'charm') {
                     const { charmId, amount, username } = metadata;
-                    console.log(`📤[CLEANUP] Sending charm message via Maxima...`);
+                    console.log(`📤 [CLEANUP] Sending charm message via Maxima...`);
                     await this.sendMessage(
                         PUBLICKEY,
                         username || 'Unknown',
@@ -843,7 +901,7 @@ WHERE(${addressClause}) AND status = 'pending'`;
                 } else if (TYPE === 'token') {
                     const { amount, tokenName, username } = metadata;
                     const tokenData = JSON.stringify({ amount, tokenName });
-                    console.log(`📤[CLEANUP] Sending token message via Maxima...`);
+                    console.log(`📤 [CLEANUP] Sending token message via Maxima...`);
                     await this.sendMessage(
                         PUBLICKEY,
                         username || 'Unknown',
@@ -1267,7 +1325,7 @@ WHERE(${addressClause}) AND status = 'pending'`;
         return transactionService.updateTransactionTxpowid(pendinguid, txpowid);
     }
 
-    async updateTransactionStatusByPendingUid(pendinguid: string, status: 'pending' | 'confirmed' | 'rejected'): Promise<void> {
+    async updateTransactionStatusByPendingUid(pendinguid: string, status: 'pending' | 'sent' | 'confirmed' | 'rejected'): Promise<void> {
         return transactionService.updateTransactionStatusByPendingUid(pendinguid, status);
     }
 
@@ -1374,7 +1432,7 @@ WHERE(${addressClause}) AND status = 'pending'`;
 
             // Step 2: Only send the charm message via Maxima if token was sent successfully
             console.log(`✅[CHARM] Token sent successfully.Now sending charm message via Maxima...`);
-            const msgResponse = await this.sendMessage(toPublicKey, senderName, charmId, "charm", "", amount, undefined, recipientName);
+            const msgResponse = await this.sendMessage(toPublicKey, senderName, charmId, "charm", "", amount, stateId || undefined, recipientName, "metachain", true, txpowid);
 
             console.log(`✅[CHARM] ========== CHARM SENT SUCCESSFULLY ==========`);
             return { pending: false, response: msgResponse, txpowid };
@@ -1397,11 +1455,11 @@ WHERE(${addressClause}) AND status = 'pending'`;
                 tokenid: tokenId
             };
 
-            // Add state variables if stateId provided (for tracking)
+            // Add state variables if provided
             if (stateId) {
                 sendParams.state = {
-                    0: stateId,      // Unique timestamp ID
-                    1: 204           // MetaChain identifier (0xCC)
+                    0: stateId.toString(),
+                    1: "204"
                 };
                 console.log(`🏷️[WALLET] Adding state variables: ID = ${stateId} `);
             }
@@ -1409,6 +1467,7 @@ WHERE(${addressClause}) AND status = 'pending'`;
             console.log(`💸[WALLET] Command parameters: `, JSON.stringify(sendParams, null, 2));
             console.log(`💸[WALLET] Executing MDS.cmd.send...`);
 
+            // Use the pattern from examples: (MDS.cmd as any).send(params)
             const response = await (MDS.cmd as any).send(sendParams);
 
             console.log(`💸[WALLET] Raw response: `, JSON.stringify(response, null, 2));
@@ -1617,16 +1676,17 @@ WHERE(${addressClause}) AND status = 'pending'`;
                     console.log(`🆔[MDS_PENDING] Updated txpowid: ${txpowid} `);
                 }
 
-                // Update transaction status to confirmed
-                await this.updateTransactionStatusByPendingUid(uid, 'confirmed');
+                // Update transaction status to 'sent' (not confirmed yet - needs 3 blocks)
+                await this.updateTransactionStatusByPendingUid(uid, 'sent');
 
                 // Extract blockchain timestamp from the transaction response
                 const blockchainTimestamp = result.response?.header?.timemilli;
                 const confirmationTime = blockchainTimestamp ? Number(blockchainTimestamp) : Date.now();
                 console.log(`🕐[MDS_PENDING] Transaction confirmed at blockchain time: ${confirmationTime} (from header: ${!!blockchainTimestamp})`);
 
-                // Update message state to 'sent' AND update timestamp to blockchain confirmation time
-                await this.updateMessageState(PUBLICKEY, MESSAGE_TIMESTAMP, 'sent', confirmationTime);
+                // CRITICAL: Update message state to 'sent' but KEEP the original timestamp
+                // We need to keep MESSAGE_TIMESTAMP unchanged so we can still find the transaction by message_timestamp
+                await this.updateMessageState(PUBLICKEY, MESSAGE_TIMESTAMP, 'sent');
 
                 // Send Maxima message
                 const metadata = JSON.parse(METADATA || '{}');
@@ -1641,7 +1701,11 @@ WHERE(${addressClause}) AND status = 'pending'`;
                         'charm',
                         '',
                         amount || 0,
-                        confirmationTime  // Use blockchain timestamp, not MESSAGE_TIMESTAMP
+                        MESSAGE_TIMESTAMP,  // Use original timestamp
+                        undefined,         // recipientName
+                        "metachain",       // targetApplication
+                        false,             // saveToDb
+                        txpowid || undefined // txpowid for receiver confirmation
                     );
                 } else if (TYPE === 'token') {
                     const { tokenName, username, amount } = metadata;
@@ -1654,7 +1718,11 @@ WHERE(${addressClause}) AND status = 'pending'`;
                         'token',
                         '',
                         0,
-                        confirmationTime  // Use blockchain timestamp, not MESSAGE_TIMESTAMP
+                        MESSAGE_TIMESTAMP,  // Use original timestamp
+                        undefined,         // recipientName
+                        "metachain",       // targetApplication
+                        false,             // saveToDb
+                        txpowid || undefined // txpowid for receiver confirmation
                     );
                 }
 
@@ -1935,6 +2003,14 @@ WHERE(${addressClause}) AND status = 'pending'`;
         }
 
         console.log(`✅ [MIGRATION] Migrated chat from ${oldKey} to ${newKey}`);
+    }
+
+    /**
+     * Start the transaction confirmation checker
+     * Checks all 'sent' transactions periodically for 3-block confirmations
+     */
+    startConfirmationChecker(): void {
+        return transactionService.startConfirmationChecker();
     }
 }
 

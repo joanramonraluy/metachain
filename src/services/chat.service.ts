@@ -336,9 +336,12 @@ class ChatService {
                     m.*,
                     s.archived,
                     s.last_opened,
-                    s.favorite
+                    s.favorite,
+                    d.alias as discovery_alias,
+                    d.avatar as discovery_avatar
                 FROM CHAT_MESSAGES m
                 LEFT JOIN CHAT_STATUS s ON m.publickey = s.publickey
+                LEFT JOIN DISCOVERED_PEERS d ON m.publickey = d.publickey
                 ORDER BY m.date DESC
             `;
 
@@ -380,7 +383,8 @@ class ChatService {
             if (!chatMap.has(publickey)) {
                 chatMap.set(publickey, {
                     publickey: row.PUBLICKEY,
-                    roomname: row.ROOMNAME,
+                    roomname: row.DISCOVERY_ALIAS || row.ROOMNAME || "Unknown",
+                    avatar: row.DISCOVERY_AVATAR,
                     lastMessage: row.MESSAGE,
                     lastMessageType: row.TYPE,
                     lastMessageDate: Number(row.DATE),
