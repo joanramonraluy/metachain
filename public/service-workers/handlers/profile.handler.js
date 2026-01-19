@@ -218,8 +218,11 @@ function handleProfileResponse(pubkey, maxjson) {
         allowNonContactChats = maxjson.allowNonContactChats ? 1 : 0;
     }
 
-    // Update bio, extra_data, AND allow_non_contact_chats
-    var updateSql = "UPDATE DISCOVERED_PEERS SET bio='" + escapeSql(maxjson.bio || "") + "', extra_data='" + extraData + "', allow_non_contact_chats=" + allowNonContactChats + ", last_seen=" + now + " WHERE publickey='" + safePubkey + "'";
+    // Extract minimaaddress from profile response
+    var minimaAddress = escapeSql(maxjson.minimaaddress || "");
+
+    // Update bio, extra_data, minimaaddress, AND allow_non_contact_chats
+    var updateSql = "UPDATE DISCOVERED_PEERS SET bio='" + escapeSql(maxjson.bio || "") + "', extra_data='" + extraData + "', minimaaddress='" + minimaAddress + "', allow_non_contact_chats=" + allowNonContactChats + ", last_seen=" + now + " WHERE publickey='" + safePubkey + "'";
 
     MDS.sql(updateSql, function (res) {
         if (res.status) {

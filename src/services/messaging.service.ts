@@ -8,6 +8,27 @@ import { runSQL, utf8ToHex } from "./database.service";
 import { chatService } from "./chat.service";
 
 /* ----------------------------------------------------------------------------
+   HELPER: Address Cleaner (Ported from Service Worker)
+---------------------------------------------------------------------------- */
+function cleanMaximaAddress(addr: string): string {
+    if (!addr) return "";
+    let s = String(addr).trim();
+    // CRITICAL: Remove ALL whitespace first to prevent Java NumberFormatException
+    s = s.replace(/\s+/g, "");
+    const idx = s.lastIndexOf(":");
+    if (idx !== -1) {
+        const base = s.substring(0, idx);
+        const port = s.substring(idx + 1);
+        const cleanBase = base.replace(/[^a-zA-Z0-9@._-]/g, "");
+        const cleanPort = port.replace(/[^0-9]/g, "");
+        if (cleanBase && cleanPort) {
+            return cleanBase + ":" + cleanPort;
+        }
+    }
+    return s.replace(/\s/g, "").replace(/[^a-zA-Z0-9@:._-]/g, "");
+}
+
+/* ----------------------------------------------------------------------------
    HELPER: Resolve Address from Discovery
 ---------------------------------------------------------------------------- */
 
@@ -124,11 +145,11 @@ export async function sendMessage(
             action: "send",
             application: targetApplication,
             data: hexData,
-            poll: false,
+            poll: true,
         };
 
         if (toPublicKey.startsWith("Mx") || toPublicKey.startsWith("MX")) {
-            sendParams.to = toPublicKey;
+            sendParams.to = cleanMaximaAddress(toPublicKey);
         } else {
             sendParams.publickey = toPublicKey;
         }
@@ -161,10 +182,10 @@ export async function sendMessage(
                     const retryResponse = await MDS.cmd.maxima({
                         params: {
                             action: "send",
-                            to: mxAddress,
+                            to: cleanMaximaAddress(mxAddress),
                             application: targetApplication,
                             data: hexData,
-                            poll: false,
+                            poll: true,
                         } as any,
                     });
 
@@ -252,7 +273,7 @@ export async function sendReadReceipt(toPublicKey: string) {
             action: "send",
             application: "metachain",
             data: hexData,
-            poll: false,
+            poll: true,
         };
 
         if (toPublicKey.startsWith('0x')) {
@@ -274,7 +295,7 @@ export async function sendReadReceipt(toPublicKey: string) {
 
         // Mark received messages as read locally
         // CRITICAL: Don't mark as 'read' if the message has an active transaction (pending/sent)
-        const sql = `UPDATE CHAT_MESSAGES SET state = 'read' WHERE publickey = '${toPublicKey}' AND username != 'Me' AND state != 'read' AND state != 'pending' AND state != 'sent'`;
+        const sql = `UPDATE CHAT_MESSAGES SET state = 'read' WHERE publickey = '${toPublicKey}' AND username != 'Me' AND state != 'read' AND state != 'pending' AND state != 'sent' AND state != 'confirmed'`;
         MDS.sql(sql, (res: any) => {
             console.log("✅ [DB] Marked received messages as read locally:", res);
         });
@@ -301,7 +322,7 @@ export async function sendDeliveryReceipt(toPublicKey: string) {
             action: "send",
             application: "metachain",
             data: hexData,
-            poll: false,
+            poll: true,
         };
 
         if (toPublicKey.startsWith('0x')) {
@@ -345,7 +366,7 @@ export async function sendPing(toPublicKey: string) {
             action: "send",
             application: "metachain",
             data: hexData,
-            poll: false,
+            poll: true,
         };
 
         if (toPublicKey.startsWith('0x')) {
@@ -387,7 +408,7 @@ export async function sendPong(toPublicKey: string) {
             action: "send",
             application: "metachain",
             data: hexData,
-            poll: false,
+            poll: true,
         };
 
         if (toPublicKey.startsWith('0x')) {
@@ -454,21 +475,40 @@ export async function requestChatHistory(toPublicKey: string) {
             type: "chat_history_request",
             username: "Me",
             filedata: "",
-            timestamp: Date.now()
+            timestamp: Date.now() - (7 * 24 * 60 * 60 * 1000) // Last 7 days
         };
 
         const jsonStr = JSON.stringify(payload);
         const hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
 
-        await MDS.cmd.maxima({
-            params: {
-                action: "send",
-                publickey: toPublicKey,
-                application: "metachain",
-                data: hexData,
-                poll: true,
-            } as any,
-        });
+        // Try to resolve MxAddress for better delivery reliability
+        const mxAddress = await resolveMaximaAddressFromPubkey(toPublicKey);
+
+        if (mxAddress) {
+            // FIX: Clean address to prevent NumberFormatException
+            const cleanAddr = cleanMaximaAddress(mxAddress);
+            console.log("🔍 [HISTORY-SYNC] Using resolved address:", cleanAddr.substring(0, 20) + "...");
+            await MDS.cmd.maxima({
+                params: {
+                    action: "send",
+                    to: cleanAddr,
+                    application: "metachain",
+                    data: hexData,
+                    poll: true,
+                } as any,
+            });
+        } else {
+            console.log("⚠️ [HISTORY-SYNC] No address found, using publickey");
+            await MDS.cmd.maxima({
+                params: {
+                    action: "send",
+                    publickey: toPublicKey,
+                    application: "metachain",
+                    data: hexData,
+                    poll: true,
+                } as any,
+            });
+        }
 
         console.log("✅ [HISTORY-SYNC] Request sent successfully");
     } catch (err) {

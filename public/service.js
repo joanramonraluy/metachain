@@ -146,13 +146,630 @@ function safeDecode(str) {
 function escapeSql(str) {
     return (str || '').replace(/'/g, "''");
 }
+
+/**
+ * Maxima Message Sender - Service Worker Utility
+ * Handles sending Maxima messages independently of frontend
+ * Ported from messaging.service.ts
+ * 
+ * NOTE: Uses callbacks instead of async/await (MDS doesn't support async/await)
+ */
+
+/**
+ * Send a Maxima message
+ * @param {string} toPublicKey - Recipient's public key (0x...) or Maxima address (Mx...)
+ * @param {string} type - Message type ('text', 'charm', 'token', etc.)
+ * @param {object} messageData - Message content and metadata
+ * @param {object} context - Additional context (senderName, timestamp, etc.)
+ * @param {function} callback - Callback function(error, result)
+ */
+function sendMaximaMessage(toPublicKey, type, messageData, context, callback) {
+    if (!callback && typeof context === 'function') {
+        callback = context;
+        context = {};
+    }
+    context = context || {};
+
+    try {
+        MDS.log("📤 [SW-MAXIMA] Preparing to send " + type + " to " + toPublicKey.substring(0, 10) + "...");
+
+        // Get sender info
+        MDS.cmd("maxima action:info", function (myInfo) {
+            if (!myInfo.status) {
+                callback("Failed to get Maxima info");
+                return;
+            }
+
+            var myAddress = myInfo.response.contact;
+
+            // Try to get avatar from keypair
+            MDS.cmd("keypair action:get key:profile_avatar", function (avatarRes) {
+                var myAvatar = "";
+                if (avatarRes.status && avatarRes.value) {
+                    myAvatar = avatarRes.value;
+                }
+
+                // Construct payload
+                var payload = {
+                    message: messageData.message || "",
+                    type: type,
+                    username: context.senderName || "Me",
+                    filedata: messageData.filedata || "",
+                    timestamp: context.timestamp || Date.now(),
+                    avatar: myAvatar,
+                    from_address: myAddress
+                };
+
+                // Add type-specific fields
+                if (type === "charm" && messageData.amount) {
+                    payload.amount = messageData.amount;
+                }
+
+                if (context.txpowid) {
+                    payload.txpowid = context.txpowid;
+                }
+
+                // Convert to hex
+                var jsonStr = JSON.stringify(payload);
+                var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
+
+                MDS.log("📦 [SW-MAXIMA] Payload: " + jsonStr.substring(0, 100) + "...");
+
+                // Determine send method (publickey vs address)
+                var sendMessage = function (sendCmd) {
+                    MDS.log("📡 [SW-MAXIMA] Sending via: " + sendCmd.substring(0, 80) + "...");
+                    MDS.cmd(sendCmd, function (response) {
+                        if (!response.status) {
+                            // Check if it's a "No Contact found" error - try address resolution
+                            if (response.error && response.error.indexOf("No Contact found") !== -1) {
+                                MDS.log("⚠️ [SW-MAXIMA] Not in contacts, trying address resolution...");
+                                resolveMaximaAddress(toPublicKey, function (err, mxAddress) {
+                                    if (!err && mxAddress) {
+                                        var retrySendCmd = "maxima action:send to:" + cleanMaximaAddress(mxAddress) + " application:metachain data:" + hexData + " poll:true";
+                                        MDS.cmd(retrySendCmd, function (retryResponse) {
+                                            if (!retryResponse.status) {
+                                                callback("Retry failed: " + retryResponse.error);
+                                            } else {
+                                                MDS.log("✅ [SW-MAXIMA] Message sent via Mx address (non-contact)");
+                                                callback(null, retryResponse);
+                                            }
+                                        });
+                                    } else {
+                                        callback("Could not resolve address for non-contact");
+                                    }
+                                });
+                            } else {
+                                callback(response.error || "Maxima send failed");
+                            }
+                        } else {
+                            MDS.log("✅ [SW-MAXIMA] Message sent successfully");
+                            callback(null, response);
+                        }
+                    });
+                };
+
+                if (toPublicKey.startsWith("Mx") || toPublicKey.startsWith("MX")) {
+                    sendMessage("maxima action:send to:" + cleanMaximaAddress(toPublicKey) + " application:metachain data:" + hexData + " poll:true");
+                } else if (toPublicKey.startsWith("0x")) {
+                    // Try to resolve to Maxima address first
+                    resolveMaximaAddress(toPublicKey, function (err, mxAddress) {
+                        if (!err && mxAddress) {
+                            MDS.log("🔍 [SW-MAXIMA] Resolved 0x to Mx address: " + mxAddress);
+                            sendMessage("maxima action:send to:" + cleanMaximaAddress(mxAddress) + " application:metachain data:" + hexData + " poll:true");
+                        } else {
+                            sendMessage("maxima action:send publickey:" + toPublicKey + " application:metachain data:" + hexData + " poll:true");
+                        }
+                    });
+                } else {
+                    callback("Invalid recipient identifier: " + toPublicKey);
+                }
+            });
+        });
+
+    } catch (err) {
+        MDS.log("❌ [SW-MAXIMA] Error sending message: " + err);
+        callback(err);
+    }
+}
+
+/**
+ * Resolve a public key (0x...) to a Maxima address (Mx...)
+ * @param {string} publicKey - Public key to resolve
+ * @param {function} callback - Callback function(error, address)
+ */
+function resolveMaximaAddress(publicKey, callback) {
+    if (!publicKey.startsWith('0x')) {
+        callback(null, null);
+        return;
+    }
+
+    try {
+        // Check DISCOVERED_PEERS table
+        var sql = "SELECT ADDRESS FROM DISCOVERED_PEERS WHERE PUBLICKEY='" + escapeSql(publicKey) + "' AND ADDRESS IS NOT NULL LIMIT 1";
+        MDS.sql(sql, function (result) {
+            if (result.status && result.rows && result.rows.length > 0) {
+                var address = result.rows[0].ADDRESS;
+                if (address) address = cleanMaximaAddress(address);
+                if (address && (address.startsWith('Mx') || address.startsWith('MX'))) {
+                    callback(null, address);
+                    return;
+                }
+            }
+            callback(null, null);
+        });
+    } catch (e) {
+        MDS.log("⚠️ [SW-MAXIMA] Error resolving address: " + e);
+        callback(e, null);
+    }
+}
+
+/**
+ * Send a charm message (token transfer + charm notification)
+ * @param {string} toPublicKey - Recipient's public key
+ * @param {string} charmId - Charm identifier
+ * @param {number} amount - Amount of tokens
+ * @param {object} context - Additional context (senderName, timestamp, txpowid)
+ * @param {function} callback - Callback function(error, result)
+ */
+function sendCharmMessage(toPublicKey, charmId, amount, context, callback) {
+    if (!callback && typeof context === 'function') {
+        callback = context;
+        context = {};
+    }
+
+    sendMaximaMessage(toPublicKey, "charm", {
+        message: charmId,
+        amount: amount
+    }, context, callback);
+}
+
+/**
+ * Send a token transfer message
+ * @param {string} toPublicKey - Recipient's public key
+ * @param {object} tokenData - Token transfer data {amount, tokenName}
+ * @param {object} context - Additional context (senderName, timestamp, txpowid)
+ * @param {function} callback - Callback function(error, result)
+ */
+function sendTokenMessage(toPublicKey, tokenData, context, callback) {
+    if (!callback && typeof context === 'function') {
+        callback = context;
+        context = {};
+    }
+
+    sendMaximaMessage(toPublicKey, "token", {
+        message: JSON.stringify(tokenData)
+    }, context, callback);
+}
+
+/**
+ * Helper to clean Maxima Address specifically for the port issue
+ * Duplicated from chat.handler.js for robustness
+ */
+function cleanMaximaAddress(addr) {
+    if (!addr) return "";
+
+    // 1. Basic trim
+    var s = String(addr).trim();
+
+    // 2. CRITICAL: Remove ALL whitespace first to prevent Java NumberFormatException
+    s = s.replace(/\s+/g, "");
+
+    // 3. Split by Last Colon (Host:Port)
+    var idx = s.lastIndexOf(":");
+
+    if (idx !== -1) {
+        var base = s.substring(0, idx);
+        var port = s.substring(idx + 1);
+
+        // 4. AGGRESSIVE CLEANING
+        // Remove all whitespace and invalid chars from base
+        // Allow: a-z A-Z 0-9 @ . - _ 
+        var cleanBase = base.replace(/[^a-zA-Z0-9@._-]/g, "");
+
+        // Remove everything except numbers from port
+        var cleanPort = port.replace(/[^0-9]/g, "");
+
+        if (cleanBase && cleanPort) {
+            return cleanBase + ":" + cleanPort;
+        }
+    }
+
+    // Fallback: Just remove all whitespace and invalid chars
+    return s.replace(/\s/g, "").replace(/[^a-zA-Z0-9@:._-]/g, "");
+}
+
+/**
+ * Transaction Checker - Service Worker Utility
+ * Handles transaction state verification independently of frontend
+ * Ported from transaction.service.ts
+ * 
+ * NOTE: Uses callbacks instead of async/await (MDS doesn't support async/await)
+ */
+
+/**
+ * Check if a pending UID still exists in Minima's pending list
+ * @param {string} uid - Pending UID to check
+ * @param {function} callback - Callback function(error, exists)
+ */
+function checkPendingUID(uid, callback) {
+    try {
+        MDS.cmd("checkpending uid:" + uid, function (response) {
+            if (!response.status) {
+                MDS.log("📋 [SW-TX-CHECK] Could not check pending status for " + uid);
+                callback(null, false);
+                return;
+            }
+
+            var exists = response.response && response.response.exists;
+            MDS.log("📋 [SW-TX-CHECK] UID " + uid + " pending status: " + exists);
+            callback(null, exists || false);
+        });
+    } catch (err) {
+        MDS.log("❌ [SW-TX-CHECK] Error checking pending UID: " + err);
+        callback(err, false);
+    }
+}
+
+/**
+ * Check transaction status by txpowid
+ * @param {string} txpowid - Transaction ID to check
+ * @param {function} callback - Callback function(error, status) where status is 'confirmed' | 'pending' | 'not_found'
+ */
+function checkTransactionByTxpowid(txpowid, callback) {
+    try {
+        MDS.cmd("txpow txpowid:" + txpowid, function (response) {
+            if (!response.status || !response.response) {
+                callback(null, 'not_found');
+                return;
+            }
+
+            var txpow = response.response;
+            var isInBlock = txpow.isblock || txpow.inblock;
+
+            callback(null, isInBlock ? 'confirmed' : 'pending');
+        });
+    } catch (err) {
+        MDS.log("❌ [SW-TX-CHECK] Error checking txpowid " + txpowid + ": " + err);
+        callback(err, 'not_found');
+    }
+}
+
+/**
+ * Find a transaction in blockchain or mempool by message timestamp
+ * Searches for MetaChain transactions (state[1].data === '204')
+ * @param {number|string} messageTimestamp - Message timestamp to search for
+ * @param {function} callback - Callback function(error, txpowid) where txpowid is string or null
+ */
+function findInBlockchainOrMempool(messageTimestamp, callback) {
+    try {
+        var tsStr = String(messageTimestamp);
+
+        // Get our address
+        MDS.cmd("getaddress", function (addressRes) {
+            if (!addressRes.status || !addressRes.response) {
+                MDS.log("❌ [SW-TX-FIND] Failed to get address");
+                callback(null, null);
+                return;
+            }
+
+            var myAddress = addressRes.response.miniaddress;
+            MDS.log("🔍 [SW-TX-FIND] Searching for timestamp " + tsStr + " at address " + myAddress);
+
+            // Search recent txpows for this address
+            MDS.cmd("txpow address:" + myAddress + " max:50", function (txpowRes) {
+                if (!txpowRes.status || !txpowRes.response) {
+                    MDS.log("⚠️ [SW-TX-FIND] No txpows found");
+                    callback(null, null);
+                    return;
+                }
+
+                var txpows = Array.isArray(txpowRes.response) ? txpowRes.response : [txpowRes.response];
+
+                // Search for our transaction
+                for (var i = 0; i < txpows.length; i++) {
+                    var txpow = txpows[i];
+                    var state = txpow.body && txpow.body.txn && txpow.body.txn.state;
+
+                    if (state && Array.isArray(state) && state.length >= 2) {
+                        var stateId = state[0] && state[0].data;
+                        var charmChainId = state[1] && state[1].data;
+
+                        // Check if it's our MetaChain transaction (204 = 0xCC)
+                        if (charmChainId === '204' && stateId === tsStr) {
+                            MDS.log("✅ [SW-TX-FIND] Found transaction: " + txpow.txpowid);
+                            callback(null, txpow.txpowid);
+                            return;
+                        }
+                    }
+                }
+
+                MDS.log("⚠️ [SW-TX-FIND] Transaction not found for timestamp " + tsStr);
+                callback(null, null);
+            });
+        });
+    } catch (err) {
+        MDS.log("❌ [SW-TX-FIND] Error searching: " + err);
+        callback(err, null);
+    }
+}
+
+/**
+ * Get all pending actions from Minima
+ * @param {function} callback - Callback function(error, pendingActions) where pendingActions is an array
+ */
+function getAllPendingActions(callback) {
+    try {
+        MDS.cmd("mds action:pending", function (response) {
+            if (!response.status || !response.response) {
+                MDS.log("⚠️ [SW-TX-CHECK] Failed to get pending actions");
+                callback(null, []);
+                return;
+            }
+
+            var pending = response.response.pending || [];
+            MDS.log("📋 [SW-TX-CHECK] Found " + pending.length + " pending actions in Minima");
+            callback(null, pending);
+        });
+    } catch (err) {
+        MDS.log("❌ [SW-TX-CHECK] Error getting pending actions: " + err);
+        callback(err, []);
+    }
+}
+
+/**
+ * Check if a transaction has 3+ block confirmations
+ * @param {string} txpowid - Transaction ID to check
+ * @param {function} callback - Callback function(error, status) where status is 'confirmed' | 'pending' | 'not_found'
+ */
+function check3BlockConfirmation(txpowid, callback) {
+    if (!txpowid || txpowid.startsWith('PENDING_')) {
+        callback(null, 'pending');
+        return;
+    }
+
+    try {
+        // Get transaction details
+        MDS.cmd("txpow txpowid:" + txpowid, function (txResponse) {
+            if (!txResponse.status || !txResponse.response) {
+                callback(null, 'not_found');
+                return;
+            }
+
+            var txpow = txResponse.response;
+            var txBlock = txpow.header && txpow.header.block;
+
+            if (txBlock === undefined || txBlock === null) {
+                callback(null, 'pending');
+                return;
+            }
+
+            // Get current blockchain tip
+            MDS.cmd("status", function (statusResponse) {
+                if (!statusResponse.status || !statusResponse.response) {
+                    MDS.log("⚠️ [SW-TX-CONFIRM] Could not get blockchain status");
+                    callback(null, 'pending');
+                    return;
+                }
+
+                var currentBlock = statusResponse.response.chain && statusResponse.response.chain.block;
+
+                if (currentBlock === undefined || currentBlock === null) {
+                    MDS.log("⚠️ [SW-TX-CONFIRM] Could not get current block number");
+                    callback(null, 'pending');
+                    return;
+                }
+
+                // Calculate confirmations
+                var blockDifference = parseInt(currentBlock) - parseInt(txBlock);
+                MDS.log("🔍 [SW-TX-CONFIRM] Transaction " + txpowid + ": block " + txBlock + ", current " + currentBlock + ", confirmations: " + blockDifference);
+
+                callback(null, blockDifference >= 3 ? 'confirmed' : 'pending');
+            });
+        });
+    } catch (err) {
+        MDS.log("❌ [SW-TX-CONFIRM] Error checking confirmation: " + err);
+        callback(err, 'pending');
+    }
+}
+
+/**
+ * Coin Discovery Utility
+ * Scans blockchain for coins with state variables to recover offline token messages
+ */
+
+/**
+ * Discover and recover token messages that were sent while node was offline
+ * @returns {Promise<number>} Number of recovered messages
+ */
+function discoverOfflineTokens() {
+    MDS.log("📦 [COIN-DISCOVERY] Starting scan for offline tokens...");
+
+    // Get all unspent coins
+    return new Promise(function (resolveMain) {
+        MDS.cmd("coins", function (coinsRes) {
+            // Debug: Log full response
+            MDS.log("📦 [COIN-DISCOVERY-DEBUG] Full response: " + JSON.stringify(coinsRes));
+
+            if (!coinsRes.status) {
+                MDS.log("⚠️ [COIN-DISCOVERY-DEBUG] Status false. Error: " + (coinsRes.error || "No error message"));
+                MDS.log("⚠️ [COIN-DISCOVERY] Failed to get coins");
+                resolveMain(0);
+                return;
+            }
+
+            if (!coinsRes.response) {
+                MDS.log("⚠️ [COIN-DISCOVERY-DEBUG] No response object");
+                MDS.log("⚠️ [COIN-DISCOVERY] Failed to get coins");
+                resolveMain(0);
+                return;
+            }
+
+            // Coins are returned directly in response array, not response.coins
+            if (!Array.isArray(coinsRes.response)) {
+                MDS.log("⚠️ [COIN-DISCOVERY-DEBUG] Response is not an array. Type: " + typeof coinsRes.response);
+                MDS.log("⚠️ [COIN-DISCOVERY] Failed to get coins");
+                resolveMain(0);
+                return;
+            }
+
+            var allCoins = coinsRes.response;
+            MDS.log("📦 [COIN-DISCOVERY] Scanning " + allCoins.length + " coins...");
+
+            // Filter coins with state variables (MetaChain tokens)
+            var stateCoins = allCoins.filter(function (coin) {
+                return coin.storestate === true &&
+                    coin.state &&
+                    coin.state['0'] &&
+                    coin.spent === false;
+            });
+
+            if (stateCoins.length === 0) {
+                MDS.log("📦 [COIN-DISCOVERY] No coins with state variables found");
+                resolveMain(0);
+                return;
+            }
+
+            MDS.log("📦 [COIN-DISCOVERY] Found " + stateCoins.length + " coin(s) with state variables");
+
+            var recoveredCount = 0;
+            var currentIndex = 0;
+
+            // Process coins sequentially
+            function processNextCoin() {
+                if (currentIndex >= stateCoins.length) {
+                    // All coins processed
+                    if (recoveredCount > 0) {
+                        MDS.log("📦 [COIN-DISCOVERY] Successfully recovered " + recoveredCount + " offline token message(s)");
+                    } else {
+                        MDS.log("📦 [COIN-DISCOVERY] No new offline tokens to recover");
+                    }
+                    resolveMain(recoveredCount);
+                    return;
+                }
+
+                var coin = stateCoins[currentIndex];
+                // State variables are objects with .data property
+                var timestamp = coin.state['0'].data;
+                var senderInfo = coin.state['1'] ? coin.state['1'].data : '';
+                var chatId = coin.state['2'] ? coin.state['2'].data : null;
+                var senderKey = coin.state['3'] ? coin.state['3'].data : null;
+
+                // Determine roomname: use chatId if available (truncated to 160 chars), otherwise "Offline Tokens"
+                var roomname = chatId ? chatId.substring(0, 160) : "Offline Tokens";
+
+                MDS.log("📦 [COIN-DISCOVERY] Processing coin with chatId: " + (chatId || "NONE") + ", roomname: " + roomname);
+
+                // Check if message already exists - use time window AND coinid/txpowid
+                var minTime = parseInt(timestamp) - 60000;
+                var maxTime = parseInt(timestamp) + 60000;
+                var checkSql = "SELECT * FROM CHAT_MESSAGES WHERE type='token' AND publickey='" + (senderKey || senderInfo || '') + "' AND (" +
+                    "(date >= " + minTime + " AND date <= " + maxTime + ") OR " +
+                    "(original_timestamp >= " + minTime + " AND original_timestamp <= " + maxTime + ") OR " +
+                    "txpowid='" + coin.coinid + "'" +
+                    ")";
+                MDS.log("🔍 [COIN-DISCOVERY] Dedup check: " + checkSql);
+                MDS.sql(checkSql, function (existing) {
+                    if (existing.status && existing.rows && existing.rows.length > 0) {
+                        MDS.log("♻️ [COIN-DISCOVERY] Skipping duplicate coin (already exists): " + coin.coinid);
+                        // Message already exists, skip to next
+                        currentIndex++;
+                        processNextCoin();
+                        return;
+                    }
+
+                    // Extract sender publickey: prioritize state[3], fallback to state[1]
+                    var senderPubkey = 'UNKNOWN';
+                    if (senderKey && senderKey.trim().length > 0) {
+                        // state[3] contains the full sender public key
+                        senderPubkey = senderKey.trim();
+                        MDS.log("📤 [COIN-DISCOVERY] Using sender key from state[3]: " + senderPubkey.substring(0, 20) + "...");
+                    } else if (senderInfo && senderInfo.trim().length > 0) {
+                        // Fallback to state[1] for backward compatibility
+                        senderPubkey = senderInfo.trim();
+                        MDS.log("⚠️ [COIN-DISCOVERY] Fallback to state[1]: " + senderPubkey.substring(0, 20) + "...");
+                    } else {
+                        MDS.log("❌ [COIN-DISCOVERY] No valid sender key found in state[3] or state[1]!");
+                    }
+
+                    // Get token info
+                    var tokenid = coin.tokenid || '0x00';
+                    var amount = coin.amount || '0';
+                    var tokenName = 'Minima';
+
+                    if (tokenid !== '0x00' && coin.token) {
+                        tokenName = coin.token.name || coin.token.tokenid || 'Unknown Token';
+                    }
+
+                    // Create message payload
+                    var messagePayload = JSON.stringify({
+                        amount: amount,
+                        tokenName: tokenName,
+                        tokenid: tokenid
+                    });
+
+                    // Escape single quotes for SQL
+                    var escapedPayload = messagePayload.replace(/'/g, "''");
+
+                    // Insert retroactive message
+                    var insertSql = "INSERT INTO CHAT_MESSAGES " +
+                        "(publickey, username, message, type, date, state, amount, txpowid, roomname, filedata, customid, read, original_timestamp) " +
+                        "VALUES (" +
+                        "'" + senderPubkey + "', " +
+                        "'Unknown', " +
+                        "'" + escapedPayload + "', " +
+                        "'token', " +
+                        "'" + timestamp + "', " +
+                        "'confirmed', " +
+                        amount + ", " +
+                        "'" + coin.coinid + "', " +
+                        "'" + roomname + "', " +
+                        "'', " +
+                        "'0x00', " +
+                        "0, " +
+                        timestamp +
+                        ")";
+
+                    MDS.sql(insertSql, function (insertRes) {
+                        if (insertRes.status) {
+                            MDS.log("✅ [COIN-DISCOVERY] Recovered offline token: " + amount + " " + tokenName + " from " + senderPubkey.substring(0, 10) + "... (timestamp: " + timestamp + ")");
+                            recoveredCount++;
+                        } else {
+                            MDS.log("⚠️ [COIN-DISCOVERY] Failed to insert message for coin " + coin.coinid + ": " + insertRes.error);
+                        }
+
+                        // Move to next coin
+                        currentIndex++;
+                        processNextCoin();
+                    });
+                });
+            }
+
+            // Start processing
+            processNextCoin();
+        });
+    }).catch(function (err) {
+        MDS.log("❌ [COIN-DISCOVERY] Error during discovery: " + err);
+        return 0;
+    });
+}
+
 /**
  * MetaChain Service Worker - Database Initialization
- * Creates all required tables on startup
+ * Creates all required tables on startup using Sequential Promise Pattern
  */
 
 function initDatabase() {
-    MDS.log("🚀 [SW] STARTING UP - v1.4 (MODULAR)");
+    MDS.log("🚀 [SW] STARTING UP - v2.6 REPAIR");
+
+    // Helper to run SQL as Promise
+    function runSQL(query) {
+        return new Promise(function (resolve, reject) {
+            MDS.sql(query, function (res) {
+                if (res.status) resolve(res);
+                else resolve({ status: false, error: res.error }); // Resolve even on error to keep chain moving
+            });
+        });
+    }
 
     // Register for NEWBLOCK events
     MDS.cmd("event on newblock", function (res) { });
@@ -165,31 +782,65 @@ function initDatabase() {
         }
     });
 
-    // CHAT_MESSAGES table
-    var chatMessagesSql = "CREATE TABLE IF NOT EXISTS CHAT_MESSAGES ( "
-        + "  id BIGINT AUTO_INCREMENT PRIMARY KEY, "
-        + "  roomname varchar(160) NOT NULL, "
-        + "  publickey varchar(512) NOT NULL, "
-        + "  username varchar(160) NOT NULL, "
-        + "  type varchar(64) NOT NULL, "
-        + "  message varchar(512) NOT NULL, "
-        + "  filedata clob(256K) NOT NULL, "
-        + "  customid varchar(128) NOT NULL DEFAULT '0x00', "
-        + "  state varchar(128) NOT NULL DEFAULT '', "
-        + "  read int NOT NULL DEFAULT 0, "
-        + "  amount int NOT NULL DEFAULT 0, "
-        + "  date bigint NOT NULL "
-        + " )";
+    // START SEQUENTIAL INIT
+    var chain = Promise.resolve();
 
-    MDS.sql(chatMessagesSql, function (res) {
-        MDS.log("💾 [DB] CHAT_MESSAGES initialized");
+    // 1. TRANSACTIONS
+    chain = chain.then(function () {
+        var sql = "CREATE TABLE IF NOT EXISTS TRANSACTIONS ( "
+            + "  id BIGINT AUTO_INCREMENT PRIMARY KEY, "
+            + "  txpowid VARCHAR(128) NOT NULL, "
+            + "  date BIGINT NOT NULL, "
+            + "  amount VARCHAR(64) NOT NULL, "
+            + "  tokenid VARCHAR(128) NOT NULL, "
+            + "  message VARCHAR(255), "
+            + "  status VARCHAR(32) DEFAULT 'pending' "
+            + " )";
+        return runSQL(sql).then(function (res) {
+            MDS.log(res.status ? "📂 [DB] TRANSACTIONS table checked/init" : "❌ [DB] TRANSACTIONS init failed: " + res.error);
+            // REPAIR: Always run these ALTERs
+            return Promise.all([
+                runSQL("ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS type VARCHAR(32)"),
+                runSQL("ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS publickey VARCHAR(512)"),
+                runSQL("ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS message_timestamp BIGINT"),
+                runSQL("ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS metadata CLOB"),
+                runSQL("ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS pendinguid VARCHAR(128)"),
+                // FORCE ADD DATE COLUMN IF MISSING (Fix for 'Column DATE not found')
+                runSQL("ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS date BIGINT"),
+                runSQL("ALTER TABLE TRANSACTIONS ALTER COLUMN date SET NOT NULL") // Enforce not null if possible, or ignore
+            ]);
+        });
+    });
 
-        // Add columns if missing
-        MDS.sql("ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS amount INT NOT NULL DEFAULT 0");
-        MDS.sql("ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS original_timestamp BIGINT");
+    // 2. CHAT_MESSAGES
+    chain = chain.then(function () {
+        var sql = "CREATE TABLE IF NOT EXISTS CHAT_MESSAGES ( "
+            + "  id BIGINT AUTO_INCREMENT PRIMARY KEY, "
+            + "  roomname varchar(160) NOT NULL, "
+            + "  publickey varchar(512) NOT NULL, "
+            + "  username varchar(160) NOT NULL, "
+            + "  type varchar(64) NOT NULL, "
+            + "  message varchar(512) NOT NULL, "
+            + "  filedata clob(256K) NOT NULL, "
+            + "  customid varchar(128) NOT NULL DEFAULT '0x00', "
+            + "  state varchar(128) NOT NULL DEFAULT '', "
+            + "  read int NOT NULL DEFAULT 0, "
+            + "  amount int NOT NULL DEFAULT 0, "
+            + "  date bigint NOT NULL "
+            + " )";
+        return runSQL(sql).then(function (res) {
+            MDS.log(res.status ? "💾 [DB] CHAT_MESSAGES checked/init" : "❌ [DB] CHAT_MESSAGES init failed");
+            return Promise.all([
+                runSQL("ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS amount INT NOT NULL DEFAULT 0"),
+                runSQL("ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS original_timestamp BIGINT"),
+                runSQL("ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS txpowid VARCHAR(128)")
+            ]);
+        });
+    });
 
-        // CHAT_STATUS table
-        var chatStatusSql = "CREATE TABLE IF NOT EXISTS CHAT_STATUS ( "
+    // 3. CHAT_STATUS
+    chain = chain.then(function () {
+        var sql = "CREATE TABLE IF NOT EXISTS CHAT_STATUS ( "
             + "  publickey VARCHAR(512) PRIMARY KEY, "
             + "  archived BOOLEAN NOT NULL DEFAULT FALSE, "
             + "  archived_date BIGINT, "
@@ -198,15 +849,18 @@ function initDatabase() {
             + "  blocked BOOLEAN NOT NULL DEFAULT FALSE, "
             + "  blocked_by_them BOOLEAN NOT NULL DEFAULT FALSE "
             + " )";
-
-        MDS.sql(chatStatusSql, function () {
-            MDS.sql("ALTER TABLE CHAT_STATUS ADD COLUMN IF NOT EXISTS favorite BOOLEAN NOT NULL DEFAULT FALSE");
-            MDS.sql("ALTER TABLE CHAT_STATUS ADD COLUMN IF NOT EXISTS blocked BOOLEAN NOT NULL DEFAULT FALSE");
-            MDS.sql("ALTER TABLE CHAT_STATUS ADD COLUMN IF NOT EXISTS blocked_by_them BOOLEAN NOT NULL DEFAULT FALSE");
+        return runSQL(sql).then(function () {
+            return Promise.all([
+                runSQL("ALTER TABLE CHAT_STATUS ADD COLUMN IF NOT EXISTS favorite BOOLEAN NOT NULL DEFAULT FALSE"),
+                runSQL("ALTER TABLE CHAT_STATUS ADD COLUMN IF NOT EXISTS blocked BOOLEAN NOT NULL DEFAULT FALSE"),
+                runSQL("ALTER TABLE CHAT_STATUS ADD COLUMN IF NOT EXISTS blocked_by_them BOOLEAN NOT NULL DEFAULT FALSE")
+            ]);
         });
+    });
 
-        // MY_PROFILE table
-        var myProfileSql = "CREATE TABLE IF NOT EXISTS MY_PROFILE ( "
+    // 4. MY_PROFILE
+    chain = chain.then(function () {
+        var sql = "CREATE TABLE IF NOT EXISTS MY_PROFILE ( "
             + "  id INT PRIMARY KEY, "
             + "  avatar TEXT, "
             + "  tags TEXT, "
@@ -215,39 +869,25 @@ function initDatabase() {
             + "  location TEXT, "
             + "  last_updated BIGINT "
             + " )";
-
-        MDS.sql(myProfileSql, function () {
-            MDS.sql("INSERT IGNORE INTO MY_PROFILE (id) VALUES (1)", function () {
-                MDS.sql("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS phone TEXT");
-                MDS.sql("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS email TEXT");
-                MDS.sql("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS website TEXT");
-                MDS.sql("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS country TEXT");
-                MDS.sql("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS languages TEXT");
-                MDS.sql("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS allow_non_contact_chats BOOLEAN DEFAULT TRUE");
-                MDS.sql("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS privacy_l2 VARCHAR(20) DEFAULT 'public'");
-                MDS.sql("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS privacy_l3 VARCHAR(20) DEFAULT 'contacts'");
-            });
+        return runSQL(sql).then(function () {
+            runSQL("INSERT IGNORE INTO MY_PROFILE (id) VALUES (1)");
+            return Promise.all([
+                runSQL("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS phone TEXT"),
+                runSQL("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS email TEXT"),
+                runSQL("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS website TEXT"),
+                runSQL("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS country TEXT"),
+                runSQL("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS languages TEXT"),
+                runSQL("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS allow_non_contact_chats BOOLEAN DEFAULT TRUE"),
+                runSQL("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS privacy_l2 VARCHAR(20) DEFAULT 'public'"),
+                runSQL("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS privacy_l3 VARCHAR(20) DEFAULT 'contacts'"),
+                runSQL("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS minimaaddress TEXT")
+            ]);
         });
+    });
 
-        // DISCOVERED_PEERS table
-        var discoveryLayerSql = "CREATE TABLE IF NOT EXISTS DISCOVERED_PEERS ( "
-            + "  publickey VARCHAR(512) PRIMARY KEY, "
-            + "  alias VARCHAR(160) NOT NULL, "
-            + "  bio VARCHAR(512), "
-            + "  address VARCHAR(512) NOT NULL, "
-            + "  last_seen BIGINT NOT NULL, "
-            + "  source VARCHAR(20) NOT NULL"
-            + " )";
-
-        MDS.sql(discoveryLayerSql, function () {
-            MDS.sql("ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS bio VARCHAR(512)");
-            MDS.sql("ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS allow_non_contact_chats BOOLEAN DEFAULT TRUE");
-            MDS.sql("ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS extra_data CLOB");
-            MDS.sql("ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS avatar TEXT");
-        });
-
-        // CONTACT_REQUESTS table
-        var contactRequestsSql = "CREATE TABLE IF NOT EXISTS CONTACT_REQUESTS ( "
+    // 5. CONTACT_REQUESTS
+    chain = chain.then(function () {
+        var sql = "CREATE TABLE IF NOT EXISTS CONTACT_REQUESTS ( "
             + "  id BIGINT AUTO_INCREMENT PRIMARY KEY, "
             + "  from_publickey VARCHAR(512) NOT NULL, "
             + "  from_name VARCHAR(255), "
@@ -257,23 +897,43 @@ function initDatabase() {
             + "  created_at BIGINT NOT NULL, "
             + "  updated_at BIGINT "
             + " )";
-
-        MDS.sql(contactRequestsSql, function () {
-            MDS.sql("ALTER TABLE CONTACT_REQUESTS ADD COLUMN IF NOT EXISTS from_address VARCHAR(1024)");
+        return runSQL(sql).then(function (res) {
+            MDS.log(res.status ? "📂 [DB] CONTACT_REQUESTS checked/init" : "❌ [DB] CONTACT_REQUESTS init failed");
+            return runSQL("ALTER TABLE CONTACT_REQUESTS ADD COLUMN IF NOT EXISTS from_address VARCHAR(1024)");
         });
+    });
 
-        // PERSONAL_CONTACTS table (Replaces keypair storage)
-        var personalContactsSql = "CREATE TABLE IF NOT EXISTS PERSONAL_CONTACTS ( "
+    // 6. DISCOVERED_PEERS (Explicit sequence)
+    chain = chain.then(function () {
+        var sql = "CREATE TABLE IF NOT EXISTS DISCOVERED_PEERS ( "
             + "  publickey VARCHAR(512) PRIMARY KEY, "
-            + "  created_at BIGINT "
+            + "  alias VARCHAR(160) NOT NULL, "
+            + "  bio VARCHAR(512), "
+            + "  address VARCHAR(512) NOT NULL, "
+            + "  last_seen BIGINT NOT NULL, "
+            + "  source VARCHAR(20) NOT NULL"
             + " )";
-
-        MDS.sql(personalContactsSql, function () {
-            MDS.log("💾 [DB] PERSONAL_CONTACTS initialized");
+        return runSQL(sql).then(function (res) {
+            MDS.log(res.status ? "📂 [DB] DISCOVERED_PEERS checked/init" : "❌ [DB] DISCOVERED_PEERS init failed: " + res.error);
+            return Promise.all([
+                runSQL("ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS bio VARCHAR(512)"),
+                runSQL("ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS allow_non_contact_chats BOOLEAN DEFAULT TRUE"),
+                runSQL("ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS extra_data CLOB"),
+                runSQL("ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS avatar TEXT"),
+                runSQL("ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS minimaaddress VARCHAR(512)")
+            ]);
         });
+    });
 
-        // MAXIMA_CONTACT_REQUESTS table
-        var maximaContactRequestsSql = "CREATE TABLE IF NOT EXISTS MAXIMA_CONTACT_REQUESTS ( "
+    // 7. PERSONAL_CONTACTS
+    chain = chain.then(function () {
+        var sql = "CREATE TABLE IF NOT EXISTS PERSONAL_CONTACTS ( publickey VARCHAR(512) PRIMARY KEY, created_at BIGINT )";
+        return runSQL(sql);
+    });
+
+    // 8. MAXIMA_CONTACT_REQUESTS
+    chain = chain.then(function () {
+        var sql = "CREATE TABLE IF NOT EXISTS MAXIMA_CONTACT_REQUESTS ( "
             + "  id BIGINT AUTO_INCREMENT PRIMARY KEY, "
             + "  from_publickey VARCHAR(512) NOT NULL, "
             + "  from_name VARCHAR(255), "
@@ -282,11 +942,12 @@ function initDatabase() {
             + "  created_at BIGINT NOT NULL, "
             + "  updated_at BIGINT "
             + " )";
+        return runSQL(sql);
+    });
 
-        MDS.sql(maximaContactRequestsSql);
-
-        // METACHAIN_USERS table
-        var userRegistrySql = "CREATE TABLE IF NOT EXISTS METACHAIN_USERS ( "
+    // 9. METACHAIN_USERS
+    chain = chain.then(function () {
+        var sql = "CREATE TABLE IF NOT EXISTS METACHAIN_USERS ( "
             + "  user_id VARCHAR(512) PRIMARY KEY, "
             + "  publickey VARCHAR(512) UNIQUE NOT NULL, "
             + "  alias VARCHAR(160) NOT NULL, "
@@ -294,18 +955,21 @@ function initDatabase() {
             + "  first_seen BIGINT NOT NULL, "
             + "  last_updated BIGINT NOT NULL"
             + " )";
+        return runSQL(sql).then(function (res) {
+            MDS.log(res.status ? "📂 [DB] METACHAIN_USERS checked/init" : "❌ [DB] METACHAIN_USERS init failed");
+        });
+    });
 
-        MDS.sql(userRegistrySql);
+    // FINAL: Start Services
+    chain.then(function () {
+        MDS.log("✅ [INIT] Database sequence complete. Starting Services...");
 
         // Enable logs for P2P beacons
         MDS.cmd("logs on", function (logRes) {
-            if (logRes.status) {
-                MDS.log("✅ [INIT] MINIMALOG listener registered");
-            }
+            if (logRes.status) MDS.log("✅ [INIT] MINIMALOG listener registered");
         });
 
         // Send initial beacon
-        MDS.log("🚀 [SW] Sending initial beacon...");
         sendBackgroundBeacon();
         startGossip();
 
@@ -313,8 +977,20 @@ function initDatabase() {
         MDS.cmd("event on newblock", function () {
             MDS.log("✅ [INIT] NEWBLOCK listener registered for periodic tasks.");
         });
+
+        // Trigger history sync safely without setTimeout
+        if (typeof requestHistoryFromRecentContacts === 'function') {
+            requestHistoryFromRecentContacts();
+        } else {
+            MDS.log("⚠️ [INIT] requestHistoryFromRecentContacts not loaded yet. Handlers might be missing.");
+        }
+
+        // Set flag to run coin discovery on first NEWBLOCK (when node is fully synced)
+        COIN_DISCOVERY_PENDING = true;
+        MDS.log("📦 [INIT] Coin discovery scheduled for first NEWBLOCK event");
     });
 }
+
 /**
  * MetaChain Service Worker - Group Message Handler
  * Handles group messages, invites, member updates
@@ -466,6 +1142,7 @@ function handleGroupMemberUpdate(pubkey, maxjson) {
         MDS.sql(removeMemberSql);
     }
 }
+
 /**
  * MetaChain Service Worker - Chat Message Handler
  * Handles chat messages, read receipts, pings, pongs
@@ -502,32 +1179,65 @@ function handleChatMessage(pubkey, maxjson) {
         var txpowidVal = txpowid ? "'" + txpowid + "'" : "NULL";
         var originalTimestamp = maxjson.timestamp ? maxjson.timestamp : 0;
 
-        var insertSql = "INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, txpowid, original_timestamp) "
-            + "VALUES ('', '" + safePubkey + "', '" + safeUsername + "', '" + msgType + "', '" + safeMessage + "', '" + safeFiledata + "', '" + initialState + "', " + amount + ", " + now + ", " + txpowidVal + ", " + originalTimestamp + ")";
+        // CRITICAL FIX: Only store if we don't already have it 
+        // We check BOTH txpowid (if available) AND time window simultaneously to ensure we catch duplicates
+        // even if one identifier is missing or slightly different.
+        var checkDup = "SELECT COUNT(*) as count FROM CHAT_MESSAGES WHERE publickey='" + safePubkey + "'";
+        var conditions = [];
 
-        MDS.sql(insertSql, function (res) {
-            if (res.status) {
-                MDS.log("✅ [CHAT] Message saved from " + safeUsername);
+        // 1. Check by TxPoWID (Strongest check)
+        if (txpowid) {
+            conditions.push("txpowid='" + txpowid + "'");
+        }
 
-                // FIX: Auto-discover user on message receipt to fix "Unknown" in chat list
-                if (safeUsername && safeUsername !== "Unknown" && safeUsername !== "System") {
-                    var safeAvatar = escapeSql(maxjson.avatar || "");
-                    var safeAddress = escapeSql(maxjson.from_address || "");
+        // 2. Check by Time Window & Content (Fuzzy check for 60s window)
+        // Checks against both original_timestamp (sender time) and date (local time)
+        var minTime = originalTimestamp - 60000;
+        var maxTime = originalTimestamp + 60000;
+        var timeCondition = "message='" + safeMessage + "' AND (" +
+            "(original_timestamp >= " + minTime + " AND original_timestamp <= " + maxTime + ") OR " +
+            "(date >= " + minTime + " AND date <= " + maxTime + "))";
+        conditions.push("(" + timeCondition + ")");
 
-                    var upsertPeer = "MERGE INTO DISCOVERED_PEERS (publickey, alias, avatar, address, last_seen, source, allow_non_contact_chats) KEY(publickey) " +
-                        "VALUES ('" + safePubkey + "', '" + safeUsername + "', '" + safeAvatar + "', '" + safeAddress + "', " + now + ", 'MSG', 1)";
-                    MDS.sql(upsertPeer, function (pRes) {
-                        MDS.log("👤 [CHAT] Auto-discovered peer: " + safeUsername);
-                    });
-                }
+        // Combine with OR
+        if (conditions.length > 0) {
+            checkDup += " AND (" + conditions.join(" OR ") + ")";
+        }
 
-                // 3. SEND DELIVERY RECEIPT (New Logic)
-                // We must send a receipt back to the sender so they get the double-check
-                sendDeliveryReceipt(pubkey);
+        MDS.log("🔍 [DEDUP-LIVE] Checking for duplicates with SQL: " + checkDup);
 
-            } else {
-                MDS.log("❌ [CHAT] Save failed: " + res.error);
+        MDS.sql(checkDup, function (dupRes) {
+            if (dupRes.status && dupRes.rows && dupRes.rows[0].COUNT > 0) {
+                MDS.log("♻️ [CHAT] Ignoring duplicate message from " + safeUsername + " (already exists in DB)");
+                return;
             }
+
+            var insertSql = "INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, txpowid, original_timestamp) "
+                + "VALUES ('', '" + safePubkey + "', '" + safeUsername + "', '" + msgType + "', '" + safeMessage + "', '" + safeFiledata + "', '" + initialState + "', " + amount + ", " + now + ", " + txpowidVal + ", " + originalTimestamp + ")";
+
+            MDS.sql(insertSql, function (res) {
+                if (res.status) {
+                    MDS.log("✅ [CHAT] Message saved from " + safeUsername);
+
+                    // FIX: Auto-discover user on message receipt to fix "Unknown" in chat list
+                    if (safeUsername && safeUsername !== "Unknown" && safeUsername !== "System") {
+                        var safeAvatar = escapeSql(maxjson.avatar || "");
+                        var safeAddress = escapeSql(maxjson.from_address || "");
+
+                        var upsertPeer = "MERGE INTO DISCOVERED_PEERS (publickey, alias, avatar, address, last_seen, source, allow_non_contact_chats) KEY(publickey) " +
+                            "VALUES ('" + safePubkey + "', '" + safeUsername + "', '" + safeAvatar + "', '" + safeAddress + "', " + now + ", 'MSG', 1)";
+                        MDS.sql(upsertPeer, function (pRes) {
+                            MDS.log("👤 [CHAT] Auto-discovered peer: " + safeUsername);
+                        });
+                    }
+
+                    // 3. SEND DELIVERY RECEIPT (New Logic)
+                    sendDeliveryReceipt(pubkey);
+
+                } else {
+                    MDS.log("❌ [CHAT] Save failed: " + res.error);
+                }
+            });
         });
     });
 }
@@ -563,8 +1273,10 @@ function sendDeliveryReceipt(toPublicKey) {
 function handleReadReceipt(pubkey) {
     MDS.log("📖 [READ-RECEIPT] Received from " + pubkey);
     // Update 'sent' OR 'delivered' messages to 'read'. 
-    // Exclude 'pending' (not sent yet) and 'failed'.
-    var sql = "UPDATE CHAT_MESSAGES SET state='read' WHERE publickey='" + pubkey + "' AND username='Me' AND state!='pending' AND state!='failed' AND state!='read'";
+    // Exclude 'pending' (not sent yet), 'failed' AND 'confirmed' (final state for transactions).
+    // CRITICAL FIX: Do not overwrite 'confirmed' state with 'read'.
+    // CRITICAL FIX 2: Only update TEXT messages. Token/Charm transactions should NOT go to 'read' state.
+    var sql = "UPDATE CHAT_MESSAGES SET state='read' WHERE publickey='" + pubkey + "' AND username='Me' AND type='text' AND state!='pending' AND state!='failed' AND state!='read' AND state!='confirmed'";
     MDS.sql(sql);
 }
 
@@ -598,10 +1310,11 @@ function handlePing(pubkey) {
             var sendCmd;
             if (peerRes && peerRes.status && peerRes.count > 0) {
                 var rawMx = peerRes.rows[0].ADDRESS;
-                var mxAddress = rawMx ? rawMx.replace(/[^a-zA-Z0-9@:._-]/g, "").trim() : null;
+                // Remove all whitespace and invalid characters
+                var mxAddress = rawMx ? rawMx.replace(/\s+/g, "").replace(/[^a-zA-Z0-9@:._-]/g, "").trim() : null;
 
                 if (mxAddress && (mxAddress.startsWith('Mx') || mxAddress.startsWith('MX'))) {
-                    sendCmd = 'maxima action:send to:"' + mxAddress + '" application:metachain data:' + hexData + ' poll:false';
+                    sendCmd = 'maxima action:send to:' + mxAddress + ' application:metachain data:' + hexData + ' poll:false';
                 } else {
                     sendCmd = "maxima action:send publickey:" + pubkey + " application:metachain data:" + hexData + " poll:false";
                 }
@@ -616,7 +1329,7 @@ function handlePing(pubkey) {
     } else {
         var sendCmd;
         if (pubkey.startsWith('Mx') || pubkey.startsWith('MX')) {
-            sendCmd = 'maxima action:send to:"' + pubkey.trim() + '" application:metachain data:' + hexData + ' poll:false';
+            sendCmd = 'maxima action:send to:' + pubkey.trim() + ' application:metachain data:' + hexData + ' poll:false';
         } else {
             sendCmd = "maxima action:send publickey:" + pubkey + " application:metachain data:" + hexData + " poll:false";
         }
@@ -630,6 +1343,343 @@ function handlePong(pubkey) {
     MDS.log("📡 [PONG] Received from " + pubkey);
     // Let the UI handle pong events
 }
+
+// ============================================================================
+// HISTORY SYNC HANDLERS
+// ============================================================================
+
+function handleChatHistoryRequest(pubkey, maxjson) {
+    MDS.log("🔄 [HISTORY-REQ] Request from " + pubkey.substring(0, 10) + "...");
+
+    try {
+        var since = maxjson.timestamp ? maxjson.timestamp : 0;
+        // Limit history request to last 7 days by default if 0 provided
+        if (since === 0) {
+            since = Date.now() - (7 * 24 * 60 * 60 * 1000);
+        }
+
+        var safePubkey = escapeSql(pubkey);
+
+        // Filter: Only send messages where 'publickey' is the requester's key (direct chat)
+        // OR where I am the sender TO the requester.
+        // Wait, CHAT_MESSAGES table stores messages in a unified way?
+        // 'publickey' column store the 'other party' key.
+        // For incoming message: 'publickey' = sender.
+        // For outgoing message: 'publickey' = recipient.
+
+        // So we just select WHERE publickey = requester_pubkey
+        // This gives both sent and received messages in that conversation.
+
+        var sql = "SELECT * FROM CHAT_MESSAGES WHERE publickey='" + safePubkey + "' " +
+            "AND (type='text' OR type='token' OR type='charm') " +
+            "AND date > " + since + " " +
+            "ORDER BY date ASC LIMIT 100"; // Lower limit to 100 to ensure payload is manageable
+
+        MDS.sql(sql, function (res) {
+            if (res.status && res.rows) {
+                MDS.log("🔄 [HISTORY-REQ] Found " + res.count + " messages for " + pubkey.substring(0, 10));
+
+                var messages = res.rows.map(function (row) {
+                    return {
+                        id: row.ID,
+                        message: row.MESSAGE,
+                        type: row.TYPE,
+                        username: row.USERNAME,
+                        date: row.DATE,
+                        filedata: row.FILEDATA,
+                        amount: row.AMOUNT,
+                        tokenid: row.TOKENID,
+                        state: row.STATE,
+                        txpowid: row.TXPOWID
+                    };
+                });
+
+                // Send response back even if empty, so client knows sync happened
+                sendChatHistoryResponse(pubkey, messages);
+            } else {
+                MDS.log("🔄 [HISTORY-REQ] No messages found (SQL success but no rows?)");
+                sendChatHistoryResponse(pubkey, []);
+            }
+        });
+    } catch (e) {
+        MDS.log("❌ [HISTORY-REQ] Error processing request: " + e);
+    }
+}
+
+function sendChatHistoryResponse(toPubkey, messages) {
+    var payload = {
+        type: "chat_history_response",
+        messages: messages,
+        timestamp: Date.now()
+    };
+
+    var jsonStr = JSON.stringify(payload);
+    var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
+
+    // Log the size
+    MDS.log("🔄 [HISTORY-RESP] Sending response size: " + hexData.length + " chars to " + toPubkey.substring(0, 10));
+
+    // Smart Address Resolution with Fallback
+    resolveAndSend(toPubkey, hexData, "HISTORY-RESP", true);
+}
+
+function handleChatHistoryResponse(pubkey, maxjson) {
+    var messages = maxjson.messages;
+    if (!messages || messages.length === 0) {
+        MDS.log("🔄 [HISTORY-RESP] Received empty history from " + pubkey);
+        return;
+    }
+
+    MDS.log("🔄 [HISTORY-RESP] Processing " + messages.length + " messages from " + pubkey);
+    var safePubkey = escapeSql(pubkey);
+    processHistoryMessage(safePubkey, messages, 0);
+}
+
+function processHistoryMessage(safePubkey, messages, index) {
+    if (index >= messages.length) {
+        MDS.log("✅ [HISTORY-RESP] Completed processing batch");
+        return;
+    }
+
+    var msg = messages[index];
+    var timestamp = msg.date;
+    var type = escapeSql(msg.type || "text");
+    var content = escapeSql(msg.message || "");
+    var username = escapeSql(msg.username || "Unknown");
+
+    var finalUsername = "Unknown";
+    var isIncoming = false;
+
+    if (msg.username === 'Me') {
+        isIncoming = true;
+        // Check if we can find a better name in DISCOVERED_PEERS
+        finalUsername = "Contact";
+    } else {
+        isIncoming = false;
+        finalUsername = "Me";
+    }
+
+    // START ENHANCED DEDUPLICATION
+    var tryInsert = function () {
+        var safeFiledata = escapeSql(msg.filedata || "");
+        var amount = msg.amount || 0;
+        var txpowidVal = msg.txpowid ? "'" + escapeSql(msg.txpowid) + "'" : "NULL";
+
+        // Use provided state if valid, otherwise fallback to 'read' or 'received' based on type
+        var state = msg.state || "read";
+
+        var insertSql = "INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, txpowid, original_timestamp) "
+            + "VALUES ('', '" + safePubkey + "', '" + finalUsername + "', '" + type + "', '" + content + "', '" + safeFiledata + "', '" + state + "', " + amount + ", " + timestamp + ", " + txpowidVal + ", " + timestamp + ")";
+
+        MDS.sql(insertSql, function (insRes) {
+            if (insRes.status) {
+                MDS.log("✅ [HISTORY-SYNC] Recovered message: " + (content.substring(0, 20)));
+            }
+            processHistoryMessage(safePubkey, messages, index + 1);
+        });
+    };
+
+    var tryUpdate = function (existingId) {
+        if (!msg.txpowid) {
+            processHistoryMessage(safePubkey, messages, index + 1);
+            return;
+        }
+
+        var newState = msg.state || "read";
+        var safeTxPow = escapeSql(msg.txpowid);
+        var updateSql = "UPDATE CHAT_MESSAGES SET txpowid='" + safeTxPow + "', state='" + newState + "' WHERE id=" + existingId;
+
+        MDS.sql(updateSql, function (updRes) {
+            MDS.log("♻️ [HISTORY-SYNC] Updated existing message ID " + existingId + " with txpowid/state");
+            processHistoryMessage(safePubkey, messages, index + 1);
+        });
+    };
+
+    // 1. First Check: By TXPOWID (if available)
+    if (msg.txpowid) {
+        var safeTxPow = escapeSql(msg.txpowid);
+        var txCheckSql = "SELECT * FROM CHAT_MESSAGES WHERE txpowid='" + safeTxPow + "'";
+
+        MDS.sql(txCheckSql, function (res) {
+            if (res.status && res.rows && res.rows.length > 0) {
+                // Exact match found by ID - skip
+                processHistoryMessage(safePubkey, messages, index + 1);
+            } else {
+                // Not found by ID - Fallback to Content/Time check
+                checkByContentAndTime();
+            }
+        });
+    } else {
+        // No ID - direct check by Content/Time
+        checkByContentAndTime();
+    }
+
+    // 2. Second Check: By Content & Time (Fallback)
+    function checkByContentAndTime() {
+        // Use original_timestamp if available, else date
+        // Note: 'timestamp' variable holds msg.date which IS the original timestamp for history messages
+        var checkTime = msg.original_timestamp || timestamp;
+
+        var minTime = checkTime - 60000; // 60 second window (increased to handle network/block latency)
+        var maxTime = checkTime + 60000;
+        var checkSql = "";
+
+        if (isIncoming) {
+            checkSql = "SELECT * FROM CHAT_MESSAGES WHERE publickey='" + safePubkey + "' AND username!='Me' " +
+                "AND (original_timestamp BETWEEN " + minTime + " AND " + maxTime + " OR date BETWEEN " + minTime + " AND " + maxTime + ") " +
+                "AND message='" + content + "'";
+        } else {
+            checkSql = "SELECT * FROM CHAT_MESSAGES WHERE publickey='" + safePubkey + "' AND username='Me' " +
+                "AND (original_timestamp BETWEEN " + minTime + " AND " + maxTime + " OR date BETWEEN " + minTime + " AND " + maxTime + ") " +
+                "AND message='" + content + "'";
+        }
+
+        MDS.sql(checkSql, function (res) {
+            if (res.status && res.rows && res.rows.length > 0) {
+                // Found by content! Update it if we have a txpowid to attach
+                if (msg.txpowid) {
+                    tryUpdate(res.rows[0].ID);
+                } else {
+                    processHistoryMessage(safePubkey, messages, index + 1);
+                }
+            } else {
+                // Not found by either method -> Insert
+                tryInsert();
+            }
+        });
+    }
+}
+
+function requestHistoryFromRecentContacts() {
+    MDS.log("🔄 [HISTORY-SYNC] Starting startup sync (Enhanced)...");
+
+    var sql = "SELECT publickey, address FROM DISCOVERED_PEERS ORDER BY last_seen DESC LIMIT 20";
+
+    MDS.sql(sql, function (res) {
+        if (res.status && res.rows) {
+            MDS.log("🔄 [HISTORY-SYNC] Syncing with " + res.rows.length + " recent contacts");
+            res.rows.forEach(function (row) {
+                // Pass both publickey and address to increase success rate
+                requestChatHistory(row.PUBLICKEY, row.ADDRESS);
+            });
+        }
+    });
+}
+
+function requestChatHistory(toPublicKey, toAddress) {
+    var payload = {
+        message: "",
+        type: "chat_history_request",
+        username: "Me",
+        filedata: "",
+        timestamp: Date.now() - (7 * 24 * 60 * 60 * 1000)
+    };
+
+    var jsonStr = JSON.stringify(payload);
+    var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
+
+    // Use specific address if known, otherwise fall back to resolution logic
+    if (toAddress && (toAddress.startsWith('Mx') || toAddress.startsWith('MX'))) {
+        // Use new robust cleaner
+        var cleanAddress = cleanMaximaAddress(toAddress);
+
+        // EXTRA DEBUG: Log address transformation
+        MDS.log("🔍 [ADDR-DEBUG] Raw: '" + toAddress + "' -> Clean: '" + cleanAddress + "'");
+
+        var sendCmd = 'maxima action:send to:' + cleanAddress + ' application:metachain data:' + hexData + ' poll:true';
+
+        // DEBUG: Print EXACT command to see what Minima receives
+        MDS.log("🔍 [CMD-DEBUG-V3] " + sendCmd);
+
+        MDS.cmd(sendCmd, function (res) {
+            if (!res.status) {
+                MDS.log("⚠️ [HISTORY-SYNC] Failed to ask via address " + cleanAddress.substring(0, 10) + " Err: " + res.error);
+            }
+        });
+    } else {
+        // Fallback to resolving via DB or publickey
+        resolveAndSend(toPublicKey, hexData, "HISTORY-SYNC", true);
+    }
+}
+
+// Helper to clean Maxima Address specifically for the port issue
+function cleanMaximaAddress(addr) {
+    if (!addr) return "";
+
+    // 1. Basic trim
+    var s = String(addr).trim();
+
+    // 2. CRITICAL: Remove ALL whitespace characters first (spaces, tabs, newlines, etc.)
+    // This prevents Java NumberFormatException when parsing port numbers
+    s = s.replace(/\s+/g, "");
+
+    // 3. Split by Last Colon (Host:Port)
+    var idx = s.lastIndexOf(":");
+
+    if (idx !== -1) {
+        var base = s.substring(0, idx);
+        var port = s.substring(idx + 1);
+
+        // 4. AGGRESSIVE CLEANING
+        // Remove all whitespace and invalid chars from base
+        // Allow: a-z A-Z 0-9 @ . - _ 
+        var cleanBase = base.replace(/[^a-zA-Z0-9@._-]/g, "");
+
+        // Remove everything except numbers from port
+        var cleanPort = port.replace(/[^0-9]/g, "");
+
+        // Log deep debug if it looked suspicious
+        if (cleanBase !== base || cleanPort !== port) {
+            MDS.log("🔍 [ADDR-FIX-V3] Cleaned: '" + addr + "' -> '" + cleanBase + ":" + cleanPort + "'");
+        }
+
+        if (cleanBase && cleanPort) {
+            return cleanBase + ":" + cleanPort;
+        }
+    }
+
+    // Fallback: Just remove all whitespace and invalid chars
+    return s.replace(/\s/g, "").replace(/[^a-zA-Z0-9@:._-]/g, "");
+}
+
+// Helper for Robust Sending (Resolves Address)
+function resolveAndSend(pubkey, hexData, logTag, usePoll) {
+    var pollStr = usePoll ? " poll:true" : " poll:false";
+
+    // Clean key
+    var safeKey = pubkey.replace(/'/g, "''");
+
+    var peerSql = "SELECT ADDRESS FROM DISCOVERED_PEERS WHERE PUBLICKEY='" + safeKey + "' AND ADDRESS IS NOT NULL LIMIT 1";
+
+    MDS.sql(peerSql, function (peerRes) {
+        var sendCmd;
+        if (peerRes && peerRes.status && peerRes.count > 0) {
+            var rawMx = peerRes.rows[0].ADDRESS;
+            // Use new robust cleaner
+            var mxAddress = rawMx ? cleanMaximaAddress(rawMx) : null;
+
+            if (mxAddress && (mxAddress.startsWith('Mx') || mxAddress.startsWith('MX'))) {
+                sendCmd = 'maxima action:send to:' + mxAddress + ' application:metachain data:' + hexData + pollStr;
+                MDS.log("🔍 [CMD-DEBUG-RES] " + sendCmd);
+            } else {
+                sendCmd = "maxima action:send publickey:" + pubkey + " application:metachain data:" + hexData + pollStr;
+                MDS.log("🔍 [CMD-DEBUG-RES] " + sendCmd); // Log for publickey fallback as well
+            }
+        } else {
+            sendCmd = "maxima action:send publickey:" + pubkey + " application:metachain data:" + hexData + pollStr;
+            MDS.log("🔍 [CMD-DEBUG-RES] " + sendCmd); // Log for no peer address found
+        }
+
+        MDS.cmd(sendCmd, function (res) {
+            if (res.status) {
+                MDS.log("✅ [" + logTag + "] Sent to " + pubkey.substring(0, 10));
+            } else {
+                MDS.log("⚠️ [" + logTag + "] Failed send: " + res.error);
+            }
+        });
+    });
+}
+
 /**
  * MetaChain Service Worker - Contact Request Handler
  * Handles chat contact requests and Maxima contact requests
@@ -892,6 +1942,7 @@ function handleContactUnblocked(pubkey) {
         + "VALUES('', '" + safeFrom + "', 'System', 'system', 'This user has unblocked you', '', 'received', 0, " + now + ")";
     MDS.sql(sysMsgSql);
 }
+
 /**
  * MetaChain Service Worker - Profile Handler
  * Handles profile requests and responses
@@ -1112,8 +2163,11 @@ function handleProfileResponse(pubkey, maxjson) {
         allowNonContactChats = maxjson.allowNonContactChats ? 1 : 0;
     }
 
-    // Update bio, extra_data, AND allow_non_contact_chats
-    var updateSql = "UPDATE DISCOVERED_PEERS SET bio='" + escapeSql(maxjson.bio || "") + "', extra_data='" + extraData + "', allow_non_contact_chats=" + allowNonContactChats + ", last_seen=" + now + " WHERE publickey='" + safePubkey + "'";
+    // Extract minimaaddress from profile response
+    var minimaAddress = escapeSql(maxjson.minimaaddress || "");
+
+    // Update bio, extra_data, minimaaddress, AND allow_non_contact_chats
+    var updateSql = "UPDATE DISCOVERED_PEERS SET bio='" + escapeSql(maxjson.bio || "") + "', extra_data='" + extraData + "', minimaaddress='" + minimaAddress + "', allow_non_contact_chats=" + allowNonContactChats + ", last_seen=" + now + " WHERE publickey='" + safePubkey + "'";
 
     MDS.sql(updateSql, function (res) {
         if (res.status) {
@@ -1121,6 +2175,271 @@ function handleProfileResponse(pubkey, maxjson) {
         }
     });
 }
+
+/**
+ * Transaction Handler
+ * Manages pending transactions and confirmation checks in the background.
+ */
+
+// Check for zombie pending transactions (cancelled while DApp was closed)
+// AND detect accepted transactions to send Maxima messages
+function checkPendingTransactions() {
+    MDS.log("🔍 [SW-TX] Checking pending transactions...");
+
+    // Get all local pending transactions
+    MDS.sql("SELECT * FROM TRANSACTIONS WHERE status = 'pending'", function (res) {
+        if (res.status && res.rows.length > 0) {
+            var localPending = res.rows;
+            MDS.log("📋 [SW-TX] Found " + localPending.length + " pending transactions in DB");
+
+            // Check each pending transaction directly against blockchain/mempool
+            // We don't use 'mds action:pending' because it creates phantom pending commands in Read Mode
+            for (var j = 0; j < localPending.length; j++) {
+                var tx = localPending[j];
+                var txUid = tx.PENDINGUID || tx.pendinguid;
+                var messageTimestamp = tx.MESSAGE_TIMESTAMP || tx.message_timestamp;
+
+                // Skip if no pendinguid
+                if (!txUid || txUid === 'null') {
+                    continue;
+                }
+
+                MDS.log("🔍 [SW-TX] Checking zombie status for transaction: " + txUid);
+
+                // Search for it in blockchain/mempool
+                findInBlockchainOrMempool(messageTimestamp, function (err, foundTxpowid) {
+                    if (err) {
+                        MDS.log("❌ [SW-TX] Error checking transaction: " + err);
+                        return;
+                    }
+
+                    if (foundTxpowid) {
+                        // ACCEPTED! Transaction was approved while DApp was closed
+                        MDS.log("✅ [SW-TX] Zombie transaction ACCEPTED: " + foundTxpowid);
+                        handleAcceptedTransaction(tx, foundTxpowid);
+                    } else {
+                        // DENIED/CANCELLED - it's a zombie
+                        // Note: This might also trigger for very recent transactions that haven't been mined yet
+                        // So we should only clean up transactions older than a certain threshold
+                        var txAge = Date.now() - messageTimestamp;
+                        var ZOMBIE_THRESHOLD = 10000; // 10 seconds (matches confirmation checker interval)
+
+                        if (txAge > ZOMBIE_THRESHOLD) {
+                            MDS.log("🗑️ [SW-TX] Zombie transaction DENIED/CANCELLED: " + txUid);
+                            handleDeniedTransaction(tx);
+                        } else {
+                            MDS.log("⏳ [SW-TX] Transaction too recent to determine zombie status: " + txUid);
+                        }
+                    }
+                });
+            }
+        } else {
+            MDS.log("✅ [SW-TX] No pending transactions in DB");
+        }
+    });
+}
+
+/**
+ * Check for SENT transactions that need confirmation (3 blocks)
+ * This was missing! Causing transactions to remain 'sent' forever.
+ */
+function checkSentTransactions() {
+    MDS.log("🔍 [SW-TX-CONFIRM] Checking SENT transactions...");
+
+    MDS.sql("SELECT * FROM TRANSACTIONS WHERE status = 'sent'", function (res) {
+        if (res.status && res.rows.length > 0) {
+            var sentTxs = res.rows;
+            MDS.log("📋 [SW-TX-CONFIRM] Found " + sentTxs.length + " sent transactions waiting for confirmation");
+
+            for (var i = 0; i < sentTxs.length; i++) {
+                var tx = sentTxs[i];
+                var txpowid = tx.TXPOWID || tx.txpowid;
+
+                if (!txpowid || txpowid === 'null') continue;
+
+                check3BlockConfirmation(txpowid, function (err, status) {
+                    if (!err && status === 'confirmed') {
+                        MDS.log("✅ [SW-TX-CONFIRM] 3-Block Confirmation achieved for: " + txpowid);
+                        updateTransactionAsConfirmed(tx, txpowid);
+                    }
+                });
+            }
+        }
+    });
+}
+
+/**
+ * Clean up orphaned pending chat messages
+ * These are messages stuck in 'pending' state but have no corresponding entry in TRANSACTIONS table
+ */
+function cleanupOrphanedChatMessages() {
+    MDS.log("🧹 [SW-CLEANUP] Starting orphan cleanup check...");
+    var oneMinuteAgo = Date.now() - 60000; // 1 minute timeout for orphaned messages
+
+    // Select pending messages older than 1 minute
+    MDS.sql("SELECT * FROM CHAT_MESSAGES WHERE state='pending' AND date < " + oneMinuteAgo, function (res) {
+        if (res.status && res.rows.length > 0) {
+            MDS.log("🧹 [SW-CLEANUP] Found " + res.rows.length + " potential orphans. Checking against TRANSACTIONS...");
+            checkAndExpireOrphans(res.rows);
+        } else {
+            MDS.log("✅ [SW-CLEANUP] No old pending messages found.");
+        }
+    });
+}
+
+function checkAndExpireOrphans(orphans) {
+    if (!orphans || orphans.length === 0) {
+        MDS.log("✅ [SW-CLEANUP] Cleanup check complete.");
+        return;
+    }
+
+    var potentialOrphan = orphans[0];
+    var messageTimestamp = potentialOrphan.DATE || potentialOrphan.date;
+    var msgId = potentialOrphan.ID || potentialOrphan.id;
+
+    if (!messageTimestamp) {
+        MDS.log("⚠️ [SW-CLEANUP] Skipping orphan with no date: " + JSON.stringify(potentialOrphan));
+        checkAndExpireOrphans(orphans.slice(1));
+        return;
+    }
+
+    MDS.sql("SELECT * FROM TRANSACTIONS WHERE message_timestamp=" + messageTimestamp, function (res) {
+        var isTracked = res.status && res.rows.length > 0;
+
+        if (!isTracked) {
+            MDS.log("🗑️ [SW-CLEANUP] EXPIRED ORPHAN (No Transaction): " + messageTimestamp + " ID: " + msgId);
+            MDS.sql("UPDATE CHAT_MESSAGES SET state='failed' WHERE id=" + msgId, function (updateRes) {
+                if (updateRes.status) MDS.log("✅ [SW-CLEANUP] Marked as failed.");
+                else MDS.log("❌ [SW-CLEANUP] Update failed: " + updateRes.error);
+
+                // Next
+                checkAndExpireOrphans(orphans.slice(1));
+            });
+        } else {
+            MDS.log("ℹ️ [SW-CLEANUP] Message " + messageTimestamp + " is tracked in TRANSACTIONS. Ignoring.");
+            // It is tracked, let normal pending check handle it.
+            checkAndExpireOrphans(orphans.slice(1));
+        }
+    });
+}
+
+/**
+ * Handle an accepted transaction - send Maxima message and update DB
+ */
+function handleAcceptedTransaction(tx, txpowid) {
+    MDS.log("📤 [SW-TX] Handling accepted transaction: " + txpowid);
+
+    var txType = tx.TYPE || tx.type;
+    var publickey = tx.PUBLICKEY || tx.publickey;
+    var messageTimestamp = tx.MESSAGE_TIMESTAMP || tx.message_timestamp;
+    var metadataStr = tx.METADATA || tx.metadata || '{}';
+
+    try {
+        var metadata = JSON.parse(metadataStr);
+        var senderName = metadata.username || "Me";
+
+        // Send Maxima message based on type
+        if (txType === 'charm') {
+            var charmId = metadata.charmId;
+            var amount = metadata.amount || 0;
+
+            MDS.log("💎 [SW-TX] Sending charm message: " + charmId + " (" + amount + " Minima)");
+
+            sendCharmMessage(publickey, charmId, amount, {
+                senderName: senderName,
+                timestamp: messageTimestamp,
+                txpowid: txpowid
+            }, function (err, result) {
+                if (err) {
+                    MDS.log("❌ [SW-TX] Failed to send charm message: " + err);
+                } else {
+                    MDS.log("✅ [SW-TX] Charm message sent successfully");
+                    updateTransactionAsConfirmed(tx, txpowid);
+                }
+            });
+
+        } else if (txType === 'token') {
+            var tokenAmount = metadata.amount;
+            var tokenName = metadata.tokenName || 'Minima';
+            var tokenData = { amount: tokenAmount, tokenName: tokenName };
+
+            MDS.log("💰 [SW-TX] Sending token message: " + tokenAmount + " " + tokenName);
+
+            sendTokenMessage(publickey, tokenData, {
+                senderName: senderName,
+                timestamp: messageTimestamp,
+                txpowid: txpowid
+            }, function (err, result) {
+                if (err) {
+                    MDS.log("❌ [SW-TX] Failed to send token message: " + err);
+                } else {
+                    MDS.log("✅ [SW-TX] Token message sent successfully");
+                    updateTransactionAsConfirmed(tx, txpowid);
+                }
+            });
+        }
+
+    } catch (e) {
+        MDS.log("❌ [SW-TX] Error parsing metadata: " + e);
+    }
+}
+
+/**
+ * Update transaction and message as confirmed
+ */
+function updateTransactionAsConfirmed(tx, txpowid) {
+    var txId = tx.ID || tx.id;
+    var messageTimestamp = tx.MESSAGE_TIMESTAMP || tx.message_timestamp;
+    var now = Date.now();
+
+    // Update TRANSACTIONS table
+    MDS.sql("UPDATE TRANSACTIONS SET txpowid='" + txpowid + "', status='confirmed', updated_at=" + now + " WHERE id=" + txId, function (updateRes) {
+        if (updateRes.status) {
+            MDS.log("✅ [SW-TX] Transaction marked as confirmed: " + txpowid);
+        }
+    });
+
+    // Update CHAT_MESSAGES table
+    MDS.sql("UPDATE CHAT_MESSAGES SET state='confirmed', txpowid='" + txpowid + "' WHERE date=" + messageTimestamp, function (chatRes) {
+        if (chatRes.status) {
+            MDS.log("✅ [SW-TX] Chat message marked as confirmed");
+        }
+    });
+}
+
+/**
+ * Handle a denied/cancelled transaction - mark as failed
+ */
+function handleDeniedTransaction(tx) {
+    var txId = tx.ID || tx.id;
+    var txpowid = tx.TXPOWID || tx.txpowid;
+    var messageTimestamp = tx.MESSAGE_TIMESTAMP || tx.message_timestamp;
+
+    MDS.log("🗑️ [SW-TX] Marking transaction as failed: " + txId);
+
+    // Update TRANSACTIONS table
+    MDS.sql("UPDATE TRANSACTIONS SET status='failed' WHERE id=" + txId, function (updateRes) {
+        if (updateRes.status) {
+            MDS.log("✅ [SW-TX] Transaction marked as failed");
+        }
+    });
+
+    // Update CHAT_MESSAGES table
+    var chatUpdateSql = "UPDATE CHAT_MESSAGES SET state='failed' WHERE ";
+    if (txpowid && txpowid !== 'null' && !txpowid.startsWith('PENDING_')) {
+        chatUpdateSql += "txpowid='" + txpowid + "'";
+    } else {
+        chatUpdateSql += "date=" + messageTimestamp;
+    }
+
+    MDS.sql(chatUpdateSql, function (chatRes) {
+        if (chatRes.status) {
+            MDS.log("✅ [SW-TX] Chat message marked as failed");
+        }
+    });
+}
+
+
 /**
  * MetaChain Service Worker - Beacon Handler
  * Handles peer discovery beacons and user registry
@@ -1142,7 +2461,8 @@ function handleBeacon(beacon, source) {
         var now = Date.now();
         var escapedAlias = escapeSql(beacon.alias);
         var bioValue = beacon.bio || "";
-        var cleanAddress = (beacon.address || "").replace(/\s/g, "");
+        // Clean address to prevent NumberFormatException (remove extra spaces)
+        var cleanAddress = (beacon.address || "").trim().replace(/\s+/g, " ").replace(/\s*:\s*/g, ":");
 
         var allowNonContactChats = (beacon.allowNonContactChats !== undefined && beacon.allowNonContactChats !== null)
             ? (beacon.allowNonContactChats ? 1 : 0)
@@ -1235,67 +2555,73 @@ function sendBackgroundBeacon() {
                 MDS.keypair.get("profile_languages", function (langRes) {
                     var languages = (langRes.status && langRes.value) ? langRes.value : "";
 
-                    // Get all profile data including avatar (like the working example)
-                    MDS.sql("SELECT * FROM MY_PROFILE WHERE id=1", function (permRes) {
-                        var allowNonContactChats = true;
-                        var avatar = "";
-                        var dbCountry = "";
-                        var dbLanguages = [];
+                    MDS.keypair.get("profile_minima_address", function (addrRes) {
+                        var minimaAddress = (addrRes.status && addrRes.value) ? addrRes.value : "";
 
-                        if (permRes.status && permRes.rows && permRes.rows.length > 0) {
-                            var row = permRes.rows[0];
-                            var val = row.ALLOW_NON_CONTACT_CHATS || row.allow_non_contact_chats;
-                            allowNonContactChats = (val === 1 || val === true || val === 'true' || val === '1');
-                            // Get avatar from DB (same as working example line 1714)
-                            avatar = row.AVATAR || row.avatar || "";
-                            // Get country from DB (with decoding like example line 1711)
-                            dbCountry = decodeURIComponent(row.COUNTRY || row.country || "");
-                            // Get languages from DB and parse as JSON array (like example line 1712-1713)
-                            try {
-                                dbLanguages = JSON.parse(decodeURIComponent(row.LANGUAGES || row.languages || "[]"));
-                            } catch (e) {
-                                dbLanguages = [];
+                        // Get all profile data including avatar (like the working example)
+                        MDS.sql("SELECT * FROM MY_PROFILE WHERE id=1", function (permRes) {
+                            var allowNonContactChats = true;
+                            var avatar = "";
+                            var dbCountry = "";
+                            var dbLanguages = [];
+
+                            if (permRes.status && permRes.rows && permRes.rows.length > 0) {
+                                var row = permRes.rows[0];
+                                var val = row.ALLOW_NON_CONTACT_CHATS || row.allow_non_contact_chats;
+                                allowNonContactChats = (val === 1 || val === true || val === 'true' || val === '1');
+                                // Get avatar from DB (same as working example line 1714)
+                                avatar = row.AVATAR || row.avatar || "";
+                                // Get country from DB (with decoding like example line 1711)
+                                dbCountry = decodeURIComponent(row.COUNTRY || row.country || "");
+                                // Get languages from DB and parse as JSON array (like example line 1712-1713)
+                                try {
+                                    dbLanguages = JSON.parse(decodeURIComponent(row.LANGUAGES || row.languages || "[]"));
+                                } catch (e) {
+                                    dbLanguages = [];
+                                }
                             }
-                        }
 
-                        // Use DB values as primary, keypair as fallback
-                        var finalCountry = dbCountry || country;
-                        var finalLanguages = dbLanguages.length > 0 ? dbLanguages : [];
-                        // Try to parse keypair languages if DB is empty
-                        if (finalLanguages.length === 0 && languages) {
-                            try {
-                                finalLanguages = JSON.parse(languages);
-                            } catch (e) {
-                                finalLanguages = [];
+                            // Use DB values as primary, keypair as fallback
+                            var finalCountry = dbCountry || country;
+                            var finalLanguages = dbLanguages.length > 0 ? dbLanguages : [];
+                            // Try to parse keypair languages if DB is empty
+                            if (finalLanguages.length === 0 && languages) {
+                                try {
+                                    finalLanguages = JSON.parse(languages);
+                                } catch (e) {
+                                    finalLanguages = [];
+                                }
                             }
-                        }
 
-                        var beacon = {
-                            app: "metachain",
-                            type: "BEACON",
-                            v: 1,
-                            pubkey: myPubkey,
-                            alias: myName,
-                            bio: bio,
-                            address: myAddress,
-                            allowNonContactChats: allowNonContactChats,
-                            country: finalCountry,
-                            languages: finalLanguages,
-                            // Use maxima icon as primary, MY_PROFILE as fallback
-                            avatar: myAvatar || avatar,
-                            timestamp: Date.now()
-                        };
+                            var beacon = {
+                                app: "metachain",
+                                type: "BEACON",
+                                v: 1,
+                                pubkey: myPubkey,
+                                alias: myName,
+                                bio: bio,
+                                address: myAddress,
+                                allowNonContactChats: allowNonContactChats,
+                                country: finalCountry,
+                                languages: finalLanguages,
+                                // Persist our immutable Wallet Address
+                                minimaaddress: minimaAddress,
+                                // Use maxima icon as primary, MY_PROFILE as fallback
+                                avatar: myAvatar || avatar,
+                                timestamp: Date.now()
+                            };
 
-                        var jsonStr = JSON.stringify(beacon);
-                        var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
+                            var jsonStr = JSON.stringify(beacon);
+                            var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
 
-                        // P2P broadcast
-                        MDS.cmd("message data:" + hexData, function (res) {
-                            MDS.log("📡 [BG-BEACON] P2P broadcast sent");
+                            // P2P broadcast
+                            MDS.cmd("message data:" + hexData, function (res) {
+                                MDS.log("📡 [BG-BEACON] P2P broadcast sent");
+                            });
+
+                            // Save self to DB
+                            handleBeacon(beacon, 'SELF');
                         });
-
-                        // Save self to DB
-                        handleBeacon(beacon, 'SELF');
                     });
                 });
             });
@@ -1318,6 +2644,7 @@ function startCleanupTimer() {
 function createDiscoveredPeersTable() {
     MDS.log("💾 [DB] DISCOVERED_PEERS table check (already created in init).");
 }
+
 /**
  * MetaChain Service Worker - Gossip Handler
  * Handles peer exchange (gossip) protocol
@@ -1494,6 +2821,7 @@ function sendWelcomePackage(targetPubkey, targetAlias) {
         }
     });
 }
+
 /**
  * MetaChain Service Worker - Main Dispatcher
  * Minimal entry point that routes events to handlers
@@ -1506,15 +2834,47 @@ function sendWelcomePackage(targetPubkey, targetAlias) {
 // MAIN EVENT DISPATCHER
 // ============================================================================
 
+// Flag to ensure startup cleanup runs once after DB is ready (triggered by first NEWBLOCK)
+var INITIAL_CLEANUP_DONE = false;
+
+// Flag to trigger coin discovery on first NEWBLOCK (when node is synced)
+var COIN_DISCOVERY_PENDING = false;
+var NEWBLOCK_COUNT = 0;
+
 MDS.init(function (msg) {
     // Initialization
     if (msg.event == "inited") {
-        MDS.log("🚀 [SW-VERSION-CHECK] Service Worker v2.1 FIX DEPLOYED - " + new Date().toISOString());
+        MDS.log("🚀 [SW-VERSION-CHECK] Service Worker v2.7 DEBUG - " + new Date().toISOString());
         initDatabase();
+        // Cleanup will happen on first NEWBLOCK to avoid setTimeout (not supported)
     }
 
     // Periodic tasks via NEWBLOCK
     else if (msg.event == "NEWBLOCK") {
+        // Run one-time startup cleanup if not done yet
+        if (!INITIAL_CLEANUP_DONE) {
+            INITIAL_CLEANUP_DONE = true;
+            cleanupOrphanedChatMessages();
+        }
+
+        // Run coin discovery at block 5 (gives time for coins to sync)
+        if (COIN_DISCOVERY_PENDING) {
+            NEWBLOCK_COUNT++;
+            if (NEWBLOCK_COUNT >= 5) {
+                COIN_DISCOVERY_PENDING = false;
+                MDS.log("📦 [COIN-DISCOVERY] Running at block " + NEWBLOCK_COUNT + "...");
+                if (typeof discoverOfflineTokens === 'function') {
+                    discoverOfflineTokens().then(function (count) {
+                        if (count > 0) {
+                            MDS.log("📦 [COIN-DISCOVERY] Recovered " + count + " offline token(s)");
+                        }
+                    }).catch(function (err) {
+                        MDS.log("⚠️ [COIN-DISCOVERY] Error: " + err);
+                    });
+                }
+            }
+        }
+
         var now = Date.now();
 
         // Gossip interval
@@ -1523,6 +2883,26 @@ MDS.init(function (msg) {
             startGossip();
             startCleanupTimer();
             sendBackgroundBeacon();
+            checkPendingTransactions(); // Check for zombie transactions
+            checkSentTransactions();    // Check for confirmations (sent -> confirmed)
+        }
+    }
+
+    // Service commands from frontend
+    else if (msg.event == "MDS_SERVICECMD") {
+        if (msg.data && msg.data.service === "COINDISC") {
+            MDS.log("📦 [SERVICE] Coin discovery requested from frontend");
+            if (typeof discoverOfflineTokens === 'function') {
+                discoverOfflineTokens().then(function (count) {
+                    if (count > 0) {
+                        MDS.log("📦 [SERVICE] Recovered " + count + " offline token(s)");
+                    } else {
+                        MDS.log("📦 [SERVICE] No new offline tokens found");
+                    }
+                }).catch(function (err) {
+                    MDS.log("⚠️ [SERVICE] Coin discovery error: " + err);
+                });
+            }
         }
     }
 
@@ -1538,6 +2918,7 @@ MDS.init(function (msg) {
 
             try {
                 var maxjson = JSON.parse(jsonstr);
+                MDS.log("🔍 [MAXIMA-DEBUG-ALL] App: " + app + " Type: " + (maxjson.type || maxjson.messageType) + " From: " + pubkey.substring(0, 10));
                 MDS.log("🔍 [MAXIMA] Type: " + (maxjson.type || maxjson.messageType));
 
                 // ================== GROUP MESSAGES ==================
@@ -1579,6 +2960,16 @@ MDS.init(function (msg) {
 
                 if (maxjson.type === "pong") {
                     handlePong(pubkey);
+                    return;
+                }
+
+                if (maxjson.type === "chat_history_request") {
+                    handleChatHistoryRequest(pubkey, maxjson);
+                    return;
+                }
+
+                if (maxjson.type === "chat_history_response") {
+                    handleChatHistoryResponse(pubkey, maxjson);
                     return;
                 }
 
@@ -1726,3 +3117,4 @@ MDS.init(function (msg) {
         }
     }
 });
+

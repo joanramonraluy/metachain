@@ -10,15 +10,47 @@
 // MAIN EVENT DISPATCHER
 // ============================================================================
 
+// Flag to ensure startup cleanup runs once after DB is ready (triggered by first NEWBLOCK)
+var INITIAL_CLEANUP_DONE = false;
+
+// Flag to trigger coin discovery on first NEWBLOCK (when node is synced)
+var COIN_DISCOVERY_PENDING = false;
+var NEWBLOCK_COUNT = 0;
+
 MDS.init(function (msg) {
     // Initialization
     if (msg.event == "inited") {
-        MDS.log("🚀 [SW-VERSION-CHECK] Service Worker v2.1 FIX DEPLOYED - " + new Date().toISOString());
+        MDS.log("🚀 [SW-VERSION-CHECK] Service Worker v2.7 DEBUG - " + new Date().toISOString());
         initDatabase();
+        // Cleanup will happen on first NEWBLOCK to avoid setTimeout (not supported)
     }
 
     // Periodic tasks via NEWBLOCK
     else if (msg.event == "NEWBLOCK") {
+        // Run one-time startup cleanup if not done yet
+        if (!INITIAL_CLEANUP_DONE) {
+            INITIAL_CLEANUP_DONE = true;
+            cleanupOrphanedChatMessages();
+        }
+
+        // Run coin discovery at block 5 (gives time for coins to sync)
+        if (COIN_DISCOVERY_PENDING) {
+            NEWBLOCK_COUNT++;
+            if (NEWBLOCK_COUNT >= 5) {
+                COIN_DISCOVERY_PENDING = false;
+                MDS.log("📦 [COIN-DISCOVERY] Running at block " + NEWBLOCK_COUNT + "...");
+                if (typeof discoverOfflineTokens === 'function') {
+                    discoverOfflineTokens().then(function (count) {
+                        if (count > 0) {
+                            MDS.log("📦 [COIN-DISCOVERY] Recovered " + count + " offline token(s)");
+                        }
+                    }).catch(function (err) {
+                        MDS.log("⚠️ [COIN-DISCOVERY] Error: " + err);
+                    });
+                }
+            }
+        }
+
         var now = Date.now();
 
         // Gossip interval
@@ -27,6 +59,26 @@ MDS.init(function (msg) {
             startGossip();
             startCleanupTimer();
             sendBackgroundBeacon();
+            checkPendingTransactions(); // Check for zombie transactions
+            checkSentTransactions();    // Check for confirmations (sent -> confirmed)
+        }
+    }
+
+    // Service commands from frontend
+    else if (msg.event == "MDS_SERVICECMD") {
+        if (msg.data && msg.data.service === "COINDISC") {
+            MDS.log("📦 [SERVICE] Coin discovery requested from frontend");
+            if (typeof discoverOfflineTokens === 'function') {
+                discoverOfflineTokens().then(function (count) {
+                    if (count > 0) {
+                        MDS.log("📦 [SERVICE] Recovered " + count + " offline token(s)");
+                    } else {
+                        MDS.log("📦 [SERVICE] No new offline tokens found");
+                    }
+                }).catch(function (err) {
+                    MDS.log("⚠️ [SERVICE] Coin discovery error: " + err);
+                });
+            }
         }
     }
 
@@ -42,6 +94,7 @@ MDS.init(function (msg) {
 
             try {
                 var maxjson = JSON.parse(jsonstr);
+                MDS.log("🔍 [MAXIMA-DEBUG-ALL] App: " + app + " Type: " + (maxjson.type || maxjson.messageType) + " From: " + pubkey.substring(0, 10));
                 MDS.log("🔍 [MAXIMA] Type: " + (maxjson.type || maxjson.messageType));
 
                 // ================== GROUP MESSAGES ==================
@@ -83,6 +136,16 @@ MDS.init(function (msg) {
 
                 if (maxjson.type === "pong") {
                     handlePong(pubkey);
+                    return;
+                }
+
+                if (maxjson.type === "chat_history_request") {
+                    handleChatHistoryRequest(pubkey, maxjson);
+                    return;
+                }
+
+                if (maxjson.type === "chat_history_response") {
+                    handleChatHistoryResponse(pubkey, maxjson);
                     return;
                 }
 

@@ -8,6 +8,38 @@ import { runSQL } from "./database.service";
 import { chatService } from "./chat.service";
 
 /* ----------------------------------------------------------------------------
+   CHAT ID GENERATION
+---------------------------------------------------------------------------- */
+
+/**
+ * Generate a deterministic, bidirectional chat ID from two public keys.
+ * The same ID is generated regardless of which user initiates the chat.
+ * @param publicKey1 First participant's public key
+ * @param publicKey2 Second participant's public key
+ * @returns SHA256 hash of sorted public keys (64 characters)
+ */
+export async function generateChatId(publicKey1: string, publicKey2: string): Promise<string> {
+    // Sort alphabetically to ensure same result regardless of order
+    const sorted = [publicKey1, publicKey2].sort();
+    const combined = sorted.join('|');
+
+    // Use browser native crypto for reliability and speed (avoids MDS dependency issues)
+    try {
+        const msgBuffer = new TextEncoder().encode(combined);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        return "0x" + hashHex.toUpperCase();
+    } catch (e) {
+        console.error("Native hash generation failed", e);
+    }
+
+    // Fallback: use first 64 chars of combined string
+    console.warn('⚠️ [CHAT-ID] Failed to generate hash, using fallback');
+    return combined.substring(0, 64);
+}
+
+/* ----------------------------------------------------------------------------
    TRANSACTION TRACKING
 ---------------------------------------------------------------------------- */
 
@@ -41,10 +73,14 @@ export async function insertTransaction(
     const txpowidVal = `'${effectiveTxPoWID}'`;
     const pendinguidVal = pendinguid ? `'${pendinguid}'` : 'NULL';
 
+    // Extract amount and tokenid from metadata to satisfy table constraints
+    const amountVal = metadata.amount ? `'${metadata.amount}'` : "'0'";
+    const tokenidVal = metadata.tokenid ? `'${metadata.tokenid}'` : "'0x00'";
+
     // Ensure we handle the case where we might be re-inserting if using pendingID
     const sql = `
-        INSERT INTO TRANSACTIONS (txpowid, type, publickey, message_timestamp, status, created_at, updated_at, metadata, pendinguid)
-        VALUES (${txpowidVal}, '${type}', '${publickey}', ${messageTimestamp}, 'pending', ${now}, ${now}, '${metadataStr}', ${pendinguidVal})
+        INSERT INTO TRANSACTIONS (txpowid, type, publickey, message_timestamp, status, date, metadata, pendinguid, amount, tokenid)
+        VALUES (${txpowidVal}, '${type}', '${publickey}', ${messageTimestamp}, 'pending', ${now}, '${metadataStr}', ${pendinguidVal}, ${amountVal}, ${tokenidVal})
     `;
 
     console.log(`💾 [TX] Inserting transaction: ${effectiveTxPoWID} (${type})`);
@@ -64,7 +100,7 @@ export async function updateTransactionStatus(txpowid: string, status: 'pending'
     const now = Date.now();
     const sql = `
         UPDATE TRANSACTIONS
-        SET status='${status}', updated_at=${now}
+        SET status='${status}', date=${now}
         WHERE txpowid='${txpowid}'
     `;
 
@@ -115,7 +151,7 @@ export async function updateTransactionTxpowid(pendinguid: string, txpowid: stri
 
 export async function updateTransactionStatusByPendingUid(pendinguid: string, status: 'pending' | 'sent' | 'confirmed' | 'rejected'): Promise<void> {
     const now = Date.now();
-    const sql = `UPDATE TRANSACTIONS SET status='${status}', updated_at=${now} WHERE pendinguid='${pendinguid}'`;
+    const sql = `UPDATE TRANSACTIONS SET status='${status}', date=${now} WHERE pendinguid='${pendinguid}'`;
     try {
         await runSQL(sql);
         console.log(`✅ [TX] Updated status for pendinguid ${pendinguid} to ${status}`);
@@ -126,7 +162,7 @@ export async function updateTransactionStatusByPendingUid(pendinguid: string, st
 }
 
 export async function getPendingTransactions(): Promise<any[]> {
-    const sql = `SELECT * FROM TRANSACTIONS WHERE status='pending' ORDER BY created_at ASC`;
+    const sql = `SELECT * FROM TRANSACTIONS WHERE status='pending' ORDER BY date ASC`;
 
     try {
         const res = await runSQL(sql);
@@ -541,7 +577,7 @@ export async function check3BlockConfirmation(txpowid: string): Promise<'confirm
          * Get all transactions that are in 'sent' status (waiting for confirmations)
          */
 export async function getSentTransactions(): Promise<any[]> {
-    const sql = `SELECT * FROM TRANSACTIONS WHERE status='sent' AND txpowid NOT LIKE 'PENDING_%' ORDER BY created_at ASC`;
+    const sql = `SELECT * FROM TRANSACTIONS WHERE status='sent' AND txpowid NOT LIKE 'PENDING_%' ORDER BY date ASC`;
 
     try {
         const res = await runSQL(sql);
@@ -590,6 +626,12 @@ export async function getMyTransactionHistory(): Promise<Map<string, { txpowid: 
 
         for (const txpow of txpows) {
             try {
+                // FILTER: Only include transactions that are actually in a block (confirmed history)
+                // This prevents pending mempool transactions from being treated as "history" by cleanup logic
+                if (!txpow.isblock && !txpow.inblock) {
+                    continue;
+                }
+
                 const state = txpow.body?.txn?.state;
 
                 if (state && Array.isArray(state) && state.length >= 2) {
@@ -700,7 +742,15 @@ export async function getBalance(): Promise<any[]> {
     }
 }
 
-export async function sendToken(tokenId: string, amount: string, address: string, tokenName: string, stateId?: number): Promise<any> {
+export async function sendToken(
+    tokenId: string,
+    amount: string,
+    address: string,
+    tokenName: string,
+    stateId?: number,
+    myPublicKey?: string,
+    recipientPublicKey?: string
+): Promise<any> {
     console.log(`💸 [WALLET] Sending ${amount} ${tokenName} to ${address}`);
 
     // Fire Optimistic Blink START immediately to sync SideMenu with Chat Bubble
@@ -714,12 +764,17 @@ export async function sendToken(tokenId: string, amount: string, address: string
             tokenid: tokenId
         };
 
-        if (stateId) {
+        if (stateId && myPublicKey && recipientPublicKey) {
+            // Generate deterministic bidirectional chat ID
+            const chatId = await generateChatId(myPublicKey, recipientPublicKey);
+
             sendParams.state = {
                 0: stateId,
-                1: 204
+                1: 204,
+                2: chatId,  // Deterministic chat identifier for recovery
+                3: myPublicKey // Sender public key for identification
             };
-            console.log(`🏷️ [WALLET] Adding state variables: ID = ${stateId}`);
+            console.log(`🏷️ [WALLET] Adding state variables: ID = ${stateId}, ChatID = ${chatId}, Sender = ${myPublicKey}`);
         }
 
         console.log(`💸 [WALLET] Command parameters:`, JSON.stringify(sendParams, null, 2));
@@ -1048,6 +1103,7 @@ export function startConfirmationChecker(): void {
                                     if (newTxPoWID && newTxPoWID !== msg.txpowid) {
                                         console.log(`🔄 [TX-CONFIRM-INCOMING] Found new ID for incoming message ${msg.date}: ${newTxPoWID}. Updating Chat DB.`);
 
+
                                         // Update CHAT_MESSAGES directly since there is no TRANSACTIONS row
                                         await runSQL(`UPDATE CHAT_MESSAGES SET txpowid='${newTxPoWID}' WHERE publickey='${msg.publickey}' AND date=${msg.date}`);
 
@@ -1076,6 +1132,7 @@ export function startConfirmationChecker(): void {
 
                                         if (newTxPoWID && newTxPoWID !== msg.txpowid) {
                                             console.log(`🔄 [TX-CONFIRM-INCOMING] Found NEW ID for zombie transaction ${msg.date}: ${newTxPoWID}. Updating DB.`);
+
                                             // Update DB
                                             await runSQL(`UPDATE CHAT_MESSAGES SET txpowid='${newTxPoWID}' WHERE publickey='${msg.publickey}' AND date=${msg.date}`);
 
@@ -1093,7 +1150,37 @@ export function startConfirmationChecker(): void {
                                     }
                                 }
                             } else {
-                                // console.log(`⚠️ [TX-CONFIRM] No sent/confirmed transaction found for message ${msg.date}`);
+                                // ORPHAN CHECK: valid 'sent' message but no tracking info found.
+                                // Likely pre-database wipe or migration artifact.
+                                // Attempt to find it in history by timestamp.
+                                console.log(`🕵️ [TX-CONFIRM] Orphan message ${msg.date} checks failed. Searching history as last resort...`);
+
+                                const recoveredTxPoWID = await findTxPoWIDInHistoryByTimestamp(msg.date);
+                                if (recoveredTxPoWID) {
+                                    console.log(`✅ [TX-CONFIRM] Found orphan transaction in history! ID: ${recoveredTxPoWID}`);
+                                    // Verify confirmation count just in case
+                                    const status = await check3BlockConfirmation(recoveredTxPoWID);
+                                    if (status === 'confirmed') {
+                                        await updateMessageState(msg.publickey, msg.date, 'confirmed');
+                                    } else {
+                                        console.log(`⏳ [TX-CONFIRM] Orphan found but status is ${status}`);
+                                        // Update CHAT_MESSAGES with the found ID so future checks use the optimized path
+                                        // And so we can track it properly.
+                                        await runSQL(`UPDATE CHAT_MESSAGES SET txpowid='${recoveredTxPoWID}' WHERE publickey='${msg.publickey}' AND date=${msg.date}`);
+
+                                        // Also insert into TRANSACTIONS so it's tracked normally? 
+                                        // Maybe overkill, but ensures consistency. For now, updating message is enough.
+                                    }
+                                } else {
+                                    // Not found in history. Check age.
+                                    const now = Date.now();
+                                    const msgTime = parseInt(msg.date) || 0;
+                                    const age = now - msgTime;
+                                    if (age > 10 * 60 * 1000) { // 10 minutes
+                                        console.log(`🗑️ [TX-CONFIRM] Orphan message ${msg.date} not found in history and old (>10m). Marking as failed.`);
+                                        await updateMessageState(msg.publickey, msg.date, 'failed');
+                                    }
+                                }
                             }
                         }
                     }
@@ -1122,6 +1209,24 @@ export function stopConfirmationChecker(): void {
     }
 }
 
+export async function getPendingTransactionsCount(): Promise<number> {
+    try {
+        // Include 'sent' status as these are also "processing" (waiting for confirmation)
+        // This ensures the UI indicator works even if Minima's unconfirmed balance is 0 (e.g. after restart)
+        const sql = `SELECT COUNT(*) as total FROM TRANSACTIONS WHERE status IN ('pending', 'sent')`;
+        const res = await runSQL(sql);
+        if (res && res.rows && res.rows.length > 0) {
+            // Handle lowercase or uppercase keys from SQL result
+            const count = res.rows[0].total !== undefined ? res.rows[0].total : res.rows[0].TOTAL;
+            return parseInt(count || '0');
+        }
+        return 0;
+    } catch (err) {
+        console.error("Error counting pending transactions:", err);
+        return 0;
+    }
+}
+
 /* ----------------------------------------------------------------------------
    EXPORT SERVICE SINGLETON
 ---------------------------------------------------------------------------- */
@@ -1147,5 +1252,6 @@ export const transactionService = {
     getBalance,
     sendToken,
     updateMessageState,
-    getPendingMessages
+    getPendingMessages,
+    getPendingTransactionsCount
 };

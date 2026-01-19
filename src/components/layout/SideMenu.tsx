@@ -4,6 +4,7 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { Settings, Info, Users, X, MessageSquare, Globe, HelpCircle } from "lucide-react";
 import { appContext } from "../../AppContext";
 import { minimaService } from "../../services/minima.service";
+import { transactionService } from "../../services/transaction.service";
 import { BalanceAmount } from "../common/BalanceAmount";
 
 const defaultAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23cbd5e1'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E";
@@ -20,6 +21,7 @@ export default function SideMenu({ isOpen, setIsOpen }: SideMenuProps) {
   // Optimistic blink state to ensure SideMenu reacts instantly when a tx is sent,
   // even if the Node hasn't reported 'unconfirmed' yet.
   const [optimisticBlink, setOptimisticBlink] = useState(false);
+  const [hasPendingTx, setHasPendingTx] = useState(false);
 
   useEffect(() => {
     const fetchBalance = async () => {
@@ -41,6 +43,15 @@ export default function SideMenu({ isOpen, setIsOpen }: SideMenuProps) {
           if (minima.unconfirmed && minima.unconfirmed !== '0') {
             console.log(`💰 [SIDEBAR] Balance Update: Unconfirmed=${minima.unconfirmed}`);
           }
+        }
+
+        // Check for local pending transactions (Read Mode support)
+        const pendingCount = await transactionService.getPendingTransactionsCount();
+        if (pendingCount > 0) {
+          console.log(`💰 [SIDEBAR] Found ${pendingCount} pending transactions. Forcing blink.`);
+          setHasPendingTx(true);
+        } else {
+          setHasPendingTx(false);
         }
       } catch (err) {
         console.error("Error fetching balance in SideMenu:", err);
@@ -148,10 +159,11 @@ export default function SideMenu({ isOpen, setIsOpen }: SideMenuProps) {
               {minimaBalance && (
                 <div className="text-xs text-gray-400 flex items-center gap-1 font-mono">
                   <span className="text-primary-400">💎</span>
+                  {/* Force HMR update */}
                   <BalanceAmount
                     amount={parseFloat(minimaBalance.sendable).toFixed(2)}
                     unconfirmed={minimaBalance.unconfirmed}
-                    forceActive={optimisticBlink}
+                    forceActive={optimisticBlink || hasPendingTx}
                     className="font-bold text-white text-[15px]"
                   />
                 </div>

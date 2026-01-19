@@ -2,7 +2,7 @@
   "name": "metachain",
   "category": "social",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.0.8",
   "type": "module",
   "template": "react-ts",
   "scripts": {
@@ -12,11 +12,11 @@
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
     "build:sw": "./scripts/build-service-worker.sh",
-    "minima:zip": "minima zip",
+    "minima:zip": "npm run build:sw && minima zip",
     "minima:install": "minima install",
     "minima:update": "minima update",
     "minima:uninstall": "minima uninstall",
-    "minima:refresh": "minima zip && minima uninstall && minima install"
+    "minima:refresh": "npm run build && minima zip && minima uninstall && minima install"
   },
   "dependencies": {
     "@minima-global/mds": "^0.14.11",

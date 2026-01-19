@@ -9,7 +9,6 @@ class TransactionPollingService {
     private isPolling = false;
     private callbacks: Set<TransactionStatusCallback> = new Set();
     private readonly POLL_INTERVAL_MS = 10000; // 10 seconds
-    private cleanupDone = false; // Track if initial cleanup has run
 
     /**
      * Start polling for pending transactions
@@ -61,11 +60,7 @@ class TransactionPollingService {
 
             console.log(`🔍 [TxPolling] Checking ${pendingTransactions.length} pending transaction(s)`);
 
-            // First poll: Cleanup orphaned pending transactions
-            if (!this.cleanupDone) {
-                await this.cleanupOrphanedTransactions();
-                this.cleanupDone = true;
-            }
+            // Transaction cleanup is now handled by Service Worker
 
             for (const tx of pendingTransactions) {
                 await this.checkTransaction(tx);
@@ -73,14 +68,6 @@ class TransactionPollingService {
         } catch (err) {
             console.error('❌ [TxPolling] Error during polling:', err);
         }
-    }
-
-    /**
-     * Clean up transactions that are pending in DB but no longer in node
-     */
-    private async cleanupOrphanedTransactions() {
-        console.log('🧹 [TxPolling] Delegating to MinimaService for blockchain verification...');
-        await minimaService.cleanupOrphanedPendingTransactions();
     }
 
     /**
@@ -118,7 +105,7 @@ class TransactionPollingService {
 
     private async handleConfirmedTransaction(txpowid: string, transaction: any, blockchainTimestamp?: number) {
         console.log(`✅ [TxPolling] Transaction confirmed: ${txpowid}`);
-        const { PUBLICKEY, MESSAGE_TIMESTAMP, TYPE, METADATA } = transaction;
+        const { PUBLICKEY, MESSAGE_TIMESTAMP } = transaction;
 
         // Update transaction status in database
         await minimaService.updateTransactionStatus(txpowid, 'confirmed');
@@ -129,41 +116,10 @@ class TransactionPollingService {
         console.log(`🕐 [TxPolling] Using confirmation timestamp: ${confirmationTime} (blockchain: ${!!blockchainTimestamp})`);
         await minimaService.updateMessageState(PUBLICKEY, MESSAGE_TIMESTAMP, 'confirmed', confirmationTime);
 
-        // Parse metadata
-        let metadata: any = {};
-        try {
-            metadata = JSON.parse(METADATA || '{}');
-        } catch (e) {
-            console.error('Error parsing metadata:', e);
-        }
-
-        // Send Maxima notification
-        if (TYPE === 'charm') {
-            const { charmId, amount, username } = metadata;
-            console.log(`📤 [TxPolling] Sending charm message via Maxima...`);
-            await minimaService.sendMessage(
-                PUBLICKEY,
-                username || 'Unknown',
-                charmId,
-                'charm',
-                '',
-                amount || 0,
-                confirmationTime  // Use blockchain timestamp, not MESSAGE_TIMESTAMP
-            );
-        } else if (TYPE === 'token') {
-            const { amount, tokenName, username } = metadata;
-            const tokenData = JSON.stringify({ amount, tokenName });
-            console.log(`📤 [TxPolling] Sending token message via Maxima...`);
-            await minimaService.sendMessage(
-                PUBLICKEY,
-                username || 'Unknown',
-                tokenData,
-                'token',
-                '',
-                0,
-                confirmationTime  // Use blockchain timestamp, not MESSAGE_TIMESTAMP
-            );
-        }
+        // NOTE: Maxima message sending is now handled by the Service Worker
+        // The Service Worker detects accepted transactions and sends messages autonomously
+        // This prevents duplicate messages and works even when the DApp is closed
+        console.log(`ℹ️ [TxPolling] Service Worker will handle Maxima message sending for ${txpowid}`);
 
         // Notify subscribers
         this.notifyCallbacks(txpowid, 'confirmed', transaction);

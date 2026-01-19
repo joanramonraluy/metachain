@@ -94,7 +94,13 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
   }, [status, isTokenTransfer, isCharm, prevStatus]);
 
   // Use status directly - no fake pending needed
-  const currentStatus = status;
+  // Enhanced status logic:
+  // For tokens/charms, 'read' implies the transaction was received and viewed.
+  // We treat 'read' as 'confirmed' to ensure the UI shows the green CONFIRMED badge
+  // instead of falling back to the default PROCESSING state.
+  const currentStatus = (isTokenTransfer || isCharm) && (status === 'read' || status === 'delivered')
+    ? 'confirmed'
+    : status;
 
   // Enhanced colors with gradients for token transfers
   let bubbleColor = "";
@@ -343,11 +349,7 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
             </span>
           )}
 
-          {((isCharm && charm) || (isTokenTransfer && tokenAmount)) && status === 'failed' && fromMe && (
-            <span className="flex items-center gap-1 bg-red-100 text-red-700 px-1.5 py-0.5 rounded text-[10px] font-medium mr-1">
-              <span>❌</span> Transaction Denied
-            </span>
-          )}
+
 
           <span>
             {new Date(timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}

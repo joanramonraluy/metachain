@@ -23,19 +23,24 @@ export const BalanceAmount = ({ amount, unconfirmed, className = "", forceActive
             console.log("💡 [BalanceAmount] Blinking active. Unconfirmed:", unconfirmed);
             const interval = setInterval(() => {
                 setBlinkState(prev => prev === 0 ? 1 : 0);
-            }, 1000); // 1 second interval like wallet
+            }, 500); // Fast interval
             return () => clearInterval(interval);
         } else {
+            console.log("🔇 [BalanceAmount] Blinking INACTIVE");
             setBlinkState(0);
         }
-    }, [hasUnconfirmed, unconfirmed]);
+    }, [hasUnconfirmed, unconfirmed, forceActive]);
 
-    // Use !important to override parent styles (like text-white in SideMenu)
-    // We utilize opacity for a smoother "breathing" effect that works on all backgrounds
-    const blinkClass = blinkState === 1 ? '!opacity-50' : '!opacity-100';
+    // DEBUG: Red color to confirm logic activation
+    // Inline opacity to guarantee visibility
+    const style = {
+        opacity: blinkState === 1 ? 0.2 : 1,
+        transition: 'opacity 0.2s ease-in-out',
+        color: hasUnconfirmed ? '#ff4444' : undefined // Red if active
+    };
 
     return (
-        <span className={`transition-opacity duration-200 ${className} ${blinkClass}`}>
+        <span className={className} style={style}>
             {amount}
         </span>
     );

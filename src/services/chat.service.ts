@@ -275,10 +275,6 @@ class ChatService {
             });
         });
     }
-
-    /* ----------------------------------------------------------------------------
-      MESSAGE OPERATIONS
-    ---------------------------------------------------------------------------- */
     async insertMessage(msg: ChatMessage & { date?: number }) {
         const { roomname, publickey, username, type, message, filedata = "", state = "", amount = 0, date } = msg;
         const escapedMsg = message.replace(/'/g, "''");
@@ -337,11 +333,12 @@ class ChatService {
                     s.archived,
                     s.last_opened,
                     s.favorite,
-                    d.alias as discovery_alias,
+                    COALESCE(d.alias, u.alias) as discovery_alias,
                     d.avatar as discovery_avatar
                 FROM CHAT_MESSAGES m
                 LEFT JOIN CHAT_STATUS s ON m.publickey = s.publickey
-                LEFT JOIN DISCOVERED_PEERS d ON m.publickey = d.publickey
+                LEFT JOIN DISCOVERED_PEERS d ON UPPER(m.publickey) = UPPER(d.publickey)
+                LEFT JOIN METACHAIN_USERS u ON UPPER(m.publickey) = UPPER(u.publickey)
                 ORDER BY m.date DESC
             `;
 

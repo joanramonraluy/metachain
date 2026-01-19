@@ -200,14 +200,10 @@ class MinimaService {
      */
     async handleNewBalance() {
         try {
-            console.log('💰 [WALLET] Balance changed - checking for confirmed transactions...');
+            console.log('💰 [WALLET] Balance changed - notifying UI...');
 
-            // Instead of trying to find the specific transaction that triggered this (which is flaky with txpowlist),
-            // we simply run the cleanup logic which checks ALL pending transactions against the blockchain history.
-            // This is more robust and handles both "app closed" and "live update" scenarios uniformly.
-            await this.cleanupOrphanedPendingTransactions();
-
-            // Notify UI to refresh balance immediately
+            // Transaction cleanup is now handled by Service Worker
+            // Just notify UI to refresh balance
             this.notifyBalanceUpdate();
 
         } catch (err) {
@@ -701,6 +697,23 @@ WHERE(${addressClause}) AND status = 'pending'`;
                     return;
                 }
 
+
+                // HANDLE HISTORY SYNC RESPONSE
+                // The DB insertion is handled by the Service Worker (chat.handler.js)
+                // We just need to wait a moment for it to finish and then tell the UI to refresh.
+                if (json.type === "chat_history_response") {
+                    console.log("🔄 [HISTORY] Received history sync response, triggering UI refresh...");
+                    setTimeout(() => {
+                        console.log("🔄 [HISTORY] Triggering UI update now.");
+                        chatService.notifyNewMessage({
+                            ...json,
+                            type: 'history_sync', // Special type to trigger broad refresh
+                            from
+                        });
+                    }, 2000);
+                    return;
+                }
+
                 // Normal message - FILTER: Only process actual chat message types
                 const validChatTypes = ["text", "image", "video", "audio", "file", "charm", "token", "gif", "sticker", "voice"];
                 if (!validChatTypes.includes(json.type)) {
@@ -744,13 +757,16 @@ WHERE(${addressClause}) AND status = 'pending'`;
         return messagingService.sendMessage(toPublicKey, senderName, message, type, filedata, amount, existingTimestamp, recipientName, targetApplication, saveToDb, txpowid);
     }
 
-    async updateMessageState(publickey: string, timestamp: number, state: string, newTimestamp?: number) {
+    async updateMessageState(publickey: string, timestamp: number, state: string, newTimestamp?: number, txpowid?: string) {
         console.log(`🔄[DB] Updating message state: newState = "${state}", timestamp = ${timestamp} `);
 
         let setClause = `state = '${state}'`;
         if (newTimestamp) {
             // Remove quotes for numeric date field
             setClause += `, date = ${newTimestamp} `;
+        }
+        if (txpowid) {
+            setClause += `, txpowid = '${txpowid}' `;
         }
 
         // Remove quotes for numeric date field in WHERE clause
@@ -794,275 +810,8 @@ WHERE(${addressClause}) AND status = 'pending'`;
     }
 
     /**
-     * Cleanup orphaned pending transactions (manual trigger)
-     * Call this to remove pending transactions that are no longer in node's pending list
-     */
-    async cleanupOrphanedPendingTransactions(): Promise<void> {
-        console.log('🧹 [CLEANUP] Starting manual cleanup of orphaned transactions...');
-
-        // Get all pending transactions from DB
-        // Get all pending transactions from DB
-        const sql = "SELECT * FROM TRANSACTIONS WHERE status='pending'";
-        const result = await this.runSQL(sql);
-        const pendingDbTxs = result.rows || [];
-
-        if (pendingDbTxs.length === 0) {
-            console.log('✅ [CLEANUP] No pending transactions found in DB (proceeding to check for stuck messages)');
-        } else {
-            console.log(`🔍[CLEANUP] Found ${pendingDbTxs.length} pending transactions in DB`);
-        }
-
-        // Get confirmed transaction history from blockchain
-        const confirmedTxs = await this.getMyTransactionHistory();
-        console.log(`🔍[CLEANUP] Found ${confirmedTxs.size} confirmed MetaChain transactions in blockchain`);
-
-        // Get pending transactions from mempool
-        const pendingTxs = await this.getMyPendingTransactions();
-        console.log(`🔍[CLEANUP] Found ${pendingTxs.size} pending MetaChain transactions in mempool`);
-
-        let cleanedCount = 0;
-
-        // Check each DB transaction
-        for (const tx of pendingDbTxs) {
-            const { MESSAGE_TIMESTAMP, TXPOWID, PENDINGUID, PUBLICKEY, CREATED_AT } = tx;
-
-            // Check if this transaction is in the blockchain (confirmed)
-            const confirmedTxData = confirmedTxs.get(MESSAGE_TIMESTAMP.toString());
-
-            let isConfirmedFallback = false;
-            let fallbackTxpowData: { txpowid: string, timestamp: number } | null = null;
-
-            if (confirmedTxData) {
-                isConfirmedFallback = true;
-                fallbackTxpowData = confirmedTxData;
-            } else if (TXPOWID && TXPOWID !== 'null') {
-                // FALLBACK: If not found in general history (maybe address mismatch), check by specific TXPOWID
-                try {
-                    const txpowCheck: any = await new Promise((resolve) => {
-                        // Use 'txpow txpowid:...'
-                        (MDS.cmd as any)(`txpow txpowid:${TXPOWID}`, (res: any) => resolve(res));
-                    });
-
-                    if (txpowCheck.status && txpowCheck.response) {
-                        const txp = txpowCheck.response;
-                        if (txp.isinblock) {
-                            console.log(`✅ [CLEANUP] Fallback: Transaction ${TXPOWID} is IN BLOCK! (Address scan missed it)`);
-                            isConfirmedFallback = true;
-                            // Construct data object typical of history map
-                            fallbackTxpowData = {
-                                txpowid: TXPOWID,
-                                timestamp: txp.header?.timemilli ? Number(txp.header.timemilli) : Date.now()
-                            };
-                        }
-                    }
-                } catch (e) {
-                    console.warn(`⚠️ [CLEANUP] Fallback check failed for ${TXPOWID}`, e);
-                }
-            }
-
-            if (isConfirmedFallback && fallbackTxpowData) {
-                const { txpowid: confirmedTxpowid, timestamp: confirmedTimestamp } = fallbackTxpowData;
-
-                // Transaction is confirmed in blockchain!
-                console.log(`✅ [CLEANUP] Transaction ${MESSAGE_TIMESTAMP} confirmed as ${confirmedTxpowid} at ${confirmedTimestamp}`);
-
-                // Update txpowid if we only had pendinguid
-                if (!TXPOWID || TXPOWID === 'null') {
-                    await this.updateTransactionTxpowid(PENDINGUID, confirmedTxpowid);
-                }
-
-                // Mark as confirmed
-                await this.updateTransactionStatus(confirmedTxpowid, 'confirmed');
-
-                // Update message state to 'confirmed' AND update timestamp to blockchain confirmation time
-                await this.updateMessageState(PUBLICKEY, MESSAGE_TIMESTAMP, 'confirmed', confirmedTimestamp);
-
-                // Send Maxima notification (in case it wasn't sent yet)
-                const { TYPE, METADATA } = tx;
-                let metadata: any = {};
-                try {
-                    metadata = JSON.parse(METADATA || '{}');
-                } catch (e) {
-                    console.error('Error parsing metadata:', e);
-                }
-
-                if (TYPE === 'charm') {
-                    const { charmId, amount, username } = metadata;
-                    console.log(`📤 [CLEANUP] Sending charm message via Maxima...`);
-                    await this.sendMessage(
-                        PUBLICKEY,
-                        username || 'Unknown',
-                        charmId,
-                        'charm',
-                        '',
-                        amount || 0,
-                        confirmedTimestamp  // Use blockchain timestamp, not MESSAGE_TIMESTAMP
-                    );
-                } else if (TYPE === 'token') {
-                    const { amount, tokenName, username } = metadata;
-                    const tokenData = JSON.stringify({ amount, tokenName });
-                    console.log(`📤 [CLEANUP] Sending token message via Maxima...`);
-                    await this.sendMessage(
-                        PUBLICKEY,
-                        username || 'Unknown',
-                        tokenData,
-                        'token',
-                        '',
-                        0,
-                        confirmedTimestamp  // Use blockchain timestamp, not MESSAGE_TIMESTAMP
-                    );
-                }
-
-                cleanedCount++;
-                continue;
-            }
-
-            // Check if this transaction is pending in mempool
-            const pendingTxpowid = pendingTxs.get(MESSAGE_TIMESTAMP.toString());
-
-            if (pendingTxpowid) {
-                // Transaction is pending in mempool (mining)
-                console.log(`⏳[CLEANUP] Transaction ${MESSAGE_TIMESTAMP} is pending in mempool as ${pendingTxpowid} `);
-
-                // Update txpowid if we only had pendinguid
-                if (!TXPOWID || TXPOWID === 'null') {
-                    await this.updateTransactionTxpowid(PENDINGUID, pendingTxpowid);
-                }
-
-                continue; // Keep as pending
-            }
-
-            // Not in blockchain and not in mempool - determine if failed or still waiting for approval
-            const age = Date.now() - CREATED_AT;
-            const ageMinutes = Math.floor(age / (1000 * 60));
-
-            // For transactions with PENDINGUID (waiting for user approval)
-            // Check if still pending in MDS - if not, it was accepted or denied while app was closed
-            if (PENDINGUID && (!TXPOWID || TXPOWID === 'null')) {
-                // Check if this specific UID is still pending using checkpending (doesn't create pending)
-                const isStillPending = await this.checkPendingUID(PENDINGUID);
-
-                if (isStillPending) {
-                    console.log(`⏳[CLEANUP] Transaction ${MESSAGE_TIMESTAMP} still pending approval(PENDINGUID: ${PENDINGUID})`);
-                    // Still waiting for user approval - leave as pending
-                    continue;
-                } else {
-                    // PENDINGUID exists but not in MDS pending list
-                    // This could mean:
-                    // 1. Transaction was accepted and is now in blockchain
-                    // 2. Transaction was accepted and is in mempool (not yet in blockchain)
-                    // 3. Transaction was denied/cancelled
-                    // 4. checkpending failed to detect it (unreliable in some cases)
-
-                    // Check if it was accepted by looking in confirmed transactions
-                    const wasAccepted = confirmedTxs.has(MESSAGE_TIMESTAMP.toString());
-
-                    // Check if it's in the mempool (approved but not yet confirmed)
-                    const isInMempool = pendingTxs.has(MESSAGE_TIMESTAMP.toString());
-
-                    if (wasAccepted) {
-                        console.log(`✅[CLEANUP] Transaction ${MESSAGE_TIMESTAMP} was accepted and confirmed while app was closed`);
-                        await this.updateMessageState(PUBLICKEY, MESSAGE_TIMESTAMP, 'sent');
-                        cleanedCount++;
-                    } else if (isInMempool) {
-                        console.log(`⏳[CLEANUP] Transaction ${MESSAGE_TIMESTAMP} is in mempool(approved, waiting for confirmation)`);
-                        // Transaction was approved and is waiting to be added to blockchain
-                        // Update to 'sent' state since it's been approved
-                        await this.updateMessageState(PUBLICKEY, MESSAGE_TIMESTAMP, 'sent');
-                        cleanedCount++;
-                    } else {
-                        // Not in blockchain and not in mempool
-                        // CONSERVATIVE APPROACH: Leave as pending instead of marking as failed
-                        // Only MDS_PENDING event can reliably tell us if it was denied
-                        console.log(`⚠️[CLEANUP] Transaction ${MESSAGE_TIMESTAMP} not found in blockchain or mempool - keeping as pending (will be updated by MDS_PENDING event if denied)`);
-                        // Don't change state - leave as pending
-                    }
-                    continue;
-                }
-            }
-            // For transactions with TXPOWID (already approved, check directly)
-            else if (TXPOWID && TXPOWID !== 'null') {
-                // Use direct lookup for efficiency
-                const txStatus = await this.checkTransactionByTxpowid(TXPOWID);
-
-                if (txStatus === 'confirmed') {
-                    console.log(`✅[CLEANUP] Transaction ${TXPOWID} confirmed via direct lookup`);
-                    await this.updateTransactionStatus(TXPOWID, 'confirmed');
-                    await this.updateMessageState(PUBLICKEY, MESSAGE_TIMESTAMP, 'sent');
-                    cleanedCount++;
-                } else if (txStatus === 'pending') {
-                    console.log(`⏳[CLEANUP] Transaction ${TXPOWID} still pending in mempool`);
-                    // Keep as pending
-                } else {
-                    // not_found - give it grace period before marking as failed
-                    if (age > 10 * 60 * 1000) {
-                        console.log(`🗑️[CLEANUP] Transaction ${TXPOWID} not found after ${ageMinutes} m - marking as failed`);
-                        await this.updateTransactionStatus(TXPOWID, 'rejected');
-                        await this.updateMessageState(PUBLICKEY, MESSAGE_TIMESTAMP, 'failed');
-                        cleanedCount++;
-                    } else {
-                        console.log(`⏳[CLEANUP] Transaction ${TXPOWID} propagating(${ageMinutes}m)...`);
-                    }
-                }
-            }
-            // Transactions without PENDINGUID or TXPOWID are orphans - clean immediately
-            else {
-                console.log(`🗑️[CLEANUP] Orphan transaction ${MESSAGE_TIMESTAMP} with no tracking ID - marking as failed`);
-                await this.updateMessageState(PUBLICKEY, MESSAGE_TIMESTAMP, 'failed');
-                cleanedCount++;
-            }
-        }
-
-        console.log(`✅[CLEANUP] Processed ${cleanedCount} orphaned transactions from DB`);
-
-        // -------------------------------------------------------------------------
-        // SAFETY NET: Check for stuck messages in CHAT_MESSAGES
-        // (zombies with no transaction record, likely from before the token fix)
-        // -------------------------------------------------------------------------
-        const stuckMessagesSql = "SELECT * FROM CHAT_MESSAGES WHERE state='pending'";
-        const stuckMessages = await this.runSQL(stuckMessagesSql);
-
-        if (stuckMessages.rows && stuckMessages.rows.length > 0) {
-            console.log(`🧹[CLEANUP] Checking ${stuckMessages.rows.length} pending messages in CHAT_MESSAGES for zombies...`);
-
-            for (const msg of stuckMessages.rows) {
-                // Check if tracked in TRANSACTIONS
-                const isTrackedSql = `SELECT * FROM TRANSACTIONS WHERE message_timestamp = ${msg.DATE} `;
-                const tracked = await this.runSQL(isTrackedSql);
-
-                if (tracked.rows.length === 0) {
-                    console.log(`⚠️[CLEANUP] Found untracked pending message: ${msg.DATE} (Amount: ${msg.AMOUNT})`);
-
-                    // Check blockchain history using the message timestamp
-                    const confirmedTxpowid = confirmedTxs.get(msg.DATE.toString());
-
-                    if (confirmedTxpowid) {
-                        console.log(`✅[CLEANUP] Recovered untracked transaction ${msg.DATE} -> ${confirmedTxpowid} `);
-                        await this.updateMessageState(msg.PUBLICKEY, msg.DATE, 'sent');
-
-                        // Optionally insert into TRANSACTIONS so it's tracked in the future
-                        // But since it's already confirmed, we might just leave it as is
-                    } else {
-                        // Check age
-                        const age = Date.now() - msg.DATE;
-                        const ageMinutes = Math.floor(age / (1000 * 60));
-
-                        if (age > 10 * 60 * 1000) { // 10 mins grace period
-                            console.log(`🗑️[CLEANUP] Untracked message ${msg.DATE} is old(${ageMinutes}m) and not in blockchain - marking failed`);
-                            await this.updateMessageState(msg.PUBLICKEY, msg.DATE, 'failed');
-                        } else {
-                            console.log(`⏳[CLEANUP] Untracked message ${msg.DATE} is recent(${ageMinutes}m) - giving it more time`);
-                        }
-                    }
-                }
-            }
-        }
-
-        console.log(`✅[CLEANUP] Complete.`);
-    }
-
-    /**
      * Cleanup messages that are stuck in 'pending' state
+     * NOTE: Transaction cleanup is now handled by Service Worker
      */
     async cleanupStuckMessages(): Promise<void> {
         console.log('🧹 [CLEANUP] Checking for stuck pending messages...');
@@ -1384,8 +1133,12 @@ WHERE(${addressClause}) AND status = 'pending'`;
         console.log(`🎯[CHARM] Sending charm ${charmId} with ${amount} Minima to ${recipientName} `);
 
         try {
+            // Get my public key for chat ID generation
+            const maximaInfo = await (MDS.cmd as any)('maxima');
+            const myPublicKey = maximaInfo?.response?.publickey || '';
+
             // Step 1: Send the Minima tokens (tokenId 0x00 is always Minima)
-            const tokenResponse = await this.sendToken("0x00", amount.toString(), minimaAddress, "Minima", stateId);
+            const tokenResponse = await this.sendToken("0x00", amount.toString(), minimaAddress, "Minima", stateId, myPublicKey, toPublicKey);
 
             // Extract txpowid and pendinguid from token response
             const txpowid = tokenResponse?.txpowid;
@@ -1444,8 +1197,12 @@ WHERE(${addressClause}) AND status = 'pending'`;
         }
     }
 
-    async sendToken(tokenId: string, amount: string, address: string, tokenName: string, stateId?: number): Promise<any> {
+    async sendToken(tokenId: string, amount: string, address: string, tokenName: string, stateId?: number, myPublicKey?: string, recipientPublicKey?: string): Promise<any> {
         console.log(`💸[WALLET] Sending ${amount} ${tokenName} to ${address} `);
+
+        // Fire Optimistic Blink START immediately to sync SideMenu with Chat Bubble
+        window.dispatchEvent(new CustomEvent('minima_balance_update_start'));
+        console.log(`⚡ [WALLET] Dispatched minima_balance_update_start event`);
 
         try {
             // Construct the send command parameters
@@ -1456,12 +1213,18 @@ WHERE(${addressClause}) AND status = 'pending'`;
             };
 
             // Add state variables if provided
-            if (stateId) {
+            if (stateId && myPublicKey && recipientPublicKey) {
+                // Import generateChatId from transaction.service
+                const { generateChatId } = await import('./transaction.service');
+                const chatId = await (generateChatId as any)(myPublicKey, recipientPublicKey);
+
                 sendParams.state = {
                     0: stateId.toString(),
-                    1: "204"
+                    1: "204",
+                    2: chatId,  // Deterministic chat identifier for recovery
+                    3: myPublicKey // Sender public key for identification
                 };
-                console.log(`🏷️[WALLET] Adding state variables: ID = ${stateId} `);
+                console.log(`🏷️[WALLET] Adding state variables: ID = ${stateId}, ChatID = ${chatId}, Sender = ${myPublicKey} `);
             }
 
             console.log(`💸[WALLET] Command parameters: `, JSON.stringify(sendParams, null, 2));
@@ -1545,15 +1308,45 @@ WHERE(${addressClause}) AND status = 'pending'`;
     async initProfile() {
         // Publish our Minima address to Maxima profile so others can send us tokens
         try {
-            const maxResponse = await MDS.cmd.maxima({ action: "getaddress" } as any);
-            if (maxResponse.status) {
-                // Cast to any to avoid type errors if the type definition is incomplete
-                const myAddress = (maxResponse.response as any).address;
+            // FIX: Use core 'getaddress' command, not maxima
+            const getAddrRes = await (MDS.cmd as any).getaddress();
+
+            if (getAddrRes.status) {
+                const myAddress = getAddrRes.response.miniaddress || getAddrRes.response.address;
                 console.log("📍 [PROFILE] My Minima Address:", myAddress);
 
-                // We'll just log it for now as we're not sure about the update command yet
-                // and we want to avoid unused variable warnings
-                // const updateCmd = ...
+                if (myAddress) {
+                    // Update Maxima profile with this address
+                    // Assuming 'minimaaddress' is a field we want to add to 'extra' or equivalent
+                    // Maxima 'action:setname' sets name. 'action:seticon'. 
+                    // To set extra data, we might need to set the profile specifically?
+                    // Usually we set 'minimaaddress' in the EXTRA DATA json.
+                    // But here we rely on profile.handler.js reading it from where?
+                    // profile.handler.js reads 'minimaaddress' from the ROOT of the JSON?
+                    // OR from 'extra_data'?
+
+                    // Let's assume we need to update the profile via 'maxima action:setminimaaddress' if it existed? No.
+                    // We likely need to pack it into the profile somehow.
+                    // Maxima natively supports 'minimaaddress' field?
+                    // Ref: https://docs.minima.global/api/maxima/
+                    // 'maxcontacts action:myaddress' ?
+
+                    // Actually, let's look at how we construct the payload in 'messaging.service.ts'.
+                    // Profile handler reads: var minimaAddress = escapeSql(maxjson.minimaaddress || "");
+                    // So we must ensure our profile broadcast INCLUDES this field.
+                    // 'initProfile' here seems to try to SET it somewhere.
+
+                    // If we can't set it in Maxima 'info', we must include it in BEACON payloads manually.
+                    // Let's check where 'initProfile' is called.
+                    // It's called on init.
+
+                    // Maybe we just store it in DB 'MY_PROFILE' table if it exists?
+                    // Or KeyPair?
+
+                    // Let's KeyPair it so Beacon can read it!
+                    await MDS.keypair.set("profile_minima_address", myAddress);
+                    console.log("📍 [PROFILE] Saved Minima Address to KeyPair for Beacons");
+                }
             }
         } catch (err) {
             console.error("❌ [PROFILE] Error initializing:", err);
@@ -1657,6 +1450,10 @@ WHERE(${addressClause}) AND status = 'pending'`;
                     // Update message state to failed
                     await this.updateMessageState(PUBLICKEY, MESSAGE_TIMESTAMP, 'failed');
 
+                    // Notify UI to reload messages (transaction failed, remove from chat)
+                    this.notifyBalanceUpdate();
+                    window.dispatchEvent(new CustomEvent('minima_balance_update'));
+
                     return;
                 }
 
@@ -1686,7 +1483,8 @@ WHERE(${addressClause}) AND status = 'pending'`;
 
                 // CRITICAL: Update message state to 'sent' but KEEP the original timestamp
                 // We need to keep MESSAGE_TIMESTAMP unchanged so we can still find the transaction by message_timestamp
-                await this.updateMessageState(PUBLICKEY, MESSAGE_TIMESTAMP, 'sent');
+                // Also update txpowid so history sync can deduplicate correctly
+                await this.updateMessageState(PUBLICKEY, MESSAGE_TIMESTAMP, 'sent', undefined, txpowid || undefined);
 
                 // Send Maxima message
                 const metadata = JSON.parse(METADATA || '{}');
@@ -1727,6 +1525,11 @@ WHERE(${addressClause}) AND status = 'pending'`;
                 }
 
                 console.log(`✅[MDS_PENDING] Transaction ${uid} processed successfully`);
+
+                // Notify UI to reload messages
+                // This ensures the message goes from 'pending' to 'sent' immediately in the UI
+                this.notifyBalanceUpdate();
+                window.dispatchEvent(new CustomEvent('minima_balance_update'));
             } else {
                 // Transaction was DENIED
                 console.log(`❌[MDS_PENDING] Transaction DENIED: ${uid} `);
@@ -1738,6 +1541,11 @@ WHERE(${addressClause}) AND status = 'pending'`;
                 await this.updateMessageState(PUBLICKEY, MESSAGE_TIMESTAMP, 'failed');
 
                 console.log(`✅[MDS_PENDING] Transaction ${uid} marked as failed`);
+
+                // Notify UI to reload messages (even though balance didn't change)
+                // This ensures the pending message disappears immediately
+                this.notifyBalanceUpdate();
+                window.dispatchEvent(new CustomEvent('minima_balance_update'));
             }
         } catch (err) {
             console.error('❌ [MDS_PENDING] Error handling pending event:', err);

@@ -22,6 +22,7 @@ function DiscoveryPage() {
     const [selectedCountry, setSelectedCountry] = useState('')
     const [selectedLanguage, setSelectedLanguage] = useState('')
     const [showFilters, setShowFilters] = useState(false)
+    const [showOffline, setShowOffline] = useState(true) // Show offline users by default
 
     useEffect(() => {
         // Initial load
@@ -112,9 +113,11 @@ function DiscoveryPage() {
 
             const matchesLanguage = !selectedLanguage || (user.languages && user.languages.includes(selectedLanguage));
 
-            return matchesSearch && matchesCountry && matchesLanguage;
+            const matchesOnlineStatus = showOffline || user.is_online; // Only filter if showOffline is false
+
+            return matchesSearch && matchesCountry && matchesLanguage && matchesOnlineStatus;
         });
-    }, [users, searchQuery, selectedCountry, selectedLanguage]);
+    }, [users, searchQuery, selectedCountry, selectedLanguage, showOffline]);
 
     // Unique Countries & Languages for Dropdowns
     const uniqueCountries = useMemo(() => {
@@ -213,9 +216,23 @@ function DiscoveryPage() {
                             </select>
                         </div>
 
-                        {(selectedCountry || selectedLanguage) && (
+                        {/* Show Offline Checkbox */}
+                        <div className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg">
+                            <input
+                                type="checkbox"
+                                id="showOffline"
+                                checked={showOffline}
+                                onChange={(e) => setShowOffline(e.target.checked)}
+                                className="w-4 h-4 text-primary-600 bg-gray-100 border-gray-300 rounded focus:ring-primary-500 focus:ring-2"
+                            />
+                            <label htmlFor="showOffline" className="text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
+                                Show offline users
+                            </label>
+                        </div>
+
+                        {(selectedCountry || selectedLanguage || !showOffline) && (
                             <button
-                                onClick={() => { setSelectedCountry(''); setSelectedLanguage(''); }}
+                                onClick={() => { setSelectedCountry(''); setSelectedLanguage(''); setShowOffline(true); }}
                                 className="text-sm text-red-500 hover:text-red-700 font-medium px-2"
                             >
                                 Clear all

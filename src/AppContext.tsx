@@ -163,7 +163,6 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
           });
 
           // Initialize database after MDS is ready
-          // We await this to ensure tables exist before running cleanup
           minimaService.initDB().then(() => {
             console.log("✅ [AppContext] Database initialized and ready");
             setDbReady(true);
@@ -171,10 +170,7 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
             // Initialize profile (publish address for token receiving)
             minimaService.initProfile()
 
-            // Cleanup orphaned pending transactions on app start
-            // This syncs the DB with the actual node state (handling offline approvals/denials)
-            console.log("🧹 [AppContext] Running initial transaction cleanup...");
-            minimaService.cleanupOrphanedPendingTransactions();
+            // Transaction cleanup is now handled by Service Worker automatically
 
             // Run chat migration to fix duplicate chats (Mx -> 0x)
             console.log("🧹 [AppContext] Running legacy chat migration...");

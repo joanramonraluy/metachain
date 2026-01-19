@@ -224,9 +224,11 @@ function ChatPage() {
               if (!c.extradata) c.extradata = {};
 
               // MERGE: Prioritize DISCOVERED_PEERS data for Minima Address
-              if (parsedExtra.minimaaddress) {
+              // Check the new direct column first, then fallback to extra_data
+              if (peer.MINIMAADDRESS) {
+                c.extradata.minimaaddress = peer.MINIMAADDRESS;
+              } else if (parsedExtra.minimaaddress) {
                 c.extradata.minimaaddress = parsedExtra.minimaaddress;
-                // console.log(`💳 [CHAT] Injected Wallet Address: ${c.extradata.minimaaddress}`);
               }
 
               // Maybe merge icon/avatar if missing?
@@ -248,31 +250,57 @@ function ChatPage() {
           const queryKey = resolvedPublicKey.startsWith('0x') ? resolvedPublicKey : address;
           const safeQueryKey = queryKey.replace(/'/g, "''");
 
-          const sql = `SELECT * FROM DISCOVERED_PEERS WHERE publickey='${safeQueryKey}'`;
-          const discoveryRes = await MDS.sql(sql);
+          // Try DISCOVERED_PEERS first (online/recent users)
+          const discoverySql = `SELECT * FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('${safeQueryKey}')`;
+          console.log(`🔍 [CHAT] Querying DISCOVERED_PEERS for:`, safeQueryKey.substring(0, 20) + '...');
+          let discoveryRes = await MDS.sql(discoverySql);
+          let foundInDiscovery = discoveryRes.status && discoveryRes.rows && discoveryRes.rows.length > 0;
+
+          // If not found in DISCOVERED_PEERS, try METACHAIN_USERS (persistent registry)
+          if (!foundInDiscovery) {
+            console.log(`⚠️ [CHAT] Not in DISCOVERED_PEERS, checking METACHAIN_USERS...`);
+            const registrySql = `SELECT * FROM METACHAIN_USERS WHERE UPPER(publickey)=UPPER('${safeQueryKey}')`;
+            discoveryRes = await MDS.sql(registrySql);
+            console.log(`🔍 [CHAT] METACHAIN_USERS result:`, discoveryRes.rows?.length || 0, 'rows');
+          }
 
           if (discoveryRes.status && discoveryRes.rows && discoveryRes.rows.length > 0) {
             const peer = discoveryRes.rows[0];
+            console.log(`✅ [CHAT] Found contact:`, peer.ALIAS || peer.alias);
 
-            // Fix: Parse EXTRA_DATA to find real wallet address. Do NOT use peer.ADDRESS (Maxima Identity)
-            let parsedExtra: any = {};
-            try {
-              if (peer.EXTRA_DATA) {
-                parsedExtra = typeof peer.EXTRA_DATA === 'string' ? JSON.parse(peer.EXTRA_DATA) : peer.EXTRA_DATA;
+            if (foundInDiscovery) {
+              // From DISCOVERED_PEERS - has extra_data, minimaaddress, icon
+              let parsedExtra: any = {};
+              try {
+                if (peer.EXTRA_DATA) {
+                  parsedExtra = typeof peer.EXTRA_DATA === 'string' ? JSON.parse(peer.EXTRA_DATA) : peer.EXTRA_DATA;
+                }
+              } catch (e) {
+                console.warn("⚠️ [CHAT] Failed to parse extra_data from discovery", e);
               }
-            } catch (e) {
-              console.warn("⚠️ [CHAT] Failed to parse extra_data from discovery", e);
+
+              contactToSet = {
+                publickey: peer.PUBLICKEY,
+                currentaddress: peer.ADDRESS || address,
+                extradata: {
+                  name: peer.ALIAS || "Unknown",
+                  minimaaddress: peer.MINIMAADDRESS || parsedExtra.minimaaddress || "",
+                  icon: peer.ICON || ""
+                }
+              };
+            } else {
+              // From METACHAIN_USERS - only has basic fields (publickey, alias, address)
+              contactToSet = {
+                publickey: peer.PUBLICKEY || peer.publickey,
+                currentaddress: peer.ADDRESS || peer.address || address,
+                extradata: {
+                  name: peer.ALIAS || peer.alias || "Unknown",
+                  minimaaddress: "", // Not available in METACHAIN_USERS
+                  icon: ""
+                }
+              };
+              console.log(`ℹ️ [CHAT] Contact from registry - minimaaddress not available (user offline)`);
             }
-
-            contactToSet = {
-              publickey: peer.PUBLICKEY,
-              currentaddress: peer.ADDRESS || address,
-              extradata: {
-                name: peer.ALIAS || "Unknown",
-                minimaaddress: parsedExtra.minimaaddress || "", // Only use if explicitly in extra_data
-                icon: peer.ICON || ""
-              }
-            };
           } else {
             // 3. Fallback: Create a minimal contact object
             // CRITICAL: Ensure we use the Hex Public Key if resolved, otherwise keep address
@@ -309,6 +337,14 @@ function ChatPage() {
 
     if (address) {
       fetchContact();
+
+      // Trigger coin discovery to check for offline tokens
+      // This runs once per chat open to catch any tokens that arrived while offline
+      (window as any).MDS?.cmd("service:COINDISC", (res: any) => {
+        if (res.status) {
+          console.log("📦 [CHAT] Coin discovery triggered");
+        }
+      });
     }
 
     // LISTEN FOR PROFILE UPDATES
@@ -744,10 +780,7 @@ function ChatPage() {
         minimaService.sendReadReceipt(contact.publickey);
       }
 
-      // Verify pending transactions when entering chat
-      minimaService.cleanupOrphanedPendingTransactions().catch(err => {
-        console.error("❌ [CHAT] Pending tx verify error:", err);
-      });
+      // Transaction cleanup is now handled by Service Worker
     };
 
     initChat();
@@ -1112,12 +1145,17 @@ function ChatPage() {
   const executeSendCharm = async (charmId: string, amount: number) => {
     console.log(`DEBUG: executeSendCharm called. charmId=${charmId}, amount=${amount}`);
 
+    // STRICT CHECK: Must have Minima Address (Wallet) for Charms too?
+    // Actually Charms might NOT need wallet address if amount is 0? 
+    // BUT sendCharmWithTokens uses 'send' command which implies amount transfer usually.
+    // If amount > 0, we need address. If amount = 0, maybe not?
+    // Let's stick to strict to be safe.
     if (!contact?.publickey || !contact?.extradata?.minimaaddress) {
       console.error("DEBUG: executeSendCharm ABORTED. Missing contact info:", {
         hasPublicKey: !!contact?.publickey,
         hasMinimaAddress: !!contact?.extradata?.minimaaddress
       });
-      alert("Cannot send: Contact missing Public Key or Minima Address.");
+      alert("Cannot send Charm: Contact hasn't shared their Wallet Address yet.");
       return;
     }
     // Use sender's name (from context) for payload, recipient's name for roomname
@@ -1135,6 +1173,8 @@ function ChatPage() {
       if (destAddress && destAddress.includes('@')) {
         destAddress = destAddress.split('@')[0];
       }
+
+      if (!contact?.publickey) throw new Error("Missing public key");
 
       const response = await minimaService.sendCharmWithTokens(
         contact.publickey,
@@ -1177,12 +1217,13 @@ function ChatPage() {
   const executeSendToken = async (tokenId: string, amount: string, tokenName: string) => {
     console.log(`DEBUG: executeSendToken called. tokenId=${tokenId}, amount=${amount}`);
 
+    // STRICT CHECK: Must have Minima Address (Wallet)
     if (!contact?.extradata?.minimaaddress || !contact?.publickey) {
-      console.error("DEBUG: executeSendToken ABORTED. Missing info:", {
+      console.error("DEBUG: executeSendToken ABORTED. Missing Minima Address:", {
         hasPublicKey: !!contact?.publickey,
-        hasMinimaAddress: !!contact?.extradata?.minimaaddress
+        hasMinimaAddress: !!contact?.extradata?.minimaaddress,
       });
-      alert("Cannot send: Contact missing Public Key or Minima Address.");
+      alert("Cannot send funds: This contact hasn't shared their Wallet Address yet. They need to come online once to sync their profile.");
       return;
     }
 
@@ -1230,7 +1271,7 @@ function ChatPage() {
 
     try {
       // 1. Send the token via Minima with stateId (timestamp)
-      const tokenResponse = await minimaService.sendToken(tokenId, amount, destAddress, tokenName, tempTimestamp);
+      const tokenResponse = await minimaService.sendToken(tokenId, amount, destAddress, tokenName, tempTimestamp, myPublicKey, contact.publickey);
 
       // Check if token send is pending
       const isTokenPending = tokenResponse && (tokenResponse.pending || (tokenResponse.error && tokenResponse.error.toString().toLowerCase().includes("pending")));
@@ -1239,38 +1280,27 @@ function ChatPage() {
       const txpowid = tokenResponse?.txpowid;
       const pendinguid = tokenResponse?.pendinguid;
 
+
+
+      // Store transaction in TRANSACTIONS table if we have a txpowid OR pendinguid
+      if (txpowid || pendinguid) {
+        await minimaService.insertTransaction(
+          txpowid,
+          'token',
+          contact.publickey,
+          tempTimestamp,
+          { tokenId, amount, tokenName, username: senderName },
+          pendinguid
+        );
+        console.log(`💾[ChatPage] Token transaction tracked: ${txpowid || 'No TXPOWID'} (PendingUID: ${pendinguid || 'None'})`);
+      } else {
+        console.warn(`⚠️[ChatPage] Could not track token transaction: No txpowid AND no pendinguid`);
+      }
+
       if (isTokenPending) {
         console.log("⚠️ [ChatPage] Token send is pending. Keeping status as 'pending' and NOT sending notification message.");
 
         // Pending message tracking is now handled by transaction polling service
-
-        // Save message locally with 'pending' state so it persists if we send other messages
-        await minimaService.insertMessage({
-          roomname: senderName,
-          publickey: contact.publickey,
-          username: "Me",
-          type: "token",
-          message: tokenData,
-          filedata: "",
-          state: "pending",
-          amount: Number(amount),
-          date: tempTimestamp
-        });
-
-        // Store transaction in TRANSACTIONS table if we have a txpowid OR pendinguid
-        if (txpowid || pendinguid) {
-          await minimaService.insertTransaction(
-            txpowid,
-            'token',
-            contact.publickey,
-            tempTimestamp,
-            { tokenId, amount, tokenName, username: senderName },
-            pendinguid
-          );
-          console.log(`💾[ChatPage] Token transaction tracked: ${txpowid || 'No TXPOWID'} (PendingUID: ${pendinguid || 'None'})`);
-        } else {
-          console.warn(`⚠️[ChatPage] Could not track token transaction: No txpowid AND no pendinguid`);
-        }
 
         // Reload messages from DB to show the pending message
         // Delay slightly to ensure optimistic UI has a chance to render (fix for instant confirm perception)
@@ -1321,13 +1351,18 @@ function ChatPage() {
     console.log("📍 [TRACE 1] WriteMode:", writeMode);
     console.log("📍 [TRACE 1] FULL CONTACT OBJECT:", JSON.stringify(contact, null, 2));
 
-    // SAFE check
-    if (!contact || !contact.extradata || !contact.extradata.minimaaddress) {
-      console.error("📍 [TRACE ABORT] Missing contact or minimaaddress. Contact keys:", contact ? Object.keys(contact) : 'null');
-      if (contact?.extradata) console.error("📍 [TRACE ABORT] Extradata keys:", Object.keys(contact.extradata));
+    // RELAXED SAFE CHECK: Allow fallback to currentaddress (Maxima Identity)
+    // Legacy contacts might not have 'minimaaddress' yet.
+    if (!contact || (!contact.extradata?.minimaaddress && !contact.currentaddress)) {
+      console.error("📍 [TRACE ABORT] No valid address found (minimaaddress OR currentaddress).");
+      if (contact) console.error("📍 [TRACE ABORT] Contact keys:", Object.keys(contact));
 
-      alert("This contact does not have a Minima address in their profile. Cannot send value.");
+      alert("This contact does not have a valid address. Cannot send value.");
       return;
+    }
+
+    if (!contact.extradata?.minimaaddress) {
+      console.warn("⚠️ [TRACE WARN] Missing 'minimaaddress'. Will attempt to fallback to 'currentaddress' during send.");
     }
 
     console.log("📍 [TRACE 2] Info check passed. Closing selector...");
@@ -2002,9 +2037,16 @@ function ChatPage() {
         )}
 
         <button
-          className={`p-3 rounded-full transition-colors text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200`}
+          className={`p-3 rounded-full transition-colors ${!contact?.extradata?.minimaaddress
+            ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed'
+            : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+            }`}
           onClick={(e) => {
             e.stopPropagation();
+            if (!contact?.extradata?.minimaaddress) {
+              alert("Cannot send funds: This contact hasn't shared their Wallet Address yet. They need to come online once to sync their profile.");
+              return;
+            }
             setShowEmojiPicker(false);
             // Small timeout to prevent UI flicker/bar effect
             setTimeout(() => {
@@ -2012,7 +2054,12 @@ function ChatPage() {
               setShowTransferSelector(true);
             }, 50);
           }}
-          title="Send Value"
+          title={
+            !contact?.extradata?.minimaaddress
+              ? "Wallet unavailable - Contact needs to come online to share their address"
+              : "Send Value"
+          }
+          disabled={!contact?.extradata?.minimaaddress}
         >
           <Wallet className="w-6 h-6" />
         </button>

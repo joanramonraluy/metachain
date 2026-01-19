@@ -19,7 +19,8 @@ function handleBeacon(beacon, source) {
         var now = Date.now();
         var escapedAlias = escapeSql(beacon.alias);
         var bioValue = beacon.bio || "";
-        var cleanAddress = (beacon.address || "").replace(/\s/g, "");
+        // Clean address to prevent NumberFormatException (remove extra spaces)
+        var cleanAddress = (beacon.address || "").trim().replace(/\s+/g, " ").replace(/\s*:\s*/g, ":");
 
         var allowNonContactChats = (beacon.allowNonContactChats !== undefined && beacon.allowNonContactChats !== null)
             ? (beacon.allowNonContactChats ? 1 : 0)
@@ -112,67 +113,73 @@ function sendBackgroundBeacon() {
                 MDS.keypair.get("profile_languages", function (langRes) {
                     var languages = (langRes.status && langRes.value) ? langRes.value : "";
 
-                    // Get all profile data including avatar (like the working example)
-                    MDS.sql("SELECT * FROM MY_PROFILE WHERE id=1", function (permRes) {
-                        var allowNonContactChats = true;
-                        var avatar = "";
-                        var dbCountry = "";
-                        var dbLanguages = [];
+                    MDS.keypair.get("profile_minima_address", function (addrRes) {
+                        var minimaAddress = (addrRes.status && addrRes.value) ? addrRes.value : "";
 
-                        if (permRes.status && permRes.rows && permRes.rows.length > 0) {
-                            var row = permRes.rows[0];
-                            var val = row.ALLOW_NON_CONTACT_CHATS || row.allow_non_contact_chats;
-                            allowNonContactChats = (val === 1 || val === true || val === 'true' || val === '1');
-                            // Get avatar from DB (same as working example line 1714)
-                            avatar = row.AVATAR || row.avatar || "";
-                            // Get country from DB (with decoding like example line 1711)
-                            dbCountry = decodeURIComponent(row.COUNTRY || row.country || "");
-                            // Get languages from DB and parse as JSON array (like example line 1712-1713)
-                            try {
-                                dbLanguages = JSON.parse(decodeURIComponent(row.LANGUAGES || row.languages || "[]"));
-                            } catch (e) {
-                                dbLanguages = [];
+                        // Get all profile data including avatar (like the working example)
+                        MDS.sql("SELECT * FROM MY_PROFILE WHERE id=1", function (permRes) {
+                            var allowNonContactChats = true;
+                            var avatar = "";
+                            var dbCountry = "";
+                            var dbLanguages = [];
+
+                            if (permRes.status && permRes.rows && permRes.rows.length > 0) {
+                                var row = permRes.rows[0];
+                                var val = row.ALLOW_NON_CONTACT_CHATS || row.allow_non_contact_chats;
+                                allowNonContactChats = (val === 1 || val === true || val === 'true' || val === '1');
+                                // Get avatar from DB (same as working example line 1714)
+                                avatar = row.AVATAR || row.avatar || "";
+                                // Get country from DB (with decoding like example line 1711)
+                                dbCountry = decodeURIComponent(row.COUNTRY || row.country || "");
+                                // Get languages from DB and parse as JSON array (like example line 1712-1713)
+                                try {
+                                    dbLanguages = JSON.parse(decodeURIComponent(row.LANGUAGES || row.languages || "[]"));
+                                } catch (e) {
+                                    dbLanguages = [];
+                                }
                             }
-                        }
 
-                        // Use DB values as primary, keypair as fallback
-                        var finalCountry = dbCountry || country;
-                        var finalLanguages = dbLanguages.length > 0 ? dbLanguages : [];
-                        // Try to parse keypair languages if DB is empty
-                        if (finalLanguages.length === 0 && languages) {
-                            try {
-                                finalLanguages = JSON.parse(languages);
-                            } catch (e) {
-                                finalLanguages = [];
+                            // Use DB values as primary, keypair as fallback
+                            var finalCountry = dbCountry || country;
+                            var finalLanguages = dbLanguages.length > 0 ? dbLanguages : [];
+                            // Try to parse keypair languages if DB is empty
+                            if (finalLanguages.length === 0 && languages) {
+                                try {
+                                    finalLanguages = JSON.parse(languages);
+                                } catch (e) {
+                                    finalLanguages = [];
+                                }
                             }
-                        }
 
-                        var beacon = {
-                            app: "metachain",
-                            type: "BEACON",
-                            v: 1,
-                            pubkey: myPubkey,
-                            alias: myName,
-                            bio: bio,
-                            address: myAddress,
-                            allowNonContactChats: allowNonContactChats,
-                            country: finalCountry,
-                            languages: finalLanguages,
-                            // Use maxima icon as primary, MY_PROFILE as fallback
-                            avatar: myAvatar || avatar,
-                            timestamp: Date.now()
-                        };
+                            var beacon = {
+                                app: "metachain",
+                                type: "BEACON",
+                                v: 1,
+                                pubkey: myPubkey,
+                                alias: myName,
+                                bio: bio,
+                                address: myAddress,
+                                allowNonContactChats: allowNonContactChats,
+                                country: finalCountry,
+                                languages: finalLanguages,
+                                // Persist our immutable Wallet Address
+                                minimaaddress: minimaAddress,
+                                // Use maxima icon as primary, MY_PROFILE as fallback
+                                avatar: myAvatar || avatar,
+                                timestamp: Date.now()
+                            };
 
-                        var jsonStr = JSON.stringify(beacon);
-                        var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
+                            var jsonStr = JSON.stringify(beacon);
+                            var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
 
-                        // P2P broadcast
-                        MDS.cmd("message data:" + hexData, function (res) {
-                            MDS.log("📡 [BG-BEACON] P2P broadcast sent");
+                            // P2P broadcast
+                            MDS.cmd("message data:" + hexData, function (res) {
+                                MDS.log("📡 [BG-BEACON] P2P broadcast sent");
+                            });
+
+                            // Save self to DB
+                            handleBeacon(beacon, 'SELF');
                         });
-
-                        // Save self to DB
-                        handleBeacon(beacon, 'SELF');
                     });
                 });
             });
