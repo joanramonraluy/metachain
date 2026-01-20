@@ -197,7 +197,8 @@ function sendMaximaMessage(toPublicKey, type, messageData, context, callback) {
                     filedata: messageData.filedata || "",
                     timestamp: context.timestamp || Date.now(),
                     avatar: myAvatar,
-                    from_address: myAddress
+                    from_address: myAddress,
+                    customid: generateUUID()
                 };
 
                 // Add type-specific fields
@@ -225,7 +226,7 @@ function sendMaximaMessage(toPublicKey, type, messageData, context, callback) {
                                 MDS.log("⚠️ [SW-MAXIMA] Not in contacts, trying address resolution...");
                                 resolveMaximaAddress(toPublicKey, function (err, mxAddress) {
                                     if (!err && mxAddress) {
-                                        var retrySendCmd = "maxima action:send to:" + cleanMaximaAddress(mxAddress) + " application:metachain data:" + hexData + " poll:true";
+                                        var retrySendCmd = "maxima action:send to:" + cleanMaximaAddress(mxAddress) + " application:metachain data:" + hexData + " poll:false";
                                         MDS.cmd(retrySendCmd, function (retryResponse) {
                                             if (!retryResponse.status) {
                                                 callback("Retry failed: " + retryResponse.error);
@@ -249,15 +250,15 @@ function sendMaximaMessage(toPublicKey, type, messageData, context, callback) {
                 };
 
                 if (toPublicKey.startsWith("Mx") || toPublicKey.startsWith("MX")) {
-                    sendMessage("maxima action:send to:" + cleanMaximaAddress(toPublicKey) + " application:metachain data:" + hexData + " poll:true");
+                    sendMessage("maxima action:send to:" + cleanMaximaAddress(toPublicKey) + " application:metachain data:" + hexData + " poll:false");
                 } else if (toPublicKey.startsWith("0x")) {
                     // Try to resolve to Maxima address first
                     resolveMaximaAddress(toPublicKey, function (err, mxAddress) {
                         if (!err && mxAddress) {
                             MDS.log("🔍 [SW-MAXIMA] Resolved 0x to Mx address: " + mxAddress);
-                            sendMessage("maxima action:send to:" + cleanMaximaAddress(mxAddress) + " application:metachain data:" + hexData + " poll:true");
+                            sendMessage("maxima action:send to:" + cleanMaximaAddress(mxAddress) + " application:metachain data:" + hexData + " poll:false");
                         } else {
-                            sendMessage("maxima action:send publickey:" + toPublicKey + " application:metachain data:" + hexData + " poll:true");
+                            sendMessage("maxima action:send publickey:" + toPublicKey + " application:metachain data:" + hexData + " poll:false");
                         }
                     });
                 } else {
@@ -376,6 +377,16 @@ function cleanMaximaAddress(addr) {
 
     // Fallback: Just remove all whitespace and invalid chars
     return s.replace(/\s/g, "").replace(/[^a-zA-Z0-9@:._-]/g, "");
+}
+
+/**
+ * UUID Generator
+ */
+function generateUUID() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+        var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
 }
 
 /**
@@ -1468,8 +1479,10 @@ function processHistoryMessage(safePubkey, messages, index) {
         // Use provided state if valid, otherwise fallback to 'read' or 'received' based on type
         var state = msg.state || "read";
 
-        var insertSql = "INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, txpowid, original_timestamp) "
-            + "VALUES ('', '" + safePubkey + "', '" + finalUsername + "', '" + type + "', '" + content + "', '" + safeFiledata + "', '" + state + "', " + amount + ", " + timestamp + ", " + txpowidVal + ", " + timestamp + ")";
+        var safeCustomId = msg.customid ? escapeSql(msg.customid) : "0x00";
+
+        var insertSql = "INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, txpowid, original_timestamp, customid) "
+            + "VALUES ('', '" + safePubkey + "', '" + finalUsername + "', '" + type + "', '" + content + "', '" + safeFiledata + "', '" + state + "', " + amount + ", " + timestamp + ", " + txpowidVal + ", " + timestamp + ", '" + safeCustomId + "')";
 
         MDS.sql(insertSql, function (insRes) {
             if (insRes.status) {
@@ -1495,23 +1508,46 @@ function processHistoryMessage(safePubkey, messages, index) {
         });
     };
 
-    // 1. First Check: By TXPOWID (if available)
-    if (msg.txpowid) {
-        var safeTxPow = escapeSql(msg.txpowid);
-        var txCheckSql = "SELECT * FROM CHAT_MESSAGES WHERE txpowid='" + safeTxPow + "'";
-
-        MDS.sql(txCheckSql, function (res) {
+    // 0. Primary Check: By CustomID (UUID)
+    if (msg.customid && msg.customid !== '0x00') {
+        var safeCustomId = escapeSql(msg.customid);
+        var customCheck = "SELECT * FROM CHAT_MESSAGES WHERE customid='" + safeCustomId + "'";
+        MDS.sql(customCheck, function (res) {
             if (res.status && res.rows && res.rows.length > 0) {
-                // Exact match found by ID - skip
-                processHistoryMessage(safePubkey, messages, index + 1);
+                // Found by UUID!
+                if (msg.txpowid) {
+                    tryUpdate(res.rows[0].ID);
+                } else {
+                    processHistoryMessage(safePubkey, messages, index + 1);
+                }
             } else {
-                // Not found by ID - Fallback to Content/Time check
-                checkByContentAndTime();
+                // Not found by UUID -> proceed to TxPoWID check
+                checkByTxPoWID();
             }
         });
     } else {
-        // No ID - direct check by Content/Time
-        checkByContentAndTime();
+        checkByTxPoWID();
+    }
+
+    // 1. First Check: By TXPOWID (if available)
+    function checkByTxPoWID() {
+        if (msg.txpowid) {
+            var safeTxPow = escapeSql(msg.txpowid);
+            var txCheckSql = "SELECT * FROM CHAT_MESSAGES WHERE txpowid='" + safeTxPow + "'";
+
+            MDS.sql(txCheckSql, function (res) {
+                if (res.status && res.rows && res.rows.length > 0) {
+                    // Exact match found by ID - skip
+                    processHistoryMessage(safePubkey, messages, index + 1);
+                } else {
+                    // Not found by ID - Fallback to Content/Time check
+                    checkByContentAndTime();
+                }
+            });
+        } else {
+            // No ID - direct check by Content/Time
+            checkByContentAndTime();
+        }
     }
 
     // 2. Second Check: By Content & Time (Fallback)
@@ -1553,7 +1589,7 @@ function processHistoryMessage(safePubkey, messages, index) {
 function requestHistoryFromRecentContacts() {
     MDS.log("🔄 [HISTORY-SYNC] Starting startup sync (Enhanced)...");
 
-    var sql = "SELECT publickey, address FROM DISCOVERED_PEERS ORDER BY last_seen DESC LIMIT 20";
+    var sql = "SELECT publickey, address FROM DISCOVERED_PEERS WHERE source != 'SELF' ORDER BY last_seen DESC LIMIT 20";
 
     MDS.sql(sql, function (res) {
         if (res.status && res.rows) {
@@ -1586,7 +1622,7 @@ function requestChatHistory(toPublicKey, toAddress) {
         // EXTRA DEBUG: Log address transformation
         MDS.log("🔍 [ADDR-DEBUG] Raw: '" + toAddress + "' -> Clean: '" + cleanAddress + "'");
 
-        var sendCmd = 'maxima action:send to:' + cleanAddress + ' application:metachain data:' + hexData + ' poll:true';
+        var sendCmd = 'maxima action:send to:' + cleanAddress + ' application:metachain data:' + hexData + ' poll:false';
 
         // DEBUG: Print EXACT command to see what Minima receives
         MDS.log("🔍 [CMD-DEBUG-V3] " + sendCmd);
@@ -1598,7 +1634,7 @@ function requestChatHistory(toPublicKey, toAddress) {
         });
     } else {
         // Fallback to resolving via DB or publickey
-        resolveAndSend(toPublicKey, hexData, "HISTORY-SYNC", true);
+        resolveAndSend(toPublicKey, hexData, "HISTORY-SYNC", false);
     }
 }
 

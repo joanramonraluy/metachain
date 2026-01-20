@@ -757,6 +757,8 @@ WHERE(${addressClause}) AND status = 'pending'`;
         return messagingService.sendMessage(toPublicKey, senderName, message, type, filedata, amount, existingTimestamp, recipientName, targetApplication, saveToDb, txpowid);
     }
 
+
+
     async updateMessageState(publickey: string, timestamp: number, state: string, newTimestamp?: number, txpowid?: string) {
         console.log(`🔄[DB] Updating message state: newState = "${state}", timestamp = ${timestamp} `);
 

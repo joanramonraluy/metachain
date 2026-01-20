@@ -48,7 +48,8 @@ function sendMaximaMessage(toPublicKey, type, messageData, context, callback) {
                     filedata: messageData.filedata || "",
                     timestamp: context.timestamp || Date.now(),
                     avatar: myAvatar,
-                    from_address: myAddress
+                    from_address: myAddress,
+                    customid: generateUUID()
                 };
 
                 // Add type-specific fields
@@ -76,7 +77,7 @@ function sendMaximaMessage(toPublicKey, type, messageData, context, callback) {
                                 MDS.log("⚠️ [SW-MAXIMA] Not in contacts, trying address resolution...");
                                 resolveMaximaAddress(toPublicKey, function (err, mxAddress) {
                                     if (!err && mxAddress) {
-                                        var retrySendCmd = "maxima action:send to:" + cleanMaximaAddress(mxAddress) + " application:metachain data:" + hexData + " poll:true";
+                                        var retrySendCmd = "maxima action:send to:" + cleanMaximaAddress(mxAddress) + " application:metachain data:" + hexData + " poll:false";
                                         MDS.cmd(retrySendCmd, function (retryResponse) {
                                             if (!retryResponse.status) {
                                                 callback("Retry failed: " + retryResponse.error);
@@ -100,15 +101,15 @@ function sendMaximaMessage(toPublicKey, type, messageData, context, callback) {
                 };
 
                 if (toPublicKey.startsWith("Mx") || toPublicKey.startsWith("MX")) {
-                    sendMessage("maxima action:send to:" + cleanMaximaAddress(toPublicKey) + " application:metachain data:" + hexData + " poll:true");
+                    sendMessage("maxima action:send to:" + cleanMaximaAddress(toPublicKey) + " application:metachain data:" + hexData + " poll:false");
                 } else if (toPublicKey.startsWith("0x")) {
                     // Try to resolve to Maxima address first
                     resolveMaximaAddress(toPublicKey, function (err, mxAddress) {
                         if (!err && mxAddress) {
                             MDS.log("🔍 [SW-MAXIMA] Resolved 0x to Mx address: " + mxAddress);
-                            sendMessage("maxima action:send to:" + cleanMaximaAddress(mxAddress) + " application:metachain data:" + hexData + " poll:true");
+                            sendMessage("maxima action:send to:" + cleanMaximaAddress(mxAddress) + " application:metachain data:" + hexData + " poll:false");
                         } else {
-                            sendMessage("maxima action:send publickey:" + toPublicKey + " application:metachain data:" + hexData + " poll:true");
+                            sendMessage("maxima action:send publickey:" + toPublicKey + " application:metachain data:" + hexData + " poll:false");
                         }
                     });
                 } else {
@@ -227,4 +228,14 @@ function cleanMaximaAddress(addr) {
 
     // Fallback: Just remove all whitespace and invalid chars
     return s.replace(/\s/g, "").replace(/[^a-zA-Z0-9@:._-]/g, "");
+}
+
+/**
+ * UUID Generator
+ */
+function generateUUID() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+        var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
 }

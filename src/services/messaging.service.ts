@@ -29,6 +29,16 @@ function cleanMaximaAddress(addr: string): string {
 }
 
 /* ----------------------------------------------------------------------------
+   HELPER: UUID Generator
+---------------------------------------------------------------------------- */
+function generateUUID() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+        var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+}
+
+/* ----------------------------------------------------------------------------
    HELPER: Resolve Address from Discovery
 ---------------------------------------------------------------------------- */
 
@@ -129,7 +139,8 @@ export async function sendMessage(
             timestamp: messageTimestamp,
             avatar: myAvatar,
             from_address: myAddress,
-            txpowid: txpowid || undefined // Include txpowid if provided
+            txpowid: txpowid || undefined, // Include txpowid if provided
+            customid: generateUUID() // Add UUID for deduplication
         };
 
         if (type === "charm" && amount > 0) {
@@ -145,7 +156,7 @@ export async function sendMessage(
             action: "send",
             application: targetApplication,
             data: hexData,
-            poll: true,
+            poll: false, // DISABLED: poll: true causes offline messages to be lost
         };
 
         if (toPublicKey.startsWith("Mx") || toPublicKey.startsWith("MX")) {
@@ -185,7 +196,7 @@ export async function sendMessage(
                             to: cleanMaximaAddress(mxAddress),
                             application: targetApplication,
                             data: hexData,
-                            poll: true,
+                            poll: false,
                         } as any,
                     });
 
@@ -242,6 +253,7 @@ export async function sendMessage(
                 filedata,
                 state: isPending ? "pending" : "sent",
                 amount,
+                customid: payload.customid // Save local customid
             });
         }
 
@@ -273,7 +285,7 @@ export async function sendReadReceipt(toPublicKey: string) {
             action: "send",
             application: "metachain",
             data: hexData,
-            poll: true,
+            poll: false,
         };
 
         if (toPublicKey.startsWith('0x')) {
@@ -322,7 +334,7 @@ export async function sendDeliveryReceipt(toPublicKey: string) {
             action: "send",
             application: "metachain",
             data: hexData,
-            poll: true,
+            poll: false,
         };
 
         if (toPublicKey.startsWith('0x')) {
@@ -366,7 +378,7 @@ export async function sendPing(toPublicKey: string) {
             action: "send",
             application: "metachain",
             data: hexData,
-            poll: true,
+            poll: false,
         };
 
         if (toPublicKey.startsWith('0x')) {
@@ -408,7 +420,7 @@ export async function sendPong(toPublicKey: string) {
             action: "send",
             application: "metachain",
             data: hexData,
-            poll: true,
+            poll: false,
         };
 
         if (toPublicKey.startsWith('0x')) {
@@ -456,7 +468,7 @@ export async function sendInvitation(toPublicKey: string, fromUsername: string) 
                 publickey: toPublicKey,
                 application: "metachain",
                 data: hexData,
-                poll: true,
+                poll: false,
             } as any,
         });
 
@@ -494,7 +506,7 @@ export async function requestChatHistory(toPublicKey: string) {
                     to: cleanAddr,
                     application: "metachain",
                     data: hexData,
-                    poll: true,
+                    poll: false,
                 } as any,
             });
         } else {
@@ -505,7 +517,7 @@ export async function requestChatHistory(toPublicKey: string) {
                     publickey: toPublicKey,
                     application: "metachain",
                     data: hexData,
-                    poll: true,
+                    poll: false,
                 } as any,
             });
         }
@@ -528,5 +540,41 @@ export const messagingService = {
     sendPing,
     sendPong,
     sendInvitation,
-    requestChatHistory
+    requestChatHistory,
+    sendSyncResponse: sendChatHistoryResponse
 };
+
+// Also export sendChatHistoryResponse for use by handlers if needed (though it's usually triggered by incoming request)
+export async function sendChatHistoryResponse(toPublicKey: string, messages: any[]) {
+    console.log("🔄 [HISTORY-RESP] Sending " + messages.length + " messages to " + toPublicKey);
+    try {
+        const payload = {
+            type: "chat_history_response",
+            messages: messages,
+            timestamp: Date.now()
+        };
+
+        const jsonStr = JSON.stringify(payload);
+        const hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
+
+        // Use resolution logic
+        const mxAddress = await resolveMaximaAddressFromPubkey(toPublicKey);
+        let sendParams: any = {
+            action: "send",
+            application: "metachain",
+            data: hexData,
+            poll: false,
+        };
+
+        if (mxAddress) {
+            sendParams.to = cleanMaximaAddress(mxAddress);
+        } else {
+            sendParams.publickey = toPublicKey;
+        }
+
+        await MDS.cmd.maxima({ params: sendParams });
+        console.log("✅ [HISTORY-RESP] Response sent successfully");
+    } catch (err) {
+        console.error("❌ [HISTORY-RESP] Error sending response:", err);
+    }
+}

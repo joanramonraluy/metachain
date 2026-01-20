@@ -781,6 +781,13 @@ function ChatPage() {
       }
 
       // Transaction cleanup is now handled by Service Worker
+
+      // TRIGGER SYNC: Request history from peer to catch up on missed messages
+      if (contact?.publickey) {
+        console.log("🔄 [CHAT] Triggering history sync with", contact.publickey);
+        minimaService.requestChatHistory(contact.publickey)
+          .catch(err => console.error("❌ [CHAT] Sync request failed:", err));
+      }
     };
 
     initChat();

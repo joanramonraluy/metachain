@@ -280,8 +280,8 @@ class ChatService {
         const escapedMsg = message.replace(/'/g, "''");
         const timestamp = date || Date.now();
         const sql = `
-            INSERT INTO CHAT_MESSAGES (roomname,publickey,username,type,message,filedata,state,amount,date)
-            VALUES ('${roomname}','${publickey}','${username}','${type}','${escapedMsg}','${filedata}','${state}',${amount},${timestamp})
+            INSERT INTO CHAT_MESSAGES (roomname,publickey,username,type,message,filedata,state,amount,date,customid)
+            VALUES ('${roomname}','${publickey}','${username}','${type}','${escapedMsg}','${filedata}','${state}',${amount},${timestamp},'${msg.customid || "0x00"}')
         `;
         try {
             await runSQL(sql);
