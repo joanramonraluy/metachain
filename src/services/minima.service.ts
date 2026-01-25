@@ -60,6 +60,17 @@ class MinimaService {
     }
 
     /**
+     * Run a Minima command (Generic wrapper)
+     */
+    runCommand(command: string): Promise<any> {
+        return new Promise((resolve) => {
+            (MDS as any).cmd(command, (res: any) => {
+                resolve(res);
+            });
+        });
+    }
+
+    /**
      * Convert Hex to UTF8
      * Delegates to database.service
      */
@@ -698,6 +709,21 @@ WHERE(${addressClause}) AND status = 'pending'`;
                 }
 
 
+                // SMART SYNC PROTOCOL
+                // 'sync_status_check' is handled by the Service Worker (backend) to send auto-replies.
+                // We ignore it here to avoid duplicate logic.
+                if (json.type === "sync_status_check") {
+                    console.log("🔄 [SMART-SYNC] Status check received (handled by SW).");
+                    return;
+                }
+
+                // 'sync_status_report' is the response telling us we are behind.
+                // We need to notify the UI to show a "Syncing..." or "Unread" state.
+                if (json.type === "sync_status_report") {
+                    console.log("📊 [SMART-SYNC] Gap report received:", json);
+                    chatService.notifyNewMessage({ ...json, type: 'sync_status_report', from });
+                    return;
+                }
                 // HANDLE HISTORY SYNC RESPONSE
                 // The DB insertion is handled by the Service Worker (chat.handler.js)
                 // We just need to wait a moment for it to finish and then tell the UI to refresh.
@@ -751,10 +777,11 @@ WHERE(${addressClause}) AND status = 'pending'`;
         recipientName?: string,
         targetApplication: string = "metachain",
         saveToDb: boolean = true,
-        txpowid?: string
+        txpowid?: string,
+        overrideSeq?: number
     ) {
         if (!this.initialized) await this.init();
-        return messagingService.sendMessage(toPublicKey, senderName, message, type, filedata, amount, existingTimestamp, recipientName, targetApplication, saveToDb, txpowid);
+        return messagingService.sendMessage(toPublicKey, senderName, message, type, filedata, amount, existingTimestamp, recipientName, targetApplication, saveToDb, txpowid, overrideSeq);
     }
 
 
@@ -1410,6 +1437,58 @@ WHERE(${addressClause}) AND status = 'pending'`;
             console.log("🔔 [MDS] MDS_PENDING full event:", JSON.stringify(event, null, 2));
             this.handlePendingEvent(event.data);
         }
+
+        // Handle CHAT_LIST_UPDATE from service worker
+        if (event.event === "CHAT_LIST_UPDATE") {
+            console.log("🔄 [MDS] CHAT_LIST_UPDATE event detected from service worker");
+            // Notify chat list to refresh - pass empty object as we just need to trigger refresh
+            chatService.notifyNewMessage({});
+        }
+    }
+
+    /**
+     * SMART SYNC: Send status check to a peer (Phase 1)
+     * Queries local DB for the last sequence number received from them,
+     * then sends 'sync_status_check' to them.
+     */
+    async sendSyncStatusCheck(publickey: string) {
+        // Query max sender_seq from this peer
+        const sql = `SELECT MAX(sender_seq) as last_seq FROM CHAT_MESSAGES WHERE publickey='${publickey}'`;
+
+        try {
+            const res = await this.runSQL(sql);
+            const lastSeq = (res.rows && res.rows.length > 0) ? (res.rows[0].LAST_SEQ || 0) : 0;
+
+            const payload = {
+                type: "sync_status_check",
+                last_received_seq: lastSeq,
+                timestamp: Date.now()
+            };
+
+            console.log(`🔄 [SMART-SYNC] Sending status check to ${publickey.substring(0, 10)} (Last Seq: ${lastSeq})`);
+
+            // Send via Maxima (no poll needed as this is a background check)
+            // Send via Maxima (no poll needed as this is a background check)
+            // FIXED: Use MDS.cmd.maxima directly to avoid 'S.cmd is not a function' error
+            // (MDS.cmd is a namespace object, not a function)
+            const dataHex = this.utf8ToHex(JSON.stringify(payload));
+
+            // params.data is required as hex string by Maxima action:send
+            MDS.cmd.maxima({
+                params: {
+                    action: "send",
+                    publickey: publickey,
+                    application: "metachain",
+                    data: "0x" + dataHex
+                }
+            }).then((resp: any) => {
+                if (resp.status) console.log("✅ [SMART-SYNC] Check sent.");
+                else console.warn("⚠️ [SMART-SYNC] Failed to send check:", resp.error);
+            });
+
+        } catch (err) {
+            console.error("❌ [SMART-SYNC] Error preparing check:", err);
+        }
     }
 
     /**
@@ -1508,9 +1587,9 @@ WHERE(${addressClause}) AND status = 'pending'`;
                         txpowid || undefined // txpowid for receiver confirmation
                     );
                 } else if (TYPE === 'token') {
-                    const { tokenName, username, amount } = metadata;
+                    const { tokenName, username, amount, seq } = metadata;
                     const tokenData = JSON.stringify({ amount, tokenName });
-                    console.log(`📤[MDS_PENDING] Sending token message via Maxima...`);
+                    console.log(`📤[MDS_PENDING] Sending token message via Maxima (Seq: ${seq || 'Auto'})...`);
                     await this.sendMessage(
                         PUBLICKEY,
                         username || 'Unknown',
@@ -1522,7 +1601,8 @@ WHERE(${addressClause}) AND status = 'pending'`;
                         undefined,         // recipientName
                         "metachain",       // targetApplication
                         false,             // saveToDb
-                        txpowid || undefined // txpowid for receiver confirmation
+                        txpowid || undefined, // txpowid for receiver confirmation
+                        seq // Use original sequence number if available
                     );
                 }
 

@@ -78,7 +78,8 @@ function initDatabase() {
             return Promise.all([
                 runSQL("ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS amount INT NOT NULL DEFAULT 0"),
                 runSQL("ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS original_timestamp BIGINT"),
-                runSQL("ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS txpowid VARCHAR(128)")
+                runSQL("ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS txpowid VARCHAR(128)"),
+                runSQL("ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS sender_seq INT DEFAULT 0")
             ]);
         });
     });
@@ -103,7 +104,18 @@ function initDatabase() {
         });
     });
 
-    // 4. MY_PROFILE
+    // 4. MESSAGE_COUNTERS (for sequence tracking)
+    chain = chain.then(function () {
+        var sql = "CREATE TABLE IF NOT EXISTS MESSAGE_COUNTERS ( "
+            + "  publickey VARCHAR(512) PRIMARY KEY, "
+            + "  next_seq INT NOT NULL DEFAULT 1 "
+            + " )";
+        return runSQL(sql).then(function (res) {
+            MDS.log(res.status ? "📊 [DB] MESSAGE_COUNTERS checked/init" : "❌ [DB] MESSAGE_COUNTERS init failed");
+        });
+    });
+
+    // 5. MY_PROFILE
     chain = chain.then(function () {
         var sql = "CREATE TABLE IF NOT EXISTS MY_PROFILE ( "
             + "  id INT PRIMARY KEY, "
@@ -223,7 +235,8 @@ function initDatabase() {
             MDS.log("✅ [INIT] NEWBLOCK listener registered for periodic tasks.");
         });
 
-        // Trigger history sync safely without setTimeout
+        // Trigger history sync to update message counters and chat list
+        // Uses timestamp optimization to only fetch new messages
         if (typeof requestHistoryFromRecentContacts === 'function') {
             requestHistoryFromRecentContacts();
         } else {

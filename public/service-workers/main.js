@@ -17,6 +17,11 @@ var INITIAL_CLEANUP_DONE = false;
 var COIN_DISCOVERY_PENDING = false;
 var NEWBLOCK_COUNT = 0;
 
+// Connection state tracking for reconnection sync
+var LAST_MAXIMA_EVENT_TIME = 0;
+var CONNECTION_TIMEOUT_MS = 120000; // 2 minutes - if no MAXIMA events, consider offline
+var WAS_OFFLINE = false;
+
 MDS.init(function (msg) {
     // Initialization
     if (msg.event == "inited") {
@@ -84,6 +89,20 @@ MDS.init(function (msg) {
 
     // MAXIMA messages
     else if (msg.event == "MAXIMA") {
+        // Track connection state for reconnection detection
+        var now = Date.now();
+        var wasOffline = (now - LAST_MAXIMA_EVENT_TIME) > CONNECTION_TIMEOUT_MS;
+
+        if (wasOffline && LAST_MAXIMA_EVENT_TIME > 0) {
+            MDS.log("🔄 [RECONNECT] Node back online after offline period. Triggering history sync...");
+            WAS_OFFLINE = true;
+            // Trigger history sync from recent contacts
+            if (typeof requestHistoryFromRecentContacts === 'function') {
+                requestHistoryFromRecentContacts();
+            }
+        }
+
+        LAST_MAXIMA_EVENT_TIME = now;
         MDS.log("📨 [MAXIMA] Event received. App: " + msg.data.application);
 
         if (msg.data.application && (msg.data.application.toLowerCase() == "metachain" || msg.data.application.toLowerCase() == "metachain-group")) {
@@ -232,6 +251,17 @@ MDS.init(function (msg) {
 
                 if (maxjson.type === "contact_unblocked") {
                     handleContactUnblocked(pubkey);
+                    return;
+                }
+
+                // ================== SMART SYNCHRONIZATION ==================
+                if (maxjson.type === "sync_status_check") {
+                    handleSyncStatusCheck(pubkey, maxjson);
+                    return;
+                }
+
+                if (maxjson.type === "sync_status_report") {
+                    handleSyncStatusReport(pubkey, maxjson);
                     return;
                 }
 

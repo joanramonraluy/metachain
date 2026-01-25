@@ -120,6 +120,12 @@ export async function initDB(): Promise<void> {
                 MDS.sql(alterSql, (alterRes: any) => {
                     if (alterRes.status) console.log("📂 [DB] txpowid column added/verified in CHAT_MESSAGES");
                 });
+
+                // Migration: Add sender_seq column for sequence tracking
+                const alterSql2 = "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS sender_seq INT DEFAULT 0";
+                MDS.sql(alterSql2, (alterRes: any) => {
+                    if (alterRes.status) console.log("📂 [DB] sender_seq column added/verified in CHAT_MESSAGES");
+                });
             }
         });
 
@@ -375,6 +381,21 @@ export async function initDB(): Promise<void> {
                                 });
                             });
                         });
+
+                        // Create MESSAGE_COUNTERS table for sequence tracking
+                        const createMessageCountersTable = `
+                            CREATE TABLE IF NOT EXISTS MESSAGE_COUNTERS (
+                                publickey VARCHAR(512) PRIMARY KEY,
+                                next_seq INT NOT NULL DEFAULT 1
+                            )`;
+
+                        MDS.sql(createMessageCountersTable, (res: any) => {
+                            if (!res.status) {
+                                console.error("❌ [DB] Failed to create MESSAGE_COUNTERS table:", res.error);
+                            } else {
+                                console.log("📂 [DB] MESSAGE_COUNTERS table initialized");
+                            }
+                        });
                     });
                 });
             }
@@ -398,6 +419,53 @@ export async function resolveMaximaAddress(publicKey: string): Promise<string | 
             } else {
                 console.log(`📍 [RESOLVE] No Maxima Address found for ${publicKey.substring(0, 15)}...`);
                 resolve(null);
+            }
+        });
+    });
+}
+
+/**
+ * Get the next sequence number for a contact
+ */
+export function getNextSequenceNumber(publicKey: string): Promise<number> {
+    return new Promise((resolve) => {
+        const safePubkey = escapeSql(publicKey);
+        const sql = `SELECT next_seq FROM MESSAGE_COUNTERS WHERE publickey='${safePubkey}'`;
+
+        MDS.sql(sql, (res: any) => {
+            if (res.status && res.rows && res.rows.length > 0) {
+                const seq = parseInt(res.rows[0].NEXT_SEQ);
+                resolve(seq);
+            } else {
+                // If no counter exists, start at 1
+                resolve(1);
+            }
+        });
+    });
+}
+
+/**
+ * Increment the sequence number for a contact
+ */
+export function incrementSequenceNumber(publicKey: string): Promise<void> {
+    return new Promise((resolve) => {
+        const safePubkey = escapeSql(publicKey);
+
+        // Use UPSERT/MERGE specific syntax or check-then-update
+        // Minima SQL supports MERGE usually, but let's be safe with INSERT ON CONFLICT logic or SELECT/INSERT
+
+        // Try to update existing first
+        const checkSql = `SELECT next_seq FROM MESSAGE_COUNTERS WHERE publickey='${safePubkey}'`;
+
+        MDS.sql(checkSql, (res: any) => {
+            if (res.status && res.rows && res.rows.length > 0) {
+                // Update
+                const updateSql = `UPDATE MESSAGE_COUNTERS SET next_seq = next_seq + 1 WHERE publickey='${safePubkey}'`;
+                MDS.sql(updateSql, () => resolve());
+            } else {
+                // Insert (start at 2, since we just used 1)
+                const insertSql = `INSERT INTO MESSAGE_COUNTERS (publickey, next_seq) VALUES ('${safePubkey}', 2)`;
+                MDS.sql(insertSql, () => resolve());
             }
         });
     });

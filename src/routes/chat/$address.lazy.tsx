@@ -13,6 +13,7 @@ import { transactionService } from "../../services/transaction.service";
 import { requestProfile } from "../../services/profile.service";
 import InviteDialog from "../../components/chat/InviteDialog";
 import { useTheme } from "../../context/ThemeContext";
+import { getNextSequenceNumber, incrementSequenceNumber } from "../../services/database.service";
 
 // Lazy load EmojiPicker to reduce initial bundle size (~60KB)
 const EmojiPicker = lazy(() => import("emoji-picker-react"));
@@ -43,28 +44,93 @@ interface ParsedMessage {
   status?: 'pending' | 'sent' | 'delivered' | 'read' | 'failed' | 'zombie';
   tokenAmount?: { amount: string; tokenName: string }; // For token transfer messages
   isSystem?: boolean; // For system messages (centered)
+  sender_seq?: number;
+  customid?: string;
+  id?: number;
+  originalTimestamp?: number; // Sender's creation time (for correct ordering across peers)
 }
 
 
 
 function ChatPage() {
-  // Helper to remove duplicate messages (by timestamp + text)
+  // Helper to remove duplicate messages (favors UUID/customid, then seq, then timestamp)
+  // Helper to remove duplicate messages (favors UUID/customid, then seq, then timestamp)
   const deduplicateMessages = (msgs: ParsedMessage[]) => {
-    const seen = new Set<string>();
-    return msgs.filter((m) => {
-      // Create a more unique key including type info
-      const typeStr = m.charm ? 'charm' : m.tokenAmount ? 'token' : 'text';
-      const key = `${m.timestamp} -${typeStr} -${m.text || ''} `;
+    // Maps to track seen values allowing cross-referencing
+    const seenCustomIds = new Set<string>();
+    const seenSeqKeys = new Set<string>(); // seq-sender-10
+    const seenTimeKeys = new Set<string>(); // ts-type-text-12345
 
-      if (seen.has(key)) return false;
-      seen.add(key);
+    // Filter duplicates
+    const unique = msgs.filter((m) => {
+      // 1. Gather all available keys for this message
+      const keys: { customId?: string; seqKey?: string; timeKey: string } = {
+        timeKey: `ts-${m.timestamp}-${m.charm ? 'charm' : m.tokenAmount ? 'token' : 'text'}-${m.text || ''}`
+      };
+
+      if (m.customid && m.customid !== "0x00" && m.customid !== "undefined") {
+        keys.customId = m.customid;
+      }
+
+      if (m.sender_seq && m.sender_seq > 0) {
+        keys.seqKey = `seq-${m.fromMe ? 'me' : 'them'}-${m.sender_seq}`;
+      }
+
+      // 2. CHECK: If ANY of these keys have been seen, it is a duplicate
+      let isDuplicate = false;
+
+      if (keys.customId && seenCustomIds.has(keys.customId)) isDuplicate = true;
+      if (!isDuplicate && keys.seqKey && seenSeqKeys.has(keys.seqKey)) isDuplicate = true;
+      if (!isDuplicate && seenTimeKeys.has(keys.timeKey)) isDuplicate = true;
+
+      // 3. ACTION: If duplicate, drop it. If unique, register ALL its keys
+      if (isDuplicate) return false;
+
+      if (keys.customId) seenCustomIds.add(keys.customId);
+      if (keys.seqKey) seenSeqKeys.add(keys.seqKey);
+      seenTimeKeys.add(keys.timeKey);
+
       return true;
+    });
+
+    // Sort by originalTimestamp if available (sender time), else fallback to local timestamp (arrival time)
+    // This fixes ordering when network delivery is slightly out of order
+    return unique.sort((a, b) => {
+      // 1. Same sender priority: Sequence Number
+      // If messages are from the same person (both Me or both Them), respect the sequence number absolutely.
+      // This fixes cases where recent messages have slightly mixed timestamps (e.g. Async insertion).
+      // CRITICAL FIX: Check for != null instead of truthy to properly handle sender_seq=0 (pending transactions)
+      if (a.fromMe === b.fromMe && a.sender_seq != null && b.sender_seq != null) {
+        // If either sequence is 0 (pending), treat it specially:
+        // - 0 means "most recent pending", should come AFTER all confirmed messages
+        // - Compare by timestamp if BOTH are 0 (multiple pending items)
+        if (a.sender_seq === 0 && b.sender_seq === 0) {
+          // Both pending - sort by timestamp
+          const timeA = a.originalTimestamp && a.originalTimestamp > 0 ? a.originalTimestamp : a.timestamp || 0;
+          const timeB = b.originalTimestamp && b.originalTimestamp > 0 ? b.originalTimestamp : b.timestamp || 0;
+          return timeA - timeB;
+        } else if (a.sender_seq === 0) {
+          return 1; // a (pending) comes after b (confirmed)
+        } else if (b.sender_seq === 0) {
+          return -1; // b (pending) comes after a (confirmed)
+        } else {
+          // Both confirmed - normal sequence comparison
+          return a.sender_seq - b.sender_seq;
+        }
+      }
+
+      // 2. Different senders or missing seq: Timestamp
+      const timeA = a.originalTimestamp && a.originalTimestamp > 0 ? a.originalTimestamp : a.timestamp || 0;
+      const timeB = b.originalTimestamp && b.originalTimestamp > 0 ? b.originalTimestamp : b.timestamp || 0;
+
+      return timeA - timeB;
     });
   };
   const { address } = Route.useParams();
   const searchParams = Route.useSearch(); // Get search parameters
   const [contact, setContact] = useState<Contact | null>(null);
   const [messages, setMessages] = useState<ParsedMessage[]>([]);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [input, setInput] = useState("");
   const [showTransferSelector, setShowTransferSelector] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -95,6 +161,9 @@ function ChatPage() {
   // const attachmentsRef = useRef<HTMLDivElement>(null); // Ref for attachments menu container
   const emojiPickerRef = useRef<HTMLDivElement>(null); // Ref for emoji picker (Desktop)
   const emojiPickerMobileRef = useRef<HTMLDivElement>(null); // Ref for emoji picker (Mobile)
+  // Ref to track if we've already requested history for this contact (Prevent infinite loop)
+  const historyRequestedFor = useRef<string | null>(null);
+
   const navigate = useNavigate();
 
   // Handle click outside to close popovers
@@ -127,6 +196,7 @@ function ChatPage() {
 
   const { writeMode, userName, myPublicKey } = useContext(appContext);
   const isLoadingMessages = useRef(false); // Flag to prevent simultaneous loads
+  const pendingReload = useRef(false); // Flag to queue a reload if one is requested while loading
 
   // Contact request state
   const [contactRequest, setContactRequest] = useState<any | null>(null);
@@ -651,13 +721,15 @@ function ChatPage() {
     const targetKey = address || contact?.publickey;
     if (!targetKey) return;
 
-    // Prevent simultaneous loads
+    // QUEUEING MECHANISM: If already loading, mark as pending and skip this run
     if (isLoadingMessages.current) {
-      console.log("⏭️ [CHAT] Skipping load (active).");
+      console.log("⏭️ [CHAT] Load already active - queueing next run.");
+      pendingReload.current = true;
       return;
     }
 
     isLoadingMessages.current = true;
+    pendingReload.current = false; // Clear pending flag as we are starting now
 
     try {
       const rawMessages = await minimaService.getMessages(targetKey);
@@ -718,7 +790,10 @@ function ChatPage() {
             message: row.MESSAGE,
             amount: row.AMOUNT,
             fromMe: row.USERNAME === "Me",
-            charm: charmObj
+            charm: charmObj,
+            sender_seq: row.SENDER_SEQ, // Map sequence number
+            customid: row.CUSTOMID, // Map custom ID for deduplication
+            originalTimestamp: row.ORIGINAL_TIMESTAMP // Correct time for sorting
           };
         });
 
@@ -748,7 +823,10 @@ function ChatPage() {
             amount: msg.amount,
             timestamp: Number(msg.date),
             status: finalStatus,
-            tokenAmount: msg.tokenAmount
+            tokenAmount: msg.tokenAmount,
+            sender_seq: msg.sender_seq,
+            customid: msg.customid,
+            originalTimestamp: msg.originalTimestamp
           } as ParsedMessage;
         }));
 
@@ -759,6 +837,12 @@ function ChatPage() {
       console.error("❌ [CHAT] Message load error:", err);
     } finally {
       isLoadingMessages.current = false;
+
+      // If a reload was requested while we were running, run again immediately
+      if (pendingReload.current) {
+        console.log("🔄 [CHAT] Pending reload detected - re-running loadMessagesFromDB");
+        loadMessagesFromDB();
+      }
     }
   };
 
@@ -784,9 +868,14 @@ function ChatPage() {
 
       // TRIGGER SYNC: Request history from peer to catch up on missed messages
       if (contact?.publickey) {
-        console.log("🔄 [CHAT] Triggering history sync with", contact.publickey);
-        minimaService.requestChatHistory(contact.publickey)
-          .catch(err => console.error("❌ [CHAT] Sync request failed:", err));
+        // Guarded history sync inside initChat (can also be called by useEffect, this is a fallback)
+        if (historyRequestedFor.current !== contact.publickey) {
+          historyRequestedFor.current = contact.publickey;
+          console.log("🔄 [CHAT] Triggering history sync (init) with", contact.publickey);
+          setIsSyncing(true);
+          minimaService.requestChatHistory(contact.publickey)
+            .catch(err => console.error("❌ [CHAT] Sync request failed:", err));
+        }
       }
     };
 
@@ -836,8 +925,20 @@ function ChatPage() {
         console.error(`❌ [PING] Failed to send:`, err);
       });
 
-      // Request chat history synchronization
-      minimaService.requestChatHistory(contact.publickey).catch(console.error);
+      // Request chat history synchronization (GUARDED)
+      // Only request if we haven't requested for this specific key yet in this session
+      if (historyRequestedFor.current !== contact.publickey) {
+        historyRequestedFor.current = contact.publickey;
+        console.log(`🔄 [CHAT] Triggering history sync for: ${contact.publickey}`);
+        setIsSyncing(true);
+        minimaService.requestChatHistory(contact.publickey).catch(console.error);
+
+        // SMART SYNC: Trigger Status Check (Phase 1/2)
+        // This ensures we catch any gaps even if we bypassed the Global Sync Check
+        minimaService.sendSyncStatusCheck(contact.publickey).catch(err => console.warn("Sync Check Failed:", err));
+      } else {
+        console.log(`Skipping duplicate history request for ${contact.publickey}`);
+      }
 
       // Timeout for auto-check
       setTimeout(() => {
@@ -972,6 +1073,17 @@ function ChatPage() {
         return;
       }
 
+      // SMART SYNC: Handle Gap Report (Phase 2)
+      // If peer reports we are missing messages, trigger a fetch.
+      if (payload.type === 'sync_status_report') {
+        console.log(`📊 [CHAT] Sync Report: Missing ${payload.missing_count} messages. Triggering fetch...`);
+        // Show syncing indicator
+        setIsSyncing(true);
+        // Request history (Optimized: SW will handle range or full fetch)
+        minimaService.requestChatHistory(contact.publickey).catch(console.error);
+        return;
+      }
+
       // Skip loading for ping - it doesn't affect messages
       if (payload.type === 'ping') {
         return;
@@ -986,6 +1098,11 @@ function ChatPage() {
           minimaService.markChatAsOpened(contact.publickey);
         }
       });
+
+      // Turn off syncing indicator if this was a history sync response
+      if (payload.type === 'history_sync') {
+        setIsSyncing(false);
+      }
     };
 
     // Send read receipt immediately when entering the chat
@@ -1067,6 +1184,7 @@ function ChatPage() {
     // Use sender's name (from context) for payload, recipient's name for roomname
     const senderName = userName || "Me";
     const recipientName = contact?.extradata?.name || "Unknown";
+    const messageToSend = input; // Capture input for async call
 
     let targetApp = "metachain";
 
@@ -1081,16 +1199,19 @@ function ChatPage() {
     const newMsg: ParsedMessage = { text: input, fromMe: true, charm: null, amount: null, timestamp, status: 'sent' };
     setMessages((prev) => [...prev, newMsg]);
 
+    // OPTIMISTIC UPDATE: Clear input immediately to make UI feel responsive
+    setInput("");
+
     try {
       // FIX: Use publickey (0x) for reliable DB storage, fallback to currentaddress for network
       // This ensures messages are always stored with the same key format as the URL param
       // FIX: Pass timestamp to prevent flicker (optimistic UI vs DB re-fetch mismatch)
-      await minimaService.sendMessage(contact.publickey || contact.currentaddress, senderName, input, "text", "", 0, timestamp, recipientName, targetApp);
+      await minimaService.sendMessage(contact.publickey || contact.currentaddress, senderName, messageToSend, "text", "", 0, timestamp, recipientName, targetApp);
     } catch (err) {
       console.error("[Send] Error sending message:", err);
+      // Optional: Restore input on failure? Or just show toast.
+      // setInput(messageToSend); // Only restore if critical failure
     }
-
-    setInput("");
   };
 
   /* ----------------------------------------------------------------------------
@@ -1239,10 +1360,17 @@ function ChatPage() {
     const senderName = userName || "Me";
     const tokenData = JSON.stringify({ amount, tokenName });
 
+    // FIX: Get correct sequence number for this token message (it consumes a slot in the timeline)
+    // This allows proper sorting even for token transactions!
+    const tokenSeq = await getNextSequenceNumber(contact.publickey);
+
+    console.log(`🔢 [ChatPage] Assigning Sequence ${tokenSeq} to Token Message`);
+
     // Optimistic UI update - Show pending immediately
     const optimisticMsg: ParsedMessage = {
       text: "",
       fromMe: true,
+      sender_seq: tokenSeq, // Include sequence in UI immediately
       charm: null,
       amount: Number(amount),
       timestamp: tempTimestamp,
@@ -1250,19 +1378,22 @@ function ChatPage() {
       tokenAmount: { amount, tokenName }
     };
     setMessages(prev => [...prev, optimisticMsg]);
-    console.log("⏳ [ChatPage] Added optimistic pending token message.");
+    console.log(`⏳ [ChatPage] Added optimistic pending token message (Seq: ${tokenSeq})`);
 
     // CRITICAL: Save optimistic message to database so UPDATE statements can find it later
     // This ensures that when MDS_PENDING updates the status to 'sent', the message exists in the DB
     // IMPORTANT: Keep valid JSON (double quotes) but escape single quotes for SQL
     const escapedTokenData = tokenData.replace(/'/g, "''");
+
     // Note: Include all required columns (roomname, type, filedata) matching chat.service.ts pattern
-    const insertSql = `INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date) VALUES ('', '${contact.publickey}', 'Me', 'token', '${escapedTokenData}', '', 'pending', ${amount}, ${tempTimestamp})`;
+    const insertSql = `INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq) VALUES ('', '${contact.publickey}', 'Me', 'token', '${escapedTokenData}', '', 'pending', ${amount}, ${tempTimestamp}, ${tokenSeq})`;
 
     await new Promise<void>((resolve) => {
-      MDS.sql(insertSql, (res: any) => {
+      MDS.sql(insertSql, async (res: any) => {
         if (res.status) {
-          console.log(`💾 [ChatPage] Saved optimistic message to DB: ${tempTimestamp}`);
+          console.log(`💾 [ChatPage] Saved optimistic message to DB: ${tempTimestamp} (Seq: ${tokenSeq})`);
+          // Increment sequence counter since we consumed one
+          await incrementSequenceNumber(contact.publickey);
         } else {
           console.error("❌ [ChatPage] Failed to save optimistic message to DB:", res);
         }
@@ -1296,7 +1427,7 @@ function ChatPage() {
           'token',
           contact.publickey,
           tempTimestamp,
-          { tokenId, amount, tokenName, username: senderName },
+          { tokenId, amount, tokenName, username: senderName, seq: tokenSeq },
           pendinguid
         );
         console.log(`💾[ChatPage] Token transaction tracked: ${txpowid || 'No TXPOWID'} (PendingUID: ${pendinguid || 'None'})`);
@@ -1320,7 +1451,30 @@ function ChatPage() {
       // 2. Only send a chat message confirming the transaction if token was sent successfully
       console.log("✅ [ChatPage] Token sent successfully. Now sending notification message via Maxima...");
       const recipientName = contact?.extradata?.name || "Unknown";
-      const msgResponse = await minimaService.sendMessage(contact.publickey, senderName, tokenData, 'token', "", 0, tempTimestamp, recipientName, "metachain", true, txpowid);
+
+      // FIX: Use overrideSeq to send the EXACT sequence number we reserved (tokenSeq)
+      // FIX: Set saveToDb=false because we ALREADY inserted the optimistic message (Seq 12)
+      // This prevents duplicates (Seq 12 + Seq 13) while ensuring the peer gets the correct sequence!
+      const msgResponse = await minimaService.sendMessage(
+        contact.publickey,
+        senderName,
+        tokenData,
+        'token',
+        "",
+        0,
+        tempTimestamp,
+        recipientName,
+        "metachain",
+        false, // Don't save second copy
+        txpowid,
+        tokenSeq // Force sequence 12
+      );
+
+      // Now we must manually update the optimistic message with the TXPOWID and 'sent' state
+      if (txpowid) {
+        const updateSql = `UPDATE CHAT_MESSAGES SET state='sent', txpowid='${txpowid}' WHERE sender_seq=${tokenSeq} AND publickey='${contact.publickey}'`;
+        await new Promise<void>(resolve => MDS.sql(updateSql, () => resolve()));
+      }
 
       // Check if message send is pending (shouldn't happen if token wasn't pending, but just in case)
       const isMsgPending = msgResponse && (msgResponse.pending || (msgResponse.error && msgResponse.error.toString().toLowerCase().includes("pending")));
@@ -1541,10 +1695,24 @@ function ChatPage() {
             </strong>
             <div className="flex items-center gap-1">
               {appStatus === 'installed' ? (
-                <span className="text-xs text-green-200 flex items-center gap-1">
-                  <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
-                  Online
-                </span>
+                <>
+                  <span className="text-xs text-green-200 flex items-center gap-1">
+                    <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+                    Online
+                  </span>
+                  {isSyncing && (
+                    <>
+                      <span className="text-xs text-gray-400">•</span>
+                      <span className="text-xs opacity-80 flex items-center gap-1">
+                        <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Syncing...
+                      </span>
+                    </>
+                  )}
+                </>
               ) : appStatus === 'checking' ? (
                 <span className="text-xs opacity-80 cursor-default">
                   Checking status...

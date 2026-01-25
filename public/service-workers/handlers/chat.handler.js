@@ -13,6 +13,7 @@ function handleChatMessage(pubkey, maxjson) {
     var safeFiledata = escapeSql(maxjson.filedata || "");
     var msgType = maxjson.type || "text";
     var amount = maxjson.amount || 0;
+    var senderSeq = maxjson.seq ? parseInt(maxjson.seq) : 0; // SEQUENCE TRACKING
 
     // 1. CHECK IF BLOCKED
     var checkBlockSql = "SELECT blocked FROM CHAT_STATUS WHERE publickey='" + safePubkey + "'";
@@ -28,11 +29,39 @@ function handleChatMessage(pubkey, maxjson) {
             return; // Abort insertion
         }
 
+        // GAP DETECTION LOGIC
+        // Only run if we have a valid sequence number > 1 (1 is start)
+        if (senderSeq > 1) {
+            // Check the last sequence number we have from this sender
+            var seqSql = "SELECT MAX(sender_seq) as last_seq FROM CHAT_MESSAGES WHERE publickey='" + safePubkey + "'";
+            MDS.sql(seqSql, function (seqRes) {
+                var lastSeq = 0;
+                if (seqRes.status && seqRes.rows && seqRes.rows.length > 0) {
+                    lastSeq = parseInt(seqRes.rows[0].LAST_SEQ || 0);
+                }
+
+                // If we have nothing (lastSeq=0) and incoming is > 1 -> Gap (start missed)
+                // If we have lastSeq (e.g. 5) and incoming is > lastSeq + 1 (e.g. 7) -> Gap (6 missed)
+                // Note: We used to check just > lastSeq+1, but if lastSeq=0, we expect senderSeq=1. Any start >1 is gap.
+                if (senderSeq > lastSeq + 1) {
+                    var gapSize = senderSeq - lastSeq - 1;
+                    MDS.log("⚠️ [GAP-DETECT] Sequence gap detected from " + safeUsername + " (Seq: " + senderSeq + ", Last: " + lastSeq + ", Missing: " + gapSize + ")");
+
+                    // Trigger sync - use existing solo comms or direct function call if available
+                    if (typeof requestChatHistory === 'function') {
+                        MDS.log("🔄 [GAP-FILL] Triggering sync to fill gap...");
+                        requestChatHistory(pubkey);
+                    }
+                }
+            });
+        }
+
         // 2. Insert message to DB if not blocked
         var txpowid = maxjson.txpowid ? escapeSql(maxjson.txpowid) : null;
         var initialState = txpowid ? 'sent' : 'received'; // 'sent' triggers blink on receiver side if txpowid exists
         var txpowidVal = txpowid ? "'" + txpowid + "'" : "NULL";
         var originalTimestamp = maxjson.timestamp ? maxjson.timestamp : 0;
+        var customid = maxjson.customid ? escapeSql(maxjson.customid) : "0x00"; // PERSIST CUSTOM ID
 
         // CRITICAL FIX: Only store if we don't already have it 
         // We check BOTH txpowid (if available) AND time window simultaneously to ensure we catch duplicates
@@ -64,11 +93,24 @@ function handleChatMessage(pubkey, maxjson) {
         MDS.sql(checkDup, function (dupRes) {
             if (dupRes.status && dupRes.rows && dupRes.rows[0].COUNT > 0) {
                 MDS.log("♻️ [CHAT] Ignoring duplicate message from " + safeUsername + " (already exists in DB)");
+
+                // CRITICAL FIX: Even if duplicate, UPDATE sender_seq if it's currently 0 or NULL
+                // This fixes ordering if the message was first added via history sync (which might have lacked seq)
+                if (maxjson.seq && maxjson.seq > 0) {
+                    var updateSeqSql = "UPDATE CHAT_MESSAGES SET sender_seq=" + maxjson.seq +
+                        " WHERE publickey='" + safePubkey + "' AND (" + conditions.join(" OR ") + ")" +
+                        " AND (sender_seq IS NULL OR sender_seq = 0)";
+                    MDS.sql(updateSeqSql, function (res) {
+                        if (res.status && res.rowsAffected > 0) {
+                            MDS.log("🔄 [CHAT] Updated sequence for duplicate message to: " + maxjson.seq);
+                        }
+                    });
+                }
                 return;
             }
 
-            var insertSql = "INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, txpowid, original_timestamp) "
-                + "VALUES ('', '" + safePubkey + "', '" + safeUsername + "', '" + msgType + "', '" + safeMessage + "', '" + safeFiledata + "', '" + initialState + "', " + amount + ", " + now + ", " + txpowidVal + ", " + originalTimestamp + ")";
+            var insertSql = "INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, txpowid, original_timestamp, sender_seq, customid) "
+                + "VALUES ('', '" + safePubkey + "', '" + safeUsername + "', '" + msgType + "', '" + safeMessage + "', '" + safeFiledata + "', '" + initialState + "', " + amount + ", " + (originalTimestamp || now) + ", " + txpowidVal + ", " + originalTimestamp + ", " + senderSeq + ", '" + customid + "')";
 
             MDS.sql(insertSql, function (res) {
                 if (res.status) {
@@ -245,7 +287,8 @@ function handleChatHistoryRequest(pubkey, maxjson) {
                         amount: row.AMOUNT,
                         tokenid: row.TOKENID,
                         state: row.STATE,
-                        txpowid: row.TXPOWID
+                        txpowid: row.TXPOWID,
+                        sender_seq: row.SENDER_SEQ // Include sequence for ordering
                     };
                 });
 
@@ -293,6 +336,11 @@ function handleChatHistoryResponse(pubkey, maxjson) {
 function processHistoryMessage(safePubkey, messages, index) {
     if (index >= messages.length) {
         MDS.log("✅ [HISTORY-RESP] Completed processing batch");
+        // Notify frontend to reload chat list
+        // MDS.comms.solo sends a message to the frontend
+        MDS.comms.solo("CHAT_LIST_UPDATE", function () {
+            MDS.log("📤 [HISTORY-SYNC] Notification sent to frontend");
+        });
         return;
     }
 
@@ -301,6 +349,7 @@ function processHistoryMessage(safePubkey, messages, index) {
     var type = escapeSql(msg.type || "text");
     var content = escapeSql(msg.message || "");
     var username = escapeSql(msg.username || "Unknown");
+    var senderSeq = msg.sender_seq || 0; // Extract sender_seq
 
     var finalUsername = "Unknown";
     var isIncoming = false;
@@ -325,8 +374,33 @@ function processHistoryMessage(safePubkey, messages, index) {
 
         var safeCustomId = msg.customid ? escapeSql(msg.customid) : "0x00";
 
-        var insertSql = "INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, txpowid, original_timestamp, customid) "
-            + "VALUES ('', '" + safePubkey + "', '" + finalUsername + "', '" + type + "', '" + content + "', '" + safeFiledata + "', '" + state + "', " + amount + ", " + timestamp + ", " + txpowidVal + ", " + timestamp + ", '" + safeCustomId + "')";
+        // CRITICAL: Resolve Correct Username (Alias) if it's "Contact" (incoming)
+        // This ensures compatibility with Live messages which use the resolved Alias
+        if (isIncoming && finalUsername === "Contact") {
+            MDS.sql("SELECT alias FROM DISCOVERED_PEERS WHERE publickey='" + safePubkey + "'", function (res) {
+                var resolvedName = "Contact";
+                if (res.status && res.rows && res.rows.length > 0) {
+                    resolvedName = escapeSql(res.rows[0].ALIAS || res.rows[0].alias || "Contact");
+                }
+
+                var insertSql = "INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, txpowid, original_timestamp, customid, sender_seq) "
+                    + "VALUES ('', '" + safePubkey + "', '" + resolvedName + "', '" + type + "', '" + content + "', '" + safeFiledata + "', '" + state + "', " + amount + ", " + timestamp + ", " + txpowidVal + ", " + timestamp + ", '" + safeCustomId + "', " + senderSeq + ")";
+
+                MDS.sql(insertSql, function (insRes) {
+                    if (insRes.status) {
+                        MDS.log("✅ [HISTORY-SYNC] Recovered message from " + resolvedName + ": " + (content.substring(0, 20)));
+                    } else {
+                        // Fallback log if insert fails
+                        MDS.log("❌ [HISTORY-SYNC] Insert failed: " + insRes.error);
+                    }
+                    processHistoryMessage(safePubkey, messages, index + 1);
+                });
+            });
+            return; // EXIT here, async SQL handles the recursion
+        }
+
+        var insertSql = "INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, txpowid, original_timestamp, customid, sender_seq) "
+            + "VALUES ('', '" + safePubkey + "', '" + finalUsername + "', '" + type + "', '" + content + "', '" + safeFiledata + "', '" + state + "', " + amount + ", " + timestamp + ", " + txpowidVal + ", " + timestamp + ", '" + safeCustomId + "', " + senderSeq + ")";
 
         MDS.sql(insertSql, function (insRes) {
             if (insRes.status) {
@@ -436,12 +510,21 @@ function requestHistoryFromRecentContacts() {
     var sql = "SELECT publickey, address FROM DISCOVERED_PEERS WHERE source != 'SELF' ORDER BY last_seen DESC LIMIT 20";
 
     MDS.sql(sql, function (res) {
+        MDS.log("🔍 [HISTORY-SYNC-DEBUG] SQL result status: " + res.status);
         if (res.status && res.rows) {
+            MDS.log("🔄 [HISTORY-SYNC] Found " + res.rows.length + " contacts in DISCOVERED_PEERS");
+            if (res.rows.length === 0) {
+                MDS.log("⚠️ [HISTORY-SYNC] No contacts found to sync with");
+                return;
+            }
             MDS.log("🔄 [HISTORY-SYNC] Syncing with " + res.rows.length + " recent contacts");
             res.rows.forEach(function (row) {
+                MDS.log("🔄 [HISTORY-SYNC] Requesting history from: " + row.PUBLICKEY.substring(0, 20) + "...");
                 // Pass both publickey and address to increase success rate
                 requestChatHistory(row.PUBLICKEY, row.ADDRESS);
             });
+        } else {
+            MDS.log("❌ [HISTORY-SYNC] SQL query failed: " + (res.error || "Unknown error"));
         }
     });
 }
@@ -558,4 +641,107 @@ function resolveAndSend(pubkey, hexData, logTag, usePoll) {
             }
         });
     });
+}
+
+// --------------------------------------------------------------------------
+// SMART SYNC PROTOCOL (BIDIRECTIONAL)
+// --------------------------------------------------------------------------
+
+/**
+ * Handle incoming sync status check (PHASE 1)
+ * Peer says: "I have received messages from you up to sequence X"
+ * We check: "Have I sent more than X?"
+ * If yes -> Send sync_status_report ("You are missing Y messages")
+ */
+function handleSyncStatusCheck(msg, fromKey) {
+    var peerLastSeq = msg.last_received_seq || 0;
+
+    // Check what is the maximum sequence number we have sent to this user
+    // We can infer this from CHAT_MESSAGES where publickey=fromKey AND fromMe=true? 
+    // Wait, CHAT_MESSAGES stores messages *received* from them or *sent* to them?
+    // It stores both. 
+    // Messages WE sent to THEM have: publickey=THEM, username=ME (or similar).
+    // AND they should have a 'seq' number we assigned them.
+    // BUT 'sender_seq' col tracks what THEY sent US.
+    // We need to know what WE sent THEM.
+    // The MESSAGE_COUNTERS table tracks the 'next_seq' we will give to the NEXT message.
+    // So 'next_seq - 1' is the last one we sent.
+
+    var sql = "SELECT next_seq FROM MESSAGE_COUNTERS WHERE publickey='" + escapeSql(fromKey) + "'";
+    MDS.sql(sql, function (res) {
+        var myNextSeq = (res.rows && res.rows.length > 0) ? res.rows[0].NEXT_SEQ : 1;
+        var myLastSentSeq = myNextSeq - 1;
+
+        MDS.log("🔄 [SMART-SYNC] Check from " + fromKey.substring(0, 10) + ". Their last: " + peerLastSeq + ", My last sent: " + myLastSentSeq);
+
+        if (myLastSentSeq > peerLastSeq) {
+            var missingCount = myLastSentSeq - peerLastSeq;
+            MDS.log("⚠️ [SMART-SYNC] Peer is missing " + missingCount + " messages.");
+
+            // Optimization: Get preview of the very last message to show in their UI
+            // We find the message with highest ID sent to them? 
+            // We don't strictly index our sent 'seq' in CHAT_MESSAGES yet (we just send it).
+            // We might need to query by date DESC.
+            var previewSql = "SELECT message, date, type FROM CHAT_MESSAGES WHERE publickey='" + escapeSql(fromKey) + "' AND state IN ('sent','delivered','read') ORDER BY date DESC LIMIT 1";
+
+            MDS.sql(previewSql, function (pRes) {
+                var lastMsg = (pRes.rows && pRes.rows.length > 0) ? pRes.rows[0] : null;
+
+                var reportPayload = {
+                    type: "sync_status_report",
+                    missing_count: missingCount,
+                    my_highest_seq: myLastSentSeq,
+                    last_message_preview: lastMsg ? {
+                        text: (lastMsg.TYPE === 'text') ? lastMsg.MESSAGE : ("[" + lastMsg.TYPE + "]"),
+                        timestamp: lastMsg.DATE
+                    } : null
+                };
+
+                // Send report back via Maxima
+                MDS.cmd("maxima action:send publickey:" + fromKey + " application:metachain data:" + JSON.stringify(reportPayload) + " poll:false", function (sendRes) {
+                    if (sendRes.status) MDS.log("✅ [SMART-SYNC] Sent status report to " + fromKey.substring(0, 10));
+                });
+            });
+
+        } else {
+            MDS.log("✅ [SMART-SYNC] Peer is up to date.");
+        }
+    });
+}
+
+
+/**
+ * Handle incoming sync status report (PHASE 1 Response)
+ * Peer says: "You are missing X messages. Last one was 'Hello'"
+ * We action: Update UI to show "Unread/Syncing" state? or Trigger fetch?
+ * For Phase 1: Just Log and maybe emit event for UI.
+ * For Phase 2: This will auto-trigger 'sync_data_request'
+ */
+function handleSyncStatusReport(msg, fromKey) {
+    MDS.log("📊 [SMART-SYNC] Report from " + fromKey.substring(0, 10) + ": Missing " + msg.missing_count + " messages.");
+
+    // Store this 'gap' state potentially?
+    // For now, let's trigger the 'gap detected' flow we already have?
+    // OR just emit an event so the frontend knows.
+
+    // If we are missing messages, we should probably just ask for them immediately if it's a small number?
+    // User plan says: "Phase 1: Chat List updates... without downloading".
+    // So we just need to notify the Frontend.
+
+    // We can use 'peer_updated' or a new 'sync_state_update' event.
+    // Let's send a specific event the Frontend can listen to relative to this peer.
+    // Actually, we can reuse 'chat_history_response' type logic to just push a "meta" message? 
+    // No, cleaner to keep it separate.
+
+    // We will just log it for now as per Phase 1 reqs (UI implementation is next).
+    // BUT, let's be proactive: If the gap is small (< 50), auto-fetch immediately?
+    // The user said "Global Sync Check... Chat List updates... without downloading".
+    // So we strictly wait for Phase 2 (Lazy Sync) to fetch.
+
+    // We send this to frontend via NEWBLOCK or just rely on 'notifyNewMessage' in MinimaService which listens to Maxima?
+    // 'minima.service.ts' processes all incoming Maxima messages.
+    // So if we just let this message pass through to 'minima.service.ts', it will be dispatched to UI.
+    // PERFECT. We don't need to do anything here if 'minima.service.ts' handles generic types.
+    // Checking 'minima.service.ts'... it filters specific types. 
+    // We need to add 'sync_status_report' to 'minima.service.ts'.
 }

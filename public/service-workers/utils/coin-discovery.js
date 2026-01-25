@@ -66,6 +66,8 @@ function discoverOfflineTokens() {
                     // All coins processed
                     if (recoveredCount > 0) {
                         MDS.log("📦 [COIN-DISCOVERY] Successfully recovered " + recoveredCount + " offline token message(s)");
+                        // Notify frontend to reload messages
+                        MDS.notify("OFFLINE_TOKENS_RECOVERED", { count: recoveredCount });
                     } else {
                         MDS.log("📦 [COIN-DISCOVERY] No new offline tokens to recover");
                     }

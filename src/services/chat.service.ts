@@ -19,6 +19,7 @@ export interface ChatMessage {
     read?: number;
     amount?: number;
     date?: number;
+    sender_seq?: number;
 }
 
 export type MessageCallback = (msg: any) => void;
@@ -276,12 +277,12 @@ class ChatService {
         });
     }
     async insertMessage(msg: ChatMessage & { date?: number }) {
-        const { roomname, publickey, username, type, message, filedata = "", state = "", amount = 0, date } = msg;
+        const { roomname, publickey, username, type, message, filedata = "", state = "", amount = 0, date, sender_seq = 0 } = msg;
         const escapedMsg = message.replace(/'/g, "''");
         const timestamp = date || Date.now();
         const sql = `
-            INSERT INTO CHAT_MESSAGES (roomname,publickey,username,type,message,filedata,state,amount,date,customid)
-            VALUES ('${roomname}','${publickey}','${username}','${type}','${escapedMsg}','${filedata}','${state}',${amount},${timestamp},'${msg.customid || "0x00"}')
+            INSERT INTO CHAT_MESSAGES (roomname,publickey,username,type,message,filedata,state,amount,date,customid,sender_seq)
+            VALUES ('${roomname}','${publickey}','${username}','${type}','${escapedMsg}','${filedata}','${state}',${amount},${timestamp},'${msg.customid || "0x00"}', ${sender_seq})
         `;
         try {
             await runSQL(sql);
@@ -305,6 +306,22 @@ class ChatService {
                 // FILTER: Remove messages that are strictly "undefined" string
                 const validRows = res.rows.filter((r: any) => r.MESSAGE !== 'undefined');
                 resolve(validRows);
+            });
+        });
+    }
+
+    getLastMessageTimestamp(publickey: string): Promise<number> {
+        return new Promise((resolve) => {
+            const sql = `
+                SELECT MAX(date) as last_date FROM CHAT_MESSAGES
+                WHERE publickey='${publickey}'
+            `;
+            MDS.sql(sql, (res: any) => {
+                if (!res.status || !res.rows || res.rows.length === 0 || !res.rows[0].LAST_DATE) {
+                    resolve(0); // No messages, return 0
+                    return;
+                }
+                resolve(Number(res.rows[0].LAST_DATE));
             });
         });
     }

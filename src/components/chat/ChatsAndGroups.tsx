@@ -146,6 +146,17 @@ export default function ChatsAndGroups() {
             fetchGroups();
         };
 
+        // Listen for solo messages from service worker
+        const handleSoloMessage = (msg: string) => {
+            if (msg === "CHAT_LIST_UPDATE") {
+                console.log("🔄 [ChatsAndGroups] Chat list update triggered by service worker");
+                fetchChats();
+            }
+        };
+
+        // Register solo listener
+        (window as any).MDS_SOLO_LISTENER = handleSoloMessage;
+
         minimaService.onNewMessage(handleNewMessage);
         minimaService.onArchiveStatusChange(fetchChats);
         minimaService.onFavoriteStatusChange(fetchChats);
@@ -153,6 +164,7 @@ export default function ChatsAndGroups() {
         groupService.onGroupUpdate(fetchGroups);
 
         return () => {
+            delete (window as any).MDS_SOLO_LISTENER;
             minimaService.removeNewMessageCallback(handleNewMessage);
             minimaService.removeArchiveStatusCallback(fetchChats);
             minimaService.removeFavoriteStatusCallback(fetchChats);

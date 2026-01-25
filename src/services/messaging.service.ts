@@ -4,7 +4,7 @@
  */
 
 import { MDS } from "@minima-global/mds";
-import { runSQL, utf8ToHex } from "./database.service";
+import { runSQL, utf8ToHex, getNextSequenceNumber, incrementSequenceNumber } from "./database.service";
 import { chatService } from "./chat.service";
 
 /* ----------------------------------------------------------------------------
@@ -79,7 +79,8 @@ export async function sendMessage(
     recipientName?: string,
     targetApplication: string = "metachain",
     saveToDb: boolean = true,
-    txpowid?: string
+    txpowid?: string,
+    overrideSeq?: number
 ): Promise<any> {
     try {
         // RESOLVE IDENTIFIER: If sending to a Maxima address (Mx...), try to find the Hex Public Key (0x...)
@@ -131,6 +132,14 @@ export async function sendMessage(
             console.warn("⚠️ [MAXIMA] Failed to fetch profile info for payload:", e);
         }
 
+        // Get sequence number for this recipient
+        let seq = 0;
+        if (overrideSeq !== undefined) {
+            seq = overrideSeq;
+        } else {
+            seq = await getNextSequenceNumber(databasePublicKey);
+        }
+
         const payload: any = {
             message,
             type,
@@ -140,8 +149,15 @@ export async function sendMessage(
             avatar: myAvatar,
             from_address: myAddress,
             txpowid: txpowid || undefined, // Include txpowid if provided
-            customid: generateUUID() // Add UUID for deduplication
+            customid: generateUUID(), // Add UUID for deduplication
+
+            // Use seq if valid (persisted or overridden)
+            seq: (saveToDb || overrideSeq !== undefined) ? seq : undefined
         };
+
+        // Define persistable types just in case saveToDb is misused for important messages (like invites)
+        const PERSISTABLE_TYPES = ['text', 'image', 'file', 'video', 'audio', 'charm', 'token', 'invitation'];
+        const isPersistable = saveToDb && PERSISTABLE_TYPES.includes(type);
 
         if (type === "charm" && amount > 0) {
             payload.amount = amount;
@@ -156,7 +172,7 @@ export async function sendMessage(
             action: "send",
             application: targetApplication,
             data: hexData,
-            poll: false, // DISABLED: poll: true causes offline messages to be lost
+            poll: true, // FIXED: poll:true ensures message delivery for offline/non-contact recipients
         };
 
         if (toPublicKey.startsWith("Mx") || toPublicKey.startsWith("MX")) {
@@ -170,6 +186,15 @@ export async function sendMessage(
         });
 
         console.log("📡 [MAXIMA] Full send response:", response);
+
+        // Increment sequence number ONLY if message is persistable (saved to DB) and NO override was provided
+        // (If override provided, caller is responsible for counter management)
+        if ((response && (response as any).status) || (response && (response as any).pending)) {
+            if (isPersistable && overrideSeq === undefined) {
+                await incrementSequenceNumber(databasePublicKey);
+            }
+        }
+
 
         const isPending = response && ((response as any).status === false) && (
             (response as any).pending ||
@@ -205,6 +230,11 @@ export async function sendMessage(
                         throw new Error(errorMessage);
                     }
 
+                    // Increment sequence if fallback succeeded and persistable
+                    if (isPersistable) {
+                        await incrementSequenceNumber(databasePublicKey);
+                    }
+
                     console.log("✅ [MAXIMA] Message sent successfully via Mx address (non-contact)");
 
                     // IMPORTANT: Insert message locally BEFORE returning!
@@ -219,6 +249,7 @@ export async function sendMessage(
                             filedata,
                             state: "sent",
                             amount,
+                            sender_seq: seq, // Save sequence number locally
                         });
                         console.log("💾 [DB] Message saved locally for non-contact");
                     }
@@ -482,12 +513,20 @@ export async function sendInvitation(toPublicKey: string, fromUsername: string) 
 export async function requestChatHistory(toPublicKey: string) {
     console.log("🔄 [HISTORY-SYNC] Requesting from", toPublicKey);
     try {
+        // Get the timestamp of the last message we have for this contact
+        const lastMessageTime = await chatService.getLastMessageTimestamp(toPublicKey);
+
+        // If we have no messages, request last 7 days. Otherwise, request from last message.
+        const sinceTimestamp = lastMessageTime || (Date.now() - (7 * 24 * 60 * 60 * 1000));
+
+        console.log(`🔍 [HISTORY-SYNC] Last local message: ${lastMessageTime}, requesting since: ${sinceTimestamp}`);
+
         const payload = {
             message: "",
             type: "chat_history_request",
             username: "Me",
             filedata: "",
-            timestamp: Date.now() - (7 * 24 * 60 * 60 * 1000) // Last 7 days
+            timestamp: sinceTimestamp
         };
 
         const jsonStr = JSON.stringify(payload);
