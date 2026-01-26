@@ -221,7 +221,7 @@ export async function sendMessage(
                             to: cleanMaximaAddress(mxAddress),
                             application: targetApplication,
                             data: hexData,
-                            poll: false,
+                            poll: true,
                         } as any,
                     });
 
@@ -316,7 +316,7 @@ export async function sendReadReceipt(toPublicKey: string) {
             action: "send",
             application: "metachain",
             data: hexData,
-            poll: false,
+            poll: true,
         };
 
         if (toPublicKey.startsWith('0x')) {
@@ -365,7 +365,7 @@ export async function sendDeliveryReceipt(toPublicKey: string) {
             action: "send",
             application: "metachain",
             data: hexData,
-            poll: false,
+            poll: true,
         };
 
         if (toPublicKey.startsWith('0x')) {
@@ -409,7 +409,7 @@ export async function sendPing(toPublicKey: string) {
             action: "send",
             application: "metachain",
             data: hexData,
-            poll: false,
+            poll: true,
         };
 
         if (toPublicKey.startsWith('0x')) {
@@ -451,7 +451,7 @@ export async function sendPong(toPublicKey: string) {
             action: "send",
             application: "metachain",
             data: hexData,
-            poll: false,
+            poll: true,
         };
 
         if (toPublicKey.startsWith('0x')) {
@@ -499,7 +499,7 @@ export async function sendInvitation(toPublicKey: string, fromUsername: string) 
                 publickey: toPublicKey,
                 application: "metachain",
                 data: hexData,
-                poll: false,
+                poll: true,
             } as any,
         });
 
@@ -545,7 +545,7 @@ export async function requestChatHistory(toPublicKey: string) {
                     to: cleanAddr,
                     application: "metachain",
                     data: hexData,
-                    poll: false,
+                    poll: true,
                 } as any,
             });
         } else {
@@ -556,7 +556,7 @@ export async function requestChatHistory(toPublicKey: string) {
                     publickey: toPublicKey,
                     application: "metachain",
                     data: hexData,
-                    poll: false,
+                    poll: true,
                 } as any,
             });
         }
@@ -602,7 +602,7 @@ export async function sendChatHistoryResponse(toPublicKey: string, messages: any
             action: "send",
             application: "metachain",
             data: hexData,
-            poll: false,
+            poll: true,
         };
 
         if (mxAddress) {

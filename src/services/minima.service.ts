@@ -1478,9 +1478,9 @@ WHERE(${addressClause}) AND status = 'pending'`;
                 params: {
                     action: "send",
                     publickey: publickey,
-                    application: "metachain",
-                    data: "0x" + dataHex
-                }
+                    data: "0x" + dataHex,
+                    poll: true
+                } as any
             }).then((resp: any) => {
                 if (resp.status) console.log("✅ [SMART-SYNC] Check sent.");
                 else console.warn("⚠️ [SMART-SYNC] Failed to send check:", resp.error);

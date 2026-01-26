@@ -148,7 +148,7 @@ export async function sendChatRequest(toAddress: string, myName: string, myAvata
             action: "send",
             application: "metachain",
             data: hexData,
-            poll: false,
+            poll: true,
         };
 
         // Use provided publickey if available, otherwise try to resolve
@@ -241,7 +241,7 @@ export async function saveChatRequest(fromPublicKey: string, fromName: string, f
                 publickey: safeFromPublicKey,
                 application: "metachain",
                 data: confirmHexData,
-                poll: false
+                poll: true
             } as any
         });
         console.log("✅ [Contact Request] Delivery confirmation sent");
@@ -368,7 +368,7 @@ export async function acceptChatRequest(fromPublicKey: string, fromAddress: stri
             action: "send",
             application: "metachain",
             data: hexData,
-            poll: false,
+            poll: true,
         };
 
         if (senderAddress && (senderAddress.startsWith("Mx") || senderAddress.startsWith("MX"))) {
@@ -574,7 +574,7 @@ export async function sendMaximaContactRequest(toAddress: string, toPublicKey?: 
             action: "send",
             application: "metachain",
             data: hexData,
-            poll: false,
+            poll: true,
             to: toAddress.replace(/\s/g, "")
         };
 
