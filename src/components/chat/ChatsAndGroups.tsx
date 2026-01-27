@@ -1,7 +1,7 @@
 // src/components/chat/ChatsAndGroups.tsx
 
 import { useState, useContext, useEffect } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, Link } from "@tanstack/react-router";
 import { appContext } from "../../AppContext";
 import { minimaService } from "../../services/minima.service";
 import { groupService } from "../../services/group.service";
@@ -420,13 +420,11 @@ export default function ChatsAndGroups() {
                 ) : (
                     <div className="space-y-3">
                         {displayedGroups.map((group) => (
-                            <div
+                            <Link
                                 key={group.group_id}
-                                onClick={() => {
-                                    console.log("🔵 Navigating to group:", group.group_id);
-                                    navigate({ to: "/groups/$groupId", params: { groupId: group.group_id } });
-                                }}
-                                className={`rounded-xl p-4 cursor-pointer transition-all duration-200 ${(group.unreadCount || 0) > 0
+                                to="/groups/$groupId"
+                                params={{ groupId: group.group_id }}
+                                className={`block rounded-xl p-4 cursor-pointer transition-all duration-200 ${(group.unreadCount || 0) > 0
                                     ? 'bg-primary-50 dark:bg-primary-900/10 shadow-md hover:shadow-lg border-2 border-primary-200 dark:border-primary-800'
                                     : 'bg-white dark:bg-gray-800 shadow-sm hover:shadow-md border border-gray-100 dark:border-gray-700'
                                     }`}
@@ -456,14 +454,15 @@ export default function ChatsAndGroups() {
                                         )}
                                     </div>
                                 </div>
-                            </div>
+                            </Link>
                         ))}
 
                         {displayedChats.map((chat, i) => (
-                            <div
+                            <Link
                                 key={i}
-                                onClick={() => navigate({ to: "/chat/$address", params: { address: chat.publickey } })}
-                                className={`rounded-xl p-4 cursor-pointer transition-all duration-200 ${(chat.unreadCount || 0) > 0
+                                to="/chat/$address"
+                                params={{ address: chat.publickey }}
+                                className={`block rounded-xl p-4 cursor-pointer transition-all duration-200 ${(chat.unreadCount || 0) > 0
                                     ? 'bg-primary-50 dark:bg-primary-900/10 shadow-md hover:shadow-lg border-2 border-primary-200 dark:border-primary-800'
                                     : 'bg-white dark:bg-gray-800 shadow-sm hover:shadow-md border border-gray-100 dark:border-gray-700'
                                     }`}
@@ -513,7 +512,7 @@ export default function ChatsAndGroups() {
                                         </p>
                                     </div>
                                 </div>
-                            </div>
+                            </Link>
                         ))}
                     </div>
                 )}

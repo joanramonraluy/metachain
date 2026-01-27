@@ -8,6 +8,8 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
+import { createFileRoute } from '@tanstack/react-router'
+
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as HelpRouteImport } from './routes/help'
@@ -25,6 +27,10 @@ import { Route as SettingsAppearanceRouteImport } from './routes/settings/appear
 import { Route as GroupsGroupIdRouteImport } from './routes/groups.$groupId'
 import { Route as ContactInfoAddressRouteImport } from './routes/contact-info.$address'
 import { Route as ChatAddressRouteImport } from './routes/chat/$address'
+
+const GroupInfoGroupIdLazyRouteImport = createFileRoute(
+  '/group-info/$groupId',
+)()
 
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
@@ -66,6 +72,13 @@ const SettingsIndexRoute = SettingsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => SettingsRoute,
 } as any)
+const GroupInfoGroupIdLazyRoute = GroupInfoGroupIdLazyRouteImport.update({
+  id: '/group-info/$groupId',
+  path: '/group-info/$groupId',
+  getParentRoute: () => rootRouteImport,
+} as any).lazy(() =>
+  import('./routes/group-info.$groupId.lazy').then((d) => d.Route),
+)
 const SettingsProfileRoute = SettingsProfileRouteImport.update({
   id: '/profile',
   path: '/profile',
@@ -127,6 +140,7 @@ export interface FileRoutesByFullPath {
   '/settings/network': typeof SettingsNetworkRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
   '/settings/profile': typeof SettingsProfileRoute
+  '/group-info/$groupId': typeof GroupInfoGroupIdLazyRoute
   '/settings/': typeof SettingsIndexRoute
 }
 export interface FileRoutesByTo {
@@ -144,6 +158,7 @@ export interface FileRoutesByTo {
   '/settings/network': typeof SettingsNetworkRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
   '/settings/profile': typeof SettingsProfileRoute
+  '/group-info/$groupId': typeof GroupInfoGroupIdLazyRoute
   '/settings': typeof SettingsIndexRoute
 }
 export interface FileRoutesById {
@@ -163,6 +178,7 @@ export interface FileRoutesById {
   '/settings/network': typeof SettingsNetworkRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
   '/settings/profile': typeof SettingsProfileRoute
+  '/group-info/$groupId': typeof GroupInfoGroupIdLazyRoute
   '/settings/': typeof SettingsIndexRoute
 }
 export interface FileRouteTypes {
@@ -183,6 +199,7 @@ export interface FileRouteTypes {
     | '/settings/network'
     | '/settings/privacy'
     | '/settings/profile'
+    | '/group-info/$groupId'
     | '/settings/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -200,6 +217,7 @@ export interface FileRouteTypes {
     | '/settings/network'
     | '/settings/privacy'
     | '/settings/profile'
+    | '/group-info/$groupId'
     | '/settings'
   id:
     | '__root__'
@@ -218,6 +236,7 @@ export interface FileRouteTypes {
     | '/settings/network'
     | '/settings/privacy'
     | '/settings/profile'
+    | '/group-info/$groupId'
     | '/settings/'
   fileRoutesById: FileRoutesById
 }
@@ -232,6 +251,7 @@ export interface RootRouteChildren {
   ChatAddressRoute: typeof ChatAddressRoute
   ContactInfoAddressRoute: typeof ContactInfoAddressRoute
   GroupsGroupIdRoute: typeof GroupsGroupIdRoute
+  GroupInfoGroupIdLazyRoute: typeof GroupInfoGroupIdLazyRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -291,6 +311,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/settings/'
       preLoaderRoute: typeof SettingsIndexRouteImport
       parentRoute: typeof SettingsRoute
+    }
+    '/group-info/$groupId': {
+      id: '/group-info/$groupId'
+      path: '/group-info/$groupId'
+      fullPath: '/group-info/$groupId'
+      preLoaderRoute: typeof GroupInfoGroupIdLazyRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/settings/profile': {
       id: '/settings/profile'
@@ -384,6 +411,7 @@ const rootRouteChildren: RootRouteChildren = {
   ChatAddressRoute: ChatAddressRoute,
   ContactInfoAddressRoute: ContactInfoAddressRoute,
   GroupsGroupIdRoute: GroupsGroupIdRoute,
+  GroupInfoGroupIdLazyRoute: GroupInfoGroupIdLazyRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

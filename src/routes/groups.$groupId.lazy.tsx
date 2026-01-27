@@ -6,6 +6,7 @@ import { appContext } from "../AppContext";
 import { Trash2, Info } from "lucide-react";
 import { groupService } from "../services/group.service";
 import MessageBubble from "../components/chat/MessageBubble";
+import { useTheme } from "../context/ThemeContext";
 
 export const Route = createLazyFileRoute("/groups/$groupId")({
   component: ChatPage,
@@ -67,6 +68,7 @@ function ChatPage() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const { userName, myPublicKey } = useContext(appContext);
   const isLoadingMessages = useRef(false); // Flag to prevent simultaneous loads
+  const { chatBackground } = useTheme();
 
 
 
@@ -361,20 +363,19 @@ function ChatPage() {
 
           {/* Dropdown Menu */}
           {showMenu && (
-            <div className="absolute top-10 right-0 bg-gray-800 md:bg-white rounded-lg shadow-xl border border-gray-700 md:border-gray-200 min-w-[180px] z-50 animate-in slide-in-from-top-2 fade-in duration-200">
+            <div className="absolute top-10 right-0 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 min-w-[180px] z-50 animate-in slide-in-from-top-2 fade-in duration-200">
               <button
-                className="flex items-center gap-3 w-full p-3 hover:bg-gray-700 md:hover:bg-gray-100 text-gray-300 md:text-gray-700 rounded-t-lg transition-colors text-left"
+                className="flex items-center gap-3 w-full p-3 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-t-lg transition-colors text-left"
                 onClick={() => {
                   setShowMenu(false);
-                  // TODO: Navigate to group info page
-                  alert("Group Info - Coming soon!");
+                  navigate({ to: '/group-info/$groupId', params: { groupId: address } });
                 }}
               >
                 <Info size={18} />
                 <span className="font-medium">Group Info</span>
               </button>
               <button
-                className="flex items-center gap-3 w-full p-3 hover:bg-red-900/50 md:hover:bg-red-50 text-red-400 md:text-red-600 rounded-b-lg transition-colors text-left border-t border-gray-700 md:border-gray-200"
+                className="flex items-center gap-3 w-full p-3 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 rounded-b-lg transition-colors text-left border-t border-gray-100 dark:border-gray-700"
                 onClick={() => {
                   setShowMenu(false);
                   setShowDeleteConfirm(true);
@@ -391,15 +392,15 @@ function ChatPage() {
       {/* Delete Confirmation Dialog */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 md:bg-white rounded-xl shadow-2xl max-w-sm w-full p-6 animate-in zoom-in-95 fade-in duration-200 border border-gray-700 md:border-gray-200">
-            <h3 className="text-lg font-bold text-white md:text-gray-900 mb-2">Exit Group?</h3>
-            <p className="text-gray-300 md:text-gray-600 mb-6">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-sm w-full p-6 animate-in zoom-in-95 fade-in duration-200 border border-gray-200 dark:border-gray-700">
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Exit Group?</h3>
+            <p className="text-gray-600 dark:text-gray-300 mb-6">
               Are you sure you want to exit this group? You will no longer receive new messages.
             </p>
             <div className="flex gap-3">
               <button
                 onClick={() => setShowDeleteConfirm(false)}
-                className="flex-1 px-4 py-2 border border-gray-600 md:border-gray-300 text-gray-300 md:text-gray-700 rounded-lg hover:bg-gray-700 md:hover:bg-gray-50 transition-colors font-medium"
+                className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-medium"
               >
                 Cancel
               </button>
@@ -418,15 +419,41 @@ function ChatPage() {
       )}
 
       {/* CHAT BODY - Scrollable */}
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto flex flex-col p-2 sm:p-4 bg-gray-50 dark:bg-gray-900 relative transition-colors">
-        {/* Custom Background Pattern (Subtle Dot Grid) */}
-        <div
-          className="absolute inset-0 opacity-[0.4] pointer-events-none"
-          style={{
-            backgroundImage: `radial-gradient(#cbd5e1 1.5px, transparent 1.5px)`,
-            backgroundSize: '24px 24px'
-          }}
-        ></div>
+      <div
+        ref={scrollContainerRef}
+        className={`flex-1 overflow-y-auto flex flex-col p-2 sm:p-4 relative transition-colors
+          ${chatBackground === 'diagonal' ? 'bg-gray-50 dark:bg-gray-900' :
+            chatBackground === 'default' ? 'bg-gray-50 dark:bg-gray-900' :
+              'bg-gray-50 dark:bg-gray-900' /* Base for patterns */
+          }`}
+      >
+        {/* Pattern Overlays - Fixed positioning ensures they cover full screen even with scroll */}
+        {chatBackground === 'dots' && (
+          <div
+            className="fixed inset-0 opacity-[0.05] dark:opacity-[0.1] pointer-events-none z-0"
+            style={{
+              backgroundImage: `radial-gradient(#0f172a 1.5px, transparent 1.5px)`,
+              backgroundSize: '24px 24px'
+            }}
+          />
+        )}
+        {chatBackground === 'grid' && (
+          <div
+            className="fixed inset-0 opacity-[0.4] dark:opacity-[0.05] pointer-events-none z-0"
+            style={{
+              backgroundImage: `linear-gradient(#cbd5e1 1px, transparent 1px), linear-gradient(to right, #cbd5e1 1px, transparent 1px)`,
+              backgroundSize: '20px 20px'
+            }}
+          />
+        )}
+        {chatBackground === 'diagonal' && (
+          <div
+            className="fixed inset-0 opacity-[0.4] dark:opacity-[0.1] pointer-events-none z-0"
+            style={{
+              backgroundImage: `repeating-linear-gradient(45deg, #e2e8f0 0px, #e2e8f0 2px, transparent 2px, transparent 12px)`
+            }}
+          />
+        )}
 
         {/* Pending Transactions Indicator */}
         {messages.filter(m => m.status === 'pending').length > 0 && (

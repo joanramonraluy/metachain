@@ -2068,10 +2068,10 @@ function ChatPage() {
               'bg-gray-50 dark:bg-gray-900' /* Base for patterns */
           }`}
       >
-        {/* Pattern Overlays */}
+        {/* Pattern Overlays - Fixed positioning ensures they cover full screen even with scroll */}
         {chatBackground === 'dots' && (
           <div
-            className="absolute inset-0 opacity-[0.05] dark:opacity-[0.1] pointer-events-none"
+            className="fixed inset-0 opacity-[0.05] dark:opacity-[0.1] pointer-events-none z-0"
             style={{
               backgroundImage: `radial-gradient(#0f172a 1.5px, transparent 1.5px)`,
               backgroundSize: '24px 24px'
@@ -2080,7 +2080,7 @@ function ChatPage() {
         )}
         {chatBackground === 'grid' && (
           <div
-            className="absolute inset-0 opacity-[0.4] dark:opacity-[0.05] pointer-events-none"
+            className="fixed inset-0 opacity-[0.4] dark:opacity-[0.05] pointer-events-none z-0"
             style={{
               backgroundImage: `linear-gradient(#cbd5e1 1px, transparent 1px), linear-gradient(to right, #cbd5e1 1px, transparent 1px)`,
               backgroundSize: '20px 20px'
@@ -2089,7 +2089,7 @@ function ChatPage() {
         )}
         {chatBackground === 'diagonal' && (
           <div
-            className="absolute inset-0 opacity-[0.4] dark:opacity-[0.1] pointer-events-none"
+            className="fixed inset-0 opacity-[0.4] dark:opacity-[0.1] pointer-events-none z-0"
             style={{
               backgroundImage: `repeating-linear-gradient(45deg, #e2e8f0 0px, #e2e8f0 2px, transparent 2px, transparent 12px)`
             }}
