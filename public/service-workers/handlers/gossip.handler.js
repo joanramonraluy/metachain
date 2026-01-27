@@ -58,15 +58,37 @@ function handleGetPeers(pubkey, maxjson) {
 }
 
 function handlePeersResponse(pubkey, maxjson) {
-    MDS.log("📥 [GOSSIP] Received " + (maxjson.peers ? maxjson.peers.length : 0) + " peers");
+    var peerCount = (maxjson.peers ? maxjson.peers.length : 0);
+    var senderAlias = pubkey ? pubkey.substring(0, 10) : "P2P-broadcast";
+
+    MDS.log("📥 [GOSSIP] Received " + peerCount + " peers from " + senderAlias);
 
     if (maxjson.peers && Array.isArray(maxjson.peers)) {
+        var processedCount = 0;
+        var skippedCount = 0;
+
         for (var i = 0; i < maxjson.peers.length; i++) {
             var peer = maxjson.peers[i];
+
+            // Debug each peer
+            MDS.log("🔍 [GOSSIP-PEER] " + (i + 1) + "/" + peerCount + ": " +
+                (peer.alias || "no-alias") + " (" +
+                (peer.pubkey ? peer.pubkey.substring(0, 10) : "no-pubkey") + "...)");
+
             if (peer.pubkey && peer.address && peer.alias) {
+                MDS.log("✅ [GOSSIP-PEER] Processing beacon for: " + peer.alias);
                 handleBeacon(peer, 'GOSSIP');
+                processedCount++;
+            } else {
+                MDS.log("⚠️ [GOSSIP-PEER] Skipping incomplete peer - pubkey:" +
+                    !!peer.pubkey + " address:" + !!peer.address + " alias:" + !!peer.alias);
+                skippedCount++;
             }
         }
+
+        MDS.log("📊 [GOSSIP] Summary: " + processedCount + " processed, " + skippedCount + " skipped");
+    } else {
+        MDS.log("⚠️ [GOSSIP] No valid peers array in response");
     }
 }
 
@@ -168,8 +190,13 @@ function sendWelcomePackage(targetPubkey, targetAlias) {
 
             var hexData = "0x" + utf8ToHex(JSON.stringify(responsePayload)).toUpperCase();
 
-            MDS.cmd("maxima action:send publickey:" + targetPubkey + " application:metachain data:" + hexData + " poll:false", function () {
-                MDS.log("✅ [GOSSIP] Welcome Package sent to " + targetAlias);
+            // Send via P2P broadcast instead of MAXIMA to avoid contact requirement
+            MDS.cmd("message data:" + hexData, function (msgRes) {
+                if (msgRes.status) {
+                    MDS.log("✅ [GOSSIP] Welcome Package broadcast to network");
+                } else {
+                    MDS.log("⚠️ [GOSSIP] Failed to broadcast Welcome Package: " + (msgRes.error || "unknown error"));
+                }
             });
         }
     });

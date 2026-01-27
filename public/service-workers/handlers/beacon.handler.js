@@ -5,15 +5,26 @@
 
 function handleBeacon(beacon, source) {
     try {
+        // Validation logging
         if (!beacon.pubkey || !beacon.address || !beacon.alias) {
+            MDS.log("⚠️ [BEACON-REJECT] Missing required fields from " + source +
+                " - pubkey:" + !!beacon.pubkey + " address:" + !!beacon.address + " alias:" + !!beacon.alias);
             return;
         }
 
         // Debounce (except for important sources)
         var isImportant = (source === 'GOSSIP' || source === 'BOOTSTRAP');
         if (!isImportant && BEACON_CACHE[beacon.pubkey] && (Date.now() - BEACON_CACHE[beacon.pubkey] < 10000)) {
+            MDS.log("⏭️ [BEACON-DEBOUNCE] Skipping " + beacon.alias + " from " + source + " (recently processed)");
             return;
         }
+
+        // Check if this is our own beacon
+        if (MY_MAXIMA_PK && beacon.pubkey === MY_MAXIMA_PK) {
+            MDS.log("⏭️ [BEACON-SELF] Ignoring own beacon from " + source);
+            return;
+        }
+
         BEACON_CACHE[beacon.pubkey] = Date.now();
 
         var now = Date.now();

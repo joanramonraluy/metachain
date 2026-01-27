@@ -1730,8 +1730,8 @@ WHERE(${addressClause}) AND status = 'pending'`;
     /**
      * Accept a contact request
      */
-    async acceptChatRequest(fromPublicKey: string, fromAddress: string): Promise<void> {
-        return contactRequestsService.acceptChatRequest(fromPublicKey, fromAddress);
+    async acceptChatRequest(fromPublicKey: string, fromAddress: string, options?: { skipMessageInsert?: boolean }): Promise<void> {
+        return contactRequestsService.acceptChatRequest(fromPublicKey, fromAddress, options);
     }
 
     /**
@@ -1766,8 +1766,11 @@ WHERE(${addressClause}) AND status = 'pending'`;
     /**
      * Decline a contact request
      */
-    async declineChatRequest(fromPublicKey: string): Promise<void> {
-        return contactRequestsService.declineChatRequest(fromPublicKey);
+    /**
+     * Decline a contact request
+     */
+    async declineChatRequest(fromPublicKey: string, options?: { skipMessageInsert?: boolean }): Promise<void> {
+        return contactRequestsService.declineChatRequest(fromPublicKey, options);
     }
 
     /**
@@ -1785,12 +1788,12 @@ WHERE(${addressClause}) AND status = 'pending'`;
         return contactRequestsService.sendMaximaContactRequest(toAddress, toPublicKey);
     }
 
-    async acceptMaximaContactRequest(fromPublicKey: string, fromAddress: string): Promise<void> {
-        return contactRequestsService.acceptMaximaContactRequest(fromPublicKey, fromAddress);
+    async acceptMaximaContactRequest(fromPublicKey: string, fromAddress: string, options?: { skipMessageInsert?: boolean }): Promise<void> {
+        return contactRequestsService.acceptMaximaContactRequest(fromPublicKey, fromAddress, options);
     }
 
-    async declineMaximaContactRequest(fromPublicKey: string, _fromAddress: string): Promise<void> {
-        return contactRequestsService.declineMaximaContactRequest(fromPublicKey, _fromAddress);
+    async declineMaximaContactRequest(fromPublicKey: string, _fromAddress: string, options?: { skipMessageInsert?: boolean }): Promise<void> {
+        return contactRequestsService.declineMaximaContactRequest(fromPublicKey, _fromAddress, options);
     }
 
     /**

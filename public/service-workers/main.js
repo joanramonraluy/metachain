@@ -177,11 +177,13 @@ MDS.init(function (msg) {
 
                 // ================== GOSSIP ==================
                 if (maxjson.type === "get_peers") {
+                    MDS.log("📨 [MAXIMA-GOSSIP] get_peers request from " + pubkey.substring(0, 10));
                     handleGetPeers(pubkey, maxjson);
                     return;
                 }
 
                 if (maxjson.type === "peers_response") {
+                    MDS.log("📨 [MAXIMA-GOSSIP] peers_response from " + pubkey.substring(0, 10));
                     handlePeersResponse(pubkey, maxjson);
                     return;
                 }
@@ -315,6 +317,9 @@ MDS.init(function (msg) {
                         }
                         MDS.log("📡 [P2P] Beacon: " + beacon.alias);
                         handleBeacon(beacon, 'P2P');
+                    } else if (beacon.app === "metachain" && beacon.type === "peers_response") {
+                        MDS.log("📨 [P2P-GOSSIP] peers_response broadcast received");
+                        handlePeersResponse(null, beacon);
                     }
                 } catch (e) {
                     // Silent fail

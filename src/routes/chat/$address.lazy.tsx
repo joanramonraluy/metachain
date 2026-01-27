@@ -1278,27 +1278,33 @@ function ChatPage() {
         const safePk = contactRequest.FROM_PUBLICKEY.replace(/'/g, "''");
         await minimaService.runSQL(`UPDATE MAXIMA_CONTACT_REQUESTS SET status='accepted', updated_at=${Date.now()} WHERE UPPER(from_publickey)=UPPER('${safePk}') AND status='pending'`);
 
-        console.log("[Chat] ✅ Local DB state forced to 'accepted' (Both Standard & Maxima tables)");
+        // Fix Missing Accept Message: Insert it optimistically NOW so it appears immediately
+        const now = Date.now();
+        const systemMsgSql = `
+            INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp)
+            VALUES('', '${safePk}', 'System', 'system', 'Chat request accepted', '', 'sent', 0, ${now}, NULL, ${now})
+        `;
+        await minimaService.runSQL(systemMsgSql);
+
+        console.log("[Chat] ✅ Local DB state forced to 'accepted' & system message added");
       } catch (dbErr) {
         console.warn("[Chat] ⚠️ Failed to force local DB update:", dbErr);
       }
 
-      // Perform network operations in background
-      // Note: acceptChatRequest will re-run the UPDATE SQL, which is fine (idempotent-ish)
-      minimaService.acceptChatRequest(contactRequest.FROM_PUBLICKEY, contact.currentaddress)
+      // Perform network operations in background (SKIP message insert to avoid duplicate)
+      minimaService.acceptChatRequest(contactRequest.FROM_PUBLICKEY, contact.currentaddress, { skipMessageInsert: true })
         .then(async () => {
           console.log("[Chat] ✅ Request accepted on network");
           await loadMessagesFromDB();
         })
         .catch(err => {
           console.error("[Chat] ❌ Network acceptance failed (queued?):", err);
-          // Optionally revert UI state, but for offline-first we usually persist the "accepted" state locally
         });
 
       console.log("[Chat] ✅ Optimistic accept triggered");
 
-      // Reload messages to show acceptance message (optimistic, but good to refresh if fast)
-      // await loadMessagesFromDB(); // Moved to inside promise success
+      // Reload messages to show acceptance message (optimistic)
+      await loadMessagesFromDB();
       // alert("Contact request accepted!"); // Removed as per user request
     } catch (err: any) {
       console.error("[Chat] Error accepting request:", err);
@@ -1314,24 +1320,54 @@ function ChatPage() {
     setProcessingRequest(true);
 
     try {
-      // Use the FROM_PUBLICKEY from the request (hex format) instead of contact.publickey (which might be Maxima address)
-      await minimaService.declineChatRequest(contactRequest.FROM_PUBLICKEY);
+      console.log(`[Chat] Declining contact request from ${contactRequest.FROM_PUBLICKEY}`);
 
-      // Clear all request-related states immediately
+      // OPTIMISTIC UPDATE: Clear the request immediately from UI
       setContactRequest(null);
-      setIsPendingOutgoing(false); // Ensure this is cleared too if it was mistakenly set
+      setIsPendingOutgoing(false);
+      setProcessingRequest(false); // Stop spinner immediately
 
-      // Reload messages to show the system message
-      await loadMessagesFromDB();
+      // PERSISTENCE FIX: Force local DB update immediately
+      try {
+        await contactRequestsService.updateLocalRequestStatus(contactRequest.FROM_PUBLICKEY, 'declined');
 
-      // Re-verify pending status (in case there are other requests, but mainly to sync state)
-      checkPending(); // Add this!
+        // Fix Missing Decline Message: Insert it optimistically NOW so it appears immediately
+        const now = Date.now();
+        const safePk = contactRequest.FROM_PUBLICKEY.replace(/'/g, "''");
+        const systemMsgSql = `
+            INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp)
+            VALUES('', '${safePk}', 'System', 'system', 'Chat request declined', '', 'sent', 0, ${now}, NULL, ${now})
+         `;
+        await minimaService.runSQL(systemMsgSql);
+
+        console.log("[Chat] ✅ Local DB state forced to 'declined' & system message added");
+      } catch (dbErr) {
+        console.warn("[Chat] ⚠️ Failed to force local DB update:", dbErr);
+      }
+
+      // Perform network operations in background (SKIP message insert to avoid duplicate)
+      minimaService.declineChatRequest(contactRequest.FROM_PUBLICKEY, { skipMessageInsert: true })
+        .then(async () => {
+          console.log("[Chat] ✅ Request declined on network");
+          await loadMessagesFromDB();
+        })
+        .catch(err => {
+          console.error("[Chat] ❌ Network decline failed (queued?):", err);
+        });
+
+      console.log("[Chat] ✅ Optimistic decline triggered");
+
+      // Reload messages to show system message (optimistic)
+      // await loadMessagesFromDB();  // Moved to inside promise success
+
+      // Re-verify pending status
+      checkPending();
 
     } catch (err: any) {
       console.error("Error declining request:", err);
-      alert(`Failed to decline request: ${err.message || err}`);
+      // alert(`Failed to decline request: ${err.message || err}`); // Suppress alert for optimistic flow
     } finally {
-      setProcessingRequest(false);
+      // setProcessingRequest(false); // Handled above
     }
   };
 
@@ -1931,14 +1967,15 @@ function ChatPage() {
         contactName={contact?.extradata?.name || "this contact"}
       />
       {/* Chat Info Dialog */}
+      {/* Chat Info Dialog */}
       {showChatInfo && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-gray-800 md:bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full p-6 animate-in zoom-in-95 fade-in duration-200 border border-gray-700 md:border-gray-200 dark:border-gray-700">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-white md:text-gray-900">Chat Statistics</h3>
+              <h3 className="text-lg font-bold text-white md:text-gray-900 dark:text-white">Chat Statistics</h3>
               <button
                 onClick={() => setShowChatInfo(false)}
-                className="text-gray-400 md:text-gray-500 hover:text-gray-300 md:hover:text-gray-700 transition-colors"
+                className="text-gray-400 md:text-gray-500 hover:text-gray-300 md:hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1948,28 +1985,28 @@ function ChatPage() {
 
             <div className="space-y-4">
               {/* Total Messages */}
-              <div className="flex items-center justify-between p-3 bg-gray-700/50 md:bg-gray-50 rounded-lg">
+              <div className="flex items-center justify-between p-3 bg-gray-700/50 md:bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-primary-500/20 rounded-full flex items-center justify-center">
-                    <svg className="w-5 h-5 text-primary-400 md:text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 text-primary-400 md:text-primary-600 dark:text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                     </svg>
                   </div>
-                  <span className="font-medium text-gray-300 md:text-gray-700">Total Messages</span>
+                  <span className="font-medium text-gray-300 md:text-gray-700 dark:text-gray-300">Total Messages</span>
                 </div>
-                <span className="text-lg font-bold text-white md:text-gray-900">{messages.length}</span>
+                <span className="text-lg font-bold text-white md:text-gray-900 dark:text-white">{messages.length}</span>
               </div>
 
               {/* Charms Sent/Received */}
-              <div className="flex items-center justify-between p-3 bg-gray-700/50 md:bg-gray-50 rounded-lg">
+              <div className="flex items-center justify-between p-3 bg-gray-700/50 md:bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-purple-500/20 rounded-full flex items-center justify-center">
                     <span className="text-xl">✨</span>
                   </div>
-                  <span className="font-medium text-gray-300 md:text-gray-700">Charms</span>
+                  <span className="font-medium text-gray-300 md:text-gray-700 dark:text-gray-300">Charms</span>
                 </div>
                 <div className="text-right">
-                  <div className="text-sm text-gray-400 md:text-gray-500">
+                  <div className="text-sm text-gray-400 md:text-gray-500 dark:text-gray-400">
                     Sent: {messages.filter(m => m.charm && m.fromMe).length} |
                     Received: {messages.filter(m => m.charm && !m.fromMe).length}
                   </div>
@@ -1977,17 +2014,17 @@ function ChatPage() {
               </div>
 
               {/* Tokens Transferred */}
-              <div className="flex items-center justify-between p-3 bg-gray-700/50 md:bg-gray-50 rounded-lg">
+              <div className="flex items-center justify-between p-3 bg-gray-700/50 md:bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-green-500/20 rounded-full flex items-center justify-center">
-                    <svg className="w-5 h-5 text-green-400 md:text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 text-green-400 md:text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                   </div>
-                  <span className="font-medium text-gray-300 md:text-gray-700">Token Transfers</span>
+                  <span className="font-medium text-gray-300 md:text-gray-700 dark:text-gray-300">Token Transfers</span>
                 </div>
                 <div className="text-right">
-                  <div className="text-sm text-gray-400 md:text-gray-500">
+                  <div className="text-sm text-gray-400 md:text-gray-500 dark:text-gray-400">
                     Sent: {messages.filter(m => m.tokenAmount && m.fromMe).length} |
                     Received: {messages.filter(m => m.tokenAmount && !m.fromMe).length}
                   </div>
@@ -1996,16 +2033,16 @@ function ChatPage() {
 
               {/* First Message Date */}
               {messages.length > 0 && messages[0].timestamp && (
-                <div className="flex items-center justify-between p-3 bg-gray-700/50 md:bg-gray-50 rounded-lg">
+                <div className="flex items-center justify-between p-3 bg-gray-700/50 md:bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-orange-500/20 rounded-full flex items-center justify-center">
-                      <svg className="w-5 h-5 text-orange-400 md:text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-5 h-5 text-orange-400 md:text-orange-600 dark:text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                       </svg>
                     </div>
-                    <span className="font-medium text-gray-300 md:text-gray-700">First Message</span>
+                    <span className="font-medium text-gray-300 md:text-gray-700 dark:text-gray-300">First Message</span>
                   </div>
-                  <span className="text-sm text-gray-400 md:text-gray-600">
+                  <span className="text-sm text-gray-400 md:text-gray-600 dark:text-gray-400">
                     {new Date(messages[0].timestamp).toLocaleDateString()}
                   </span>
                 </div>
@@ -2089,25 +2126,42 @@ function ChatPage() {
                           console.log("[UI] Accepting Maxima Request (via Service)");
                           if (contact && contact.publickey) {
                             try {
-                              // Use the Service method which is proven to work in Contact Info page
-                              // It handles both the Maxima command and the DB update/notification
+                              // OPTIMISTIC UPDATE: Clear the request immediately from UI (BEFORE DB operations!)
+                              setContactRequest(null);
+                              setBlockReason('none');
 
                               // PERSISTENCE FIX: Force local DB update immediately to prevent banner reappearing
                               // This is crucial for offline mode or slow network
                               try {
                                 const validPk = contact.publickey.replace(/'/g, "''");
-                                await minimaService.runSQL(`UPDATE MAXIMA_CONTACT_REQUESTS SET status='accepted', updated_at=${Date.now()} WHERE UPPER(from_publickey)=UPPER('${validPk}') AND status='pending'`);
-                                console.log("[Chat] ✅ Forced local Maxima request update");
+                                const now = Date.now();
+
+                                await minimaService.runSQL(`UPDATE MAXIMA_CONTACT_REQUESTS SET status='accepted', updated_at=${now} WHERE UPPER(from_publickey)=UPPER('${validPk}') AND status='pending'`);
+
+                                // Insert system message optimistically
+                                const systemMsgSql = `
+                                    INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp)
+                                    VALUES('', '${validPk}', 'System', 'system', 'Maxima contact accepted', '', 'sent', 0, ${now}, NULL, ${now})
+                                `;
+                                await minimaService.runSQL(systemMsgSql);
+
+                                console.log("[Chat] ✅ Forced local Maxima request update to 'accepted' & added message");
+
+                                // Background network call (SKIP message insert, NO AWAIT)
+                                minimaService.acceptMaximaContactRequest(contact.publickey, contact.currentaddress || "", { skipMessageInsert: true })
+                                  .then(() => {
+                                    console.log("[Chat] ✅ Maxima request accepted on network");
+                                    loadMessagesFromDB();
+                                  })
+                                  .catch(e => console.error("Error accepting Maxima request on network:", e));
+
+                                // Refresh pending state and reload messages
+                                checkPending();
+                                loadMessagesFromDB();
                               } catch (localErr) {
                                 console.warn("[Chat] ⚠️ Failed to force local update:", localErr);
+                                alert("Failed to accept locally");
                               }
-
-                              await minimaService.acceptMaximaContactRequest(contact.publickey, contact.currentaddress || "");
-
-                              // Refresh banner without reload AND clear state explicitly
-                              setContactRequest(null);
-                              checkPending();
-                              loadMessagesFromDB();
                             } catch (e) {
                               console.error("Error accepting Maxima request:", e);
                               alert("Failed to accept Maxima request");
@@ -2125,17 +2179,40 @@ function ChatPage() {
                     <button
                       onClick={async () => {
                         if ((contactRequest as any)?.type === 'maxima') {
-                          console.log("[UI] Declining Maxima Request");
+                          console.log("[UI] Declining Maxima Request (Optimistic)");
                           if (contact && contact.publickey) {
+
+                            // OPTIMISTIC UPDATE
+                            setContactRequest(null);
+
                             try {
-                              await minimaService.declineMaximaContactRequest(contact.publickey, contact.currentaddress || "");
-                              // Refresh banner without reload AND clear state explicitly
-                              setContactRequest(null);
+                              // Force local DB update immediately
+                              const validPk = contact.publickey.replace(/'/g, "''");
+                              const now = Date.now();
+
+                              await minimaService.runSQL(`UPDATE MAXIMA_CONTACT_REQUESTS SET status='declined', updated_at=${now} WHERE UPPER(from_publickey)=UPPER('${validPk}') AND status='pending'`);
+
+                              // Insert system message optimistically
+                              const systemMsgSql = `
+                                INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp)
+                                VALUES('', '${validPk}', 'System', 'system', 'Maxima contact declined', '', 'sent', 0, ${now}, NULL, ${now})
+                              `;
+                              await minimaService.runSQL(systemMsgSql);
+
+                              console.log("[Chat] ✅ Forced local Maxima request update to 'declined'");
+
+                              // Background network call (SKIP message insert)
+                              minimaService.declineMaximaContactRequest(contact.publickey, contact.currentaddress || "", { skipMessageInsert: true })
+                                .then(() => {
+                                  console.log("[Chat] ✅ Maxima request declined on network");
+                                  loadMessagesFromDB();
+                                })
+                                .catch(e => console.error("Error declining Maxima request on network:", e));
+
                               checkPending();
-                              loadMessagesFromDB();
+                              // loadMessagesFromDB(); // Done in background success
                             } catch (e) {
-                              console.error("Error declining Maxima request:", e);
-                              alert("Failed to decline Maxima request");
+                              console.error("Error updating local Maxima request:", e);
                             }
                           }
                         } else {

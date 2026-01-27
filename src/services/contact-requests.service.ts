@@ -350,7 +350,7 @@ function getStatusDescription(status: string) {
     return status.replace(/[^a-z]/g, '');
 }
 
-export async function acceptChatRequest(fromPublicKey: string, fromAddress: string): Promise<void> {
+export async function acceptChatRequest(fromPublicKey: string, fromAddress: string, options?: { skipMessageInsert?: boolean }): Promise<void> {
     try {
         console.log(`✅ [Contact Request] Accepting request from ${fromPublicKey}`);
 
@@ -399,16 +399,18 @@ export async function acceptChatRequest(fromPublicKey: string, fromAddress: stri
 
         await MDS.cmd.maxima({ params: sendParams });
 
-        // Save system message locally (if not duplicate within 10s)
-        const checkDupSql = `SELECT * FROM CHAT_MESSAGES WHERE publickey='${safeFromPublicKey}' AND message='User chat accepted' AND date > ${now - 10000}`;
-        const dupRes = await runSQL(checkDupSql);
+        // Save system message locally (unless skipped)
+        if (!options?.skipMessageInsert) {
+            const checkDupSql = `SELECT * FROM CHAT_MESSAGES WHERE publickey='${safeFromPublicKey}' AND message='Chat request accepted' AND date > ${now - 10000}`;
+            const dupRes = await runSQL(checkDupSql);
 
-        if (!dupRes.rows || dupRes.rows.length === 0) {
-            const insertMsgSql = `
-                INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp)
-                VALUES ('', '${safeFromPublicKey}', 'System', 'system', 'User chat accepted', '', 'sent', 0, ${now}, NULL, ${now})
-            `;
-            await runSQL(insertMsgSql);
+            if (!dupRes.rows || dupRes.rows.length === 0) {
+                const insertMsgSql = `
+                    INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp)
+                    VALUES ('', '${safeFromPublicKey}', 'System', 'system', 'Chat request accepted', '', 'sent', 0, ${now}, NULL, ${now})
+                `;
+                await runSQL(insertMsgSql);
+            }
         }
         console.log("✅ [Contact Request] Request accepted and confirmation sent");
     } catch (err) {
@@ -417,7 +419,7 @@ export async function acceptChatRequest(fromPublicKey: string, fromAddress: stri
     }
 }
 
-export async function declineChatRequest(fromPublicKey: string): Promise<void> {
+export async function declineChatRequest(fromPublicKey: string, options?: { skipMessageInsert?: boolean }): Promise<void> {
     try {
         const now = Date.now();
         const safeFromPublicKey = escapeSql(fromPublicKey);
@@ -426,12 +428,14 @@ export async function declineChatRequest(fromPublicKey: string): Promise<void> {
         await runSQL(sql);
         console.log("✅ [Contact Request] Request declined");
 
-        // Add system message
-        const chatMessageSql = `
-            INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp)
-            VALUES('', '${safeFromPublicKey}', 'System', 'system', 'Chat request declined', '', 'sent', 0, ${now}, NULL, ${now})
-        `;
-        await runSQL(chatMessageSql);
+        // Add system message (unless skipped)
+        if (!options?.skipMessageInsert) {
+            const chatMessageSql = `
+                INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp)
+                VALUES('', '${safeFromPublicKey}', 'System', 'system', 'Chat request declined', '', 'sent', 0, ${now}, NULL, ${now})
+            `;
+            await runSQL(chatMessageSql);
+        }
 
         // Send decline notification
         const payload = {
@@ -625,7 +629,7 @@ export async function sendMaximaContactRequest(toAddress: string, toPublicKey?: 
     }
 }
 
-export async function acceptMaximaContactRequest(fromPublicKey: string, fromAddress: string): Promise<void> {
+export async function acceptMaximaContactRequest(fromPublicKey: string, fromAddress: string, options?: { skipMessageInsert?: boolean }): Promise<void> {
     try {
         console.log(`✅ [Maxima Contact] Accepting request from ${fromPublicKey}`);
 
@@ -647,12 +651,14 @@ export async function acceptMaximaContactRequest(fromPublicKey: string, fromAddr
 
         const myAddress = await getMyMaximaAddress();
 
-        // Save system message locally
-        const insertMsgSql = `
-            INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp)
-            VALUES ('', '${safeFromPk}', 'System', 'system', 'Maxima contact accepted', '', 'sent', 0, ${now}, NULL, ${now})
-        `;
-        await runSQL(insertMsgSql);
+        // Save system message locally (unless skipped)
+        if (!options?.skipMessageInsert) {
+            const insertMsgSql = `
+                INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp)
+                VALUES ('', '${safeFromPk}', 'System', 'system', 'Maxima contact accepted', '', 'sent', 0, ${now}, NULL, ${now})
+            `;
+            await runSQL(insertMsgSql);
+        }
 
         const payload = {
             type: "maxima_contact_accepted",
@@ -684,7 +690,7 @@ export async function acceptMaximaContactRequest(fromPublicKey: string, fromAddr
     }
 }
 
-export async function declineMaximaContactRequest(fromPublicKey: string, _fromAddress: string): Promise<void> {
+export async function declineMaximaContactRequest(fromPublicKey: string, _fromAddress: string, options?: { skipMessageInsert?: boolean }): Promise<void> {
     try {
         console.log(`🚫 [Maxima Contact] Declining request from ${fromPublicKey}`);
 
@@ -694,12 +700,14 @@ export async function declineMaximaContactRequest(fromPublicKey: string, _fromAd
         const updateSql = `UPDATE MAXIMA_CONTACT_REQUESTS SET status='declined', updated_at=${now} WHERE from_publickey='${safeFromPk}' AND status='pending'`;
         await runSQL(updateSql);
 
-        // Save system message locally
-        const insertMsgSql = `
-            INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp)
-            VALUES ('', '${safeFromPk}', 'System', 'system', 'Maxima contact declined', '', 'sent', 0, ${now}, NULL, ${now})
-        `;
-        await runSQL(insertMsgSql);
+        // Save system message locally (unless skipped)
+        if (!options?.skipMessageInsert) {
+            const insertMsgSql = `
+                INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp)
+                VALUES ('', '${safeFromPk}', 'System', 'system', 'Maxima contact declined', '', 'sent', 0, ${now}, NULL, ${now})
+            `;
+            await runSQL(insertMsgSql);
+        }
 
         const mxAddress = await resolveMaximaAddress(fromPublicKey);
 
