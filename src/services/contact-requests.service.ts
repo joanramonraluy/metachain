@@ -175,8 +175,8 @@ export async function sendChatRequest(toAddress: string, myName: string, myAvata
 
         // Insert system message
         const insertChatSql = `
-            INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date)
-            VALUES ('', '${safeHexPublicKey}', 'System', 'system', 'Chat request sent', '', 'sent', 0, ${now})
+            INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp)
+            VALUES ('', '${safeHexPublicKey}', 'System', 'system', 'Chat request sent', '', 'sent', 0, ${now}, NULL, ${now})
         `;
         await runSQL(insertChatSql);
         console.log("✅ [Contact Request] Chat entry created for outgoing request");
@@ -333,6 +333,23 @@ export async function getChatRequests(myPublicKey: string): Promise<any[]> {
     }
 }
 
+// Helper to update status immediately (for optimistic UI support)
+export async function updateLocalRequestStatus(publickey: string, status: string): Promise<void> {
+    const safePk = escapeSql(publickey);
+    const now = Date.now();
+    // Using simple concatenation because Minima SQL support for stored procedures/prepared statements var is limited/unknown
+    // Use UPPER() to be safe against case mismatches
+    const sql = `UPDATE CONTACT_REQUESTS SET status='${getStatusDescription(status)}', updated_at=${now} WHERE UPPER(from_publickey)=UPPER('${safePk}') AND status='pending'`;
+    console.log(`🛠️ [Contact Request] Forcing status update: ${sql}`);
+    const res = await runSQL(sql);
+    console.log(`✅ [Contact Request] Forced status update result:`, JSON.stringify(res));
+}
+
+function getStatusDescription(status: string) {
+    // Basic sanitization
+    return status.replace(/[^a-z]/g, '');
+}
+
 export async function acceptChatRequest(fromPublicKey: string, fromAddress: string): Promise<void> {
     try {
         console.log(`✅ [Contact Request] Accepting request from ${fromPublicKey}`);
@@ -349,6 +366,7 @@ export async function acceptChatRequest(fromPublicKey: string, fromAddress: stri
             : fromAddress;
 
         // Update request status
+        // We call the helper or just do it here. Doing it here ensures we don't break existing flow if helper changes.
         const updateSql = `UPDATE CONTACT_REQUESTS SET status='accepted', updated_at=${now} WHERE from_publickey='${safeFromPublicKey}' AND status='pending'`;
         await runSQL(updateSql);
 
@@ -387,8 +405,8 @@ export async function acceptChatRequest(fromPublicKey: string, fromAddress: stri
 
         if (!dupRes.rows || dupRes.rows.length === 0) {
             const insertMsgSql = `
-                INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date)
-                VALUES ('', '${safeFromPublicKey}', 'System', 'system', 'User chat accepted', '', 'sent', 0, ${now})
+                INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp)
+                VALUES ('', '${safeFromPublicKey}', 'System', 'system', 'User chat accepted', '', 'sent', 0, ${now}, NULL, ${now})
             `;
             await runSQL(insertMsgSql);
         }
@@ -410,8 +428,8 @@ export async function declineChatRequest(fromPublicKey: string): Promise<void> {
 
         // Add system message
         const chatMessageSql = `
-            INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date)
-            VALUES('', '${safeFromPublicKey}', 'System', 'system', 'Chat request declined', '', 'sent', 0, ${now})
+            INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp)
+            VALUES('', '${safeFromPublicKey}', 'System', 'system', 'Chat request declined', '', 'sent', 0, ${now}, NULL, ${now})
         `;
         await runSQL(chatMessageSql);
 
@@ -515,8 +533,8 @@ export async function cancelChatRequest(toPublicKey: string): Promise<void> {
 
         // Add system message
         const chatMessageSql = `
-            INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date)
-            VALUES('', '${safeToPublicKey}', 'System', 'system', 'Chat request cancelled', '', 'sent', 0, ${now})
+            INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp)
+            VALUES('', '${safeToPublicKey}', 'System', 'system', 'Chat request cancelled', '', 'sent', 0, ${now}, NULL, ${now})
         `;
         await runSQL(chatMessageSql);
         console.log("✅ [Contact Request] Added cancellation message to chat");
@@ -587,8 +605,8 @@ export async function sendMaximaContactRequest(toAddress: string, toPublicKey?: 
         const safeMyName = escapeSql(myName);
 
         // Insert system message
-        const chatSql = `INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) 
-                         VALUES('${safeMyName}', '${safeRecipPk}', 'System', 'system', 'Maxima contact request sent', '', 'sent', 0, ${now})`;
+        const chatSql = `INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp) 
+                         VALUES('${safeMyName}', '${safeRecipPk}', 'System', 'system', 'Maxima contact request sent', '', 'sent', 0, ${now}, NULL, ${now})`;
         await runSQL(chatSql);
 
         const deleteSql = `DELETE FROM MAXIMA_CONTACT_REQUESTS WHERE from_publickey='${safeMyPk}' AND to_publickey='${safeRecipPk}'`;
@@ -631,8 +649,8 @@ export async function acceptMaximaContactRequest(fromPublicKey: string, fromAddr
 
         // Save system message locally
         const insertMsgSql = `
-            INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date)
-            VALUES ('', '${safeFromPk}', 'System', 'system', 'Maxima contact accepted', '', 'sent', 0, ${now})
+            INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp)
+            VALUES ('', '${safeFromPk}', 'System', 'system', 'Maxima contact accepted', '', 'sent', 0, ${now}, NULL, ${now})
         `;
         await runSQL(insertMsgSql);
 
@@ -678,8 +696,8 @@ export async function declineMaximaContactRequest(fromPublicKey: string, _fromAd
 
         // Save system message locally
         const insertMsgSql = `
-            INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date)
-            VALUES ('', '${safeFromPk}', 'System', 'system', 'Maxima contact declined', '', 'sent', 0, ${now})
+            INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp)
+            VALUES ('', '${safeFromPk}', 'System', 'system', 'Maxima contact declined', '', 'sent', 0, ${now}, NULL, ${now})
         `;
         await runSQL(insertMsgSql);
 
@@ -779,8 +797,8 @@ export async function cancelMaximaContactRequest(toPublicKey: string): Promise<v
 
             // Insert visual system message locally
             const now = Date.now();
-            const sqlLocal = `INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) 
-                              VALUES('', '${safeToPk}', 'System', 'system', 'Maxima contact request cancelled', '', 'sent', 0, ${now})`;
+            const sqlLocal = `INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp) 
+                              VALUES('', '${safeToPk}', 'System', 'system', 'Maxima contact request cancelled', '', 'sent', 0, ${now}, NULL, ${now})`;
             await runSQL(sqlLocal);
 
         } catch (sendErr) {

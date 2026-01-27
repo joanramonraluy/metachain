@@ -126,6 +126,12 @@ export async function initDB(): Promise<void> {
                 MDS.sql(alterSql2, (alterRes: any) => {
                     if (alterRes.status) console.log("📂 [DB] sender_seq column added/verified in CHAT_MESSAGES");
                 });
+
+                // Migration: Add original_timestamp column for cross-peer sorting
+                const alterSql3 = "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS original_timestamp BIGINT DEFAULT 0";
+                MDS.sql(alterSql3, (alterRes: any) => {
+                    if (alterRes.status) console.log("📂 [DB] original_timestamp column added/verified in CHAT_MESSAGES");
+                });
             }
         });
 

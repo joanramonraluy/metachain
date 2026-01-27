@@ -9,6 +9,7 @@ import MessageBubble from "../../components/chat/MessageBubble";
 
 import type { EmojiClickData } from "emoji-picker-react";
 import { minimaService } from "../../services/minima.service";
+import * as contactRequestsService from '../../services/contact-requests.service';
 import { transactionService } from "../../services/transaction.service";
 import { requestProfile } from "../../services/profile.service";
 import InviteDialog from "../../components/chat/InviteDialog";
@@ -95,12 +96,13 @@ function ChatPage() {
 
     // Sort by originalTimestamp if available (sender time), else fallback to local timestamp (arrival time)
     // This fixes ordering when network delivery is slightly out of order
-    return unique.sort((a, b) => {
+    const sorted = unique.sort((a, b) => {
       // 1. Same sender priority: Sequence Number
       // If messages are from the same person (both Me or both Them), respect the sequence number absolutely.
       // This fixes cases where recent messages have slightly mixed timestamps (e.g. Async insertion).
       // CRITICAL FIX: Check for != null instead of truthy to properly handle sender_seq=0 (pending transactions)
-      if (a.fromMe === b.fromMe && a.sender_seq != null && b.sender_seq != null) {
+      // 1. Same sender logic (Ignored for System messages - they rely on timestamp)
+      if (a.fromMe === b.fromMe && !a.isSystem && !b.isSystem && a.sender_seq != null && b.sender_seq != null) {
         // If either sequence is 0 (pending), treat it specially:
         // - 0 means "most recent pending", should come AFTER all confirmed messages
         // - Compare by timestamp if BOTH are 0 (multiple pending items)
@@ -125,6 +127,17 @@ function ChatPage() {
 
       return timeA - timeB;
     });
+
+    // Debug Log
+    // console.log("📊 [SORT DEBUG] Sorted Messages:", JSON.stringify(sorted.map(m => ({
+    //   txt: m.text?.substring(0, 20),
+    //   seq: m.sender_seq,
+    //   orig: m.originalTimestamp,
+    //   ts: m.timestamp,
+    //   sys: m.isSystem
+    // }))));
+
+    return sorted;
   };
   const { address } = Route.useParams();
   const searchParams = Route.useSearch(); // Get search parameters
@@ -306,9 +319,10 @@ function ChatPage() {
             }
           }
 
-          // FIX: If stored minimaaddress is invalid (starts with MxG.. which is Maxima ID), clear it
-          if (c.extradata?.minimaaddress && c.extradata.minimaaddress.startsWith("MxG")) {
-            console.warn("⚠️ [CHAT] Found contact with INVALID minimaaddress (MxG...), clearing it for safety.");
+          // FIX: Only clear if it looks like a Maxima Contact Address (contains @)
+          // Minima Wallet addresses start with Mx but do NOT contain @
+          if (c.extradata?.minimaaddress && c.extradata.minimaaddress.includes("@")) {
+            console.warn("⚠️ [CHAT] Found contact with INVALID minimaaddress (Maxima ID detected), clearing it.");
             if (c.extradata) c.extradata.minimaaddress = "";
           }
 
@@ -786,12 +800,32 @@ function ChatPage() {
             isCharm,
             tokenAmount,
             username: row.USERNAME,
+            // ROBUST FIX: Case-insensitive check and log for debugging
+            isSystem: (() => {
+              const u = row.USERNAME ? String(row.USERNAME).trim() : '';
+              const t = row.TYPE ? String(row.TYPE).trim() : '';
+              const m = row.MESSAGE ? String(row.MESSAGE).trim() : '';
+
+              // Check 1: Username is System (case insensitive)
+              if (u.toLowerCase() === 'system') return true;
+
+              // Check 2: Type is system (case insensitive)
+              if (t.toLowerCase() === 'system') return true;
+
+              // Check 3: Automated system event text patterns (fallback)
+              if (m.toLowerCase().includes('chat accepted')) return true;
+              if (m.toLowerCase().includes('request accepted')) return true;
+              if (m.toLowerCase().includes('chat request sent')) return true;
+              if (m.toLowerCase().includes('user chat accepted')) return true;
+
+              return false;
+            })(),
             date: row.DATE,
             message: row.MESSAGE,
             amount: row.AMOUNT,
             fromMe: row.USERNAME === "Me",
             charm: charmObj,
-            sender_seq: row.SENDER_SEQ, // Map sequence number
+            sender_seq: row.SENDER_SEQ != null ? Number(row.SENDER_SEQ) : null, // Map sequence number (Strict Number)
             customid: row.CUSTOMID, // Map custom ID for deduplication
             originalTimestamp: row.ORIGINAL_TIMESTAMP // Correct time for sorting
           };
@@ -826,7 +860,8 @@ function ChatPage() {
             tokenAmount: msg.tokenAmount,
             sender_seq: msg.sender_seq,
             customid: msg.customid,
-            originalTimestamp: msg.originalTimestamp
+            originalTimestamp: msg.originalTimestamp,
+            isSystem: msg.isSystem
           } as ParsedMessage;
         }));
 
@@ -1223,21 +1258,52 @@ function ChatPage() {
 
     try {
       console.log(`[Chat] Accepting contact request from ${contactRequest.FROM_PUBLICKEY}`);
-      await minimaService.acceptChatRequest(contactRequest.FROM_PUBLICKEY, contact.currentaddress);
+
+      // OPTIMISTIC UPDATE: Clear the request immediately from UI
       setContactRequest(null);
+      setBlockReason('none');
+      setProcessingRequest(false); // Stop spinner immediately
 
-      // IMPORTANT: Unblock chat immediately for receiver
-      setBlockReason('none'); // Set block reason to none
-      console.log("[Chat] ✅ Request accepted, chat unblocked for receiver");
+      // PERSISTENCE FIX: Update DB immediately so background polls don't revert state
+      // This is crucial for offline mode
+      try {
+        // 1. Mark standard Contact Request as accepted (Case insensitive)
+        await contactRequestsService.updateLocalRequestStatus(contactRequest.FROM_PUBLICKEY, 'accepted');
 
-      // Reload messages to show acceptance message
-      await loadMessagesFromDB();
+        // 2. ALSO clear any matching "Maxima Contact Request" (New protocol)
+        // If we have a pending Maxima request from the same person, accepting the chat request 
+        // should strictly imply accepting the contact link too.
+        const safePk = contactRequest.FROM_PUBLICKEY.replace(/'/g, "''");
+        await minimaService.runSQL(`UPDATE MAXIMA_CONTACT_REQUESTS SET status='accepted', updated_at=${Date.now()} WHERE UPPER(from_publickey)=UPPER('${safePk}') AND status='pending'`);
+
+        console.log("[Chat] ✅ Local DB state forced to 'accepted' (Both Standard & Maxima tables)");
+      } catch (dbErr) {
+        console.warn("[Chat] ⚠️ Failed to force local DB update:", dbErr);
+      }
+
+      // Perform network operations in background
+      // Note: acceptChatRequest will re-run the UPDATE SQL, which is fine (idempotent-ish)
+      minimaService.acceptChatRequest(contactRequest.FROM_PUBLICKEY, contact.currentaddress)
+        .then(async () => {
+          console.log("[Chat] ✅ Request accepted on network");
+          await loadMessagesFromDB();
+        })
+        .catch(err => {
+          console.error("[Chat] ❌ Network acceptance failed (queued?):", err);
+          // Optionally revert UI state, but for offline-first we usually persist the "accepted" state locally
+        });
+
+      console.log("[Chat] ✅ Optimistic accept triggered");
+
+      // Reload messages to show acceptance message (optimistic, but good to refresh if fast)
+      // await loadMessagesFromDB(); // Moved to inside promise success
       // alert("Contact request accepted!"); // Removed as per user request
     } catch (err: any) {
       console.error("[Chat] Error accepting request:", err);
-      alert(`Failed to accept request: ${err.message || err}`);
+      // Only alert if it's a critical logic error, not network
+      // alert(`Failed to accept request: ${err.message || err}`);
     } finally {
-      setProcessingRequest(false);
+      // setProcessingRequest(false); // Handled above
     }
   };
 
@@ -2023,6 +2089,17 @@ function ChatPage() {
                             try {
                               // Use the Service method which is proven to work in Contact Info page
                               // It handles both the Maxima command and the DB update/notification
+
+                              // PERSISTENCE FIX: Force local DB update immediately to prevent banner reappearing
+                              // This is crucial for offline mode or slow network
+                              try {
+                                const validPk = contact.publickey.replace(/'/g, "''");
+                                await minimaService.runSQL(`UPDATE MAXIMA_CONTACT_REQUESTS SET status='accepted', updated_at=${Date.now()} WHERE UPPER(from_publickey)=UPPER('${validPk}') AND status='pending'`);
+                                console.log("[Chat] ✅ Forced local Maxima request update");
+                              } catch (localErr) {
+                                console.warn("[Chat] ⚠️ Failed to force local update:", localErr);
+                              }
+
                               await minimaService.acceptMaximaContactRequest(contact.publickey, contact.currentaddress || "");
 
                               // Refresh banner without reload AND clear state explicitly

@@ -1451,6 +1451,11 @@ WHERE(${addressClause}) AND status = 'pending'`;
      * Queries local DB for the last sequence number received from them,
      * then sends 'sync_status_check' to them.
      */
+    /**
+     * SMART SYNC: Send status check to a peer (Phase 1)
+     * Queries local DB for the last sequence number received from them,
+     * then sends 'sync_status_check' to them.
+     */
     async sendSyncStatusCheck(publickey: string) {
         // Query max sender_seq from this peer
         const sql = `SELECT MAX(sender_seq) as last_seq FROM CHAT_MESSAGES WHERE publickey='${publickey}'`;
@@ -1467,23 +1472,56 @@ WHERE(${addressClause}) AND status = 'pending'`;
 
             console.log(`🔄 [SMART-SYNC] Sending status check to ${publickey.substring(0, 10)} (Last Seq: ${lastSeq})`);
 
-            // Send via Maxima (no poll needed as this is a background check)
-            // Send via Maxima (no poll needed as this is a background check)
-            // FIXED: Use MDS.cmd.maxima directly to avoid 'S.cmd is not a function' error
-            // (MDS.cmd is a namespace object, not a function)
             const dataHex = this.utf8ToHex(JSON.stringify(payload));
 
-            // params.data is required as hex string by Maxima action:send
-            MDS.cmd.maxima({
-                params: {
+            // Helper to try sending
+            const trySend = async (addressOrKey: string, isAddress: boolean) => {
+                const params: any = {
                     action: "send",
-                    publickey: publickey,
+                    application: "metachain", // Added missing parameter
                     data: "0x" + dataHex,
                     poll: true
-                } as any
-            }).then((resp: any) => {
-                if (resp.status) console.log("✅ [SMART-SYNC] Check sent.");
-                else console.warn("⚠️ [SMART-SYNC] Failed to send check:", resp.error);
+                };
+
+                if (isAddress) {
+                    params.to = addressOrKey;
+                } else {
+                    params.publickey = addressOrKey;
+                }
+
+                return MDS.cmd.maxima({ params } as any);
+            };
+
+            // Attempt 1: Send via Public Key (Standard for Contacts)
+            trySend(publickey, false).then(async (resp: any) => {
+                if (resp.status) {
+                    console.log("✅ [SMART-SYNC] Check sent (via Public Key).");
+                } else {
+                    // ERROR HANDLING: "No Contact found" usually means we need to use their Address
+                    if (resp.error && (resp.error.includes("No Contact found") || resp.error.includes("not in contacts"))) {
+                        console.log("⚠️ [SMART-SYNC] Not a contact. Attempting to resolve address from DISCOVERED_PEERS...");
+
+                        // Attempt 2: Resolve Address locally
+                        const peerSql = `SELECT address FROM DISCOVERED_PEERS WHERE publickey='${publickey}' LIMIT 1`;
+                        const peerRes = await this.runSQL(peerSql);
+
+                        if (peerRes.rows && peerRes.rows.length > 0 && peerRes.rows[0].ADDRESS) {
+                            const address = peerRes.rows[0].ADDRESS;
+                            console.log(`🔄 [SMART-SYNC] Found address: ${address}. Retrying send...`);
+
+                            const retryResp = await trySend(address, true);
+                            if (retryResp.status) {
+                                console.log("✅ [SMART-SYNC] Check sent (via Resolved Address).");
+                            } else {
+                                console.warn("⚠️ [SMART-SYNC] Failed to send to address:", retryResp.error);
+                            }
+                        } else {
+                            console.warn("⚠️ [SMART-SYNC] Peer address not found in DB. Cannot send non-contact message.");
+                        }
+                    } else {
+                        console.warn("⚠️ [SMART-SYNC] Failed to send check:", resp.error);
+                    }
+                }
             });
 
         } catch (err) {

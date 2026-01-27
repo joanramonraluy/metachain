@@ -769,9 +769,9 @@ function ContactInfoPage() {
                 try {
                     const escapeSql = (str: string) => str.replace(/'/g, "''");
                     const safePk = escapeSql(contact.publickey);
-                    const insertMsg = `INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date)
-                                       VALUES('', '${safePk}', 'System', 'system', 'You removed this contact', '', 'sent', 0, ${Date.now()})`;
-                    await MDS.sql(insertMsg);
+                    const insertSql = `INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp) 
+                                       VALUES('', '${safePk}', 'System', 'system', 'You removed this contact', '', 'sent', 0, ${Date.now()}, NULL, ${Date.now()})`;
+                    await MDS.sql(insertSql);
                     console.log("💾 [CONTACT] Local system message inserted");
                 } catch (sqlErr) {
                     console.warn("⚠️ [CONTACT] Could not insert system message:", sqlErr);

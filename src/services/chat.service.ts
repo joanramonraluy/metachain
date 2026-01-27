@@ -276,13 +276,33 @@ class ChatService {
             });
         });
     }
-    async insertMessage(msg: ChatMessage & { date?: number }) {
-        const { roomname, publickey, username, type, message, filedata = "", state = "", amount = 0, date, sender_seq = 0 } = msg;
+    async insertMessage(msg: ChatMessage & { date?: number; originalTimestamp?: number }) {
+        const { roomname, publickey, username, type, message, filedata = "", state = "", amount = 0, date, sender_seq, originalTimestamp } = msg; // sender_seq is typically defined, but can be null/undefined
         const escapedMsg = message.replace(/'/g, "''");
         const timestamp = date || Date.now();
+        // Use provided originalTimestamp, or fallback to timestamp for regular messages.
+        // For system messages, it should be provided.
+        const msgOriginalTimestamp = originalTimestamp || timestamp;
+
+        // Handle sender_seq: If explicitly null (e.g. system message), use NULL. If undefined/0, use 0.
+        // But for SQL string interpolation:
+        // - If sender_seq is null/undefined for a normal message -> 0 (default)
+        // - If sender_seq is null for system message -> NULL
+        // We need the caller to be explicit. If missing, default to 0.
+        // Wait, system messages pass NULL? In TS 'null' or '0'?
+        // The SQL string interpolation needs strict handling.
+
+        // Wait, if I want NULL in SQL, I need "NULL" string or logic.
+        // But for generic 'insertMessage', defaulting to 0 is safer for existing calls.
+        // Callers who want NULL should use raw SQL or we expand this method.
+        // Let's stick to 0 default for now to match interface, BUT add original_timestamp.
+
+        // BETTER: IF msg.sender_seq IS NULL (explicitly), use NULL.
+        const sqlSeq = (sender_seq === null) ? "NULL" : (sender_seq || 0);
+
         const sql = `
-            INSERT INTO CHAT_MESSAGES (roomname,publickey,username,type,message,filedata,state,amount,date,customid,sender_seq)
-            VALUES ('${roomname}','${publickey}','${username}','${type}','${escapedMsg}','${filedata}','${state}',${amount},${timestamp},'${msg.customid || "0x00"}', ${sender_seq})
+            INSERT INTO CHAT_MESSAGES (roomname,publickey,username,type,message,filedata,state,amount,date,customid,sender_seq,original_timestamp)
+            VALUES ('${roomname}','${publickey}','${username}','${type}','${escapedMsg}','${filedata}','${state}',${amount},${timestamp},'${msg.customid || "0x00"}', ${sqlSeq}, ${msgOriginalTimestamp})
         `;
         try {
             await runSQL(sql);
@@ -356,13 +376,13 @@ class ChatService {
                 LEFT JOIN CHAT_STATUS s ON m.publickey = s.publickey
                 LEFT JOIN DISCOVERED_PEERS d ON UPPER(m.publickey) = UPPER(d.publickey)
                 LEFT JOIN METACHAIN_USERS u ON UPPER(m.publickey) = UPPER(u.publickey)
-                ORDER BY m.date DESC
+                ORDER BY COALESCE(m.original_timestamp, m.date) DESC
             `;
 
             MDS.sql(sql, (res: any) => {
                 if (!res.status) {
                     console.warn("⚠️ [SQL] Complex query failed, falling back to simple query:", res.error);
-                    const simpleSql = `SELECT * FROM CHAT_MESSAGES ORDER BY date DESC`;
+                    const simpleSql = `SELECT * FROM CHAT_MESSAGES ORDER BY COALESCE(original_timestamp, date) DESC`;
                     MDS.sql(simpleSql, (simpleRes: any) => {
                         if (!simpleRes.status || !simpleRes.rows) {
                             resolve([]);
@@ -395,13 +415,19 @@ class ChatService {
             }
 
             if (!chatMap.has(publickey)) {
+                // Use original_timestamp if available for the preview date
+                // This ensures the chat list sort order matches the message bubble sort order
+                const displayDate = (row.ORIGINAL_TIMESTAMP && Number(row.ORIGINAL_TIMESTAMP) > 0)
+                    ? Number(row.ORIGINAL_TIMESTAMP)
+                    : Number(row.DATE);
+
                 chatMap.set(publickey, {
                     publickey: row.PUBLICKEY,
                     roomname: row.DISCOVERY_ALIAS || row.ROOMNAME || "Unknown",
                     avatar: row.DISCOVERY_AVATAR,
                     lastMessage: row.MESSAGE,
                     lastMessageType: row.TYPE,
-                    lastMessageDate: Number(row.DATE),
+                    lastMessageDate: displayDate,
                     lastMessageAmount: row.AMOUNT,
                     username: row.USERNAME,
                     archived: row.ARCHIVED === true || row.ARCHIVED === 'TRUE' || row.ARCHIVED === 'true' || row.ARCHIVED === 1 || false,
