@@ -520,6 +520,7 @@ function ChatPage() {
 
     // CRITICAL: Maxima Contact Requests take precedence over everything else
     // We check this FIRST to ensure the banner appears if a request exists.
+    let hasMaximaRequest = false;
     try {
       const escapeSql = (str: string) => str.replace(/'/g, "''");
       // Relaxed query: Check for ANY pending request from this user to us
@@ -532,16 +533,16 @@ function ChatPage() {
       console.log(`🔍 [CHAT DEBUG] Maxima Req Result:`, maximaReqRes);
 
       if (maximaReqRes && maximaReqRes.rows && maximaReqRes.rows.length > 0) {
-        // Has pending Maxima contact request - always allow interaction (so they can accept)
-        setBlockReason('none');
+        // Has pending Maxima contact request - show banner but DO NOT auto-allow chat
+        // We must still respect the sender's "Allow Direct Messages" setting
+
         // FIX: Ensure UI sees the request object so the banner appears!
         const foundReq = maximaReqRes.rows[0];
         if (!foundReq.type) foundReq.type = 'maxima';
         setContactRequest(foundReq as any);
-        console.log("🔓 [CHAT] Allowing incoming Maxima contact request (always permitted)");
-        // Return here? No, let logic continue but we have set the state.
-        // Actually, if we found a request, we are done blocking.
-        return;
+        console.log("🔔 [CHAT] Found incoming Maxima contact request");
+
+        hasMaximaRequest = true;
       }
       // NOTE: Don't clear contactRequest here - there might be a pending CHAT request
     } catch (err) {
@@ -553,8 +554,8 @@ function ChatPage() {
       // Already Maxima contacts - always allow
       console.log("🔓 [CHAT] Allowing (Maxima Contact)");
       setBlockReason('none');
-    } else if (hasPendingIncoming) {
-      // They sent ME a request - I should be able to REPLY to them
+    } else if (hasPendingIncoming || hasMaximaRequest) {
+      // They sent ME a request - I should be able to REPLY to them IF they allow it
       // My allowNonContactChats only affects who can send TO me, not who I can send TO
       // Check if THEY allow non-contact chats (so I can send to them)
       if (recipientAllowsNonContacts) {
@@ -563,8 +564,9 @@ function ChatPage() {
       } else {
         // They don't allow non-contact chats, so I can't send to them
         // But they can send to me (they already did - the request)
+        // I must ACCEPT the request first to unlock the chat
         setBlockReason('recipient_restricted');
-        console.log("🔒 [CHAT] Blocking reply (recipient doesn't allow non-contact chats)");
+        console.log("🔒 [CHAT] Blocking reply (recipient doesn't allow non-contact chats). Must Accept Request first.");
       }
     } else if (hasPendingOutgoing) {
       // I sent THEM a request - check THEIR permission
