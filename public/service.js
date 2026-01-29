@@ -3195,6 +3195,13 @@ MDS.init(function (msg) {
         if (wasOffline && LAST_MAXIMA_EVENT_TIME > 0) {
             MDS.log("🔄 [RECONNECT] Node back online after offline period. Triggering history sync...");
             WAS_OFFLINE = true;
+
+            // Notify frontend to retry queued messages immediately
+            MDS.comms.solo(JSON.stringify({
+                type: 'RECONNECTED',
+                timestamp: now
+            }));
+
             // Trigger history sync from recent contacts
             if (typeof requestHistoryFromRecentContacts === 'function') {
                 requestHistoryFromRecentContacts();

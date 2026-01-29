@@ -20,6 +20,7 @@ export interface ChatMessage {
     amount?: number;
     date?: number;
     sender_seq?: number;
+    originalTimestamp?: number;
 }
 
 export type MessageCallback = (msg: any) => void;
@@ -276,39 +277,38 @@ class ChatService {
             });
         });
     }
-    async insertMessage(msg: ChatMessage & { date?: number; originalTimestamp?: number }) {
-        const { roomname, publickey, username, type, message, filedata = "", state = "", amount = 0, date, sender_seq, originalTimestamp } = msg; // sender_seq is typically defined, but can be null/undefined
+    async insertMessage(msg: ChatMessage) {
+        const { roomname, publickey, username, type, message, filedata = "", state = "", amount = 0, date, sender_seq, originalTimestamp, customid } = msg;
         const escapedMsg = message.replace(/'/g, "''");
         const timestamp = date || Date.now();
-        // Use provided originalTimestamp, or fallback to timestamp for regular messages.
-        // For system messages, it should be provided.
         const msgOriginalTimestamp = originalTimestamp || timestamp;
-
-        // Handle sender_seq: If explicitly null (e.g. system message), use NULL. If undefined/0, use 0.
-        // But for SQL string interpolation:
-        // - If sender_seq is null/undefined for a normal message -> 0 (default)
-        // - If sender_seq is null for system message -> NULL
-        // We need the caller to be explicit. If missing, default to 0.
-        // Wait, system messages pass NULL? In TS 'null' or '0'?
-        // The SQL string interpolation needs strict handling.
-
-        // Wait, if I want NULL in SQL, I need "NULL" string or logic.
-        // But for generic 'insertMessage', defaulting to 0 is safer for existing calls.
-        // Callers who want NULL should use raw SQL or we expand this method.
-        // Let's stick to 0 default for now to match interface, BUT add original_timestamp.
-
-        // BETTER: IF msg.sender_seq IS NULL (explicitly), use NULL.
-        const sqlSeq = (sender_seq === null) ? "NULL" : (sender_seq || 0);
+        const sqlSeq = (sender_seq === null || sender_seq === undefined) ? "0" : sender_seq; // Simplification
 
         const sql = `
             INSERT INTO CHAT_MESSAGES (roomname,publickey,username,type,message,filedata,state,amount,date,customid,sender_seq,original_timestamp)
-            VALUES ('${roomname}','${publickey}','${username}','${type}','${escapedMsg}','${filedata}','${state}',${amount},${timestamp},'${msg.customid || "0x00"}', ${sqlSeq}, ${msgOriginalTimestamp})
+            VALUES ('${roomname}','${publickey}','${username}','${type}','${escapedMsg}','${filedata}','${state}',${amount},${timestamp},'${customid || "0x00"}', ${sqlSeq}, ${msgOriginalTimestamp})
         `;
         try {
             await runSQL(sql);
         } catch (err) {
             console.error("❌ [SQL] INSERT failed:", err);
         }
+    }
+
+    updateMessageState(publickey: string, date: number, state: string, txpowid?: string): Promise<void> {
+        return new Promise((resolve) => {
+            let sql = `UPDATE CHAT_MESSAGES SET state='${state}'`;
+            if (txpowid) sql += `, txpowid='${txpowid}'`;
+
+            // Where clause
+            // We use date (timestamp) as the primary identifier along with publickey for now
+            sql += ` WHERE publickey='${publickey}' AND date=${date}`;
+
+            MDS.sql(sql, (res: any) => {
+                if (!res.status) console.error("❌ [DB] Update state failed:", res.error);
+                resolve();
+            });
+        });
     }
 
     getMessages(publickey: string): Promise<ChatMessage[]> {

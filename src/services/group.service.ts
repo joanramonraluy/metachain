@@ -1,5 +1,7 @@
 import { MDS } from "@minima-global/mds";
 import { utf8ToHex } from "../utils/hex";
+import { offlineQueueService } from "./offline-queue.service";
+
 
 
 export interface Group {
@@ -411,8 +413,14 @@ class GroupService {
                         await this.sendMaximaMessage(memberPubkey, maximaMessage);
                         sentCount++;
                         console.log(`📤 [GROUP-MSG] Sent to contact: ${memberPubkey.substring(0, 20)}...`);
-                    } catch (err) {
+                    } catch (err: any) {
                         console.error(`❌ [GROUP-MSG] Failed to send to ${memberPubkey}:`, err);
+                        // Queue for offline retry
+                        await offlineQueueService.queueGroupMessage({
+                            groupId,
+                            targetPublicKey: memberPubkey,
+                            payload: maximaMessage
+                        });
                     }
                 } else {
                     console.log(`⏭️ [GROUP-MSG] Skipping non-contact: ${memberPubkey.substring(0, 20)}...`);
@@ -424,6 +432,12 @@ class GroupService {
             console.error("❌ [GROUP-MSG] Message send failed:", err);
             throw err;
         }
+    }
+
+    async retryGroupMessage(targetPublicKey: string, payload: GroupMaximaMessage): Promise<void> {
+        console.log(`🔄 [GROUP-RETRY] Retrying send to ${targetPublicKey.substring(0, 10)}...`);
+        // Just try sending. If it throws, the queue service handles the failure (leaves it pending).
+        await this.sendMaximaMessage(targetPublicKey, payload);
     }
 
     async getGroupMessages(groupId: string): Promise<GroupMessage[]> {

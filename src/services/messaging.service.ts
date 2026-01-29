@@ -5,7 +5,8 @@
 
 import { MDS } from "@minima-global/mds";
 import { runSQL, utf8ToHex, getNextSequenceNumber, incrementSequenceNumber } from "./database.service";
-import { chatService } from "./chat.service";
+import { chatService, ChatMessage } from "./chat.service";
+import { offlineQueueService } from "./offline-queue.service";
 
 /* ----------------------------------------------------------------------------
    HELPER: Address Cleaner (Ported from Service Worker)
@@ -83,12 +84,15 @@ export async function sendMessage(
     overrideSeq?: number
 ): Promise<any> {
     try {
-        // RESOLVE IDENTIFIER: If sending to a Maxima address (Mx...), try to find the Hex Public Key (0x...)
+        const cleanMessage = message.trim();
+        const customid = generateUUID();
+
+        // 1. RESOLVE IDENTIFIER
         let databasePublicKey = toPublicKey;
+        const safeMxAddress = toPublicKey.replace(/'/g, "''");
 
         if (toPublicKey.startsWith("Mx") || toPublicKey.startsWith("MX")) {
             try {
-                const safeMxAddress = toPublicKey.replace(/'/g, "''");
                 const discoverySql = `SELECT PUBLICKEY FROM DISCOVERED_PEERS WHERE ADDRESS LIKE '%${safeMxAddress}%' LIMIT 1`;
                 const discoveryRes = await runSQL(discoverySql);
 
@@ -107,7 +111,6 @@ export async function sendMessage(
 
                 // LAZY MIGRATION
                 if (databasePublicKey !== toPublicKey) {
-                    console.log(`🔄 [MIGRATION] Lazy migration triggered for ${toPublicKey} -> ${databasePublicKey}`);
                     const migrateChatSql = `UPDATE CHAT_MESSAGES SET publickey='${databasePublicKey}' WHERE publickey='${safeMxAddress}'`;
                     await runSQL(migrateChatSql);
                     const migrateReqSql = `UPDATE CONTACT_REQUESTS SET to_publickey='${databasePublicKey}' WHERE to_publickey='${safeMxAddress}'`;
@@ -118,21 +121,18 @@ export async function sendMessage(
             }
         }
 
-        // Get extra info for "first contact" resolution (auto-discovery)
+        // 2. PREPARE PAYLOAD
         let myAvatar = "";
         let myAddress = "";
         try {
             const avatarRes = await MDS.keypair.get("profile_avatar");
-            if (avatarRes && avatarRes.status && avatarRes.value) {
-                myAvatar = avatarRes.value;
-            }
+            if (avatarRes && avatarRes.status && avatarRes.value) myAvatar = avatarRes.value;
             const myInfo = await MDS.cmd.maxima({ params: { action: 'info' } });
             myAddress = (myInfo.response as any).contact;
         } catch (e) {
-            console.warn("⚠️ [MAXIMA] Failed to fetch profile info for payload:", e);
+            console.warn("⚠️ [MAXIMA] Failed to fetch profile info:", e);
         }
 
-        // Get sequence number for this recipient
         let seq = 0;
         if (overrideSeq !== undefined) {
             seq = overrideSeq;
@@ -140,6 +140,34 @@ export async function sendMessage(
             seq = await getNextSequenceNumber(databasePublicKey);
         }
 
+        const PERSISTABLE_TYPES = ['text', 'image', 'file', 'video', 'audio', 'charm', 'token', 'invitation'];
+        const isPersistable = saveToDb && PERSISTABLE_TYPES.includes(type);
+
+        // 3. OPTIMISTIC SAVE (PENDING)
+        if (saveToDb) {
+            const msgData: ChatMessage = {
+                roomname: recipientName || senderName,
+                publickey: databasePublicKey,
+                username: "Me",
+                type,
+                message: cleanMessage,
+                filedata,
+                state: "pending",
+                amount,
+                date: messageTimestamp,
+                customid: customid,
+                sender_seq: seq,
+                originalTimestamp: messageTimestamp
+            };
+
+            await chatService.insertMessage(msgData);
+
+            if (isPersistable && overrideSeq === undefined) {
+                await incrementSequenceNumber(databasePublicKey);
+            }
+        }
+
+        // 4. NETWORK SEND
         const payload: any = {
             message,
             type,
@@ -148,31 +176,21 @@ export async function sendMessage(
             timestamp: messageTimestamp,
             avatar: myAvatar,
             from_address: myAddress,
-            txpowid: txpowid || undefined, // Include txpowid if provided
-            customid: generateUUID(), // Add UUID for deduplication
-
-            // Use seq if valid (persisted or overridden)
+            txpowid: txpowid || undefined,
+            customid: customid,
             seq: (saveToDb || overrideSeq !== undefined) ? seq : undefined
         };
 
-        // Define persistable types just in case saveToDb is misused for important messages (like invites)
-        const PERSISTABLE_TYPES = ['text', 'image', 'file', 'video', 'audio', 'charm', 'token', 'invitation'];
-        const isPersistable = saveToDb && PERSISTABLE_TYPES.includes(type);
-
-        if (type === "charm" && amount > 0) {
-            payload.amount = amount;
-        }
+        if (type === "charm" && amount > 0) payload.amount = amount;
 
         const jsonStr = JSON.stringify(payload);
         const hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
-
-        console.log("📤 [MAXIMA] Sending message to:", toPublicKey, payload);
 
         const sendParams: any = {
             action: "send",
             application: targetApplication,
             data: hexData,
-            poll: true, // FIXED: poll:true ensures message delivery for offline/non-contact recipients
+            poll: true, // CORRECT: poll:true ensures message delivery for offline/non-contact recipients
         };
 
         if (toPublicKey.startsWith("Mx") || toPublicKey.startsWith("MX")) {
@@ -181,117 +199,236 @@ export async function sendMessage(
             sendParams.publickey = toPublicKey;
         }
 
-        const response = await MDS.cmd.maxima({
-            params: sendParams
-        });
+        console.log("📤 [MAXIMA] Sending to:", toPublicKey);
 
-        console.log("📡 [MAXIMA] Full send response:", response);
+        try {
+            const response = await MDS.cmd.maxima({ params: sendParams });
 
-        // Increment sequence number ONLY if message is persistable (saved to DB) and NO override was provided
-        // (If override provided, caller is responsible for counter management)
-        if ((response && (response as any).status) || (response && (response as any).pending)) {
-            if (isPersistable && overrideSeq === undefined) {
-                await incrementSequenceNumber(databasePublicKey);
+            if (!(response as any).status) {
+                throw new Error((response as any).error || "MDS command failed");
             }
-        }
+            // Reference implementation only checks status, not delivered
 
+            console.log("✅ [MAXIMA] Sent successfully.");
 
-        const isPending = response && ((response as any).status === false) && (
-            (response as any).pending ||
-            ((response as any).error && (response as any).error.toString().toLowerCase().includes("pending"))
-        );
+            // 5. UPDATE TO SENT
+            if (saveToDb) {
+                chatService.updateMessageState(databasePublicKey, messageTimestamp, "sent", txpowid);
+            }
 
-        if (response && (response as any).status === false && !isPending) {
-            const errorMessage = (response as any).error || "";
+            return response;
 
+        } catch (networkErr: any) {
+            const errorMessage = networkErr.message || "";
+
+            // FALLBACK: If "No Contact found", try resolving address from Discovery and retry
             if (errorMessage.includes("No Contact found")) {
                 console.log("⚠️ [MAXIMA] Target not in contacts. Attempting to resolve address from Discovery...");
 
                 const safeKey = toPublicKey.replace(/'/g, "''");
+                // Inline resolve query or call helper if available. runSQL is imported.
                 const peerSql = `SELECT ADDRESS FROM DISCOVERED_PEERS WHERE PUBLICKEY='${safeKey}' LIMIT 1`;
-                const peerRes = await runSQL(peerSql);
+                try {
+                    const peerRes = await runSQL(peerSql);
 
-                if (peerRes.rows && peerRes.rows.length > 0) {
-                    const mxAddress = peerRes.rows[0].ADDRESS;
-                    console.log(`🔍 [MAXIMA] Found Mx address for non-contact: ${mxAddress}`);
+                    if (peerRes.rows && peerRes.rows.length > 0) {
+                        const mxAddress = peerRes.rows[0].ADDRESS;
+                        console.log(`🔍 [MAXIMA] Found Mx address for non-contact: ${mxAddress}`);
 
-                    const retryResponse = await MDS.cmd.maxima({
-                        params: {
-                            action: "send",
-                            to: cleanMaximaAddress(mxAddress),
-                            application: targetApplication,
-                            data: hexData,
-                            poll: true,
-                        } as any,
-                    });
-
-                    if (retryResponse && (retryResponse as any).status === false) {
-                        console.error("❌ [MAXIMA] Retry with Mx address failed:", (retryResponse as any).error);
-                        throw new Error(errorMessage);
-                    }
-
-                    // Increment sequence if fallback succeeded and persistable
-                    if (isPersistable) {
-                        await incrementSequenceNumber(databasePublicKey);
-                    }
-
-                    console.log("✅ [MAXIMA] Message sent successfully via Mx address (non-contact)");
-
-                    // IMPORTANT: Insert message locally BEFORE returning!
-                    // Always insert even if timestamp is provided (flicker fix passes timestamp)
-                    if (saveToDb) {
-                        chatService.insertMessage({
-                            roomname: recipientName || senderName,
-                            publickey: databasePublicKey,
-                            username: "Me",
-                            type,
-                            message,
-                            filedata,
-                            state: "sent",
-                            amount,
-                            sender_seq: seq, // Save sequence number locally
+                        // Retry using the specific Mx address
+                        const retryResponse = await MDS.cmd.maxima({
+                            params: {
+                                action: "send",
+                                to: cleanMaximaAddress(mxAddress),
+                                application: targetApplication,
+                                data: hexData,
+                                poll: true,
+                            } as any,
                         });
-                        console.log("💾 [DB] Message saved locally for non-contact");
-                    }
 
-                    return retryResponse;
-                } else {
-                    throw new Error(errorMessage);
+                        if (!(retryResponse as any).status) {
+                            throw new Error((retryResponse as any).error || "Fallback retry failed");
+                        }
+                        // Reference implementation only checks status, not delivered
+
+                        console.log("✅ [MAXIMA] Message sent successfully via Mx address (fallback)");
+
+                        if (saveToDb) {
+                            chatService.updateMessageState(databasePublicKey, messageTimestamp, "sent", txpowid);
+                        }
+                        return retryResponse;
+                    }
+                } catch (fallbackErr: any) {
+                    console.warn(`⚠️ [MAXIMA] Fallback retry failed: ${fallbackErr.message}`);
+                    // Continue to queueing logic below
                 }
+            }
+
+            console.warn(`⚠️ [MAXIMA] Send failed: ${errorMessage}. Queueing.`);
+
+
+            // 6. QUEUE ON FAILURE
+            if (saveToDb) {
+                await offlineQueueService.queueChatMessage({
+                    publickey: toPublicKey,
+                    senderName,
+                    message: cleanMessage,
+                    type,
+                    filedata,
+                    amount,
+                    timestamp: messageTimestamp,
+                    recipientName: recipientName || "",
+                    targetApplication,
+                    txpowid,
+                    overrideSeq: seq
+                });
+
+                return { status: true, pending: true, message: "Queued for offline delivery" };
             } else {
-                console.error("❌ [MAXIMA] Send failed:", errorMessage);
-                throw new Error(errorMessage || "Maxima send failed");
+                throw networkErr;
             }
         }
 
-        if (isPending) {
-            console.warn("⚠️ [MAXIMA] Command is pending approval (Read Mode). Saving with 'pending' state.");
-        } else {
-            console.log("✅ [MAXIMA] Message sent successfully");
-        }
-
-        // Only insert a new message if we're not updating an existing one
-        // UPDATE: Allow insertion even if timestamp is provided (for UI sync), unless explicitly skipping? 
-        // For now, assume sendMessage implies we want to save it. 
-        // Logic: If we are sending, we should have a record. 'insertMessage' handles new rows.
-        if (saveToDb) {
-            chatService.insertMessage({
-                roomname: recipientName || senderName,
-                publickey: databasePublicKey,
-                username: "Me",
-                type,
-                message,
-                filedata,
-                state: isPending ? "pending" : "sent",
-                amount,
-                customid: payload.customid // Save local customid
-            });
-        }
-
-        return response;
     } catch (err) {
-        console.error("❌ [MAXIMA] Error sending message:", err);
-        throw err;
+        console.error("❌ [SEND] Critical failure:", err);
+        return { status: false, error: err };
+    }
+}
+
+/**
+ * Retry sending a message (called by OfflineQueueService)
+ */
+export async function retryMessage(data: {
+    publickey: string,
+    senderName: string,
+    message: string,
+    type: string,
+    filedata: string,
+    amount: number,
+    timestamp: number,
+    recipientName: string,
+    targetApplication: string,
+    txpowid?: string,
+    overrideSeq?: number
+}): Promise<void> {
+    console.log(`🔄 [RETRY] Resending to ${data.publickey}...`);
+
+    let target = data.publickey;
+    if (data.publickey.startsWith('0x')) {
+        const resolved = await resolveMaximaAddressFromPubkey(data.publickey);
+        if (resolved) {
+            target = resolved;
+            console.log(`🔍 [RETRY] Resolved address: ${resolved}`);
+        } else {
+            console.log(`⚠️ [RETRY] No address found in DISCOVERED_PEERS for ${data.publickey.substring(0, 20)}...`);
+        }
+    } else if (data.publickey.startsWith("Mx")) {
+        target = cleanMaximaAddress(data.publickey);
+    }
+
+    console.log(`📤 [RETRY] Target for send: ${target.substring(0, 30)}... (type: ${target.startsWith('Mx') ? 'address' : 'publickey'})`);
+
+
+    const myInfo = await MDS.cmd.maxima({ params: { action: 'info' } });
+    const myAddress = (myInfo.response as any).contact;
+    const avatarRes = await MDS.keypair.get("profile_avatar");
+    const myAvatar = (avatarRes && avatarRes.status) ? avatarRes.value : "";
+
+    const payload: any = {
+        message: data.message,
+        type: data.type,
+        username: data.senderName,
+        filedata: data.filedata,
+        timestamp: data.timestamp,
+        avatar: myAvatar,
+        from_address: myAddress,
+        txpowid: data.txpowid,
+        customid: generateUUID(),
+        seq: data.overrideSeq
+    };
+
+    if (data.type === "charm" && data.amount > 0) payload.amount = data.amount;
+
+    const jsonStr = JSON.stringify(payload);
+    const hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
+
+    const sendParams: any = {
+        action: "send",
+        application: data.targetApplication,
+        data: hexData,
+        poll: true,
+    };
+
+    if (target.startsWith("Mx") || target.startsWith("MX")) {
+        sendParams.to = target;
+    } else {
+        sendParams.publickey = target;
+    }
+
+    try {
+        const response = await MDS.cmd.maxima({ params: sendParams });
+
+        console.log("🔍 [RETRY] Response:", JSON.stringify(response).substring(0, 200));
+
+        if (!(response as any).status) {
+            const errMsg = (response as any).error || "MDS command failed";
+            console.warn(`⚠️ [RETRY] MDS status false: ${errMsg}`);
+            throw new Error(errMsg);
+        }
+        // Reference implementation only checks status, not delivered
+
+        // Success - update DB
+        let dbKey = data.publickey;
+        if (dbKey.startsWith("Mx")) {
+            const safeMx = dbKey.replace(/'/g, "''");
+            const r = await runSQL(`SELECT PUBLICKEY FROM DISCOVERED_PEERS WHERE ADDRESS LIKE '%${safeMx}%' LIMIT 1`);
+            if (r.rows?.[0]?.PUBLICKEY) dbKey = r.rows[0].PUBLICKEY;
+        }
+
+        await chatService.updateMessageState(dbKey, data.timestamp, "sent", data.txpowid);
+        console.log("✅ [RETRY] Success.");
+
+    } catch (retryErr: any) {
+        const errorMessage = retryErr.message || "";
+
+        // FALLBACK: If "No Contact found", try resolving address from Discovery and retry
+        if (errorMessage.includes("No Contact found") && data.publickey.startsWith('0x')) {
+            console.log("⚠️ [RETRY] Target not in contacts. Attempting to resolve address from Discovery...");
+
+            const safeKey = data.publickey.replace(/'/g, "''");
+            const peerSql = `SELECT ADDRESS FROM DISCOVERED_PEERS WHERE PUBLICKEY='${safeKey}' LIMIT 1`;
+
+            const peerRes = await runSQL(peerSql);
+
+            if (peerRes.rows && peerRes.rows.length > 0) {
+                const mxAddress = peerRes.rows[0].ADDRESS;
+                console.log(`🔍 [RETRY] Found Mx address for non-contact: ${mxAddress}`);
+
+                // Retry using the specific Mx address
+                const fallbackResponse = await MDS.cmd.maxima({
+                    params: {
+                        action: "send",
+                        to: cleanMaximaAddress(mxAddress),
+                        application: data.targetApplication,
+                        data: hexData,
+                        poll: true,
+                    } as any,
+                });
+
+                if (!(fallbackResponse as any).status || !(fallbackResponse as any).response.delivered) {
+                    throw new Error((fallbackResponse as any).error || (fallbackResponse as any).response?.error || "Fallback retry failed");
+                }
+
+                console.log("✅ [RETRY] Message sent successfully via Mx address (fallback)");
+
+                // Update DB
+                await chatService.updateMessageState(data.publickey, data.timestamp, "sent", data.txpowid);
+                return;
+            }
+        }
+
+        // If fallback didn't work or wasn't applicable, re-throw
+        throw retryErr;
     }
 }
 
@@ -580,7 +717,8 @@ export const messagingService = {
     sendPong,
     sendInvitation,
     requestChatHistory,
-    sendSyncResponse: sendChatHistoryResponse
+    sendSyncResponse: sendChatHistoryResponse,
+    retryMessage // Added for OfflineQueueService
 };
 
 // Also export sendChatHistoryResponse for use by handlers if needed (though it's usually triggered by incoming request)
