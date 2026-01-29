@@ -5,6 +5,8 @@ import {
     hexToUtf8,
     utf8ToHex,
     initDB,
+    getNextSequenceNumber,
+    incrementSequenceNumber,
     //    resolveMaximaAddress, 
     //    escapeSql
 } from './database.service';
@@ -67,7 +69,7 @@ class MinimaService {
      */
     runCommand(command: string): Promise<any> {
         return new Promise((resolve) => {
-            (MDS as any).cmd(command, (res: any) => {
+            MDS.executeRaw(command, (res: any) => {
                 resolve(res);
             });
         });
@@ -790,7 +792,7 @@ WHERE(${addressClause}) AND status = 'pending'`;
 
 
 
-    async updateMessageState(publickey: string, timestamp: number, state: string, newTimestamp?: number, txpowid?: string) {
+    async updateMessageState(publickey: string, timestamp: number, state: string, newTimestamp?: number, txpowid?: string, sender_seq?: number) {
         console.log(`🔄[DB] Updating message state: newState = "${state}", timestamp = ${timestamp} `);
 
         let setClause = `state = '${state}'`;
@@ -800,6 +802,9 @@ WHERE(${addressClause}) AND status = 'pending'`;
         }
         if (txpowid) {
             setClause += `, txpowid = '${txpowid}' `;
+        }
+        if (sender_seq !== undefined) {
+            setClause += `, sender_seq = ${sender_seq} `;
         }
 
         // Remove quotes for numeric date field in WHERE clause
@@ -1167,7 +1172,7 @@ WHERE(${addressClause}) AND status = 'pending'`;
 
         try {
             // Get my public key for chat ID generation
-            const maximaInfo = await (MDS.cmd as any)('maxima');
+            const maximaInfo = await this.runCommand('maxima action:info');
             const myPublicKey = maximaInfo?.response?.publickey || '';
 
             // Step 1: Send the Minima tokens (tokenId 0x00 is always Minima)
@@ -1238,12 +1243,7 @@ WHERE(${addressClause}) AND status = 'pending'`;
         console.log(`⚡ [WALLET] Dispatched minima_balance_update_start event`);
 
         try {
-            // Construct the send command parameters
-            const sendParams: any = {
-                amount: amount,
-                address: address,
-                tokenid: tokenId
-            };
+            let cmd = `send amount:${amount} address:${address} tokenid:${tokenId}`;
 
             // Add state variables if provided
             if (stateId && myPublicKey && recipientPublicKey) {
@@ -1251,20 +1251,23 @@ WHERE(${addressClause}) AND status = 'pending'`;
                 const { generateChatId } = await import('./transaction.service');
                 const chatId = await (generateChatId as any)(myPublicKey, recipientPublicKey);
 
-                sendParams.state = {
+                const state = {
                     0: stateId.toString(),
                     1: "204",
                     2: chatId,  // Deterministic chat identifier for recovery
                     3: myPublicKey // Sender public key for identification
                 };
                 console.log(`🏷️[WALLET] Adding state variables: ID = ${stateId}, ChatID = ${chatId}, Sender = ${myPublicKey} `);
+
+                // Properly format JSON for Minima command line
+                // state:{"0":"...","1":"..."}
+                cmd += ` state:${JSON.stringify(state)}`;
             }
 
-            console.log(`💸[WALLET] Command parameters: `, JSON.stringify(sendParams, null, 2));
-            console.log(`💸[WALLET] Executing MDS.cmd.send...`);
+            console.log(`💸[WALLET] Executing command: ${cmd}`);
 
-            // Use the pattern from examples: (MDS.cmd as any).send(params)
-            const response = await (MDS.cmd as any).send(sendParams);
+            // Use string command via runCommand helper
+            const response = await this.runCommand(cmd);
 
             console.log(`💸[WALLET] Raw response: `, JSON.stringify(response, null, 2));
 
@@ -1342,7 +1345,7 @@ WHERE(${addressClause}) AND status = 'pending'`;
         // Publish our Minima address to Maxima profile so others can send us tokens
         try {
             // FIX: Use core 'getaddress' command, not maxima
-            const getAddrRes = await (MDS.cmd as any).getaddress();
+            const getAddrRes = await this.runCommand('getaddress');
 
             if (getAddrRes.status) {
                 const myAddress = getAddrRes.response.miniaddress || getAddrRes.response.address;
@@ -1480,20 +1483,19 @@ WHERE(${addressClause}) AND status = 'pending'`;
 
             // Helper to try sending
             const trySend = async (addressOrKey: string, isAddress: boolean) => {
-                const params: any = {
-                    action: "send",
-                    application: "metachain", // Added missing parameter
-                    data: "0x" + dataHex,
-                    poll: true
-                };
+                // Convert params to string for runCommand
+                // maxcontacts action:add publickey:0x... OR maxcontacts action:add contact:Mx...
+                // Wait, this is 'maxima action:send ...'
+
+                let cmd = `maxima action:send application:metachain poll:true data:0x${dataHex}`;
 
                 if (isAddress) {
-                    params.to = addressOrKey;
+                    cmd += ` to:${addressOrKey}`;
                 } else {
-                    params.publickey = addressOrKey;
+                    cmd += ` publickey:${addressOrKey}`;
                 }
 
-                return MDS.cmd.maxima({ params } as any);
+                return this.runCommand(cmd);
             };
 
             // Attempt 1: Send via Public Key (Standard for Contacts)
@@ -1604,10 +1606,15 @@ WHERE(${addressClause}) AND status = 'pending'`;
                 const confirmationTime = blockchainTimestamp ? Number(blockchainTimestamp) : Date.now();
                 console.log(`🕐[MDS_PENDING] Transaction confirmed at blockchain time: ${confirmationTime} (from header: ${!!blockchainTimestamp})`);
 
+                // Generate sequence number for the message to ensure correct ordering
+                const seq = await getNextSequenceNumber(PUBLICKEY);
+                await incrementSequenceNumber(PUBLICKEY);
+
                 // CRITICAL: Update message state to 'sent' but KEEP the original timestamp
                 // We need to keep MESSAGE_TIMESTAMP unchanged so we can still find the transaction by message_timestamp
                 // Also update txpowid so history sync can deduplicate correctly
-                await this.updateMessageState(PUBLICKEY, MESSAGE_TIMESTAMP, 'sent', undefined, txpowid || undefined);
+                // AND update sender_seq so sorting works correctly (avoids pinned-to-bottom issue)
+                await this.updateMessageState(PUBLICKEY, MESSAGE_TIMESTAMP, 'sent', undefined, txpowid || undefined, seq);
 
                 // Send Maxima message
                 const metadata = JSON.parse(METADATA || '{}');
@@ -1626,12 +1633,13 @@ WHERE(${addressClause}) AND status = 'pending'`;
                         undefined,         // recipientName
                         "metachain",       // targetApplication
                         false,             // saveToDb
-                        txpowid || undefined // txpowid for receiver confirmation
+                        txpowid || undefined, // txpowid for receiver confirmation
+                        seq                // Pass generated sequence number
                     );
                 } else if (TYPE === 'token') {
-                    const { tokenName, username, amount, seq } = metadata;
+                    const { tokenName, username, amount } = metadata;
                     const tokenData = JSON.stringify({ amount, tokenName });
-                    console.log(`📤[MDS_PENDING] Sending token message via Maxima (Seq: ${seq || 'Auto'})...`);
+                    console.log(`📤[MDS_PENDING] Sending token message via Maxima (Seq: ${seq})...`);
                     await this.sendMessage(
                         PUBLICKEY,
                         username || 'Unknown',
@@ -1644,7 +1652,7 @@ WHERE(${addressClause}) AND status = 'pending'`;
                         "metachain",       // targetApplication
                         false,             // saveToDb
                         txpowid || undefined, // txpowid for receiver confirmation
-                        seq // Use original sequence number if available
+                        seq // Use generated sequence number
                     );
                 }
 

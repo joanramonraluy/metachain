@@ -295,10 +295,11 @@ class ChatService {
         }
     }
 
-    updateMessageState(publickey: string, date: number, state: string, txpowid?: string): Promise<void> {
+    updateMessageState(publickey: string, date: number, state: string, txpowid?: string, sender_seq?: number): Promise<void> {
         return new Promise((resolve) => {
             let sql = `UPDATE CHAT_MESSAGES SET state='${state}'`;
             if (txpowid) sql += `, txpowid='${txpowid}'`;
+            if (sender_seq !== undefined) sql += `, sender_seq=${sender_seq}`;
 
             // Where clause
             // We use date (timestamp) as the primary identifier along with publickey for now
