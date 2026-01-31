@@ -200,9 +200,73 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
           const command = await MDS.cmd.block()
           setBlock(command.response)
         }
+
+        // Handle Disconnection / MDS Failure
+        if ((msg.event as any) === "MDSFAIL") {
+          console.warn("⚠️ [AppContext] MDSFAIL received - Minima connection lost!");
+          setSynced(false);
+        }
       })
     }
+
+    // Add browser-level offline/online listeners
+    const handleOffline = () => {
+      console.warn("⚠️ [AppContext] Browser went offline");
+      setSynced(false);
+    };
+
+    const handleOnline = () => {
+      console.log("✅ [AppContext] Browser back online - waiting for Minima...");
+      // We don't immediately set synced=true here; we wait for the next NEWBLOCK or success cmd
+      // But we could trigger a check
+      MDS.cmd.block().then(res => {
+        if (res.status) {
+          console.log("✅ [AppContext] Minima verified online after reconnection");
+          setSynced(true);
+        }
+      });
+    };
+
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('online', handleOnline);
+
+    return () => {
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', handleOnline);
+    };
   }, [])
+
+  // Heartbeat to check Minima connection status periodically
+  useEffect(() => {
+    if (!loaded) return;
+
+    const interval = setInterval(() => {
+      // Create a timeout promise that rejects after 2 seconds
+      const timeout = new Promise<any>((_, reject) =>
+        setTimeout(() => reject(new Error("Timeout")), 2000)
+      );
+
+      // Race the block check against the timeout
+      Promise.race([MDS.cmd.block(), timeout])
+        .then((res) => {
+          if (res.status && !synced) {
+            console.log("✅ [AppContext] Heartbeat - Minima is BACK ONLINE");
+            setSynced(true);
+          } else if (!res.status && synced) {
+            console.warn("⚠️ [AppContext] Heartbeat - Minima returned failure status");
+            setSynced(false);
+          }
+        })
+        .catch((err) => {
+          if (synced) {
+            console.warn("⚠️ [AppContext] Heartbeat - Request Failed or Timed Out:", err);
+            setSynced(false);
+          }
+        });
+    }, 5000); // Check every 5 seconds
+
+    return () => clearInterval(interval);
+  }, [loaded, synced]);
 
   const context = {
     loaded,
