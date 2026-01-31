@@ -1344,6 +1344,16 @@ WHERE(${addressClause}) AND status = 'pending'`;
     async initProfile() {
         // Publish our Minima address to Maxima profile so others can send us tokens
         try {
+            // OPTIMIZATION: Check if we already have a cached address in KeyPair
+            // This prevents calling 'getaddress' on every startup, which creates a 0-value transaction
+            // and shows the "Sending 0 Minima" banner.
+            const cachedAddrRes = await MDS.keypair.get("profile_minima_address");
+            if (cachedAddrRes && cachedAddrRes.status && cachedAddrRes.value) {
+                console.log("📍 [PROFILE] Found cached Minima Address in KeyPair:", cachedAddrRes.value);
+                // We already have an address, no need to generate a new transaction
+                return;
+            }
+
             // FIX: Use core 'getaddress' command, not maxima
             const getAddrRes = await this.runCommand('getaddress');
 
