@@ -5,6 +5,9 @@
 
 import { MDS } from "@minima-global/mds";
 
+// Queue map: publicKey -> Promise chain to strictly serialize execution
+const seqQueues: { [key: string]: Promise<void> } = {};
+
 /**
  * Run SQL query with Promise wrapper
  */
@@ -431,7 +434,70 @@ export async function resolveMaximaAddress(publicKey: string): Promise<string | 
 }
 
 /**
- * Get the next sequence number for a contact
+ * ATOMIC: Get the next sequence number AND increment it in one operation
+ * This uses an in-memory Mutex (Promise chaining) to ensure multiple rapid calls
+ * for the same user are strictly serialized, preventing race conditions even if
+ * the underlying SQL operations are asynchronous/interleaved.
+ */
+export function getAndIncrementSequenceNumber(publicKey: string): Promise<number> {
+    // 1. Get the current tail of the promise chain (or start new)
+    const previousTask = seqQueues[publicKey] || Promise.resolve();
+
+    // 2. Chain our new task to run AFTER the previous one finishes
+    const myTask = previousTask.then(() => {
+        return new Promise<number>((resolve, reject) => {
+            const safePubkey = escapeSql(publicKey);
+
+            // Step 1: Check if counter exists
+            const checkSql = `SELECT next_seq FROM MESSAGE_COUNTERS WHERE publickey='${safePubkey}'`;
+
+            MDS.sql(checkSql, (res: any) => {
+                if (res.status && res.rows && res.rows.length > 0) {
+                    // Counter exists - get current value
+                    const currentSeq = parseInt(res.rows[0].NEXT_SEQ);
+
+                    // Step 2: Increment atomically
+                    const updateSql = `UPDATE MESSAGE_COUNTERS SET next_seq = next_seq + 1 WHERE publickey='${safePubkey}'`;
+
+                    MDS.sql(updateSql, (updateRes: any) => {
+                        if (updateRes.status) {
+                            console.log(`📊 [SEQ-MUTEX] Got seq ${currentSeq}, incremented to ${currentSeq + 1} for ${safePubkey.substring(0, 20)}...`);
+                            resolve(currentSeq);
+                        } else {
+                            console.error(`❌ [SEQ-MUTEX] Failed to increment: ${updateRes.error}`);
+                            reject(updateRes.error);
+                        }
+                    });
+                } else {
+                    // Counter doesn't exist - create it starting at 2 (we'll return 1)
+                    const insertSql = `INSERT INTO MESSAGE_COUNTERS (publickey, next_seq) VALUES ('${safePubkey}', 2)`;
+
+                    MDS.sql(insertSql, (insertRes: any) => {
+                        if (insertRes.status) {
+                            console.log(`📊 [SEQ-MUTEX] Created counter for ${safePubkey.substring(0, 20)}..., returning 1`);
+                            resolve(1);
+                        } else {
+                            console.error(`❌ [SEQ-MUTEX] Failed to create counter: ${insertRes.error}`);
+                            reject(insertRes.error);
+                        }
+                    });
+                }
+            });
+        });
+    });
+
+    // 3. Update the queue tail so the next request waits for US
+    // catch() ensures failures don't block the queue forever
+    seqQueues[publicKey] = myTask.then(() => { }).catch((err) => {
+        console.warn(`⚠️ [SEQ-MUTEX] Task failed, queue continuing:`, err);
+    });
+
+    // 4. Return our result
+    return myTask;
+}
+
+/**
+ * Get the next sequence number for a contact (read-only, for display purposes)
  */
 export function getNextSequenceNumber(publicKey: string): Promise<number> {
     return new Promise((resolve) => {
@@ -452,13 +518,11 @@ export function getNextSequenceNumber(publicKey: string): Promise<number> {
 
 /**
  * Increment the sequence number for a contact
+ * NOTE: Prefer getAndIncrementSequenceNumber() to avoid race conditions
  */
 export function incrementSequenceNumber(publicKey: string): Promise<void> {
     return new Promise((resolve) => {
         const safePubkey = escapeSql(publicKey);
-
-        // Use UPSERT/MERGE specific syntax or check-then-update
-        // Minima SQL supports MERGE usually, but let's be safe with INSERT ON CONFLICT logic or SELECT/INSERT
 
         // Try to update existing first
         const checkSql = `SELECT next_seq FROM MESSAGE_COUNTERS WHERE publickey='${safePubkey}'`;

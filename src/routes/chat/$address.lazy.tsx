@@ -14,7 +14,7 @@ import { transactionService } from "../../services/transaction.service";
 import { requestProfile } from "../../services/profile.service";
 import InviteDialog from "../../components/chat/InviteDialog";
 import { useTheme } from "../../context/ThemeContext";
-import { getNextSequenceNumber, incrementSequenceNumber } from "../../services/database.service";
+import { getAndIncrementSequenceNumber } from "../../services/database.service";
 
 // Lazy load EmojiPicker to reduce initial bundle size (~60KB)
 const EmojiPicker = lazy(() => import("emoji-picker-react"));
@@ -45,6 +45,8 @@ interface ParsedMessage {
   status?: 'pending' | 'sent' | 'delivered' | 'read' | 'failed' | 'zombie';
   tokenAmount?: { amount: string; tokenName: string }; // For token transfer messages
   isSystem?: boolean; // For system messages (centered)
+  isCharm?: boolean; // For charm messages
+  isToken?: boolean; // For token transfer messages
   sender_seq?: number;
   customid?: string;
   id?: number;
@@ -52,6 +54,21 @@ interface ParsedMessage {
 }
 
 
+
+// Helper function to format relative time
+function formatRelativeTime(timestamp: number): string {
+  const now = Date.now();
+  const diff = now - timestamp;
+  const seconds = Math.floor(diff / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+
+  if (days > 0) return `${days} day${days > 1 ? 's' : ''} ago`;
+  if (hours > 0) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+  if (minutes > 0) return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
+  return 'just now';
+}
 
 function ChatPage() {
   // Helper to remove duplicate messages (favors UUID/customid, then seq, then timestamp)
@@ -822,14 +839,14 @@ function ChatPage() {
 
               return false;
             })(),
-            date: row.DATE,
+            timestamp: Number(row.DATE) || Date.now(), // Convert to number, fallback to now if invalid
             message: row.MESSAGE,
             amount: row.AMOUNT,
             fromMe: row.USERNAME === "Me",
             charm: charmObj,
             sender_seq: row.SENDER_SEQ != null ? Number(row.SENDER_SEQ) : null, // Map sequence number (Strict Number)
             customid: row.CUSTOMID, // Map custom ID for deduplication
-            originalTimestamp: row.ORIGINAL_TIMESTAMP // Correct time for sorting
+            originalTimestamp: row.ORIGINAL_TIMESTAMP ? Number(row.ORIGINAL_TIMESTAMP) : undefined // Convert to number
           };
         });
 
@@ -841,11 +858,11 @@ function ChatPage() {
           // Only check if it looks like a transaction from me
           if ((msg.isToken || msg.isCharm) && msg.fromMe) {
             // Check TRANSACTIONS table using the message timestamp as stateId
-            const tx = await transactionService.findPendingTransactionByStateId(msg.date);
+            const tx = await transactionService.findPendingTransactionByStateId(msg.timestamp);
             if (tx) {
               // If we find a transaction with pending or sent status, show as pending in UI
               if (tx.status === 'pending' || tx.status === 'sent') {
-                console.log(`🔄 [CHAT-DB] Found ${tx.status.toUpperCase()} tx for message ${msg.date}. Showing as 'pending' in UI.`);
+                console.log(`🔄 [CHAT-DB] Found ${tx.status.toUpperCase()} tx for message ${msg.timestamp}. Showing as 'pending' in UI.`);
                 finalStatus = 'pending';
               }
             }
@@ -857,7 +874,7 @@ function ChatPage() {
             fromMe: msg.fromMe,
             charm: msg.charm,
             amount: msg.amount,
-            timestamp: Number(msg.date),
+            timestamp: msg.timestamp, // Already a number now
             status: finalStatus,
             tokenAmount: msg.tokenAmount,
             sender_seq: msg.sender_seq,
@@ -928,6 +945,7 @@ function ChatPage() {
 
 
   const [appStatus, setAppStatus] = useState<'unknown' | 'checking' | 'installed' | 'not_found' | 'offline'>('unknown');
+  const [lastSeen, setLastSeen] = useState<number | null>(null);
 
   /* ----------------------------------------------------------------------------
       LISTEN FOR INCOMING MESSAGES
@@ -978,18 +996,24 @@ function ChatPage() {
       }
 
       // Timeout for auto-check
-      setTimeout(() => {
-        setAppStatus((prev) => {
+      setTimeout(async () => {
+        // Fetch last seen if needed
+        const lastSeenTimestamp = await minimaService.getPeerLastSeen(contact.publickey);
 
-          if (prev === 'checking') {
+        // Use callback to get current state
+        setAppStatus((currentStatus) => {
+          if (currentStatus === 'checking') {
             // No Pong received yet. Decide fallback based on "Known" status.
             if (isKnownUser) {
+              // Set last seen timestamp when offline
+              setLastSeen(lastSeenTimestamp);
+              console.log('🕐 [PING] Last seen:', lastSeenTimestamp);
               return 'offline';
             } else {
               return 'not_found';
             }
           }
-          return prev;
+          return currentStatus;
         });
       }, 5000);
     }
@@ -997,10 +1021,15 @@ function ChatPage() {
     const handleNewMessage = (payload: any) => {
       // Handle Pong response
       if (payload.type === 'pong') {
-        setAppStatus('installed');
-        // Save that this user has the app installed
-        if (contact.publickey) {
-          minimaService.setAppInstalled(contact.publickey);
+        // Only update if it's from the current contact
+        if (payload.from === contact?.publickey) {
+          console.log('✅ [PING] Pong received from current contact');
+          setAppStatus('installed');
+          setLastSeen(null); // Clear last seen when user is online
+          // Save that this user has the app installed
+          if (contact.publickey) {
+            minimaService.setAppInstalled(contact.publickey);
+          }
         }
         return;
       }
@@ -1465,8 +1494,8 @@ function ChatPage() {
     const tokenData = JSON.stringify({ amount, tokenName });
 
     // FIX: Get correct sequence number for this token message (it consumes a slot in the timeline)
-    // This allows proper sorting even for token transactions!
-    const tokenSeq = await getNextSequenceNumber(contact.publickey);
+    // ATOMIC: Get and increment in one operation to prevent race conditions
+    const tokenSeq = await getAndIncrementSequenceNumber(contact.publickey);
 
     console.log(`🔢 [ChatPage] Assigning Sequence ${tokenSeq} to Token Message`);
 
@@ -1496,8 +1525,7 @@ function ChatPage() {
       MDS.sql(insertSql, async (res: any) => {
         if (res.status) {
           console.log(`💾 [ChatPage] Saved optimistic message to DB: ${tempTimestamp} (Seq: ${tokenSeq})`);
-          // Increment sequence counter since we consumed one
-          await incrementSequenceNumber(contact.publickey);
+          // NOTE: No need to increment here - getAndIncrementSequenceNumber already did it atomically
         } else {
           console.error("❌ [ChatPage] Failed to save optimistic message to DB:", res);
         }
@@ -1839,7 +1867,7 @@ function ChatPage() {
                 </div>
               ) : appStatus === 'offline' ? (
                 <span className="text-xs opacity-80 truncate block cursor-default">
-                  Offline
+                  {lastSeen ? `Last seen ${formatRelativeTime(lastSeen)}` : 'Offline'}
                 </span>
               ) : (
                 <span className="text-xs opacity-80 truncate block">
@@ -2251,9 +2279,9 @@ function ChatPage() {
         )}
 
         {/* Pending Transactions Indicator */}
-        {messages.filter(m => m.status === 'pending').length > 0 && (
+        {messages.filter(m => m.status === 'pending' && (m.isCharm || m.isToken)).length > 0 && (
           <div className="sticky top-0 z-20 mb-4 mx-2 mt-2">
-            {messages.filter(m => m.status === 'pending').map((msg) => (
+            {messages.filter(m => m.status === 'pending' && (m.isCharm || m.isToken)).map((msg) => (
               <div key={msg.timestamp} className="bg-primary-50/95 backdrop-blur-sm border border-primary-200 rounded-lg shadow-sm p-4 mb-2 animate-in fade-in slide-in-from-top-2 duration-300">
                 <div className="flex items-start gap-3">
                   <div className="flex-shrink-0 w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center">

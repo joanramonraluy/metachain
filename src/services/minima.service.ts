@@ -5,8 +5,7 @@ import {
     hexToUtf8,
     utf8ToHex,
     initDB,
-    getNextSequenceNumber,
-    incrementSequenceNumber,
+    getAndIncrementSequenceNumber,
     //    resolveMaximaAddress, 
     //    escapeSql
 } from './database.service';
@@ -428,6 +427,15 @@ VALUES('${peer.pubkey}', '${escapedAlias}', '${escapedBio}', '${peer.address}', 
 
                 if (json.type === "pong") {
                     console.log("📡 [PING] Pong received from", from);
+
+                    // Update last_seen timestamp in database
+                    const now = Date.now();
+                    const safeKey = from.replace(/'/g, "''");
+                    const updateSql = `UPDATE DISCOVERED_PEERS SET last_seen=${now} WHERE UPPER(publickey)=UPPER('${safeKey}')`;
+                    this.runSQL(updateSql).catch(err => {
+                        console.warn("⚠️ [PING] Failed to update last_seen:", err);
+                    });
+
                     // Notify listeners so UI can update app status
                     // Include 'from' so Discovery page can identify which profile responded
                     chatService.notifyNewMessage({ ...json, type: 'pong', from });
@@ -1617,8 +1625,8 @@ WHERE(${addressClause}) AND status = 'pending'`;
                 console.log(`🕐[MDS_PENDING] Transaction confirmed at blockchain time: ${confirmationTime} (from header: ${!!blockchainTimestamp})`);
 
                 // Generate sequence number for the message to ensure correct ordering
-                const seq = await getNextSequenceNumber(PUBLICKEY);
-                await incrementSequenceNumber(PUBLICKEY);
+                // ATOMIC: Get and increment in one operation to prevent race conditions
+                const seq = await getAndIncrementSequenceNumber(PUBLICKEY);
 
                 // CRITICAL: Update message state to 'sent' but KEEP the original timestamp
                 // We need to keep MESSAGE_TIMESTAMP unchanged so we can still find the transaction by message_timestamp
@@ -1800,6 +1808,27 @@ WHERE(${addressClause}) AND status = 'pending'`;
      */
     async cancelChatRequest(toPublicKey: string): Promise<void> {
         return contactRequestsService.cancelChatRequest(toPublicKey);
+    }
+
+    /**
+     * Get the last seen timestamp for a peer from DISCOVERED_PEERS
+     */
+    async getPeerLastSeen(publickey: string): Promise<number | null> {
+        // Safe escape
+        const safeKey = publickey.replace(/'/g, "''");
+        const sql = `SELECT last_seen FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('${safeKey}')`;
+
+        try {
+            const res = await this.runSQL(sql);
+            if (res.rows && res.rows.length > 0) {
+                // H2 returns uppercase keys usually
+                const lastSeen = res.rows[0].LAST_SEEN || res.rows[0].last_seen;
+                return lastSeen ? parseInt(lastSeen) : null;
+            }
+        } catch (err) {
+            console.error("❌ [DB] Error fetching last_seen:", err);
+        }
+        return null;
     }
 
     /* ----------------------------------------------------------------------------

@@ -4,7 +4,7 @@
  */
 
 import { MDS } from "@minima-global/mds";
-import { runSQL, utf8ToHex, getNextSequenceNumber, incrementSequenceNumber } from "./database.service";
+import { runSQL, utf8ToHex, getAndIncrementSequenceNumber } from "./database.service";
 import { chatService, ChatMessage } from "./chat.service";
 import { offlineQueueService } from "./offline-queue.service";
 
@@ -137,11 +137,9 @@ export async function sendMessage(
         if (overrideSeq !== undefined) {
             seq = overrideSeq;
         } else {
-            seq = await getNextSequenceNumber(databasePublicKey);
+            // ATOMIC: Get and increment in one operation to prevent race conditions
+            seq = await getAndIncrementSequenceNumber(databasePublicKey);
         }
-
-        const PERSISTABLE_TYPES = ['text', 'image', 'file', 'video', 'audio', 'charm', 'token', 'invitation'];
-        const isPersistable = saveToDb && PERSISTABLE_TYPES.includes(type);
 
         // 3. OPTIMISTIC SAVE (PENDING)
         if (saveToDb) {
@@ -162,9 +160,8 @@ export async function sendMessage(
 
             await chatService.insertMessage(msgData);
 
-            if (isPersistable && overrideSeq === undefined) {
-                await incrementSequenceNumber(databasePublicKey);
-            }
+            // NOTE: No need to increment here - getAndIncrementSequenceNumber already did it atomically
+            // This prevents race conditions when sending multiple messages quickly
         }
 
         // 4. NETWORK SEND

@@ -2,6 +2,7 @@ import { Block, MDS, MinimaEvents } from "@minima-global/mds"
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react"
 import { minimaService } from "./services/minima.service"
 import useBeaconSender from "./hooks/useBeaconSender"
+import { DebugSQLPanel } from "./components/debug/DebugSQLPanel"
 
 
 const defaultAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23cbd5e1'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E";
@@ -42,9 +43,24 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
   const [userAvatar, setUserAvatar] = useState(defaultAvatar)
   const [writeMode, setWriteMode] = useState(false)
   const [myPublicKey, setMyPublicKey] = useState("")
+  const [showDebugPanel, setShowDebugPanel] = useState(false)
 
   // Enable periodic beacon sending globally (only when MDS is loaded)
   useBeaconSender(loaded);
+
+  // Keyboard shortcut for debug panel: Ctrl+Shift+D
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && e.key === 'D') {
+        e.preventDefault();
+        setShowDebugPanel(prev => !prev);
+        console.log('🐛 [DEBUG] SQL Panel toggled');
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Fetch user profile from Maxima
   const fetchUserProfile = async () => {
@@ -282,7 +298,18 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
     refreshProfile
   }
 
-  return <appContext.Provider value={context}>{children}</appContext.Provider>
+  return (
+    <appContext.Provider value={context}>
+      {children}
+      {showDebugPanel && (
+        <DebugSQLPanel
+          onClose={() => setShowDebugPanel(false)}
+          contactPubkey={undefined}
+          mdsLoaded={loaded}
+        />
+      )}
+    </appContext.Provider>
+  )
 }
 
 export const useAppContext = () => useContext(appContext)
