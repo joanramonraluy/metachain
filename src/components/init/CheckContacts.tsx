@@ -104,11 +104,13 @@ export default function CheckContacts() {
       localStorage.setItem("cached_all_contacts", JSON.stringify(enrichedList));
 
     } catch (err: any) {
-      console.error("🚨 Error fetching contacts:", err);
       // If we have no cache and fetch failed, show error. 
-      // If we have cache, we stay on cache and just log error (silent fail for user)
+      // If we have cache, we stay on cache and just log warning (silent fail for user)
       if (!cached) {
+        console.error("🚨 Error fetching contacts:", err);
         setError(err.message || "Unknown error");
+      } else {
+        console.warn("⚠️ [CONTACTS] Offline/Timeout - keeping cached data", err);
       }
     } finally {
       setLoading(false);

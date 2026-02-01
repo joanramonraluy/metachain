@@ -64,17 +64,45 @@ function DiscoveryPage() {
 
 
 
+    // Helper for timeouts
+    const withTimeout = (promise: Promise<any>, ms: number = 5000) => {
+        return Promise.race([
+            promise,
+            new Promise((_, reject) => setTimeout(() => reject(new Error("Request timed out")), ms))
+        ]);
+    };
+
     const loadData = async () => {
         // setLoading(true) // Don't flicker loading on every refresh
+
+        // 1. Load from cache immediately (Optimistic UI)
+        const cached = localStorage.getItem("cached_discovery_users");
+        if (cached && loading) { // Only load cache on initial load (when loading is true)
+            try {
+                const cachedUsers = JSON.parse(cached);
+                if (Array.isArray(cachedUsers)) {
+                    setUsers(cachedUsers);
+                    setTotalFound(cachedUsers.length);
+                    // Don't set loading to false yet, let the fresh fetch attempt run
+                    // But if strict offline, maybe we should? 
+                    // Let's just update state so user sees something.
+                    console.log("⚠️ [DISCOVERY] Loaded users from cache");
+                }
+            } catch (e) {
+                console.warn("Error parsing cached discovery users", e);
+            }
+        }
+
         try {
             console.log("🔄 [DISCOVERY] loadData triggering...");
             // Fetch users with online/offline status from two-layer system
-            const fetchedUsers = await getUsersWithStatus()
+            // 2. Fetch fresh data with timeout
+            const fetchedUsers = await withTimeout(getUsersWithStatus(), 5000);
 
             console.log(`✅ [DISCOVERY] Received ${fetchedUsers.length} users.`);
-            fetchedUsers.forEach((u, i) => {
-                console.log(`   [${i}] ${u.alias} - Online: ${u.is_online}`);
-            });
+            // fetchedUsers.forEach((u, i) => {
+            //     console.log(`   [${i}] ${u.alias} - Online: ${u.is_online}`);
+            // });
 
             setTotalFound(fetchedUsers.length)
             const onlineCount = fetchedUsers.filter(u => u.is_online).length
@@ -94,8 +122,17 @@ function DiscoveryPage() {
                 setTimeout(() => setShowNotification(false), 3000)
             }
             setPreviousCount(fetchedUsers.length)
+
+            // 3. Update cache
+            localStorage.setItem("cached_discovery_users", JSON.stringify(fetchedUsers));
+
         } catch (e) {
-            console.error("❌ [DISCOVERY] Error:", e)
+            // Using cached variable from outer scope of loadData
+            if (cached) {
+                console.warn("⚠️ [DISCOVERY] Offline/Timeout - keeping cached data", e);
+            } else {
+                console.error("❌ [DISCOVERY] Error:", e);
+            }
         } finally {
             setLoading(false)
         }
