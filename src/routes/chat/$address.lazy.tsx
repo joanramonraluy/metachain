@@ -71,6 +71,14 @@ function formatRelativeTime(timestamp: number): string {
 }
 
 function ChatPage() {
+  // Helper function for timeouts
+  const withTimeout = (promise: Promise<any>, ms: number = 3000) => {
+    const timeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Request timed out")), ms)
+    );
+    return Promise.race([promise, timeout]);
+  };
+
   // Helper to remove duplicate messages (favors UUID/customid, then seq, then timestamp)
   // Helper to remove duplicate messages (favors UUID/customid, then seq, then timestamp)
   const deduplicateMessages = (msgs: ParsedMessage[]) => {
@@ -259,6 +267,20 @@ function ChatPage() {
   useEffect(() => {
     let mounted = true;
     const fetchContact = async () => {
+      // 1. Try to load from localStorage cache first (Optimistic UI)
+      const cacheKey = `cached_contact_${address}`;
+      const cached = localStorage.getItem(cacheKey);
+
+      if (cached) {
+        try {
+          const cachedContact = JSON.parse(cached);
+          setContact(cachedContact);
+          console.log("⚠️ [CHAT] Loaded contact from cache (Optimistic)");
+        } catch (e) {
+          console.warn("⚠️ [CHAT] Failed to parse cached contact");
+        }
+      }
+
       try {
         let contactToSet: Contact | null = null;
         let resolvedPublicKey = address; // Default to address as is
@@ -266,16 +288,14 @@ function ChatPage() {
         // PRE-CHECK: If address is a Maxima address (Mx...), try to resolve to Hex Public Key first
         if (address && (address.startsWith("Mx") || address.startsWith("MX"))) {
           console.log(`🔍 [CHAT] Resolving address: ${address}`);
-          // Escape single quotes for SQL
           const safeMxAddress = address.replace(/'/g, "''");
-          // Try exact match first
+
           let resolveSql = `SELECT PUBLICKEY FROM DISCOVERED_PEERS WHERE ADDRESS = '${safeMxAddress}' LIMIT 1`;
-          let resolveRes = await MDS.sql(resolveSql);
+          let resolveRes: any = await withTimeout(MDS.sql(resolveSql), 3000).catch(() => ({ status: false }));
 
           if (!resolveRes.status || !resolveRes.rows || resolveRes.rows.length === 0) {
-            // Try LIKE if exact match fails (for safety)
             resolveSql = `SELECT PUBLICKEY FROM DISCOVERED_PEERS WHERE ADDRESS LIKE '%${safeMxAddress}%' LIMIT 1`;
-            resolveRes = await MDS.sql(resolveSql);
+            resolveRes = await withTimeout(MDS.sql(resolveSql), 3000).catch(() => ({ status: false }));
           }
 
           if (resolveRes.status && resolveRes.rows && resolveRes.rows.length > 0) {
@@ -287,7 +307,7 @@ function ChatPage() {
         }
 
         // 1. Try to find in Maxima contacts using the RESOLVED key
-        const res = await MDS.cmd.maxcontacts();
+        const res: any = await withTimeout(MDS.cmd.maxcontacts(), 5000).catch(() => ({ status: false }));
         const list: Contact[] = (res as any)?.response?.contacts || [];
         const c = list.find(
           (x) =>
@@ -297,22 +317,17 @@ function ChatPage() {
         );
 
         if (c) {
-          // Add the resolved public key if not present (sometimes contacts only have address)
           if (!c.publickey && resolvedPublicKey.startsWith("0x")) {
             c.publickey = resolvedPublicKey;
           }
 
-          // FIX: Look up in DISCOVERED_PEERS to get extended info (minimaaddress, bio, etc.)
-          // because maxcontacts only has basic info.
           if (c.publickey) {
             const safeKey = c.publickey.replace(/'/g, "''");
             const discSql = `SELECT * FROM DISCOVERED_PEERS WHERE publickey='${safeKey}'`;
-            const discRes = await MDS.sql(discSql);
+            const discRes: any = await withTimeout(MDS.sql(discSql), 2000).catch(() => ({ status: false }));
 
             if (discRes.status && discRes.rows && discRes.rows.length > 0) {
               const peer = discRes.rows[0];
-              // console.log(`✅ [CHAT] Merging extended info from DISCOVERED_PEERS for ${c.extradata?.name}`);
-
               let parsedExtra: any = {};
               try {
                 if (peer.EXTRA_DATA) {
@@ -320,24 +335,18 @@ function ChatPage() {
                 }
               } catch (e) { console.warn("Error parsing extra", e); }
 
-              // Initialize extradata if missing
               if (!c.extradata) c.extradata = {};
 
-              // MERGE: Prioritize DISCOVERED_PEERS data for Minima Address
-              // Check the new direct column first, then fallback to extra_data
               if (peer.MINIMAADDRESS) {
                 c.extradata.minimaaddress = peer.MINIMAADDRESS;
               } else if (parsedExtra.minimaaddress) {
                 c.extradata.minimaaddress = parsedExtra.minimaaddress;
               }
 
-              // Maybe merge icon/avatar if missing?
               if (!c.extradata.icon && peer.ICON) c.extradata.icon = peer.ICON;
             }
           }
 
-          // FIX: Only clear if it looks like a Maxima Contact Address (contains @)
-          // Minima Wallet addresses start with Mx but do NOT contain @
           if (c.extradata?.minimaaddress && c.extradata.minimaaddress.includes("@")) {
             console.warn("⚠️ [CHAT] Found contact with INVALID minimaaddress (Maxima ID detected), clearing it.");
             if (c.extradata) c.extradata.minimaaddress = "";
@@ -347,30 +356,23 @@ function ChatPage() {
         } else {
           // 2. If not found, try DISCOVERED_PEERS (using the RESOLVED key)
           console.log(`🔍 [CHAT] Checking Discovery DB: ${resolvedPublicKey}...`);
-          // Ensure we use the Hex Public Key if resolved, otherwise keep address
           const queryKey = resolvedPublicKey.startsWith('0x') ? resolvedPublicKey : address;
           const safeQueryKey = queryKey.replace(/'/g, "''");
 
-          // Try DISCOVERED_PEERS first (online/recent users)
           const discoverySql = `SELECT * FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('${safeQueryKey}')`;
-          console.log(`🔍 [CHAT] Querying DISCOVERED_PEERS for:`, safeQueryKey.substring(0, 20) + '...');
-          let discoveryRes = await MDS.sql(discoverySql);
+          let discoveryRes: any = await withTimeout(MDS.sql(discoverySql), 3000).catch(() => ({ status: false }));
           let foundInDiscovery = discoveryRes.status && discoveryRes.rows && discoveryRes.rows.length > 0;
 
-          // If not found in DISCOVERED_PEERS, try METACHAIN_USERS (persistent registry)
           if (!foundInDiscovery) {
             console.log(`⚠️ [CHAT] Not in DISCOVERED_PEERS, checking METACHAIN_USERS...`);
             const registrySql = `SELECT * FROM METACHAIN_USERS WHERE UPPER(publickey)=UPPER('${safeQueryKey}')`;
-            discoveryRes = await MDS.sql(registrySql);
-            console.log(`🔍 [CHAT] METACHAIN_USERS result:`, discoveryRes.rows?.length || 0, 'rows');
+            discoveryRes = await withTimeout(MDS.sql(registrySql), 3000).catch(() => ({ status: false }));
           }
 
           if (discoveryRes.status && discoveryRes.rows && discoveryRes.rows.length > 0) {
             const peer = discoveryRes.rows[0];
-            console.log(`✅ [CHAT] Found contact:`, peer.ALIAS || peer.alias);
 
             if (foundInDiscovery) {
-              // From DISCOVERED_PEERS - has extra_data, minimaaddress, icon
               let parsedExtra: any = {};
               try {
                 if (peer.EXTRA_DATA) {
@@ -390,42 +392,46 @@ function ChatPage() {
                 }
               };
             } else {
-              // From METACHAIN_USERS - only has basic fields (publickey, alias, address)
               contactToSet = {
                 publickey: peer.PUBLICKEY || peer.publickey,
                 currentaddress: peer.ADDRESS || peer.address || address,
                 extradata: {
                   name: peer.ALIAS || peer.alias || "Unknown",
-                  minimaaddress: "", // Not available in METACHAIN_USERS
+                  minimaaddress: "",
                   icon: ""
                 }
               };
-              console.log(`ℹ️ [CHAT] Contact from registry - minimaaddress not available (user offline)`);
             }
           } else {
-            // 3. Fallback: Create a minimal contact object
-            // CRITICAL: Ensure we use the Hex Public Key if resolved, otherwise keep address
             console.log("⚠️ [CHAT] Contact not found anywhere. Using raw/resolved.");
-            contactToSet = {
-              publickey: resolvedPublicKey, // Use the resolved hex key if possible!
-              currentaddress: address, // Keep original address for sending if needed
-              extradata: {
-                name: "Unknown User",
-              }
-            };
+
+            // Only use fallback "Unknown" if we DO NOT have cached data
+            // If cached data exists, we prefer it over "Unknown User" fallback
+            if (!cached) {
+              contactToSet = {
+                publickey: resolvedPublicKey,
+                currentaddress: address,
+                extradata: {
+                  name: "Unknown User",
+                }
+              };
+            } else {
+              console.log("⚠️ [CHAT] Keeping cached contact instead of fallback Unknown");
+              // We keep contactToSet null so we don't overwrite cache with Unknown
+            }
           }
         }
 
         if (contactToSet) {
           setContact(contactToSet);
+          // Update cache
+          localStorage.setItem(cacheKey, JSON.stringify(contactToSet));
 
-          // If contact was not found in Discovery (Unknown User) OR missing Minima Address, request profile proactively
-          // Only if we have a valid public key OR address to send to
           const isUnknown = contactToSet.extradata?.name === "Unknown User" || !contactToSet.extradata?.name;
           const isMissingAddress = !contactToSet.extradata?.minimaaddress;
 
           if ((isUnknown || isMissingAddress) && contactToSet.publickey) {
-            console.log(`🔄 [CHAT] Contact incomplete (Unknown: ${isUnknown}, Missing Address: ${isMissingAddress}) - requesting profile proactively`);
+            // Non-critical, just warning log if fails
             requestProfile(contactToSet.currentaddress || address, contactToSet.publickey)
               .catch(err => console.warn("⚠️ [CHAT] Profile request failed:", err));
           }
@@ -765,7 +771,29 @@ function ChatPage() {
     pendingReload.current = false; // Clear pending flag as we are starting now
 
     try {
-      const rawMessages = await minimaService.getMessages(targetKey);
+      // 1. Try to load from cache
+      const cacheKey = `cached_msgs_${targetKey}`;
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        try {
+          const cachedMsgs = JSON.parse(cached);
+          // If we have cached messages, process them immediately
+          if (Array.isArray(cachedMsgs) && cachedMsgs.length > 0) {
+            // We need to pass them through the parser logic or store parsed?
+            // Storing parsed is risky due to types.
+            // Let's assume we store PARSED messages in cache to save processing.
+            // Wait, check if we parsed rawMessages below.
+            // YES, we map rawMessages to parsedMessages.
+            // So we should store parsedMessages.
+            setMessages(deduplicateMessages(cachedMsgs));
+            console.log("⚠️ [CHAT-DB] Loaded messages from cache");
+            // Don't return, allow fetch to proceed and update
+          }
+        } catch (e) { }
+      }
+
+      // 2. Fetch fresh with timeout
+      const rawMessages: any = await withTimeout(minimaService.getMessages(targetKey), 5000).catch(() => null);
 
       if (Array.isArray(rawMessages)) {
         const parsedMessages = rawMessages.map((row: any) => {
@@ -886,6 +914,14 @@ function ChatPage() {
 
         const deduplicatedMessages = deduplicateMessages(finalMessages);
         setMessages(deduplicatedMessages);
+
+        // Cache the LAST 50 messages to save space for offline use
+        try {
+          const toCache = deduplicatedMessages.slice(-50);
+          localStorage.setItem(`cached_msgs_${targetKey}`, JSON.stringify(toCache));
+        } catch (e) {
+          console.warn("⚠️ [CHAT] Failed to cache messages", e);
+        }
       }
     } catch (err) {
       console.error("❌ [CHAT] Message load error:", err);

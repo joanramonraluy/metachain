@@ -48,7 +48,10 @@ export default function ChatsAndGroups() {
     const [activeTab, setActiveTab] = useState<'all' | 'individuals' | 'groups' | 'requests' | 'favorites' | 'archived'>('all');
     // State to hold discovered peer names map
     const [peerNames, setPeerNames] = useState<Map<string, string>>(new Map());
-    const [chats, setChats] = useState<ChatItem[]>([]);
+    const [chats, setChats] = useState<ChatItem[]>(() => {
+        const cached = localStorage.getItem('cached_chats');
+        return cached ? JSON.parse(cached) : [];
+    });
     const [groups, setGroups] = useState<GroupWithUnread[]>([]);
     const [contacts, setContacts] = useState<Map<string, Contact>>(new Map());
     const [loading, setLoading] = useState(true);
@@ -58,8 +61,20 @@ export default function ChatsAndGroups() {
         try {
             const chatsList = await minimaService.getRecentChats();
             setChats(chatsList);
+            // Cache successful fetch
+            localStorage.setItem('cached_chats', JSON.stringify(chatsList));
         } catch (err) {
             console.error("🚨 Error fetching chats:", err);
+            // Fallback to cache on error
+            const cached = localStorage.getItem('cached_chats');
+            if (cached) {
+                try {
+                    setChats(JSON.parse(cached));
+                    console.log("⚠️ Used cached chats due to fetch error");
+                } catch (e) {
+                    // ignore
+                }
+            }
         }
     };
 
@@ -100,20 +115,47 @@ export default function ChatsAndGroups() {
         if (!loaded || !dbReady) return;
 
         const fetchData = async () => {
-            try {
-                const contactsRes: any = await MDS.cmd.maxcontacts();
-                const contactsList: Contact[] = contactsRes?.response?.contacts || [];
-                // Create a map for quick lookup
-                const contactsMap = new Map<string, Contact>();
-                contactsList.forEach((contact) => {
-                    if (contact.publickey) {
-                        contactsMap.set(contact.publickey, contact);
-                    }
-                });
+            // Helper for timeout
+            const withTimeout = (promise: Promise<any>, ms: number = 3000) => {
+                const timeout = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error("Request timed out")), ms)
+                );
+                return Promise.race([promise, timeout]);
+            };
 
-                // Fetch discovered peers for name resolution of non-contacts
-                const peersSql = "SELECT publickey, alias FROM DISCOVERED_PEERS";
-                MDS.sql(peersSql, (res: any) => {
+            // 1. Define result containers
+            const contactsMap = new Map<string, Contact>();
+
+            // Parallelize fetching to reduce wait time (max wait = longest timeout vs sum of timeouts)
+            const p1_contacts = async () => {
+                try {
+                    const contactsRes: any = await withTimeout(MDS.cmd.maxcontacts(), 3000);
+                    const contactsList: Contact[] = contactsRes?.response?.contacts || [];
+                    contactsList.forEach((contact: Contact) => {
+                        if (contact.publickey) {
+                            contactsMap.set(contact.publickey, contact);
+                        }
+                    });
+                } catch (err) {
+                    console.warn("⚠️ [ChatsAndGroups] Failed to fetch contacts (Offline/Timeout):", err);
+                }
+            };
+
+            const p2_peers = async () => {
+                // 2. Fetch Discovered Peers (Might fail if offline, but usually local DB)
+                try {
+                    // Wrapper for MDS.sql which is callback based usually, but here we want to await it safely
+                    // or just fire and forget. The original code used MDS.sql(..., callback).
+                    // MDS.sql is fast (local). Converting to promise for safety.
+                    const peersPromise = new Promise((resolve, reject) => {
+                        MDS.sql("SELECT publickey, alias FROM DISCOVERED_PEERS", (res: any) => {
+                            if (res.status) resolve(res);
+                            else reject(new Error(res.error));
+                        });
+                    });
+
+                    const res: any = await withTimeout(peersPromise, 2000);
+
                     if (res.status && res.rows) {
                         const pMap = new Map<string, string>();
                         res.rows.forEach((row: any) => {
@@ -123,17 +165,37 @@ export default function ChatsAndGroups() {
                         });
                         setPeerNames(pMap);
                     }
-                });
+                } catch (err) {
+                    // Non-critical
+                    console.warn("⚠️ [ChatsAndGroups] Peer fetch warning:", err);
+                }
+            };
 
-                await fetchChats();
-                await fetchGroups();
+            const p3_chats = async () => {
+                try {
+                    // Return null on timeout instead of throwing to allow loading=false to proceed naturally
+                    await withTimeout(fetchChats(), 5000).catch(err => {
+                        console.warn("⚠️ [ChatsAndGroups] Fetch chats timed out - using cached data if available", err);
+                        return null;
+                    });
+                } catch (err) {
+                    console.error("❌ [ChatsAndGroups] Fetch chats TIMEOUT/ERROR:", err);
+                }
+            };
 
-                setContacts(contactsMap);
-            } catch (err: any) {
-                console.error("🚨 Error fetching data:", err);
-            } finally {
-                setLoading(false);
-            }
+            const p4_groups = async () => {
+                try {
+                    await withTimeout(fetchGroups(), 5000).catch(() => console.warn("Groups timeout"));
+                } catch (err) {
+                    console.warn("⚠️ [ChatsAndGroups] Failed to fetch groups (timeout):", err);
+                }
+            };
+
+            // Run all in parallel
+            await Promise.all([p1_contacts(), p2_peers(), p3_chats(), p4_groups()]);
+
+            setContacts(contactsMap);
+            setLoading(false);
         };
 
         fetchData();
@@ -173,7 +235,8 @@ export default function ChatsAndGroups() {
         };
     }, [loaded, dbReady, myPublicKey]);
 
-    if (!loaded || !dbReady || loading) {
+    // Show spinner only if purely loading (no cache) or system not ready
+    if ((!loaded || !dbReady) || (loading && chats.length === 0)) {
         return (
             <div className="flex items-center justify-center h-screen bg-white dark:bg-gray-900">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>

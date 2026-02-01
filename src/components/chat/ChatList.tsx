@@ -67,30 +67,45 @@ export default function ChatList() {
         let isMounted = true;
 
         const fetchData = async () => {
+            // Helper for timeout
+            const withTimeout = (promise: Promise<any>, ms: number = 3000) => {
+                const timeout = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error("Request timed out")), ms)
+                );
+                return Promise.race([promise, timeout]);
+            };
+
+            let contactsMap = new Map<string, Contact>();
+
+            // 1. Fetch Contacts (Might fail if offline)
             try {
-                // Fetch contacts first
-                const contactsRes: any = await MDS.cmd.maxcontacts();
+                // Fetch contacts first with timeout
+                // MDS.cmd.maxcontacts() usually returns a promise (or we assume it does based on await usage)
+                const contactsRes: any = await withTimeout(MDS.cmd.maxcontacts());
                 const contactsList: Contact[] = contactsRes?.response?.contacts || [];
 
                 // Create a map for quick lookup
-                const contactsMap = new Map<string, Contact>();
-                contactsList.forEach((contact) => {
+                contactsList.forEach((contact: Contact) => {
                     if (contact.publickey) {
                         contactsMap.set(contact.publickey, contact);
                     }
                 });
-
-                // Fetch recent chats
-                await fetchChats();
-
-                if (isMounted) {
-                    setContacts(contactsMap);
-                }
             } catch (err: any) {
-                console.error("❌ [CHAT-LIST] Fetch error:", err);
+                console.warn("⚠️ [CHAT-LIST] Failed to fetch contacts (offline/timeout):", err);
+                if (isMounted) setError(null); // Don't show error to user, just log warning
+            }
+
+            // 2. Fetch recent chats (Local DB - should always work)
+            try {
+                await fetchChats();
+            } catch (err: any) {
+                console.error("❌ [CHAT-LIST] Fetch chats error:", err);
                 if (isMounted) setError(err.message || "Unknown error");
-            } finally {
-                if (isMounted) setLoading(false);
+            }
+
+            if (isMounted) {
+                setContacts(contactsMap);
+                setLoading(false);
             }
         };
 
