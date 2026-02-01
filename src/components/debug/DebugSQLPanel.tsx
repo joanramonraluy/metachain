@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useLocation } from '@tanstack/react-router';
 import { X, Play, Copy, Download, ChevronDown, ChevronUp } from 'lucide-react';
 import { MDS } from '@minima-global/mds';
 
@@ -23,9 +24,9 @@ const PREDEFINED_QUERIES: PredefinedQuery[] = [
         name: 'All Chat Messages',
         description: 'View all messages for current chat',
         category: 'Messages',
-        sql: `SELECT id, message, type, state, sender_seq, original_timestamp, publickey 
+        sql: `SELECT sender_seq, date, message, type, state, original_timestamp, publickey, id 
 FROM CHAT_MESSAGES 
-WHERE publickey = '{CONTACT_PUBKEY}' 
+WHERE UPPER(publickey) = UPPER('{CONTACT_PUBKEY}') OR UPPER(publickey) = UPPER('{RAW_CHAT_ID}') 
 ORDER BY sender_seq ASC`,
     },
     {
@@ -59,9 +60,9 @@ ORDER BY original_timestamp DESC`,
         name: 'Discovered Peers',
         description: 'All discovered peers',
         category: 'Contacts',
-        sql: `SELECT publickey, name, minimaaddress, allow_non_contact_chats 
+        sql: `SELECT alias, publickey, minimaaddress, allow_non_contact_chats 
 FROM DISCOVERED_PEERS 
-ORDER BY name`,
+ORDER BY alias`,
     },
     {
         name: 'Contact Requests',
@@ -75,6 +76,18 @@ ORDER BY name`,
         category: 'Profile',
         sql: `SELECT * FROM MY_PROFILE`,
     },
+    {
+        name: 'Debug: List Chat Keys',
+        description: 'Show all public keys currently in DB',
+        category: 'Debug',
+        sql: `SELECT DISTINCT publickey FROM CHAT_MESSAGES`,
+    },
+    {
+        name: 'Debug: Show First 10 Messages',
+        description: 'Show first 10 messages in DB (no filter)',
+        category: 'Debug',
+        sql: `SELECT * FROM CHAT_MESSAGES LIMIT 10`,
+    },
 ];
 
 export function DebugSQLPanel({ onClose, contactPubkey, mdsLoaded = false }: { onClose: () => void; contactPubkey?: string; mdsLoaded?: boolean }) {
@@ -85,19 +98,131 @@ export function DebugSQLPanel({ onClose, contactPubkey, mdsLoaded = false }: { o
     const [showPredefined, setShowPredefined] = useState(true);
     const [selectedCategory, setSelectedCategory] = useState<string>('All');
 
+    // Router location to detect current chat
+    const location = useLocation();
+    const [resolvedPubkey, setResolvedPubkey] = useState<string>('');
+    const [rawChatId, setRawChatId] = useState<string>('');
+
     const categories = ['All', ...Array.from(new Set(PREDEFINED_QUERIES.map(q => q.category)))];
 
     const filteredQueries = selectedCategory === 'All'
         ? PREDEFINED_QUERIES
         : PREDEFINED_QUERIES.filter(q => q.category === selectedCategory);
 
+    const [availableChats, setAvailableChats] = useState<{ pubkey: string; name: string }[]>([]);
+    const [isManualEntry, setIsManualEntry] = useState(false);
+
+    // Fetch available chats for the dropdown
+    useEffect(() => {
+        const fetchChats = async () => {
+            try {
+                // Get all public keys that have messages
+                const msgRes = await MDS.sql("SELECT DISTINCT publickey FROM CHAT_MESSAGES");
+                if (!msgRes.status || !msgRes.rows) return;
+
+                const activeKeys = msgRes.rows.map((r: any) => r.PUBLICKEY);
+
+                // Get names for these keys from DISCOVERED_PEERS
+                const peerRes = await MDS.sql("SELECT publickey, alias FROM DISCOVERED_PEERS");
+                const peerMap: Record<string, string> = {};
+
+                if (peerRes.status && peerRes.rows) {
+                    peerRes.rows.forEach((r: any) => {
+                        peerMap[r.PUBLICKEY] = r.ALIAS;
+                        peerMap[r.PUBLICKEY.toLowerCase()] = r.ALIAS;
+                    });
+                }
+
+                const chats = activeKeys.map((key: string) => ({
+                    pubkey: key,
+                    name: peerMap[key] || peerMap[key.toLowerCase()] || `${key.substring(0, 10)}...${key.substring(key.length - 8)}`
+                }));
+
+                setAvailableChats(chats);
+            } catch (e) {
+                console.error("Failed to load chats:", e);
+            }
+        };
+
+        if (mdsLoaded) {
+            fetchChats();
+        }
+    }, [mdsLoaded]);
+
+    // Auto-detect contact from URL
+    useEffect(() => {
+        const detectContact = async () => {
+            // Check router location first
+            let path = location.pathname;
+
+            // Fallback to window.location.hash if router path is root or empty
+            if (path === '/' || path === '' || !path.includes('/chat/')) {
+                const hash = window.location.hash;
+                if (hash.includes('/chat/')) {
+                    // Extract path from hash (e.g., #/chat/0x... -> /chat/0x...)
+                    const parts = hash.split('/chat/');
+                    if (parts.length > 1) {
+                        path = '/chat/' + parts[1];
+                    }
+                }
+            }
+
+            if (path.startsWith('/chat/')) {
+                const rawId = path.split('/chat/')[1];
+                if (!rawId) return;
+
+                setRawChatId(rawId);
+
+                // If it's already a hex key (0x...), use it directly
+                if (rawId.startsWith('0x')) {
+                    setResolvedPubkey(rawId);
+                }
+                // If it's an Mx address, try to resolve it
+                else if (rawId.startsWith('Mx') || rawId.startsWith('MX')) {
+                    console.log(`🔍 [DEBUG-SQL] Attempting to resolve URL ID: ${rawId}`);
+                    try {
+                        const safeMx = rawId.replace(/'/g, "''");
+                        // Try DISCOVERED_PEERS first
+                        const sql = `SELECT PUBLICKEY FROM DISCOVERED_PEERS WHERE ADDRESS LIKE '%${safeMx}%' LIMIT 1`;
+                        const res = await MDS.sql(sql);
+                        if (res && res.rows && res.rows.length > 0) {
+                            console.log(`✅ [DEBUG-SQL] Resolved ${rawId} -> ${res.rows[0].PUBLICKEY}`);
+                            setResolvedPubkey(res.rows[0].PUBLICKEY);
+                        } else {
+                            console.warn(`⚠️ [DEBUG-SQL] Could not resolve ${rawId} in DISCOVERED_PEERS`);
+                            setResolvedPubkey(rawId);
+                        }
+                    } catch (e) {
+                        console.warn("Error resolving Mx address in DebugPanel:", e);
+                        setResolvedPubkey(rawId);
+                    }
+                } else {
+                    // Fallback for other formats
+                    setResolvedPubkey(rawId);
+                }
+            }
+        };
+
+        detectContact();
+    }, [location.pathname]);
+
     const executeQuery = async (sqlQuery: string) => {
         if (!sqlQuery.trim()) return;
 
         setIsExecuting(true);
         try {
-            // Replace placeholder with actual contact pubkey
-            const finalQuery = sqlQuery.replace('{CONTACT_PUBKEY}', contactPubkey || '');
+            // Replace placeholder with actual contact pubkey (Prop > Resolved > Empty)
+            // Use resolvedPubkey from URL if prop is not provided
+            const targetKey = contactPubkey || resolvedPubkey || '';
+            const targetRawId = rawChatId || targetKey;
+
+            let finalQuery = sqlQuery.replace(/{CONTACT_PUBKEY}/g, targetKey);
+            finalQuery = finalQuery.replace(/{RAW_CHAT_ID}/g, targetRawId);
+
+            if (finalQuery.includes('{CONTACT_PUBKEY}') && !targetKey) {
+                // Warn if placeholder remains
+                console.warn("⚠️ Placeholder {CONTACT_PUBKEY} not replaced - no contact detected.");
+            }
 
             const response = await MDS.sql(finalQuery);
 
@@ -188,7 +313,62 @@ export function DebugSQLPanel({ onClose, contactPubkey, mdsLoaded = false }: { o
                                 {mdsLoaded ? '● Online' : '● Offline'}
                             </span>
                         </div>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">Execute SQL queries on the local database</p>
+                        <div className="flex flex-col gap-1 mt-1">
+                            <p className="text-sm text-gray-500 dark:text-gray-400">Execute SQL queries on the local database</p>
+
+                            {/* Context Selector */}
+                            <div className="flex items-center gap-2 mt-2">
+                                <span className="text-gray-500 text-xs font-mono">Target Chat:</span>
+
+                                {!isManualEntry ? (
+                                    <div className="flex items-center gap-2">
+                                        <select
+                                            value={resolvedPubkey}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                if (val === 'MANUAL_ENTRY') {
+                                                    setIsManualEntry(true);
+                                                    setResolvedPubkey('');
+                                                } else {
+                                                    setResolvedPubkey(val);
+                                                }
+                                            }}
+                                            className="text-xs p-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-900 text-gray-900 dark:text-white max-w-md"
+                                        >
+                                            <option value="">-- Select a Chat --</option>
+                                            {availableChats.map(chat => (
+                                                <option key={chat.pubkey} value={chat.pubkey}>
+                                                    {chat.name}
+                                                </option>
+                                            ))}
+                                            <option value="MANUAL_ENTRY">Custom / Manual Entry...</option>
+                                        </select>
+
+                                        {resolvedPubkey && (
+                                            <span className="text-xs text-gray-400 font-mono truncate max-w-[200px]" title={resolvedPubkey}>
+                                                {resolvedPubkey}
+                                            </span>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            value={resolvedPubkey}
+                                            onChange={(e) => setResolvedPubkey(e.target.value)}
+                                            className="bg-transparent border-b border-gray-300 dark:border-gray-600 focus:border-blue-500 outline-none text-blue-600 dark:text-blue-400 w-96 font-mono text-xs"
+                                            placeholder="Enter Public Key..."
+                                            autoFocus
+                                        />
+                                        <button
+                                            onClick={() => setIsManualEntry(false)}
+                                            className="text-xs text-blue-500 hover:text-blue-700 underline"
+                                        >
+                                            Back to List
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
                     </div>
                     <button
                         onClick={onClose}
@@ -336,6 +516,12 @@ export function DebugSQLPanel({ onClose, contactPubkey, mdsLoaded = false }: { o
                                                 </button>
                                             </div>
                                         )}
+                                    </div>
+
+                                    {/* Show Executed Query */}
+                                    <div className="mb-3 p-2 bg-gray-50 dark:bg-gray-900/50 rounded border border-gray-100 dark:border-gray-700 font-mono text-xs text-gray-600 dark:text-gray-400 break-all">
+                                        <span className="font-bold text-gray-500 mr-2">Executed:</span>
+                                        {result.sql}
                                     </div>
 
                                     {result.error && (
