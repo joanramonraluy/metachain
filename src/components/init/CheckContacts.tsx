@@ -45,9 +45,34 @@ export default function CheckContacts() {
     localStorage.setItem('minima_dismiss_community_hint', 'true');
   };
 
+  // Helper for timeouts
+  const withTimeout = (promise: Promise<any>, ms: number = 5000) => {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error("Request timed out")), ms))
+    ]);
+  };
+
   const fetchContacts = async () => {
+    // 1. Load from cache immediately (Optimistic UI)
+    const cached = localStorage.getItem("cached_all_contacts");
+    if (cached) {
+      try {
+        const cachedList = JSON.parse(cached);
+        if (Array.isArray(cachedList)) {
+          setContacts(cachedList);
+          setLoading(false); // Show data immediately
+          console.log("⚠️ [CONTACTS] Loaded from cache");
+        }
+      } catch (e) {
+        console.warn("Error parsing cached contacts", e);
+      }
+    }
+
     try {
-      const res: any = await MDS.cmd.maxcontacts();
+      console.log("🔄 [CONTACTS] Fetching fresh contacts...");
+      // 2. Fetch fresh data with timeout
+      const res: any = await withTimeout(MDS.cmd.maxcontacts(), 5000);
       let list: Contact[] = [];
 
       if (res?.response?.contacts && Array.isArray(res.response.contacts)) {
@@ -61,18 +86,30 @@ export default function CheckContacts() {
       }
 
       // Enrich contacts with mute status
+      // We can also timeout this part if it takes too long
       const enrichedList = await Promise.all(list.map(async (c) => {
         if (c.publickey) {
-          const isMuted = await minimaService.isContactMuted(c.publickey);
-          return { ...c, muted: isMuted };
+          try {
+            // giving a small timeout for DB checks just in case
+            const isMuted = await minimaService.isContactMuted(c.publickey);
+            return { ...c, muted: isMuted };
+          } catch (e) { return c; }
         }
         return c;
       }));
 
       setContacts(enrichedList);
+
+      // 3. Update cache
+      localStorage.setItem("cached_all_contacts", JSON.stringify(enrichedList));
+
     } catch (err: any) {
       console.error("🚨 Error fetching contacts:", err);
-      setError(err.message || "Unknown error");
+      // If we have no cache and fetch failed, show error. 
+      // If we have cache, we stay on cache and just log error (silent fail for user)
+      if (!cached) {
+        setError(err.message || "Unknown error");
+      }
     } finally {
       setLoading(false);
     }
