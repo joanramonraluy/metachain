@@ -3111,6 +3111,22 @@ function sendWelcomePackage(targetPubkey, targetAlias) {
  */
 
 // ============================================================================
+// LIFECYCLE MANAGEMENT (CRITICAL FOR UPDATES)
+// ============================================================================
+
+// Force immediate installation of new version
+self.addEventListener('install', function (event) {
+    MDS.log("📢 [SW-LIFECYCLE] Installing new Service Worker v2.7...");
+    self.skipWaiting(); // Force new SW to become active immediately
+});
+
+// Force immediate control of all clients
+self.addEventListener('activate', function (event) {
+    MDS.log("📢 [SW-LIFECYCLE] Activating new Service Worker...");
+    event.waitUntil(self.clients.claim()); // Take control of all open tabs immediately
+});
+
+// ============================================================================
 // MAIN EVENT DISPATCHER
 // ============================================================================
 
