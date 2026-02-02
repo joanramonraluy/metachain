@@ -1,6 +1,7 @@
 import { MDS } from "@minima-global/mds";
 import { utf8ToHex } from "../utils/hex";
 import { offlineQueueService } from "./offline-queue.service";
+import { resolveMaximaAddress } from "./database.service";
 
 
 
@@ -933,14 +934,25 @@ class GroupService {
                 }
             }
 
+            // Attempt to resolve Maxima Address (Mx...) derived from Discovery
+            const address = await resolveMaximaAddress(publickey);
+            const contactValue = address || publickey;
+
+            if (address) {
+                console.log(`📍 [CONTACTS] Resolved address for ${publickey.substring(0, 10)}... -> ${address}`);
+            } else {
+                console.warn(`⚠️ [CONTACTS] Could not resolve address for ${publickey.substring(0, 10)}..., trying public key directly.`);
+            }
+
             // Add contact
             await MDS.cmd.maxcontacts({
                 action: "add",
-                contact: publickey
+                contact: contactValue
             } as any);
-            console.log("✅ [CONTACTS] Auto-added:", publickey);
+            console.log("✅ [CONTACTS] Auto-added:", contactValue);
         } catch (err) {
             console.error("❌ [CONTACTS] Failed to add:", err);
+            throw err; // Re-throw so the caller knows it failed
         }
     }
 

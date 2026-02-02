@@ -7,26 +7,15 @@
  */
 
 // ============================================================================
-// LIFECYCLE MANAGEMENT (CRITICAL FOR UPDATES)
-// ============================================================================
 
-// Force immediate installation of new version
-self.addEventListener('install', function (event) {
-    MDS.log("📢 [SW-LIFECYCLE] Installing new Service Worker v2.7...");
-    self.skipWaiting(); // Force new SW to become active immediately
-});
-
-// Force immediate control of all clients
-self.addEventListener('activate', function (event) {
-    MDS.log("📢 [SW-LIFECYCLE] Activating new Service Worker...");
-    event.waitUntil(self.clients.claim()); // Take control of all open tabs immediately
-});
 
 // ============================================================================
 // MAIN EVENT DISPATCHER
 // ============================================================================
 
 // Flag to ensure startup cleanup runs once after DB is ready (triggered by first NEWBLOCK)
+var DB_INIT_DONE = false;
+var DB_READY = false;
 var INITIAL_CLEANUP_DONE = false;
 
 // Flag to trigger coin discovery on first NEWBLOCK (when node is synced)
@@ -43,18 +32,21 @@ MDS.init(function (msg) {
     if (msg.event == "inited") {
         MDS.log("🚀 [SW-VERSION-CHECK] Service Worker v2.7 DEBUG - " + new Date().toISOString());
 
-        // BREATHING ROOM: Delay SW init by 5 seconds to let UI priority startup finish
-        // This prevents the "Startup Storm" where UI and SW hammer the node simultaneously on update.
-        setTimeout(function () {
-            MDS.log("⏰ [SW] Starting Post-Init Database Setup (Delayed 5s)...");
-            initDatabase();
-        }, 5000);
-
-        // Cleanup will happen on first NEWBLOCK to avoid setTimeout (not supported)
+        // IMMEDIATE INIT: Restore fast startup (like Reference Implementation)
+        // Race conditions are now handled by the DB_READY flag in the NEWBLOCK loop.
+        MDS.log("⏰ [SW] Starting Database Initialization...");
+        initDatabase();
     }
 
     // Periodic tasks via NEWBLOCK
     else if (msg.event == "NEWBLOCK") {
+        // 1. WAIT FOR DB TO BE READY (Async Init)
+        // This prevents "Table Not Found" errors if Gossip runs before Init finishes.
+        if (!DB_READY) {
+            MDS.log("⏳ [SW] Database initializing... Skipping periodic tasks.");
+            return;
+        }
+
         // Run one-time startup cleanup if not done yet
         if (!INITIAL_CLEANUP_DONE) {
             INITIAL_CLEANUP_DONE = true;

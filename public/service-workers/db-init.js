@@ -79,7 +79,8 @@ function initDatabase() {
                 runSQL("ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS amount INT NOT NULL DEFAULT 0"),
                 runSQL("ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS original_timestamp BIGINT"),
                 runSQL("ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS txpowid VARCHAR(128)"),
-                runSQL("ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS sender_seq INT DEFAULT 0")
+                runSQL("ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS sender_seq INT DEFAULT 0"),
+                runSQL("ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS customid VARCHAR(128)")
             ]);
         });
     });
@@ -177,7 +178,8 @@ function initDatabase() {
                 runSQL("ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS allow_non_contact_chats BOOLEAN DEFAULT TRUE"),
                 runSQL("ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS extra_data CLOB"),
                 runSQL("ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS avatar TEXT"),
-                runSQL("ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS minimaaddress VARCHAR(512)")
+                runSQL("ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS minimaaddress VARCHAR(512)"),
+                runSQL("ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS source VARCHAR(20) DEFAULT 'P2P'")
             ]);
         });
     });
@@ -220,6 +222,7 @@ function initDatabase() {
     // FINAL: Start Services
     chain.then(function () {
         MDS.log("✅ [INIT] Database sequence complete. Starting Services...");
+        DB_READY = true;
 
         // Enable logs for P2P beacons
         MDS.cmd("logs on", function (logRes) {

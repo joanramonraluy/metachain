@@ -60,6 +60,9 @@ export const getUsersWithStatus = async (): Promise<UserWithStatus[]> => {
     const registryUsers: MetachainUser[] = registryRes.rows || [];
     const discoveredPeers: DiscoveredPeer[] = discoveredRes.rows || [];
 
+    console.log("🔍 [DiscoveryService] RAW DISCOVERED PEERS:", JSON.stringify(discoveredPeers)); // DEBUG LOG
+
+
     const userMap = new Map<string, UserWithStatus>();
 
     // 1. Add Registry Users (Base)

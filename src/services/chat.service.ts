@@ -279,33 +279,44 @@ class ChatService {
     }
     async insertMessage(msg: ChatMessage) {
         const { roomname, publickey, username, type, message, filedata = "", state = "", amount = 0, date, sender_seq, originalTimestamp, customid } = msg;
+
+        // SAFE ESCAPING FOR ALL STRINGS
+        const safeRoomname = roomname.replace(/'/g, "''");
+        const safeKey = publickey.replace(/'/g, "''");
+        const safeUsername = username.replace(/'/g, "''");
+        // const safeType = type.replace(/'/g, "''"); // Types are usually strict enums
         const escapedMsg = message.replace(/'/g, "''");
+        const safeFiledata = filedata ? filedata.replace(/'/g, "''") : "";
+        const safeCustomId = (customid || "0x00").replace(/'/g, "''");
+
         const timestamp = date || Date.now();
         const msgOriginalTimestamp = originalTimestamp || timestamp;
-        const sqlSeq = (sender_seq === null || sender_seq === undefined) ? "0" : sender_seq; // Simplification
+        const sqlSeq = (sender_seq === null || sender_seq === undefined) ? "0" : sender_seq;
 
         const sql = `
             INSERT INTO CHAT_MESSAGES (roomname,publickey,username,type,message,filedata,state,amount,date,customid,sender_seq,original_timestamp)
-            VALUES ('${roomname}','${publickey}','${username}','${type}','${escapedMsg}','${filedata}','${state}',${amount},${timestamp},'${customid || "0x00"}', ${sqlSeq}, ${msgOriginalTimestamp})
+            VALUES ('${safeRoomname}','${safeKey}','${safeUsername}','${type}','${escapedMsg}','${safeFiledata}','${state}',${amount},${timestamp},'${safeCustomId}', ${sqlSeq}, ${msgOriginalTimestamp})
         `;
-        console.log("📥 [CHAT-DB-DEBUG] Inserting message:", { sql, msg });
+        console.log("📥 [CHAT-DB] Inserting message:", { type, seq: sqlSeq, customid: safeCustomId });
         try {
             await runSQL(sql);
-            console.log("✅ [CHAT-DB-DEBUG] Insert success");
+            console.log("✅ [CHAT-DB] Insert success");
         } catch (err) {
             console.error("❌ [SQL] INSERT failed:", err);
+            console.error("❌ [SQL] FAILED QUERY:", sql);
         }
     }
 
     updateMessageState(publickey: string, date: number, state: string, txpowid?: string, sender_seq?: number): Promise<void> {
         return new Promise((resolve) => {
+            const safeKey = publickey.replace(/'/g, "''");
             let sql = `UPDATE CHAT_MESSAGES SET state='${state}'`;
-            if (txpowid) sql += `, txpowid='${txpowid}'`;
+            if (txpowid) sql += `, txpowid='${txpowid.replace(/'/g, "''")}'`;
             if (sender_seq !== undefined) sql += `, sender_seq=${sender_seq}`;
 
             // Where clause
             // We use date (timestamp) as the primary identifier along with publickey for now
-            sql += ` WHERE publickey='${publickey}' AND date=${date}`;
+            sql += ` WHERE publickey='${safeKey}' AND date=${date}`;
 
             MDS.sql(sql, (res: any) => {
                 if (!res.status) console.error("❌ [DB] Update state failed:", res.error);
@@ -374,7 +385,8 @@ class ChatService {
                     s.last_opened,
                     s.favorite,
                     COALESCE(d.alias, u.alias) as discovery_alias,
-                    d.avatar as discovery_avatar
+                    d.avatar as discovery_avatar,
+                    d.address as discovery_address
                 FROM CHAT_MESSAGES m
                 LEFT JOIN CHAT_STATUS s ON m.publickey = s.publickey
                 LEFT JOIN DISCOVERED_PEERS d ON UPPER(m.publickey) = UPPER(d.publickey)
@@ -426,6 +438,7 @@ class ChatService {
 
                 chatMap.set(publickey, {
                     publickey: row.PUBLICKEY,
+                    currentaddress: row.DISCOVERY_ADDRESS,
                     roomname: row.DISCOVERY_ALIAS || row.ROOMNAME || "Unknown",
                     avatar: row.DISCOVERY_AVATAR,
                     lastMessage: row.MESSAGE,

@@ -109,7 +109,8 @@ export async function initDB(): Promise<void> {
                 state VARCHAR(32) DEFAULT 'delivered',
                 amount DECIMAL(30,8) DEFAULT 0,
                 date BIGINT NOT NULL,
-                txpowid VARCHAR(256)
+                txpowid VARCHAR(256),
+                customid VARCHAR(128)
             )`;
 
         MDS.sql(createMessagesTable, (res: any) => {
@@ -134,6 +135,12 @@ export async function initDB(): Promise<void> {
                 const alterSql3 = "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS original_timestamp BIGINT DEFAULT 0";
                 MDS.sql(alterSql3, (alterRes: any) => {
                     if (alterRes.status) console.log("📂 [DB] original_timestamp column added/verified in CHAT_MESSAGES");
+                });
+
+                // Migration: Add customid column for deduplication
+                const alterSql4 = "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS customid VARCHAR(128)";
+                MDS.sql(alterSql4, (alterRes: any) => {
+                    if (alterRes.status) console.log("📂 [DB] customid column added/verified in CHAT_MESSAGES");
                 });
             }
         });
@@ -318,7 +325,8 @@ export async function initDB(): Promise<void> {
                                         message TEXT,
                                         filedata TEXT,
                                         date BIGINT NOT NULL,
-                                        read INTEGER DEFAULT 0
+                                        read INTEGER DEFAULT 0,
+                                        propagated INTEGER DEFAULT 0
                                     )`;
 
                                 MDS.sql(createGroupMessagesTable, (res: any) => {
@@ -326,6 +334,12 @@ export async function initDB(): Promise<void> {
                                         console.error("❌ [DB] Failed to create GROUP_MESSAGES table:", res.error);
                                     } else {
                                         console.log("📂 [DB] GROUP_MESSAGES table initialized");
+
+                                        // Migration: Add propagated column if it doesn't exist
+                                        const alterSql = "ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS propagated INTEGER DEFAULT 0";
+                                        MDS.sql(alterSql, (alterRes: any) => {
+                                            if (alterRes.status) console.log("📂 [DB] propagated column added/verified in GROUP_MESSAGES");
+                                        });
                                     }
 
                                     // Create CONTACT_REQUESTS table for bidirectional contact requests
@@ -404,6 +418,48 @@ export async function initDB(): Promise<void> {
                             } else {
                                 console.log("📂 [DB] MESSAGE_COUNTERS table initialized");
                             }
+
+                            // Create DISCOVERED_PEERS table
+                            const createDiscoveredPeersTable = `
+                                CREATE TABLE IF NOT EXISTS DISCOVERED_PEERS (
+                                    publickey VARCHAR(512) PRIMARY KEY,
+                                    address VARCHAR(1024),
+                                    alias VARCHAR(255),
+                                    avatar TEXT,
+                                    last_seen BIGINT,
+                                    allow_non_contact_chats BOOLEAN DEFAULT TRUE,
+                                    source VARCHAR(20) DEFAULT 'P2P'
+                                )`;
+
+                            MDS.sql(createDiscoveredPeersTable, (res: any) => {
+                                if (!res.status) {
+                                    console.error("❌ [DB] Failed to create DISCOVERED_PEERS table:", res.error);
+                                } else {
+                                    console.log("📂 [DB] DISCOVERED_PEERS table initialized");
+
+                                    // Ensure source column exists (migration)
+                                    MDS.sql("ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS source VARCHAR(20) DEFAULT 'P2P'", (alterRes: any) => {
+                                        if (alterRes.status) console.log("📂 [DB] Verified DISCOVERED_PEERS source column");
+                                    });
+                                }
+
+                                // Create METACHAIN_USERS table
+                                const createMetachainUsersTable = `
+                                    CREATE TABLE IF NOT EXISTS METACHAIN_USERS (
+                                        publickey VARCHAR(512) PRIMARY KEY,
+                                        alias VARCHAR(255),
+                                        avatar TEXT,
+                                        last_seen BIGINT
+                                    )`;
+
+                                MDS.sql(createMetachainUsersTable, (res: any) => {
+                                    if (!res.status) {
+                                        console.error("❌ [DB] Failed to create METACHAIN_USERS table:", res.error);
+                                    } else {
+                                        console.log("📂 [DB] METACHAIN_USERS table initialized");
+                                    }
+                                });
+                            });
                         });
                     });
                 });

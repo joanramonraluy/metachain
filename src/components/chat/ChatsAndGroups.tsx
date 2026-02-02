@@ -47,14 +47,40 @@ export default function ChatsAndGroups() {
     const { loaded, dbReady, myPublicKey } = useContext(appContext);
     const [activeTab, setActiveTab] = useState<'all' | 'individuals' | 'groups' | 'requests' | 'favorites' | 'archived'>('all');
     // State to hold discovered peer names map
-    const [peerNames, setPeerNames] = useState<Map<string, string>>(new Map());
+    const [peerNames, setPeerNames] = useState<Map<string, string>>(() => {
+        try {
+            const cached = localStorage.getItem('cached_peer_names');
+            return cached ? new Map(JSON.parse(cached)) : new Map();
+        } catch (e) { return new Map(); }
+    });
     const [chats, setChats] = useState<ChatItem[]>(() => {
         const cached = localStorage.getItem('cached_chats');
         return cached ? JSON.parse(cached) : [];
     });
-    const [groups, setGroups] = useState<GroupWithUnread[]>([]);
-    const [contacts, setContacts] = useState<Map<string, Contact>>(new Map());
-    const [loading, setLoading] = useState(true);
+    const [groups, setGroups] = useState<GroupWithUnread[]>(() => {
+        const cached = localStorage.getItem('cached_groups');
+        return cached ? JSON.parse(cached) : [];
+    });
+    const [contacts, setContacts] = useState<Map<string, Contact>>(() => {
+        try {
+            const cached = localStorage.getItem('cached_contacts');
+            if (cached) {
+                const list = JSON.parse(cached);
+                const map = new Map<string, Contact>();
+                list.forEach((c: Contact) => {
+                    if (c.publickey) map.set(c.publickey, c);
+                });
+                return map;
+            }
+        } catch (e) { }
+        return new Map();
+    });
+
+    // Only show full loading spinner if we have absolutely no data
+    const [loading, setLoading] = useState(() => {
+        const hasChats = !!localStorage.getItem('cached_chats');
+        return !hasChats;
+    });
     const navigate = useNavigate();
 
     const fetchChats = async () => {
@@ -106,8 +132,14 @@ export default function ChatsAndGroups() {
 
             groupsWithUnread.sort((a, b) => (b.lastMessageDate || 0) - (a.lastMessageDate || 0));
             setGroups(groupsWithUnread);
+            localStorage.setItem('cached_groups', JSON.stringify(groupsWithUnread));
         } catch (err) {
             console.error("❌ [ChatsAndGroups] Error fetching groups:", err);
+            // Fallback to cache
+            const cached = localStorage.getItem('cached_groups');
+            if (cached) {
+                try { setGroups(JSON.parse(cached)); } catch (e) { }
+            }
         }
     };
 
@@ -124,18 +156,23 @@ export default function ChatsAndGroups() {
             };
 
             // 1. Define result containers
-            const contactsMap = new Map<string, Contact>();
+            // const contactsMap = new Map<string, Contact>(); // Removed unused var
 
-            // Parallelize fetching to reduce wait time (max wait = longest timeout vs sum of timeouts)
+
+            // Parallelize fetching - Update state independently for instant feel
             const p1_contacts = async () => {
                 try {
                     const contactsRes: any = await withTimeout(MDS.cmd.maxcontacts(), 3000);
                     const contactsList: Contact[] = contactsRes?.response?.contacts || [];
+                    const newMap = new Map<string, Contact>();
                     contactsList.forEach((contact: Contact) => {
                         if (contact.publickey) {
-                            contactsMap.set(contact.publickey, contact);
+                            newMap.set(contact.publickey, contact);
                         }
                     });
+                    setContacts(newMap);
+                    // Cache the LIST (Maps are not JSON serializable directly)
+                    localStorage.setItem('cached_contacts', JSON.stringify(contactsList));
                 } catch (err) {
                     console.warn("⚠️ [ChatsAndGroups] Failed to fetch contacts (Offline/Timeout):", err);
                 }
@@ -144,9 +181,6 @@ export default function ChatsAndGroups() {
             const p2_peers = async () => {
                 // 2. Fetch Discovered Peers (Might fail if offline, but usually local DB)
                 try {
-                    // Wrapper for MDS.sql which is callback based usually, but here we want to await it safely
-                    // or just fire and forget. The original code used MDS.sql(..., callback).
-                    // MDS.sql is fast (local). Converting to promise for safety.
                     const peersPromise = new Promise((resolve, reject) => {
                         MDS.sql("SELECT publickey, alias FROM DISCOVERED_PEERS", (res: any) => {
                             if (res.status) resolve(res);
@@ -164,18 +198,18 @@ export default function ChatsAndGroups() {
                             }
                         });
                         setPeerNames(pMap);
+                        // Cache map as array of entries
+                        localStorage.setItem('cached_peer_names', JSON.stringify(Array.from(pMap.entries())));
                     }
                 } catch (err) {
-                    // Non-critical
                     console.warn("⚠️ [ChatsAndGroups] Peer fetch warning:", err);
                 }
             };
 
             const p3_chats = async () => {
                 try {
-                    // Return null on timeout instead of throwing to allow loading=false to proceed naturally
                     await withTimeout(fetchChats(), 5000).catch(err => {
-                        console.warn("⚠️ [ChatsAndGroups] Fetch chats timed out - using cached data if available", err);
+                        console.warn("⚠️ [ChatsAndGroups] Fetch chats timed out", err);
                         return null;
                     });
                 } catch (err) {
@@ -191,11 +225,15 @@ export default function ChatsAndGroups() {
                 }
             };
 
-            // Run all in parallel
-            await Promise.all([p1_contacts(), p2_peers(), p3_chats(), p4_groups()]);
+            // Fire all requests - do NOT await them together
+            // Use 'void' to fire-and-forget but we know they update state internally
+            void p1_contacts();
+            void p2_peers();
 
-            setContacts(contactsMap);
-            setLoading(false);
+            // Critical content (chats/groups) -> once these settle (or fail), allow UI to show empty state if needed
+            Promise.allSettled([p3_chats(), p4_groups()]).then(() => {
+                setLoading(false);
+            });
         };
 
         fetchData();

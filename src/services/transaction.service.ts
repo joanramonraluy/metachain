@@ -100,7 +100,7 @@ export async function updateTransactionStatus(txpowid: string, status: 'pending'
     const now = Date.now();
     const sql = `
         UPDATE TRANSACTIONS
-        SET status='${status}', date=${now}
+        SET status='${status}', updated_at=${now}
         WHERE txpowid='${txpowid}'
     `;
 
@@ -151,7 +151,7 @@ export async function updateTransactionTxpowid(pendinguid: string, txpowid: stri
 
 export async function updateTransactionStatusByPendingUid(pendinguid: string, status: 'pending' | 'sent' | 'confirmed' | 'rejected'): Promise<void> {
     const now = Date.now();
-    const sql = `UPDATE TRANSACTIONS SET status='${status}', date=${now} WHERE pendinguid='${pendinguid}'`;
+    const sql = `UPDATE TRANSACTIONS SET status='${status}', updated_at=${now} WHERE pendinguid='${pendinguid}'`;
     try {
         await runSQL(sql);
         console.log(`✅ [TX] Updated status for pendinguid ${pendinguid} to ${status}`);
@@ -162,7 +162,7 @@ export async function updateTransactionStatusByPendingUid(pendinguid: string, st
 }
 
 export async function getPendingTransactions(): Promise<any[]> {
-    const sql = `SELECT * FROM TRANSACTIONS WHERE status='pending' ORDER BY date ASC`;
+    const sql = `SELECT * FROM TRANSACTIONS WHERE status='pending' ORDER BY message_timestamp ASC`;
 
     try {
         const res = await runSQL(sql);
@@ -577,7 +577,7 @@ export async function check3BlockConfirmation(txpowid: string): Promise<'confirm
          * Get all transactions that are in 'sent' status (waiting for confirmations)
          */
 export async function getSentTransactions(): Promise<any[]> {
-    const sql = `SELECT * FROM TRANSACTIONS WHERE status='sent' AND txpowid NOT LIKE 'PENDING_%' ORDER BY date ASC`;
+    const sql = `SELECT * FROM TRANSACTIONS WHERE status='sent' AND txpowid NOT LIKE 'PENDING_%' ORDER BY message_timestamp ASC`;
 
     try {
         const res = await runSQL(sql);

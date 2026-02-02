@@ -44,7 +44,7 @@ function GroupInfoPage() {
           return {
             publickey: pubkey,
             name: username,
-            isMe: pubkey === myPublicKey
+            isMe: (pubkey || "").toLowerCase() === (myPublicKey || "").toLowerCase()
           };
         });
 

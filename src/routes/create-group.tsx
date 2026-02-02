@@ -13,6 +13,7 @@ export const Route = createFileRoute("/create-group")({
 interface Contact {
   publickey: string;
   currentaddress: string;
+  type: 'contact' | 'community';
   extradata?: {
     name?: string;
     icon?: string;
@@ -27,6 +28,7 @@ function CreateGroupPage() {
   const [selectedContacts, setSelectedContacts] = useState<Set<string>>(new Set());
   const [creating, setCreating] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [activeTab, setActiveTab] = useState<'all' | 'contacts' | 'community'>('all');
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -34,7 +36,8 @@ function CreateGroupPage() {
       try {
         // 1. Fetch Maxima contacts
         const res = await MDS.cmd.maxcontacts();
-        const contactsList: Contact[] = (res as any)?.response?.contacts || [];
+        const rawContacts = (res as any)?.response?.contacts || [];
+        const contactsList: Contact[] = rawContacts.map((c: any) => ({ ...c, type: 'contact' }));
 
         // 2. Fetch Recent Chats (for non-contacts)
         const chats = await chatService.getRecentChats();
@@ -51,7 +54,8 @@ function CreateGroupPage() {
           )
           .map(chat => ({
             publickey: chat.publickey,
-            currentaddress: chat.publickey, // Use publickey as address for non-contacts
+            currentaddress: chat.currentaddress || chat.publickey, // Use Maxima address if found (from Discovery), else fallback to pubkey
+            type: 'community',
             extradata: {
               name: chat.roomname,
               icon: chat.avatar
@@ -104,11 +108,17 @@ function CreateGroupPage() {
     }
   };
 
-  const filteredContacts = contacts.filter(c =>
-    (c.extradata?.name || c.currentaddress)
+  const filteredContacts = contacts.filter(c => {
+    const matchesSearch = (c.extradata?.name || c.currentaddress)
       .toLowerCase()
-      .includes(searchQuery.toLowerCase())
-  );
+      .includes(searchQuery.toLowerCase());
+
+    if (!matchesSearch) return false;
+
+    if (activeTab === 'contacts') return c.type === 'contact';
+    if (activeTab === 'community') return c.type === 'community';
+    return true;
+  });
 
   const defaultAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23cbd5e1'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E";
 
@@ -171,6 +181,21 @@ function CreateGroupPage() {
             <h2 className="text-lg font-semibold text-gray-900 mb-3">
               Add Members ({selectedContacts.size} selected)
             </h2>
+
+            <div className="flex gap-2 mb-4 border-b border-gray-200">
+              {(['all', 'contacts', 'community'] as const).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={`pb-2 px-3 text-sm font-medium capitalize transition-colors relative ${activeTab === tab
+                      ? "text-primary-600 border-b-2 border-primary-600 -mb-px"
+                      : "text-gray-500 hover:text-gray-700"
+                    }`}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
 
             <input
               type="text"

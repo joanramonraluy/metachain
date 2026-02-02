@@ -676,45 +676,44 @@ function ChatPage() {
         setBlockReason('recipient_restricted');
       }
 
-      // FINAL CHECK: If there is an ACCEPTED request in DB, allow chat regardless of other flags
-      // This fixes the issue where accepting a request didn't immediately unblock the chat
-      if (myPublicKey && contact?.publickey) {
-        // DEBUG LOGS
-        console.log("🔍 [CHAT DEBUG] Override Check - MyPK:", myPublicKey, "ContactPK:", contact.publickey);
-        try {
-          const sMy = myPublicKey.replace(/'/g, "''");
-          const sPeer = contact.publickey.replace(/'/g, "''");
-          const sql = `SELECT * FROM CONTACT_REQUESTS 
-                     WHERE ((from_publickey='${sMy}' AND to_publickey='${sPeer}')
-                        OR (from_publickey='${sPeer}' AND to_publickey='${sMy}'))
-                     AND status='accepted'`;
+    }
 
-          console.log("🔍 [CHAT DEBUG] Override SQL:", sql);
+    // Check override logic (MOVED OUTSIDE ELSE)
+    // Always check override logic (no condition to avoid stale state)
+    if (myPublicKey && contact?.publickey) {
+      // DEBUG LOGS
+      console.log("🔍 [CHAT DEBUG] Override Check (Post-Block) - MyPK:", myPublicKey, "ContactPK:", contact.publickey);
+      try {
+        const sMy = myPublicKey.replace(/'/g, "''");
+        const sPeer = contact.publickey.replace(/'/g, "''");
+        const sql = `SELECT * FROM CONTACT_REQUESTS 
+                   WHERE ((from_publickey='${sMy}' AND to_publickey='${sPeer}')
+                      OR (from_publickey='${sPeer}' AND to_publickey='${sMy}'))
+                   AND status='accepted'`;
 
-          const res = await new Promise<any>((resolve) => MDS.sql(sql, resolve));
+        // console.log("🔍 [CHAT DEBUG] Override SQL:", sql);
 
-          console.log("🔍 [CHAT DEBUG] Override Res:", res);
+        const res = await new Promise<any>((resolve) => MDS.sql(sql, resolve));
 
-          if (res.status && res.rows && res.rows.length > 0) {
-            console.log("🔓 [CHAT] Override: Found ACCEPTED request in DB -> Allow");
+        // console.log("🔍 [CHAT DEBUG] Override Res:", res);
+
+        if (res.status && res.rows && res.rows.length > 0) {
+          console.log("🔓 [CHAT] Override: Found ACCEPTED request in DB -> Allow");
+          setBlockReason('none');
+        } else {
+          // HISTORY OVERRIDE: If we have chatted before (sent/received messages), allow chat
+          // This covers the case where users were chatting in "Open" mode but then one switched to "Contacts Only"
+          // We don't want to break existing active chats.
+          const historySql = `SELECT * FROM CHAT_MESSAGES WHERE publickey='${sPeer}' AND type!='system' LIMIT 1`;
+          const histRes = await new Promise<any>((resolve) => MDS.sql(historySql, resolve));
+
+          if (histRes.status && histRes.rows && histRes.rows.length > 0) {
+            console.log("🔓 [CHAT] Override: Found CHAT HISTORY -> Allow (Implied Contact)");
             setBlockReason('none');
-          } else {
-            // HISTORY OVERRIDE: If we have chatted before (sent/received messages), allow chat
-            // This covers the case where users were chatting in "Open" mode but then one switched to "Contacts Only"
-            // We don't want to break existing active chats.
-            const historySql = `SELECT * FROM CHAT_MESSAGES WHERE publickey='${sPeer}' AND type!='system' LIMIT 1`;
-            const histRes = await new Promise<any>((resolve) => MDS.sql(historySql, resolve));
-
-            if (histRes.status && histRes.rows && histRes.rows.length > 0) {
-              console.log("🔓 [CHAT] Override: Found CHAT HISTORY -> Allow (Implied Contact)");
-              setBlockReason('none');
-            }
           }
-        } catch (sqlErr) {
-          console.warn("Error checking accepted status:", sqlErr);
         }
-      } else {
-        console.log("⚠️ [CHAT DEBUG] Skipping Override - Missing Keys. MyPK:", !!myPublicKey, "ContactPK:", !!contact?.publickey);
+      } catch (sqlErr) {
+        console.warn("Error checking accepted status:", sqlErr);
       }
     }
 
