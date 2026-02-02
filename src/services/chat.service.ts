@@ -288,8 +288,10 @@ class ChatService {
             INSERT INTO CHAT_MESSAGES (roomname,publickey,username,type,message,filedata,state,amount,date,customid,sender_seq,original_timestamp)
             VALUES ('${roomname}','${publickey}','${username}','${type}','${escapedMsg}','${filedata}','${state}',${amount},${timestamp},'${customid || "0x00"}', ${sqlSeq}, ${msgOriginalTimestamp})
         `;
+        console.log("📥 [CHAT-DB-DEBUG] Inserting message:", { sql, msg });
         try {
             await runSQL(sql);
+            console.log("✅ [CHAT-DB-DEBUG] Insert success");
         } catch (err) {
             console.error("❌ [SQL] INSERT failed:", err);
         }
@@ -317,7 +319,7 @@ class ChatService {
             const sql = `
                 SELECT * FROM CHAT_MESSAGES
                 WHERE publickey='${publickey}'
-                ORDER BY date ASC
+                ORDER BY COALESCE(original_timestamp, date) ASC, sender_seq ASC, id ASC
             `;
             MDS.sql(sql, (res: any) => {
                 if (!res.status || !res.rows) {
@@ -350,7 +352,7 @@ class ChatService {
     deleteAllMessages(publickey: string): Promise<void> {
         return new Promise((resolve, reject) => {
             const sql = `DELETE FROM CHAT_MESSAGES WHERE publickey='${publickey}'`;
-            console.log("💾 [SQL] Deleting all messages for:", publickey);
+            console.log("🔥 [CHAT-DB-DEBUG] DELETING ALL MESSAGES for:", publickey);
             MDS.sql(sql, (res: any) => {
                 if (!res.status) {
                     console.error("❌ [SQL] Failed to delete messages:", res.error);
@@ -377,13 +379,13 @@ class ChatService {
                 LEFT JOIN CHAT_STATUS s ON m.publickey = s.publickey
                 LEFT JOIN DISCOVERED_PEERS d ON UPPER(m.publickey) = UPPER(d.publickey)
                 LEFT JOIN METACHAIN_USERS u ON UPPER(m.publickey) = UPPER(u.publickey)
-                ORDER BY COALESCE(m.original_timestamp, m.date) DESC
+                ORDER BY COALESCE(m.original_timestamp, m.date) DESC, m.sender_seq DESC, m.id DESC
             `;
 
             MDS.sql(sql, (res: any) => {
                 if (!res.status) {
                     console.warn("⚠️ [SQL] Complex query failed, falling back to simple query:", res.error);
-                    const simpleSql = `SELECT * FROM CHAT_MESSAGES ORDER BY COALESCE(original_timestamp, date) DESC`;
+                    const simpleSql = `SELECT * FROM CHAT_MESSAGES ORDER BY COALESCE(original_timestamp, date) DESC, sender_seq DESC, id DESC`;
                     MDS.sql(simpleSql, (simpleRes: any) => {
                         if (!simpleRes.status || !simpleRes.rows) {
                             resolve([]);

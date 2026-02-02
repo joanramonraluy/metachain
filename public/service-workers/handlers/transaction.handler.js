@@ -99,7 +99,7 @@ function cleanupOrphanedChatMessages() {
     var oneMinuteAgo = Date.now() - 60000; // 1 minute timeout for orphaned messages
 
     // Select pending messages older than 1 minute
-    MDS.sql("SELECT * FROM CHAT_MESSAGES WHERE state='pending' AND date < " + oneMinuteAgo, function (res) {
+    MDS.sql("SELECT * FROM CHAT_MESSAGES WHERE state='pending' AND (type='token' OR type='charm') AND date < " + oneMinuteAgo, function (res) {
         if (res.status && res.rows.length > 0) {
             MDS.log("🧹 [SW-CLEANUP] Found " + res.rows.length + " potential orphans. Checking against TRANSACTIONS...");
             checkAndExpireOrphans(res.rows);

@@ -4,6 +4,7 @@
  */
 
 function handleChatMessage(pubkey, maxjson) {
+    MDS.log("💬 [CHAT-DEBUG] RAW INCOMING from " + pubkey + ": " + JSON.stringify(maxjson));
     MDS.log("💬 [CHAT] From: " + pubkey + " - " + (maxjson.message || "").substring(0, 30));
 
     var now = Date.now();
@@ -27,6 +28,8 @@ function handleChatMessage(pubkey, maxjson) {
         if (isBlocked) {
             MDS.log("🚫 [CHAT] Message BLOCKED from: " + safeUsername + " (" + safePubkey + ")");
             return; // Abort insertion
+        } else {
+            MDS.log("✅ [CHAT-DEBUG] Block check passed for " + safeUsername);
         }
 
         // GAP DETECTION LOGIC
@@ -107,6 +110,8 @@ function handleChatMessage(pubkey, maxjson) {
                     });
                 }
                 return;
+            } else {
+                MDS.log("✨ [CHAT-DEBUG] No duplicate found. Proceeding to INSERT...");
             }
 
             var insertSql = "INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, txpowid, original_timestamp, sender_seq, customid) "

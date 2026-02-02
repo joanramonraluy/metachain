@@ -330,7 +330,14 @@ function DiscoveryPage() {
                                             navigate({ to: '/settings', hash: 'community-discovery' })
                                         } else {
                                             // Navigate to contact info page for other profiles
-                                            navigate({ to: `/contact-info/${user.publickey || user.user_id}` })
+                                            const targetAddress = user.publickey || user.user_id;
+                                            if (targetAddress) {
+                                                navigate({
+                                                    to: '/contact-info/$address',
+                                                    params: { address: targetAddress },
+                                                    search: { returnTo: '/discovery' }
+                                                })
+                                            }
                                         }
                                     }}
                                     className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-5 hover:shadow-md transition-all cursor-pointer hover:border-primary-200 dark:hover:border-primary-700"

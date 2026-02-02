@@ -850,7 +850,24 @@ function ContactInfoPage() {
                 >
                     <ArrowLeft size={24} />
                 </button>
-                <h1 className="text-lg font-semibold text-gray-800 dark:text-white">Contact Info</h1>
+                <div className="flex items-center gap-3 overflow-hidden">
+                    <img
+                        src={avatarUrl}
+                        alt={contactName}
+                        className="w-10 h-10 rounded-full object-cover bg-gray-200 dark:bg-gray-700 flex-shrink-0"
+                        onError={(e) => {
+                            (e.target as HTMLImageElement).src = defaultAvatar;
+                        }}
+                    />
+                    <div className="flex flex-col min-w-0">
+                        <h1 className="text-lg font-semibold text-gray-800 dark:text-white truncate leading-tight">
+                            {contactName}
+                        </h1>
+                        <span className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                            Contact Info
+                        </span>
+                    </div>
+                </div>
             </div>
 
             {/* Tab Navigation */}
