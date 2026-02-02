@@ -698,6 +698,17 @@ function ChatPage() {
           if (res.status && res.rows && res.rows.length > 0) {
             console.log("🔓 [CHAT] Override: Found ACCEPTED request in DB -> Allow");
             setBlockReason('none');
+          } else {
+            // HISTORY OVERRIDE: If we have chatted before (sent/received messages), allow chat
+            // This covers the case where users were chatting in "Open" mode but then one switched to "Contacts Only"
+            // We don't want to break existing active chats.
+            const historySql = `SELECT * FROM CHAT_MESSAGES WHERE publickey='${sPeer}' AND type!='system' LIMIT 1`;
+            const histRes = await new Promise<any>((resolve) => MDS.sql(historySql, resolve));
+
+            if (histRes.status && histRes.rows && histRes.rows.length > 0) {
+              console.log("🔓 [CHAT] Override: Found CHAT HISTORY -> Allow (Implied Contact)");
+              setBlockReason('none');
+            }
           }
         } catch (sqlErr) {
           console.warn("Error checking accepted status:", sqlErr);
