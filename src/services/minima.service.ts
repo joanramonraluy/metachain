@@ -99,6 +99,11 @@ class MinimaService {
         await offlineQueueService.init();
     }
 
+    startOfflineQueue() {
+        console.log("🔄 [SERVICE] Starting Offline Queue Polling...");
+        offlineQueueService.start();
+    }
+
     /* ----------------------------------------------------------------------------
        CHAT STATUS & MESSAGES (Delegated to ChatService)
     ---------------------------------------------------------------------------- */

@@ -15,7 +15,7 @@ interface SideMenuProps {
 }
 
 export default function SideMenu({ isOpen, setIsOpen }: SideMenuProps) {
-  const { userName, userAvatar } = useContext(appContext);
+  const { userName, userAvatar, loaded } = useContext(appContext);
   const [minimaBalance, setMinimaBalance] = useState<{ sendable: string; unconfirmed: string } | null>(null);
 
   // Optimistic blink state to ensure SideMenu reacts instantly when a tx is sent,
@@ -25,6 +25,8 @@ export default function SideMenu({ isOpen, setIsOpen }: SideMenuProps) {
 
   useEffect(() => {
     const fetchBalance = async () => {
+      if (!loaded) return; // Block requests until app is fully loaded
+
       try {
         const balance = await minimaService.getBalance();
         const minima = balance.find((t: any) => t.tokenid === '0x00');

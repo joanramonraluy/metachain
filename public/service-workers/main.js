@@ -26,7 +26,14 @@ MDS.init(function (msg) {
     // Initialization
     if (msg.event == "inited") {
         MDS.log("🚀 [SW-VERSION-CHECK] Service Worker v2.7 DEBUG - " + new Date().toISOString());
-        initDatabase();
+
+        // BREATHING ROOM: Delay SW init by 5 seconds to let UI priority startup finish
+        // This prevents the "Startup Storm" where UI and SW hammer the node simultaneously on update.
+        setTimeout(function () {
+            MDS.log("⏰ [SW] Starting Post-Init Database Setup (Delayed 5s)...");
+            initDatabase();
+        }, 5000);
+
         // Cleanup will happen on first NEWBLOCK to avoid setTimeout (not supported)
     }
 

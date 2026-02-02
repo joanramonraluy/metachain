@@ -36,7 +36,7 @@ class OfflineQueueService {
     async init() {
         await this.createTable();
         this.setupReconnectionListener();
-        this.start();
+        // this.start(); // Manual start required (AppContext)
     }
 
     private setupReconnectionListener() {

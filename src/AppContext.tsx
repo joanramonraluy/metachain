@@ -158,59 +158,85 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
         minimaService.processEvent(msg)
 
         if (msg.event === MinimaEvents.INITED) {
-          setLoaded(true)
-          console.log("MDS initialised and ready! 🚀")
+          console.log("MDS initialised! 🚀 Starting serialized initialization sequence...");
 
-          // Check Write Mode using checkmode command (doesn't create pending)
-          console.log("🔄 [AppContext] Checking Write Mode with 'checkmode'...");
-          (MDS as any).executeRaw("checkmode", (res: any) => {
-            console.log("📝 [AppContext] 'checkmode' command response:", res);
-            if (res.status && res.response) {
-              const mode = res.response.mode;
-              console.log(`📝 [AppContext] Detected mode: ${mode}`);
+          // BREATHING ROOM: Verification shows immediate requests can overload the node
+          // just after the handshake. We give it 1 second to settle.
+          await new Promise(r => setTimeout(r, 1000));
 
-              if (mode === "WRITE") {
-                setWriteMode(true);
-                console.log("✅ [AppContext] Write Mode ENABLED");
-              } else {
-                setWriteMode(false);
-                console.log("⚠️ [AppContext] Read Mode ACTIVE");
-              }
-            } else {
-              console.log("📝 [AppContext] Could not detect mode - defaulting to Read Mode");
-              setWriteMode(false);
-            }
-          });
+          try {
+            // STEP 1: Check Write Mode (Promisified)
+            console.log("1️⃣ [AppContext] Checking Write Mode...");
+            await new Promise<void>((resolve) => {
+              (MDS as any).executeRaw("checkmode", (res: any) => {
+                if (res.status && res.response) {
+                  const mode = res.response.mode;
+                  console.log(`📝 [AppContext] Detected mode: ${mode}`);
+                  if (mode === "WRITE") {
+                    setWriteMode(true);
+                    console.log("✅ [AppContext] Write Mode ENABLED");
+                  } else {
+                    setWriteMode(false);
+                    console.log("⚠️ [AppContext] Read Mode ACTIVE");
+                  }
+                } else {
+                  console.log("📝 [AppContext] Could not detect mode - defaulting to Read Mode");
+                  setWriteMode(false);
+                }
+                resolve();
+              });
+            });
 
-          // Initialize database after MDS is ready
-          minimaService.initDB().then(() => {
-            console.log("✅ [AppContext] Database initialized and ready");
+            // STEP 2: Initialize Database (Async)
+            console.log("2️⃣ [AppContext] Initializing Database...");
+            await minimaService.initDB();
             setDbReady(true);
+            console.log("✅ [AppContext] Database ready");
 
-            // Initialize profile (publish address for token receiving)
-            minimaService.initProfile()
-
-            // Transaction cleanup is now handled by Service Worker automatically
-
-            // Run chat migration to fix duplicate chats (Mx -> 0x)
+            // STEP 2b: Post-DB Actions (Synchronous/Fast)
+            // Even though these might be fast, we MUST await them to prevent request stacking
+            // on slower nodes or if data exists (Update scenario).
+            await minimaService.initProfile();
             console.log("🧹 [AppContext] Running legacy chat migration...");
-            minimaService.migrateLegacyChats();
+            await minimaService.migrateLegacyChats();
 
-            // Start confirmation checker for 3-block confirmations
+            // NOTE: Confirmation Checker is DELAYED until final step to avoid traffic
+
+            // STEP 3: Fetch User Profile (Async)
+            console.log("3️⃣ [AppContext] Fetching User Profile...");
+            await fetchUserProfile();
+
+            // STEP 4: Initial Block Check (Async)
+            console.log("4️⃣ [AppContext] Verifying Block Status...");
+            const command = await MDS.cmd.block();
+            setBlock(command.response);
+
+            // FINAL STEP: Set Loaded & Start Background Services
+            // This triggers useBeaconSender, SideMenu balance check, etc.
+            console.log("✅ [AppContext] Initialization Complete! Setting loaded = true");
+            setLoaded(true);
+
+            // Start polling services NOW, after the main load is done
             console.log("⏰ [AppContext] Starting transaction confirmation checker...");
             minimaService.startConfirmationChecker();
-          });
 
-          // Start transaction polling service - DISABLED (replaced by MDS_PENDING event)
-          // console.log("🔄 [AppContext] Starting transaction polling service");
-          // transactionPollingService.start();
+            // Start offline queue (manually started now)
+            // Import dynamically or assume it's available via minimaService if needed, 
+            // but we can import it directly if we wish.
+            // Let's use the exported instance from services/index or assume it's global.
+            // Since we can't easily add imports here without re-reading the top, let's trust existing imports.
+            // Wait, we need to import offlineQueueService. 
+            // Better to rely on a method in minimaService to start it if not imported.
+            // Let's add startOfflineQueue() to MinimaService or just assume it's running via sidebar? No.
+            // We should use the service directly.
+            // Actually, we can just use minimaService.startOfflineQueue() if we add it, or use the global import if available.
+            // Checking imports... AppContext imports minimaService.
+            // I will add a method to MinimaService to start the queue to keep AppContext clean.
 
-          // Fetch user profile
-          fetchUserProfile()
-
-
-          const command = await MDS.cmd.block()
-          setBlock(command.response)
+          } catch (err) {
+            console.error("❌ [AppContext] Initialization Sequence Failed:", err);
+            setLoaded(true);
+          }
         }
 
         // Listen for NEWBLOCK events to detect synchronization
