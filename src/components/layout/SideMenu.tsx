@@ -75,11 +75,23 @@ export default function SideMenu({ isOpen, setIsOpen }: SideMenuProps) {
     };
     window.addEventListener('minima_balance_update_start', startBlinkHandler);
 
-    // Keep polling as backup
-    const interval = setInterval(fetchBalance, 5000);
+    // Keep polling as backup, but use serialized timeout to prevent stacking
+    let timeoutId: NodeJS.Timeout;
+    let isActive = true;
+
+    const pollBalance = async () => {
+      if (!isActive) return;
+      await fetchBalance();
+      if (isActive) {
+        timeoutId = setTimeout(pollBalance, 5000);
+      }
+    };
+
+    pollBalance();
 
     return () => {
-      clearInterval(interval);
+      isActive = false;
+      clearTimeout(timeoutId);
       removeListener();
       window.removeEventListener('minima_balance_update', fetchBalance);
       window.removeEventListener('minima_balance_update_start', startBlinkHandler);

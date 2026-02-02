@@ -257,18 +257,28 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
   }, [])
 
   // Heartbeat to check Minima connection status periodically
+  // Serialized Heartbeat to check Minima connection status
+  // Uses recursive setTimeout instead of setInterval to prevent request stacking
   useEffect(() => {
     if (!loaded) return;
 
-    const interval = setInterval(() => {
-      // Create a timeout promise that rejects after 2 seconds
-      const timeout = new Promise<any>((_, reject) =>
-        setTimeout(() => reject(new Error("Timeout")), 2000)
-      );
+    let timeoutId: NodeJS.Timeout;
+    let isActive = true; // Flag to prevent state updates after unmount
 
-      // Race the block check against the timeout
-      Promise.race([MDS.cmd.block(), timeout])
-        .then((res) => {
+    const checkHeartbeat = async () => {
+      // If we unmounted, stop
+      if (!isActive) return;
+
+      try {
+        // Create a timeout promise that rejects after 5 seconds (prevent hanging requests)
+        const timeout = new Promise<any>((_, reject) =>
+          setTimeout(() => reject(new Error("Timeout")), 5000)
+        );
+
+        // Race the block check against the timeout
+        const res = await Promise.race([MDS.cmd.block(), timeout]);
+
+        if (isActive) {
           if (res.status && !synced) {
             console.log("✅ [AppContext] Heartbeat - Minima is BACK ONLINE");
             setSynced(true);
@@ -276,16 +286,27 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
             console.warn("⚠️ [AppContext] Heartbeat - Minima returned failure status");
             setSynced(false);
           }
-        })
-        .catch((err) => {
-          if (synced) {
-            console.warn("⚠️ [AppContext] Heartbeat - Request Failed or Timed Out:", err);
-            setSynced(false);
-          }
-        });
-    }, 5000); // Check every 5 seconds
+        }
+      } catch (err) {
+        if (isActive && synced) {
+          console.warn("⚠️ [AppContext] Heartbeat - Request Failed or Timed Out:", err);
+          setSynced(false);
+        }
+      } finally {
+        // Schedule next check ONLY after this one completes (approx 5s delay)
+        if (isActive) {
+          timeoutId = setTimeout(checkHeartbeat, 5000);
+        }
+      }
+    };
 
-    return () => clearInterval(interval);
+    // Start the loop
+    checkHeartbeat();
+
+    return () => {
+      isActive = false;
+      clearTimeout(timeoutId);
+    };
   }, [loaded, synced]);
 
   const context = {

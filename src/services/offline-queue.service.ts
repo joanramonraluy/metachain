@@ -69,18 +69,34 @@ class OfflineQueueService {
         }
     }
 
-    start() {
+    async start() {
         if (this.isPolling) return;
         this.isPolling = true;
-        console.log("🔄 [QUEUE] Starting offline message queue polling...");
-        this.poll(); // Initial run
-        this.pollingInterval = setInterval(() => this.poll(), this.POLL_INTERVAL);
+        console.log("🔄 [QUEUE] Starting offline message queue polling (serialized)...");
+        this.pollRecursive();
     }
 
     stop() {
-        if (this.pollingInterval) clearInterval(this.pollingInterval);
         this.isPolling = false;
+        if (this.pollingInterval) {
+            clearTimeout(this.pollingInterval);
+            this.pollingInterval = null;
+        }
         console.log("⏹️ [QUEUE] Stopped polling.");
+    }
+
+    private async pollRecursive() {
+        if (!this.isPolling) return;
+
+        try {
+            await this.poll();
+        } catch (err) {
+            console.error("❌ [QUEUE] Polling error:", err);
+        } finally {
+            if (this.isPolling) {
+                this.pollingInterval = setTimeout(() => this.pollRecursive(), this.POLL_INTERVAL);
+            }
+        }
     }
 
     async queueChatMessage(data: ChatMessageData) {

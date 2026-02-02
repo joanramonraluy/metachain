@@ -905,40 +905,31 @@ export function getPendingMessages(publickey: string) {
    CONFIRMATION CHECKER - Periodic check for 3-block confirmations
 ---------------------------------------------------------------------------- */
 
-let confirmationCheckerInterval: NodeJS.Timeout | null = null;
+let confirmationCheckerTimeout: NodeJS.Timeout | null = null;
+let isConfirmationCheckerRunning = false;
 
 /**
  * Start periodic checker for transaction confirmations
- * Checks all 'sent' transactions every 10 seconds and updates to 'confirmed' when they have 3+ blocks
+ * Uses recursive setTimeout to ensure one check finishes before the next begins.
  */
 export function startConfirmationChecker(): void {
     // Don't start multiple checkers
-    if (confirmationCheckerInterval) {
+    if (isConfirmationCheckerRunning) {
         console.log('⏰ [TX-CONFIRM] Confirmation checker already running');
         return;
     }
 
-    console.log('⏰ [TX-CONFIRM] Starting confirmation checker (every 10 seconds)');
-
-    // Initial cleanup of corrupt messages - FIX: date is numeric, don't compare with strings 'undefined' if strict
-    // Just delete nulls. For junk data, if date is not nullable but 0?
-    // Let's rely on type check in JS loop instead of complex SQL delete which might fail.
-    /*
-    const cleanup = async () => {
-        try {
-            await runSQL(`DELETE FROM CHAT_MESSAGES WHERE date IS NULL`);
-            console.log('🧹 [TX-CONFIRM] Cleaned up null date messages from DB');
-        } catch (e) {
-            console.error('❌ [TX-CONFIRM] Cleanup failed:', e);
-        }
-    };
-    cleanup();
-    */
+    console.log('⏰ [TX-CONFIRM] Starting confirmation checker (recursive loop)');
+    isConfirmationCheckerRunning = true;
 
     const checkConfirmations = async () => {
+        // Stop if flag was turned off
+        if (!isConfirmationCheckerRunning) return;
+
         try {
             // Check TRANSACTIONS table
             const sentTxRows = await getSentTransactions();
+
             // Normalize rows to lower case keys
             const sentTxs = sentTxRows.map(row => {
                 const newRow: any = {};
@@ -952,6 +943,9 @@ export function startConfirmationChecker(): void {
                 console.log(`🔍 [TX-CONFIRM] Checking ${sentTxs.length} sent transaction(s) for confirmations...`);
 
                 for (const tx of sentTxs) {
+                    // Check if stopped in middle of loop
+                    if (!isConfirmationCheckerRunning) break;
+
                     if (!tx.txpowid) {
                         console.log(`⚠️ [TX-CONFIRM] Skipping tx with missing txpowid keys:`, Object.keys(tx));
                         continue;
@@ -1025,6 +1019,9 @@ export function startConfirmationChecker(): void {
                 console.log(`🔍 [TX-CONFIRM] Checking ${sentMessages.length} sent message(s) for confirmations...`);
 
                 for (const msg of sentMessages) {
+                    // Check if stopped in middle of loop
+                    if (!isConfirmationCheckerRunning) break;
+
                     // Skip if message doesn't have a valid date
                     if (!msg.date || msg.date === 'undefined') {
                         console.log(`⚠️ [TX-CONFIRM] Skipping message with invalid date: ${msg.date}`);
@@ -1188,25 +1185,28 @@ export function startConfirmationChecker(): void {
             }
         } catch (err) {
             console.error('❌ [TX-CONFIRM] Error in confirmation checker:', err);
+        } finally {
+            // Schedule next check ONLY after this one completes
+            if (isConfirmationCheckerRunning) {
+                confirmationCheckerTimeout = setTimeout(checkConfirmations, 10000);
+            }
         }
     };
 
     // Run immediately on start
     checkConfirmations();
-
-    // Then run every 10 seconds
-    confirmationCheckerInterval = setInterval(checkConfirmations, 10000);
 }
 
 /**
  * Stop the confirmation checker
  */
 export function stopConfirmationChecker(): void {
-    if (confirmationCheckerInterval) {
-        clearInterval(confirmationCheckerInterval);
-        confirmationCheckerInterval = null;
-        console.log('⏰ [TX-CONFIRM] Confirmation checker stopped');
+    isConfirmationCheckerRunning = false;
+    if (confirmationCheckerTimeout) {
+        clearTimeout(confirmationCheckerTimeout);
+        confirmationCheckerTimeout = null;
     }
+    console.log('⏰ [TX-CONFIRM] Confirmation checker stopped');
 }
 
 export async function getPendingTransactionsCount(): Promise<number> {
