@@ -4,9 +4,10 @@ import { useContext, useEffect, useState } from "react";
 import { appContext } from "../../AppContext";
 import { MDS } from "@minima-global/mds";
 import { useNavigate } from "@tanstack/react-router";
-import { Plus, VolumeX, UserCheck, LayoutGrid, X } from "lucide-react";
+import { Plus, VolumeX, UserCheck, LayoutGrid, X, MessageCircle, Users } from "lucide-react";
 import { minimaService } from "../../services/minima.service";
 import { personalContactsService } from "../../services/personal-contacts.service";
+import { chatService } from "../../services/chat.service";
 
 interface Contact {
   currentaddress: string;
@@ -25,7 +26,8 @@ export default function CheckContacts() {
   const { loaded } = useContext(appContext);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [personalContacts, setPersonalContacts] = useState<string[]>([]);
-  const [activeTab, setActiveTab] = useState<'all' | 'personal'>('all');
+  const [chatOnlyContacts, setChatOnlyContacts] = useState<Contact[]>([]);
+  const [activeTab, setActiveTab] = useState<'all' | 'contacts' | 'community' | 'personal'>('all');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [showAddContactDialog, setShowAddContactDialog] = useState(false);
@@ -86,7 +88,6 @@ export default function CheckContacts() {
       }
 
       // Enrich contacts with mute status
-      // We can also timeout this part if it takes too long
       const enrichedList = await Promise.all(list.map(async (c) => {
         if (c.publickey) {
           try {
@@ -98,13 +99,50 @@ export default function CheckContacts() {
         return c;
       }));
 
-      setContacts(enrichedList);
+      // 3. Fetch Chats and filter for non-contacts
+      const chats = await chatService.getRecentChats();
+      const contactPublicKeys = new Set(enrichedList.map(c => c.publickey).filter(Boolean));
 
-      // 3. Update cache
+      const chatOnlyList: Contact[] = chats
+        .filter(chat =>
+          chat.publickey &&
+          !contactPublicKeys.has(chat.publickey) &&
+          !chat.roomname.startsWith("Group: ") // Filter out group chats if needed, or keep them? Usually contacts are individuals.
+          // Note: chatService might return groups too if they are just in message list.
+          // For now, let's include them if they have a publickey that looks like a user one (Group IDs are usually different format if logic separates them).
+          // Actually, group messages usually have specific group_id. getRecentChats groups by publickey which is the room ID for 1:1.
+        )
+        .map(chat => ({
+          currentaddress: chat.publickey,
+          publickey: chat.publickey,
+          extradata: {
+            name: chat.roomname,
+            icon: chat.avatar
+          },
+          lastseen: chat.lastMessageDate,
+          // We can check mute status for these too if we want
+        }));
+
+      // Enrich chat-only with mute status too
+      const enrichedChatOnlyList = await Promise.all(chatOnlyList.map(async (c) => {
+        if (c.publickey) {
+          try {
+            const isMuted = await minimaService.isContactMuted(c.publickey);
+            return { ...c, muted: isMuted };
+          } catch (e) { return c; }
+        }
+        return c;
+      }));
+
+
+      setContacts(enrichedList);
+      setChatOnlyContacts(enrichedChatOnlyList);
+
+      // 4. Update cache
       localStorage.setItem("cached_all_contacts", JSON.stringify(enrichedList));
 
     } catch (err: any) {
-      // If we have no cache and fetch failed, show error. 
+      // If we have no cache and fetch failed, show error.
       // If we have cache, we stay on cache and just log warning (silent fail for user)
       if (!cached) {
         console.error("🚨 Error fetching contacts:", err);
@@ -280,7 +318,7 @@ export default function CheckContacts() {
         {/* Tabs */}
         <div className="bg-white dark:bg-gray-800 flex-shrink-0 px-4 py-3 shadow-sm transition-colors">
           <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
-            {/* ... tabs ... */}
+
             <button
               onClick={() => setActiveTab('all')}
               className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === 'all'
@@ -289,8 +327,31 @@ export default function CheckContacts() {
                 }`}
             >
               <LayoutGrid size={16} className="flex-shrink-0" />
-              <span className="hidden md:inline">All</span> ({contacts.length})
+              <span className="hidden md:inline">All</span> ({contacts.length + chatOnlyContacts.length})
             </button>
+
+            <button
+              onClick={() => setActiveTab('contacts')}
+              className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === 'contacts'
+                ? 'bg-primary-600 text-white shadow-md'
+                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                }`}
+            >
+              <Users size={16} className="flex-shrink-0" />
+              <span className="hidden md:inline">Contacts</span> ({contacts.length})
+            </button>
+
+            <button
+              onClick={() => setActiveTab('community')}
+              className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === 'community'
+                ? 'bg-primary-600 text-white shadow-md'
+                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                }`}
+            >
+              <MessageCircle size={16} className="flex-shrink-0" />
+              <span className="hidden md:inline">Community</span> ({chatOnlyContacts.length})
+            </button>
+
             <button
               onClick={() => setActiveTab('personal')}
               className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === 'personal'
@@ -345,9 +406,19 @@ export default function CheckContacts() {
         <div className="flex-1 overflow-y-auto p-3">
           {(() => {
             // Filter contacts based on active tab
-            const displayedContacts = activeTab === 'personal'
-              ? contacts.filter(c => c.publickey && personalContacts.includes(c.publickey))
-              : contacts;
+            let displayedContacts: Contact[] = [];
+
+            if (activeTab === 'personal') {
+              displayedContacts = contacts.filter(c => c.publickey && personalContacts.includes(c.publickey));
+            } else if (activeTab === 'community') {
+              displayedContacts = chatOnlyContacts;
+            } else if (activeTab === 'contacts') {
+              displayedContacts = contacts;
+            } else {
+              // All
+              displayedContacts = [...contacts, ...chatOnlyContacts];
+              // Optional: Sort by last seen? For now just keep order.
+            }
 
             return displayedContacts.length > 0 ? (
               <div className="space-y-2">
@@ -396,12 +467,12 @@ export default function CheckContacts() {
                           <h3 className="font-semibold text-gray-900 dark:text-white truncate">
                             {c.extradata?.name || "Unknown"}
                           </h3>
-                          <span className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">
-                            {timeAgo(c.lastseen)}
-                          </span>
                         </div>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">
-                          {c.publickey?.slice(0, 16)}...
+                        <p className={`text-xs truncate mt-0.5 ${timeAgo(c.lastseen) === 'online'
+                            ? 'text-green-600 dark:text-green-400 font-medium'
+                            : 'text-gray-500 dark:text-gray-400'
+                          }`}>
+                          {timeAgo(c.lastseen)}
                         </p>
                       </div>
                     </div>
@@ -413,6 +484,8 @@ export default function CheckContacts() {
                 <div className="bg-primary-50 dark:bg-primary-900/20 p-4 rounded-full mb-4">
                   {activeTab === 'personal' ? (
                     <UserCheck className="w-12 h-12 text-primary-600" />
+                  ) : activeTab === 'community' ? (
+                    <MessageCircle className="w-12 h-12 text-primary-600" />
                   ) : (
                     <svg className="w-12 h-12 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -420,14 +493,24 @@ export default function CheckContacts() {
                   )}
                 </div>
                 <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-1">
-                  {activeTab === 'personal' ? 'No personal contacts yet' : 'No contacts yet'}
+                  {activeTab === 'personal'
+                    ? 'No personal contacts yet'
+                    : activeTab === 'community'
+                      ? 'No non-contact chats found'
+                      : activeTab === 'contacts'
+                        ? 'No contacts yet'
+                        : 'No contacts or community chats yet'}
                 </h3>
                 <p className="text-sm mb-6">
                   {activeTab === 'personal'
                     ? 'Mark contacts as personal from their contact info page.'
-                    : 'Add your first contact to start chatting.'}
+                    : activeTab === 'community'
+                      ? 'As you chat with users they will appear here.'
+                      : activeTab === 'contacts'
+                        ? 'Add your first contact to start chatting.'
+                        : 'Add your first contact or chat with someone to see them here.'}
                 </p>
-                {activeTab === 'all' && (
+                {(activeTab === 'all' || activeTab === 'contacts') && (
                   <button
                     onClick={() => setShowAddContactDialog(true)}
                     className="px-6 py-2 bg-primary-600 text-white rounded-full font-medium hover:bg-primary-700 transition-colors shadow-sm"
