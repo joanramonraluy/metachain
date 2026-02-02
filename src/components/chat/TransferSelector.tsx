@@ -3,6 +3,7 @@ import { minimaService } from '../../services/minima.service';
 import { getCharms, Charm } from '../../services/charm.service';
 import Lottie from "lottie-react";
 import { BalanceAmount } from '../common/BalanceAmount';
+import { useAppContext } from '../../AppContext';
 
 interface Token {
     tokenid: string;
@@ -25,14 +26,36 @@ const TransferSelector: React.FC<TransferSelectorProps> = ({ onSend, onCancel })
     const [loading, setLoading] = useState(true);
     const [charms, setCharms] = useState<Charm[]>([]);
 
+    const { synced } = useAppContext();
+
     useEffect(() => {
         let mounted = true;
+
+        // Helper to timeout the balance check if Minima is offline/unresponsive
+        const loadbalanceWithTimeout = async () => {
+            return new Promise<any[]>((resolve) => {
+                const timer = setTimeout(() => {
+                    console.warn("⚠️ [TRANSFER] Balance check timed out");
+                    resolve([]); // Return empty balance on timeout
+                }, 2000); // 2 second timeout
+
+                minimaService.getBalance().then((res) => {
+                    clearTimeout(timer);
+                    resolve(res || []);
+                }).catch((err) => {
+                    clearTimeout(timer);
+                    console.error("❌ [TRANSFER] Balance check failed:", err);
+                    resolve([]);
+                });
+            });
+        };
+
         const loadData = async () => {
             try {
-                // Load balances
-                const balance = await minimaService.getBalance();
+                // Load balances (with timeout)
+                const balance = await loadbalanceWithTimeout();
                 if (mounted) {
-                    setTokens(balance || []);
+                    setTokens(balance);
                 }
 
                 // Load charms (sync)
@@ -45,11 +68,14 @@ const TransferSelector: React.FC<TransferSelectorProps> = ({ onSend, onCancel })
                 if (mounted) setLoading(false);
             }
         };
+
         loadData();
         return () => { mounted = false; };
     }, []);
 
     const handleSendClick = () => {
+        if (!synced) return; // double check
+
         // Validation matches TokenSelector.tsx
         if (!amount || parseFloat(amount) <= 0) {
             alert("Please enter a valid amount");
@@ -128,6 +154,13 @@ const TransferSelector: React.FC<TransferSelectorProps> = ({ onSend, onCancel })
                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                     </button>
                 </div>
+
+                {!synced && (
+                    <div className="mb-6 p-4 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-lg flex items-center gap-3 text-amber-800 dark:text-amber-200">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                        <span className="text-sm font-medium">Transactions are disabled while offline</span>
+                    </div>
+                )}
 
                 <div className="space-y-6">
                     {/* Token Selection */}
@@ -268,7 +301,11 @@ const TransferSelector: React.FC<TransferSelectorProps> = ({ onSend, onCancel })
                         </button>
                         <button
                             onClick={handleSendClick}
-                            className="flex-1 px-4 py-3 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors font-medium shadow-lg shadow-primary-900/20"
+                            disabled={!synced}
+                            className={`flex-1 px-4 py-3 text-white rounded-lg transition-colors font-medium shadow-lg ${!synced
+                                ? "bg-gray-400 cursor-not-allowed opacity-50 shadow-none"
+                                : "bg-primary-600 hover:bg-primary-700 shadow-primary-900/20"
+                                }`}
                         >
                             {selectedCharm ? "Send Charm" : "Transfer"}
                         </button>

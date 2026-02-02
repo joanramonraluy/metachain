@@ -122,7 +122,7 @@ const ChatAddressRoute = ChatAddressRouteImport.update({
   id: '/chat/$address',
   path: '/chat/$address',
   getParentRoute: () => rootRouteImport,
-} as any).lazy(() => import('./routes/chat/$address.lazy').then((d) => d.Route))
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
