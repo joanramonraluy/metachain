@@ -1,9 +1,8 @@
-// src/routes/create-group.tsx
-
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useContext, useEffect, useState } from "react";
 import { appContext } from "../AppContext";
 import { groupService } from "../services/group.service";
+import { chatService } from "../services/chat.service";
 import { MDS } from "@minima-global/mds";
 import { ArrowLeft, Check } from "lucide-react";
 
@@ -33,9 +32,34 @@ function CreateGroupPage() {
   useEffect(() => {
     const loadContacts = async () => {
       try {
+        // 1. Fetch Maxima contacts
         const res = await MDS.cmd.maxcontacts();
         const contactsList: Contact[] = (res as any)?.response?.contacts || [];
-        setContacts(contactsList);
+
+        // 2. Fetch Recent Chats (for non-contacts)
+        const chats = await chatService.getRecentChats();
+
+        // 3. Create a set of existing contact public keys for fast lookup
+        const contactKeys = new Set(contactsList.map(c => c.publickey));
+
+        // 4. Filter chats to find people NOT in contacts
+        const chatContacts: Contact[] = chats
+          .filter(chat =>
+            chat.publickey &&
+            !contactKeys.has(chat.publickey) &&
+            !chat.roomname.startsWith("Group: ") // Optional: Exclude groups if needed
+          )
+          .map(chat => ({
+            publickey: chat.publickey,
+            currentaddress: chat.publickey, // Use publickey as address for non-contacts
+            extradata: {
+              name: chat.roomname,
+              icon: chat.avatar
+            }
+          }));
+
+        // 5. Merge lists
+        setContacts([...contactsList, ...chatContacts]);
       } catch (err) {
         console.error("❌ [CreateGroup] Error loading contacts:", err);
       }
