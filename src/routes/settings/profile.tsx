@@ -267,7 +267,7 @@ function RouteComponent() {
 
 
   return (
-    <div className="max-w-4xl mx-auto py-6 sm:px-6 lg:px-8">
+    <div className="max-w-4xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
 
 
 
@@ -312,7 +312,7 @@ function RouteComponent() {
                 <Globe className="text-primary-500" size={20} />
                 <h3 className="text-lg font-semibold text-gray-800 dark:text-white">Discovery Profile (P2P)</h3>
               </div>
-              <span className="px-3 py-1 bg-primary-100 text-primary-700 text-xs font-semibold rounded-full">Level 1 - Public</span>
+              <span className="px-3 py-1 bg-primary-100 text-primary-700 text-xs font-semibold rounded-full text-center">Level 1 - Public</span>
             </div>
 
             <div className="bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800/50 rounded-lg p-3 text-sm text-primary-800 dark:text-primary-200 flex items-start gap-2 mb-6">
@@ -452,7 +452,7 @@ function RouteComponent() {
                 <User className="text-purple-500" size={20} />
                 <h3 className="text-lg font-semibold text-gray-800 dark:text-white">Additional Information</h3>
               </div>
-              <span className="px-3 py-1 bg-purple-100 text-purple-700 text-xs font-semibold rounded-full">Level 2 - Semi-Private</span>
+              <span className="px-3 py-1 bg-purple-100 text-purple-700 text-xs font-semibold rounded-full text-center">Level 2 - Semi-Private</span>
             </div>
             <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800/50 rounded-lg p-3 text-sm text-purple-800 dark:text-purple-200 flex items-start gap-2 mb-4">
               <Info size={16} className="mt-0.5 flex-shrink-0" />
@@ -487,7 +487,7 @@ function RouteComponent() {
                 <Shield className="text-amber-600" size={20} />
                 <h3 className="text-lg font-semibold text-gray-800 dark:text-white">Private Contact Information</h3>
               </div>
-              <span className="px-3 py-1 bg-amber-100 text-amber-700 text-xs font-semibold rounded-full">Level 3 - Private</span>
+              <span className="px-3 py-1 bg-amber-100 text-amber-700 text-xs font-semibold rounded-full text-center">Level 3 - Private</span>
             </div>
             <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/50 rounded-lg p-3 mb-4">
               <p className="text-sm text-amber-800 dark:text-amber-200 flex items-start gap-2">

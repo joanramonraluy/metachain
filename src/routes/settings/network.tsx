@@ -32,7 +32,7 @@ function RouteComponent() {
   }, []);
 
   return (
-    <div className="max-w-4xl mx-auto py-6 sm:px-6 lg:px-8">
+    <div className="max-w-4xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden transition-colors">
 
         {/* Header */}
