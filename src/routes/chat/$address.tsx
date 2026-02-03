@@ -2000,57 +2000,65 @@ function ChatPage() {
 
           {/* Dropdown Menu */}
           {showMenu && (
-            <div className="absolute top-10 right-0 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 min-w-[180px] z-50 animate-in slide-in-from-top-2 fade-in duration-200">
+            <div className="absolute top-10 right-0 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 min-w-[200px] z-50 animate-in slide-in-from-top-2 fade-in duration-200">
               <button
-                className="flex items-center gap-3 w-full p-3 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-t-lg transition-colors text-left"
+                className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 rounded-t-lg transition-colors text-left"
                 onClick={() => {
                   setShowMenu(false);
                   navigate({ to: `/contact-info/${address}`, search: { returnTo: `/chat/${address}` } });
                 }}
               >
-                <User size={18} className="text-gray-400 dark:text-gray-500" />
+                <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
+                  <User size={16} />
+                </div>
                 <span className="font-medium">Profile</span>
               </button>
               <button
-                className="flex items-center gap-3 w-full p-3 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
+                className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
                 onClick={() => {
                   setShowMenu(false);
                   navigate({ to: `/contact-info/${address}`, search: { returnTo: `/chat/${address}`, tab: 'settings' } });
                 }}
               >
-                <div className="w-[18px] h-[18px] flex items-center justify-center text-gray-400 dark:text-gray-500">
+                <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
                 </div>
                 <span className="font-medium">Actions</span>
               </button>
               <button
-                className="flex items-center gap-3 w-full p-3 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
+                className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
                 onClick={() => {
                   setShowMenu(false);
                   setShowChatInfo(true);
                 }}
               >
-                <BarChart size={18} />
+                <div className="w-8 h-8 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-600 dark:text-purple-400">
+                  <BarChart size={16} />
+                </div>
                 <span className="font-medium">Chat Info</span>
               </button>
               <button
-                className="flex items-center gap-3 w-full p-3 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
+                className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
                 onClick={() => {
                   setShowMenu(false);
                   handleToggleFavorite();
                 }}
               >
-                <Star size={18} fill={isFavorite ? "currentColor" : "none"} className={isFavorite ? "text-yellow-500" : ""} />
+                <div className="w-8 h-8 rounded-full bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center text-yellow-600 dark:text-yellow-400">
+                  <Star size={16} fill={isFavorite ? "currentColor" : "none"} />
+                </div>
                 <span className="font-medium">{isFavorite ? 'Unfavorite Chat' : 'Favorite Chat'}</span>
               </button>
               <button
-                className="flex items-center gap-3 w-full p-3 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
+                className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
                 onClick={() => {
                   setShowMenu(false);
                   handleToggleArchive();
                 }}
               >
-                <Archive size={18} />
+                <div className="w-8 h-8 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center text-orange-600 dark:text-orange-400">
+                  <Archive size={16} />
+                </div>
                 <span className="font-medium">{isArchived ? 'Unarchive Chat' : 'Archive Chat'}</span>
               </button>
               <button
@@ -2060,7 +2068,9 @@ function ChatPage() {
                   setShowDeleteConfirm(true);
                 }}
               >
-                <Trash2 size={18} />
+                <div className="w-8 h-8 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center text-red-600 dark:text-red-400">
+                  <Trash2 size={16} />
+                </div>
                 <span className="font-medium">Delete Chat</span>
               </button>
             </div>

@@ -1,10 +1,8 @@
-// src/components/chat/ChatList.tsx
-
-import { useContext, useEffect, useState } from "react";
+import { useContext, useEffect, useState, useRef } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { appContext } from "../../AppContext";
 import { minimaService } from "../../services/minima.service";
 import { MDS } from "@minima-global/mds";
-import { useNavigate } from "@tanstack/react-router";
 import { Archive, Star } from "lucide-react";
 
 interface Contact {
@@ -297,6 +295,9 @@ export default function ChatList() {
 
 
 
+    const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const longPressTriggeredRef = useRef(false);
+
     const handleUnarchive = async (publickey: string, e: React.MouseEvent) => {
         e.stopPropagation();
         e.preventDefault();
@@ -319,21 +320,23 @@ export default function ChatList() {
             {/* Context Menu */}
             {contextMenu && (
                 <div
-                    className="fixed bg-white dark:bg-gray-800 shadow-lg rounded-lg py-1 z-50 min-w-[160px] border border-gray-200 dark:border-gray-700"
+                    className="fixed bg-white dark:bg-gray-800 shadow-lg rounded-lg py-1 z-50 min-w-[200px] border border-gray-200 dark:border-gray-700"
                     style={{ top: contextMenu.y, left: contextMenu.x }}
                 >
                     <button
-                        className="w-full text-left px-4 py-2 hover:bg-gray-50 text-gray-700 flex items-center gap-2"
+                        className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 flex items-center gap-3 transition-colors"
                         onClick={(e) => {
                             handleToggleFavorite(contextMenu.publickey, e);
                             setContextMenu(null);
                         }}
                     >
-                        <Star size={16} fill={contextMenu.favorite ? "currentColor" : "none"} />
-                        {contextMenu.favorite ? "Unfavorite Chat" : "Favorite Chat"}
+                        <div className="w-8 h-8 rounded-full bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center text-yellow-600 dark:text-yellow-400">
+                            <Star size={16} fill={contextMenu.favorite ? "currentColor" : "none"} />
+                        </div>
+                        <span className="font-medium">{contextMenu.favorite ? "Unfavorite Chat" : "Favorite Chat"}</span>
                     </button>
                     <button
-                        className="w-full text-left px-4 py-2 hover:bg-gray-50 text-gray-700 flex items-center gap-2"
+                        className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 flex items-center gap-3 transition-colors border-t border-gray-100 dark:border-gray-700"
                         onClick={(e) => {
                             if (contextMenu.archived) {
                                 handleUnarchive(contextMenu.publickey, e);
@@ -343,8 +346,10 @@ export default function ChatList() {
                             setContextMenu(null);
                         }}
                     >
-                        <Archive size={16} />
-                        {contextMenu.archived ? "Unarchive Chat" : "Archive Chat"}
+                        <div className="w-8 h-8 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center text-orange-600 dark:text-orange-400">
+                            <Archive size={16} />
+                        </div>
+                        <span className="font-medium">{contextMenu.archived ? "Unarchive Chat" : "Archive Chat"}</span>
                     </button>
                 </div>
             )}
@@ -398,16 +403,65 @@ export default function ChatList() {
                         {displayedChats.map((chat, i) => (
                             <div
                                 key={i}
-                                onClick={() =>
+                                onClick={(e) => {
+                                    // If this interaction was flagged as a long press, ignore the click
+                                    if (longPressTriggeredRef.current) {
+                                        // Reset immediately so next click works
+                                        longPressTriggeredRef.current = false;
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        return;
+                                    }
+
                                     navigate({
                                         to: "/chat/$address",
                                         params: {
                                             address: chat.publickey,
                                         },
-                                    })
-                                }
-                                onContextMenu={(e) => handleContextMenu(e, chat.publickey, chat.archived, chat.favorite)}
-                                className={`relative rounded-lg shadow-sm border p-3 hover:shadow-md cursor-pointer transition-all active:bg-gray-50 dark:active:bg-gray-700 ${isNewChat(chat)
+                                    });
+                                }}
+                                onContextMenu={(e) => {
+                                    e.preventDefault();
+                                    handleContextMenu(e, chat.publickey, chat.archived, chat.favorite);
+                                }}
+                                // Touch handlers for Long Press
+                                onTouchStart={(e) => {
+                                    // Clear any existing timer just in case
+                                    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+                                    longPressTriggeredRef.current = false;
+
+                                    const touch = e.touches[0];
+                                    const clientX = touch.clientX;
+                                    const clientY = touch.clientY;
+
+                                    longPressTimerRef.current = setTimeout(() => {
+                                        longPressTriggeredRef.current = true;
+                                        // Trigger Context Menu
+                                        const syntheticEvent = {
+                                            preventDefault: () => { },
+                                            stopPropagation: () => { },
+                                            clientX: clientX,
+                                            clientY: clientY,
+                                        } as React.MouseEvent;
+                                        handleContextMenu(syntheticEvent, chat.publickey, chat.archived, chat.favorite);
+                                    }, 500);
+                                }}
+                                onTouchMove={() => {
+                                    // If user moves finger (scrolls), cancel long press
+                                    if (longPressTimerRef.current) {
+                                        clearTimeout(longPressTimerRef.current);
+                                        longPressTimerRef.current = null;
+                                    }
+                                }}
+                                onTouchEnd={() => {
+                                    // Clean up timer on release
+                                    if (longPressTimerRef.current) {
+                                        clearTimeout(longPressTimerRef.current);
+                                        longPressTimerRef.current = null;
+                                    }
+                                }}
+                                style={{ WebkitTouchCallout: 'none' } as any}
+                                className={`relative rounded-lg shadow-sm border p-3 hover:shadow-md cursor-pointer transition-all select-none active:bg-gray-50 dark:active:bg-gray-700 ${isNewChat(chat)
                                     ? 'bg-primary-50 dark:bg-primary-900/10 border-l-4 border-l-primary-500 border-t-primary-200 border-r-primary-200 border-b-primary-200 dark:border-t-primary-800 dark:border-r-primary-800 dark:border-b-primary-800'
                                     : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'
                                     }`}
@@ -419,7 +473,7 @@ export default function ChatList() {
                                         <img
                                             src={getAvatar(chat.publickey)}
                                             alt={getName(chat)}
-                                            className="w-12 h-12 rounded-full object-cover bg-gray-200 dark:bg-gray-700"
+                                            className="w-12 h-12 rounded-full object-cover bg-gray-200 dark:bg-gray-700 pointer-events-none"
                                             onError={(e: any) => {
                                                 e.target.src = defaultAvatar;
                                             }}

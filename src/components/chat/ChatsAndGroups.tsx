@@ -1,12 +1,12 @@
 // src/components/chat/ChatsAndGroups.tsx
 
-import { useState, useContext, useEffect } from "react";
+import { useState, useContext, useEffect, useRef } from "react";
 import { useNavigate, Link } from "@tanstack/react-router";
 import { appContext } from "../../AppContext";
 import { minimaService } from "../../services/minima.service";
 import { groupService } from "../../services/group.service";
 import { MDS } from "@minima-global/mds";
-import { Plus, Archive, Star, Users, MessageCircle, LayoutGrid, Inbox } from "lucide-react";
+import { Plus, Archive, Star, Users, MessageCircle, LayoutGrid, Inbox, Globe, Radio, UserPlus, MessageSquarePlus } from "lucide-react";
 
 interface Contact {
     currentaddress: string;
@@ -76,12 +76,66 @@ export default function ChatsAndGroups() {
         return new Map();
     });
 
+    const [fabMenuOpen, setFabMenuOpen] = useState(false);
     // Only show full loading spinner if we have absolutely no data
     const [loading, setLoading] = useState(() => {
         const hasChats = !!localStorage.getItem('cached_chats');
         return !hasChats;
     });
     const navigate = useNavigate();
+
+    // Context Menu State
+    const [contextMenu, setContextMenu] = useState<{ x: number, y: number, publickey: string, archived: boolean, favorite: boolean } | null>(null);
+    const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const longPressTriggeredRef = useRef(false);
+
+    // Close context menu on click outside
+    useEffect(() => {
+        const handleClick = () => setContextMenu(null);
+        document.addEventListener('click', handleClick);
+        return () => document.removeEventListener('click', handleClick);
+    }, []);
+
+    const handleContextMenu = (e: React.MouseEvent, publickey: string, archived?: boolean, favorite?: boolean) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setContextMenu({ x: e.clientX, y: e.clientY, publickey, archived: !!archived, favorite: !!favorite });
+    };
+
+    const handleArchive = async (publickey: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        e.preventDefault();
+        try {
+            await minimaService.archiveChat(publickey);
+        } catch (err) {
+            console.error("❌ Archive error:", err);
+        }
+    };
+
+    const handleUnarchive = async (publickey: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        e.preventDefault();
+        try {
+            await minimaService.unarchiveChat(publickey);
+        } catch (err) {
+            console.error("❌ Unarchive error:", err);
+        }
+    };
+
+    const handleToggleFavorite = async (publickey: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        e.preventDefault();
+        try {
+            const chat = chats.find(c => c.publickey === publickey);
+            if (chat?.favorite) {
+                await minimaService.unmarkChatAsFavorite(publickey);
+            } else {
+                await minimaService.markChatAsFavorite(publickey);
+            }
+        } catch (err) {
+            console.error("❌ Favorite toggle error:", err);
+        }
+    };
 
     const fetchChats = async () => {
         try {
@@ -399,7 +453,44 @@ export default function ChatsAndGroups() {
     const archivedCount = archivedChats.length + archivedGroups.length;
 
     return (
-        <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-900 overflow-x-hidden">
+        <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-900 overflow-x-hidden relative">
+            {/* Context Menu */}
+            {contextMenu && (
+                <div
+                    className="fixed bg-white dark:bg-gray-800 shadow-lg rounded-lg py-1 z-50 min-w-[200px] border border-gray-200 dark:border-gray-700 select-none"
+                    style={{ top: contextMenu.y, left: contextMenu.x }}
+                >
+                    <button
+                        className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 flex items-center gap-3 transition-colors touch-manipulation"
+                        onClick={(e) => {
+                            handleToggleFavorite(contextMenu.publickey, e);
+                            setContextMenu(null);
+                        }}
+                    >
+                        <div className="w-8 h-8 rounded-full bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center text-yellow-600 dark:text-yellow-400">
+                            <Star size={16} fill={contextMenu.favorite ? "currentColor" : "none"} />
+                        </div>
+                        <span className="font-medium">{contextMenu.favorite ? "Unfavorite Chat" : "Favorite Chat"}</span>
+                    </button>
+                    <button
+                        className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 flex items-center gap-3 transition-colors border-t border-gray-100 dark:border-gray-700 touch-manipulation"
+                        onClick={(e) => {
+                            if (contextMenu.archived) {
+                                handleUnarchive(contextMenu.publickey, e);
+                            } else {
+                                handleArchive(contextMenu.publickey, e);
+                            }
+                            setContextMenu(null);
+                        }}
+                    >
+                        <div className="w-8 h-8 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center text-orange-600 dark:text-orange-400">
+                            <Archive size={16} />
+                        </div>
+                        <span className="font-medium">{contextMenu.archived ? "Unarchive Chat" : "Archive Chat"}</span>
+                    </button>
+                </div>
+            )}
+
             {/* Modern Tabs */}
             <div className="bg-white dark:bg-gray-800 flex-shrink-0 px-4 py-3 shadow-sm transition-colors">
                 <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
@@ -464,15 +555,7 @@ export default function ChatsAndGroups() {
                         <span className="hidden md:inline">Archived</span> {archivedCount > 0 && `(${archivedCount})`}
                     </button>
 
-                    {activeTab === 'groups' && (
-                        <button
-                            onClick={() => navigate({ to: "/create-group" })}
-                            className="ml-auto p-2 bg-primary-600 text-white rounded-full hover:bg-primary-700 transition-all shadow-md hover:shadow-lg flex-shrink-0"
-                            title="Create Group"
-                        >
-                            <Plus size={20} />
-                        </button>
-                    )}
+
                 </div>
             </div>
 
@@ -484,10 +567,10 @@ export default function ChatsAndGroups() {
                                 <Users className="w-12 h-12 text-primary-600" />
                             ) : activeTab === 'requests' ? (
                                 <Inbox className="w-12 h-12 text-primary-600" />
+                            ) : activeTab === 'individuals' ? (
+                                <MessageCircle className="w-12 h-12 text-primary-600" />
                             ) : (
-                                <svg className="w-12 h-12 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                                </svg>
+                                <LayoutGrid className="w-12 h-12 text-primary-600" />
                             )}
                         </div>
                         <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-1">
@@ -509,9 +592,23 @@ export default function ChatsAndGroups() {
                             >
                                 Create Group
                             </button>
-                        ) : (
+                        ) : activeTab === 'requests' ? (
+                            <button
+                                onClick={() => navigate({ to: "/discovery" })}
+                                className="px-6 py-2 bg-primary-600 text-white rounded-full font-medium hover:bg-primary-700 transition-colors shadow-sm"
+                            >
+                                Go to Community
+                            </button>
+                        ) : activeTab === 'individuals' ? (
                             <button
                                 onClick={() => navigate({ to: "/contacts" })}
+                                className="px-6 py-2 bg-primary-600 text-white rounded-full font-medium hover:bg-primary-700 transition-colors shadow-sm"
+                            >
+                                Start Personal Chat
+                            </button>
+                        ) : (
+                            <button
+                                onClick={() => (activeTab === 'all' || activeTab === 'favorites') ? setFabMenuOpen(true) : navigate({ to: "/contacts" })}
                                 className="px-6 py-2 bg-primary-600 text-white rounded-full font-medium hover:bg-primary-700 transition-colors shadow-sm"
                             >
                                 Start Messaging
@@ -559,11 +656,55 @@ export default function ChatsAndGroups() {
                         ))}
 
                         {displayedChats.map((chat, i) => (
-                            <Link
+                            <div
                                 key={i}
-                                to="/chat/$address"
-                                params={{ address: chat.publickey }}
-                                className={`block rounded-xl p-4 cursor-pointer transition-all duration-200 ${(chat.unreadCount || 0) > 0
+                                onClick={(e) => {
+                                    if (longPressTriggeredRef.current) {
+                                        longPressTriggeredRef.current = false;
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        return;
+                                    }
+                                    navigate({
+                                        to: "/chat/$address",
+                                        params: { address: chat.publickey },
+                                    });
+                                }}
+                                onContextMenu={(e) => {
+                                    e.preventDefault();
+                                    handleContextMenu(e, chat.publickey, chat.archived, chat.favorite);
+                                }}
+                                onTouchStart={(e) => {
+                                    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+                                    longPressTriggeredRef.current = false;
+                                    const touch = e.touches[0];
+                                    const clientX = touch.clientX;
+                                    const clientY = touch.clientY;
+                                    longPressTimerRef.current = setTimeout(() => {
+                                        longPressTriggeredRef.current = true;
+                                        const syntheticEvent = {
+                                            preventDefault: () => { },
+                                            stopPropagation: () => { },
+                                            clientX: clientX,
+                                            clientY: clientY,
+                                        } as React.MouseEvent;
+                                        handleContextMenu(syntheticEvent, chat.publickey, chat.archived, chat.favorite);
+                                    }, 500);
+                                }}
+                                onTouchMove={() => {
+                                    if (longPressTimerRef.current) {
+                                        clearTimeout(longPressTimerRef.current);
+                                        longPressTimerRef.current = null;
+                                    }
+                                }}
+                                onTouchEnd={() => {
+                                    if (longPressTimerRef.current) {
+                                        clearTimeout(longPressTimerRef.current);
+                                        longPressTimerRef.current = null;
+                                    }
+                                }}
+                                style={{ WebkitTouchCallout: 'none' } as any}
+                                className={`block rounded-xl p-4 cursor-pointer transition-all duration-200 select-none ${(chat.unreadCount || 0) > 0
                                     ? 'bg-primary-50 dark:bg-primary-900/10 shadow-md hover:shadow-lg border-2 border-primary-200 dark:border-primary-800'
                                     : 'bg-white dark:bg-gray-800 shadow-sm hover:shadow-md border border-gray-100 dark:border-gray-700'
                                     }`}
@@ -578,7 +719,7 @@ export default function ChatsAndGroups() {
                                             <img
                                                 src={getAvatar(chat.publickey)}
                                                 alt={getName(chat)}
-                                                className="w-14 h-14 rounded-full object-cover bg-gray-200 dark:bg-gray-700 shadow-md"
+                                                className="w-14 h-14 rounded-full object-cover bg-gray-200 dark:bg-gray-700 shadow-md pointer-events-none"
                                                 onError={(e: any) => { e.target.src = defaultAvatar; }}
                                             />
                                         )}
@@ -613,22 +754,62 @@ export default function ChatsAndGroups() {
                                         </p>
                                     </div>
                                 </div>
-                            </Link>
+                            </div>
                         ))}
                     </div>
                 )}
             </div>
 
-            <div className="fixed bottom-6 right-6">
+            {/* FAB Menu Actions */}
+            {fabMenuOpen && (activeTab === 'all' || activeTab === 'favorites') && (
+                <div className="fixed bottom-24 right-6 flex flex-col items-end gap-3 z-50">
+                    <button
+                        onClick={() => { setFabMenuOpen(false); navigate({ to: "/create-group" }); }}
+                        className="flex items-center gap-3 px-4 py-2 bg-white dark:bg-gray-800 rounded-full shadow-lg text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all border border-gray-100 dark:border-gray-700"
+                    >
+                        <span className="font-medium text-sm">New Group</span>
+                        <div className="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center text-primary-600">
+                            <Users size={20} />
+                        </div>
+                    </button>
+                    <button
+                        onClick={() => { setFabMenuOpen(false); console.log("Create Channel"); /* TODO: Implement create channel */ }}
+                        className="flex items-center gap-3 px-4 py-2 bg-white dark:bg-gray-800 rounded-full shadow-lg text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all border border-gray-100 dark:border-gray-700"
+                    >
+                        <span className="font-medium text-sm">New Channel</span>
+                        <div className="w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-600">
+                            <Radio size={20} />
+                        </div>
+                    </button>
+                    <button
+                        onClick={() => { setFabMenuOpen(false); navigate({ to: "/contacts" }); }}
+                        className="flex items-center gap-3 px-4 py-2 bg-white dark:bg-gray-800 rounded-full shadow-lg text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all border border-gray-100 dark:border-gray-700"
+                    >
+                        <span className="font-medium text-sm">New Chat</span>
+                        <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600">
+                            <UserPlus size={20} />
+                        </div>
+                    </button>
+                </div>
+            )}
+
+            <div className="fixed bottom-6 right-6 z-50">
                 <button
-                    onClick={() => activeTab === 'groups' ? navigate({ to: "/create-group" }) : navigate({ to: "/contacts" })}
-                    className="w-14 h-14 bg-primary-600 text-white rounded-full shadow-lg flex items-center justify-center hover:bg-primary-700 transition-transform hover:scale-105 active:scale-95"
+                    onClick={() => {
+                        if (activeTab === 'groups') navigate({ to: "/create-group" });
+                        else if (activeTab === 'requests') navigate({ to: "/discovery" });
+                        else if (activeTab === 'all' || activeTab === 'favorites') setFabMenuOpen(!fabMenuOpen);
+                        else navigate({ to: "/contacts" });
+                    }}
+                    className={`w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 ${fabMenuOpen ? 'bg-gray-700 text-white rotate-45' : 'bg-primary-600 text-white'
+                        }`}
                 >
-                    {activeTab === 'groups' ? <Plus className="w-6 h-6" /> : (
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                        </svg>
-                    )}
+                    {activeTab === 'groups' ? <Users size={24} /> :
+                        activeTab === 'requests' ? <Globe size={24} /> :
+                            activeTab === 'individuals' ? <UserPlus size={24} /> :
+                                (activeTab === 'all' || activeTab === 'favorites') ? <Plus size={24} /> :
+                                    <MessageSquarePlus size={24} />
+                    }
                 </button>
             </div>
         </div >
