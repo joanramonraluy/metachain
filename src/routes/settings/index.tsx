@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { SettingsTabs } from '../../components/SettingsTabs';
 import { useEffect } from 'react';
+import { useAppContext } from '@/AppContext';
 
 export const Route = createFileRoute('/settings/')({
     component: SettingsIndex
@@ -8,14 +9,19 @@ export const Route = createFileRoute('/settings/')({
 
 function SettingsIndex() {
     const navigate = useNavigate();
+    const { sessionExpired } = useAppContext();
 
     useEffect(() => {
-        // Simple check for desktop width (> 768px for md breakpoint)
-        // If desktop, redirect to profile as we want the split view
+        // Only redirect on Desktop (> 768px)
+        // On Mobile, we want to show the menu so they can choose Network or Connect
         if (window.innerWidth >= 768) {
-            navigate({ to: '/settings/profile', replace: true });
+            if (sessionExpired) {
+                navigate({ to: '/settings/connect', replace: true });
+            } else {
+                navigate({ to: '/settings/profile', replace: true });
+            }
         }
-    }, [navigate]);
+    }, [navigate, sessionExpired]);
 
     return (
         <div className="p-4 md:hidden">

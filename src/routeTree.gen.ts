@@ -23,6 +23,7 @@ import { Route as SettingsProfileRouteImport } from './routes/settings/profile'
 import { Route as SettingsPrivacyRouteImport } from './routes/settings/privacy'
 import { Route as SettingsNetworkRouteImport } from './routes/settings/network'
 import { Route as SettingsDiscoveryRouteImport } from './routes/settings/discovery'
+import { Route as SettingsConnectRouteImport } from './routes/settings/connect'
 import { Route as SettingsAppearanceRouteImport } from './routes/settings/appearance'
 import { Route as GroupsGroupIdRouteImport } from './routes/groups.$groupId'
 import { Route as ContactInfoAddressRouteImport } from './routes/contact-info.$address'
@@ -99,6 +100,11 @@ const SettingsDiscoveryRoute = SettingsDiscoveryRouteImport.update({
   path: '/discovery',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsConnectRoute = SettingsConnectRouteImport.update({
+  id: '/connect',
+  path: '/connect',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsAppearanceRoute = SettingsAppearanceRouteImport.update({
   id: '/appearance',
   path: '/appearance',
@@ -136,6 +142,7 @@ export interface FileRoutesByFullPath {
   '/contact-info/$address': typeof ContactInfoAddressRoute
   '/groups/$groupId': typeof GroupsGroupIdRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
+  '/settings/connect': typeof SettingsConnectRoute
   '/settings/discovery': typeof SettingsDiscoveryRoute
   '/settings/network': typeof SettingsNetworkRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
@@ -154,6 +161,7 @@ export interface FileRoutesByTo {
   '/contact-info/$address': typeof ContactInfoAddressRoute
   '/groups/$groupId': typeof GroupsGroupIdRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
+  '/settings/connect': typeof SettingsConnectRoute
   '/settings/discovery': typeof SettingsDiscoveryRoute
   '/settings/network': typeof SettingsNetworkRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
@@ -174,6 +182,7 @@ export interface FileRoutesById {
   '/contact-info/$address': typeof ContactInfoAddressRoute
   '/groups/$groupId': typeof GroupsGroupIdRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
+  '/settings/connect': typeof SettingsConnectRoute
   '/settings/discovery': typeof SettingsDiscoveryRoute
   '/settings/network': typeof SettingsNetworkRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
@@ -195,6 +204,7 @@ export interface FileRouteTypes {
     | '/contact-info/$address'
     | '/groups/$groupId'
     | '/settings/appearance'
+    | '/settings/connect'
     | '/settings/discovery'
     | '/settings/network'
     | '/settings/privacy'
@@ -213,6 +223,7 @@ export interface FileRouteTypes {
     | '/contact-info/$address'
     | '/groups/$groupId'
     | '/settings/appearance'
+    | '/settings/connect'
     | '/settings/discovery'
     | '/settings/network'
     | '/settings/privacy'
@@ -232,6 +243,7 @@ export interface FileRouteTypes {
     | '/contact-info/$address'
     | '/groups/$groupId'
     | '/settings/appearance'
+    | '/settings/connect'
     | '/settings/discovery'
     | '/settings/network'
     | '/settings/privacy'
@@ -347,6 +359,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsDiscoveryRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/connect': {
+      id: '/settings/connect'
+      path: '/connect'
+      fullPath: '/settings/connect'
+      preLoaderRoute: typeof SettingsConnectRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/appearance': {
       id: '/settings/appearance'
       path: '/appearance'
@@ -380,6 +399,7 @@ declare module '@tanstack/react-router' {
 
 interface SettingsRouteChildren {
   SettingsAppearanceRoute: typeof SettingsAppearanceRoute
+  SettingsConnectRoute: typeof SettingsConnectRoute
   SettingsDiscoveryRoute: typeof SettingsDiscoveryRoute
   SettingsNetworkRoute: typeof SettingsNetworkRoute
   SettingsPrivacyRoute: typeof SettingsPrivacyRoute
@@ -389,6 +409,7 @@ interface SettingsRouteChildren {
 
 const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsAppearanceRoute: SettingsAppearanceRoute,
+  SettingsConnectRoute: SettingsConnectRoute,
   SettingsDiscoveryRoute: SettingsDiscoveryRoute,
   SettingsNetworkRoute: SettingsNetworkRoute,
   SettingsPrivacyRoute: SettingsPrivacyRoute,

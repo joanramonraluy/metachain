@@ -2,7 +2,7 @@ import { Block, MDS, MinimaEvents } from "@minima-global/mds"
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react"
 import { minimaService } from "./services/minima.service"
 import useBeaconSender from "./hooks/useBeaconSender"
-
+import { MinimaSetup } from './components/setup/MinimaSetup';
 
 
 const defaultAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23cbd5e1'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E";
@@ -21,6 +21,7 @@ export const appContext = createContext<{
   refreshProfile: () => Promise<void>
   showDebugPanel: boolean
   setShowDebugPanel: (show: boolean) => void
+  sessionExpired: boolean
 }>({
   loaded: false,
   dbReady: false,
@@ -34,7 +35,8 @@ export const appContext = createContext<{
   refreshWriteMode: async () => { },
   refreshProfile: async () => { },
   showDebugPanel: false,
-  setShowDebugPanel: () => { }
+  setShowDebugPanel: () => { },
+  sessionExpired: false
 })
 
 const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
@@ -48,6 +50,9 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
   const [writeMode, setWriteMode] = useState(false)
   const [myPublicKey, setMyPublicKey] = useState("")
   const [showDebugPanel, setShowDebugPanel] = useState(false)
+
+  // New state for setup
+  const [needsSetup, setNeedsSetup] = useState(false);
 
   // Enable periodic beacon sending globally (only when MDS is loaded)
   useBeaconSender(loaded);
@@ -139,6 +144,29 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
     if (!initialised.current) {
       initialised.current = true
 
+      // Check for Stored UID (Standalone Mode)
+      // Check for Stored UID (Standalone Mode or Native)
+      const isNative = (window as any).Capacitor?.isNativePlatform?.() || (window as any).Capacitor?.isNative;
+      const storedUid = localStorage.getItem('minima_uid');
+
+      // If no UID is found...
+      if (!storedUid && !MDS.DEBUG_MINIDAPPID) {
+        // ...and we are in Native mode OR Debug mode
+        if (isNative || import.meta.env.DEV) {
+          console.log("No UID found in Native/Dev mode. Triggering Setup.");
+          setNeedsSetup(true);
+          return;
+        }
+      }
+
+      if (storedUid) {
+        console.log("Using Stored UID for connection:", storedUid);
+        MDS.DEBUG_MINIDAPPID = storedUid;
+        MDS.DEBUG_HOST = "127.0.0.1";
+        MDS.DEBUG_PORT = 9003;
+        (window as any).MDS_CONFIGURED = true; // Flag for debugging
+      }
+
       minimaService.init()
 
       MDS.init(async (msg) => {
@@ -220,18 +248,8 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
             console.log("⏰ [AppContext] Starting transaction confirmation checker...");
             minimaService.startConfirmationChecker();
 
-            // Start offline queue (manually started now)
-            // Import dynamically or assume it's available via minimaService if needed, 
-            // but we can import it directly if we wish.
-            // Let's use the exported instance from services/index or assume it's global.
-            // Since we can't easily add imports here without re-reading the top, let's trust existing imports.
-            // Wait, we need to import offlineQueueService. 
-            // Better to rely on a method in minimaService to start it if not imported.
-            // Let's add startOfflineQueue() to MinimaService or just assume it's running via sidebar? No.
-            // We should use the service directly.
-            // Actually, we can just use minimaService.startOfflineQueue() if we add it, or use the global import if available.
-            // Checking imports... AppContext imports minimaService.
-            // I will add a method to MinimaService to start the queue to keep AppContext clean.
+            // Start offline queue
+            minimaService.startOfflineQueue();
 
           } catch (err) {
             console.error("❌ [AppContext] Initialization Sequence Failed:", err);
@@ -335,6 +353,54 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
     };
   }, [loaded, synced]);
 
+  // Session Expiry Detection (Startup & Resume)
+  const [sessionExpired, setSessionExpired] = useState(false);
+
+  useEffect(() => {
+    const checkSession = async () => {
+      // Run check regardless of storage source to catch all invalid states
+      console.log("🕵️‍♂️ [AppContext] Checking Session Validity...");
+
+      try {
+        // TIMEOUT ENFORCEMENT: MDS.cmd can hang on 500 errors (invalid UID)
+        // We race against a 3s timeout to ensure we catch the failure
+        const timeout = new Promise<any>((_, reject) => setTimeout(() => reject(new Error("Session Check Timeout")), 3000));
+
+        const res = await Promise.race([MDS.cmd.block(), timeout]);
+
+        console.log("🕵️‍♂️ [AppContext] Session Check Result:", res);
+
+        // Check for specific "Incorrect Minima Dapp UID" error or general failure with connected MDS
+        if (!res.status && typeof res.error === 'string' &&
+          (res.error.includes("Incorrect Minima Dapp UID") || res.error.includes("Not allowed"))) {
+          console.warn("🚨 [AppContext] Session Expired / Invalid UID detected!");
+          setSessionExpired(true);
+        } else if (res.status) {
+          // Recover if it starts working again (e.g. user updated it in another tab)
+          setSessionExpired(false);
+        }
+      } catch (err) {
+        console.error("Session check failed (Network/Auth Error/Timeout):", err);
+        // If the request fails entirely (e.g. 500/404 or Timeout because UID is invalid), treat as expired
+        setSessionExpired(true);
+      }
+    };
+
+    // Run on mount (Startup)
+    checkSession();
+
+    // Run on Resume
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log("👀 [AppContext] App resumed - checking session validity...");
+        checkSession();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, []);
+
   const context = {
     loaded,
     dbReady,
@@ -348,7 +414,15 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
     refreshWriteMode,
     refreshProfile,
     showDebugPanel,
-    setShowDebugPanel
+    setShowDebugPanel,
+    sessionExpired // Exported for UI components to react
+  }
+
+  if (needsSetup) {
+    return <MinimaSetup onComplete={(uid) => {
+      localStorage.setItem('minima_uid', uid);
+      window.location.reload();
+    }} />;
   }
 
   return (

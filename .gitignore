@@ -21,6 +21,9 @@ Thumbs.db
 .vscode/
 .idea/
 
+#Gemini
+.gemini
+
 # Examples folder
 examples/
 
