@@ -23,6 +23,10 @@
     "@capacitor/app": "^8.0.0",
     "@capacitor/cli": "^8.0.2",
     "@capacitor/core": "^8.0.2",
+    "@capacitor/local-notifications": "^8.0.0",
+    "@capacitor/status-bar": "^8.0.0",
+    "@capacitor/navigation-bar": "8.0.0",
+    "@capacitor/keyboard": "8.0.0",
     "@minima-global/mds": "^0.14.11",
     "@tanstack/react-router": "^1.76.3",
     "emoji-picker-react": "^4.16.1",
@@ -33,6 +37,7 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
     "@eslint/js": "^9.13.0",
     "@minima-global/minima-cli": "^0.1.5",
     "@tanstack/router-cli": "^1.97.23",

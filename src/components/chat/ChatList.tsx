@@ -178,7 +178,7 @@ export default function ChatList() {
 
     if (!loaded || loading) {
         return (
-            <div className="flex items-center justify-center h-screen bg-white dark:bg-gray-900">
+            <div className="flex items-center justify-center h-full bg-white dark:bg-gray-900">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
             </div>
         );
@@ -186,7 +186,7 @@ export default function ChatList() {
 
     if (error) {
         return (
-            <div className="flex items-center justify-center h-screen bg-white dark:bg-gray-900">
+            <div className="flex items-center justify-center h-full bg-white dark:bg-gray-900">
                 <p className="text-red-500">⚠️ {error}</p>
             </div>
         );
@@ -316,7 +316,7 @@ export default function ChatList() {
     };
 
     return (
-        <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-900 relative">
+        <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-900 relative">
             {/* Context Menu */}
             {contextMenu && (
                 <div

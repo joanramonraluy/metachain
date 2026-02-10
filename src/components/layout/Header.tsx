@@ -30,7 +30,7 @@ export default function Header({ onToggleMenu }: HeaderProps) {
   const pageTitle = currentPath === "/" ? "MetaChain" : (currentItem?.label || "MetaChain");
 
   return (
-    <header className="w-full bg-primary-600 text-white shadow-md z-30 flex-shrink-0 dark:border-b dark:border-gray-800 transition-colors">
+    <header className="w-full bg-primary-600 text-white shadow-md z-30 flex-shrink-0 dark:border-b dark:border-gray-800 transition-colors pt-[env(safe-area-inset-top)]">
       <div className="flex justify-between items-center px-4 py-4">
         <div className="flex items-center gap-3">
 

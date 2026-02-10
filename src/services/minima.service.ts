@@ -773,6 +773,9 @@ WHERE(${addressClause}) AND status = 'pending'`;
 
                 // Notify UI to refresh
                 chatService.notifyNewMessage(json);
+
+                // Update Badge Count (Live update)
+                chatService.updateUnreadNotification();
             } catch (err) {
                 console.error("❌ [MAXIMA] Error processing message:", err);
                 console.error("❌ [MAXIMA] Received data:", datastr);

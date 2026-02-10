@@ -82,6 +82,20 @@ App.getLaunchUrl().then(data => {
   }
 });
 
+// Handle Android Hardware Back Button
+App.addListener('backButton', () => {
+  const currentPath = router.state.location.pathname;
+  console.log(`[Navigation] Back Button Pressed. Path: ${currentPath}`);
+
+  // Exit app if on root or login screen
+  if (currentPath === '/' || currentPath === '/settings/connect') {
+    App.exitApp();
+  } else {
+    // Go back in router history
+    router.history.back();
+  }
+});
+
 // Launcher Mode Logic Removed as per user request (Direct Load)
 // Deep Link listeners (App.addListener) above handle native app navigation if triggered externally.
 

@@ -453,7 +453,7 @@ export default function ChatsAndGroups() {
     const archivedCount = archivedChats.length + archivedGroups.length;
 
     return (
-        <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-900 overflow-x-hidden relative">
+        <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-900 overflow-x-hidden relative">
             {/* Context Menu */}
             {contextMenu && (
                 <div

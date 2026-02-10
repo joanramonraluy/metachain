@@ -73,7 +73,7 @@ function GroupInfoPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col transition-colors">
+    <div className="min-h-full bg-gray-50 dark:bg-gray-900 flex flex-col transition-colors">
       {/* HEADER */}
       <div className="sticky top-0 z-10 bg-white/80 dark:bg-gray-800/80 backdrop-blur-md border-b border-gray-200 dark:border-gray-700 px-4 py-3 flex items-center gap-3">
         <button

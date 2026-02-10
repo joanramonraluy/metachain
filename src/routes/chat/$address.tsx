@@ -1,6 +1,7 @@
 // src/routes/chat/$address.tsx
 import { useEffect, useRef, useState, useContext, useCallback, Suspense, lazy } from "react";
 import { useNavigate, createFileRoute } from "@tanstack/react-router";
+import { Keyboard } from '@capacitor/keyboard';
 import { MDS } from "@minima-global/mds";
 import { appContext } from "../../AppContext";
 import TransferSelector from "../../components/chat/TransferSelector";
@@ -241,6 +242,23 @@ function ChatPage() {
     }, 100);
     return () => clearTimeout(timer);
   }, [address]); // Re-focus when switching chats
+
+  // Scroll to bottom when keyboard opens
+  useEffect(() => {
+    const handleKeyboardShow = () => {
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    };
+
+    const showListener = Keyboard.addListener('keyboardWillShow', handleKeyboardShow);
+    const didShowListener = Keyboard.addListener('keyboardDidShow', handleKeyboardShow);
+
+    return () => {
+      showListener.then(l => l.remove());
+      didShowListener.then(l => l.remove());
+    };
+  }, []);
 
   const { writeMode, userName, myPublicKey } = useContext(appContext);
   const isLoadingMessages = useRef(false); // Flag to prevent simultaneous loads
@@ -1900,9 +1918,9 @@ function ChatPage() {
       RENDER
   ---------------------------------------------------------------------------- */
   return (
-    <div className="h-screen flex flex-col bg-[#E5DDD5] dark:bg-gray-900">
+    <div className="flex-1 w-full flex flex-col bg-[#E5DDD5] dark:bg-gray-900 min-h-0">
       {/* HEADER - Fixed at top */}
-      <div className="bg-primary-600 dark:bg-gray-800 text-white p-4 px-4 flex items-center gap-3 flex-shrink-0 shadow-sm z-30 transition-colors border-b border-primary-700 dark:border-gray-700">
+      <div className="bg-primary-600 dark:bg-gray-800 text-white p-4 pt-[calc(1rem+env(safe-area-inset-top))] px-4 flex items-center gap-3 flex-shrink-0 shadow-sm z-30 transition-colors border-b border-primary-700 dark:border-gray-700">
         {/* Back button */}
         <button
           onClick={() => navigate({ to: '/' })}
@@ -2479,7 +2497,7 @@ function ChatPage() {
         <div ref={messagesEndRef} />
       </div>
       {/* INPUT BAR - Fixed at bottom */}
-      <div className="p-2 bg-[#F0F2F5] dark:bg-gray-800/95 flex gap-2 items-center flex-shrink-0 z-10 relative border-t border-gray-200 dark:border-gray-700 transition-colors">
+      <div className="w-full max-w-full overflow-x-hidden px-1.5 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] bg-white dark:bg-gray-800 flex gap-0.5 items-center flex-shrink-0 z-10 relative border-t border-gray-200 dark:border-gray-700 transition-colors box-border">
 
         {/* Emoji Picker Popover */}
         {showEmojiPicker && (
@@ -2515,7 +2533,7 @@ function ChatPage() {
         )}
 
         <button
-          className={`p-3 rounded-full transition-colors ${!contact?.extradata?.minimaaddress
+          className={`p-2 rounded-full transition-colors ${!contact?.extradata?.minimaaddress
             ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed'
             : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
             }`}
@@ -2543,7 +2561,7 @@ function ChatPage() {
         </button>
 
         <button
-          className={`p-3 rounded-full transition-colors ${showEmojiPicker ? 'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-600 dark:text-yellow-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
+          className={`p-2 rounded-full transition-colors ${showEmojiPicker ? 'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-600 dark:text-yellow-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
           onClick={(e) => {
             e.stopPropagation(); // Stop propagation to prevent immediate close
             // setShowAttachments(false); // Removed
@@ -2554,7 +2572,7 @@ function ChatPage() {
           <Smile className="w-6 h-6" />
         </button>
 
-        <div className="flex-1 bg-white dark:bg-gray-700 rounded-2xl flex items-center border border-gray-200 dark:border-gray-600 focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-transparent shadow-sm px-4 py-2 transition-all">
+        <div className="flex-1 min-w-0 bg-white dark:bg-gray-700 rounded-2xl flex items-center border border-gray-200 dark:border-gray-600 focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-transparent shadow-sm px-3 py-2 transition-all">
           <input
             ref={inputRef}
             className="flex-1 bg-transparent outline-none text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 text-[15px] max-h-32 py-1"
@@ -2577,7 +2595,7 @@ function ChatPage() {
         </div>
 
         <button
-          className={`p-3 rounded-full transition-all duration-200 shadow-sm
+          className={`p-2 rounded-full transition-all duration-200 shadow-sm
             ${input.trim() && blockReason === 'none' && !isBlocked
               ? 'bg-primary-600 text-white hover:bg-primary-700 transform hover:scale-105'
               : 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-default'

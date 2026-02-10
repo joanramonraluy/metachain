@@ -60,6 +60,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "@capacitor/keyboard": path.resolve(__dirname, "./src/mocks/capacitor-keyboard.ts"),
     },
   },
   plugins: [

@@ -7,7 +7,9 @@ android {
         applicationId "com.metachain.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
+        // Automatically increment versionCode based on timestamp (seconds since epoch)
+        // This ensures every build is treated as an update, so you don't need to uninstall.
+        versionCode (System.currentTimeMillis() / 1000).toInteger()
         versionName "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {

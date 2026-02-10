@@ -322,9 +322,9 @@ function ChatPage() {
       RENDER
   ---------------------------------------------------------------------------- */
   return (
-    <div className="h-screen flex flex-col bg-[#E5DDD5] dark:bg-gray-900 transition-colors">
+    <div className="h-full flex flex-col bg-[#E5DDD5] dark:bg-gray-900 transition-colors">
       {/* HEADER - Fixed at top */}
-      <div className="bg-primary-600 dark:bg-gray-900 text-white p-4 px-4 flex items-center gap-3 flex-shrink-0 shadow-sm z-10 dark:border-b dark:border-gray-800 transition-colors">
+      <div className="bg-primary-600 dark:bg-gray-900 text-white p-4 pt-[calc(1rem+env(safe-area-inset-top))] px-4 flex items-center gap-3 flex-shrink-0 shadow-sm z-10 dark:border-b dark:border-gray-800 transition-colors">
         {/* Back button */}
         <button
           onClick={() => navigate({ to: '/' })}
@@ -530,7 +530,7 @@ function ChatPage() {
       </div>
 
       {/* INPUT BAR - Fixed at bottom */}
-      <div className="p-2 bg-[#F0F2F5] dark:bg-gray-800 flex gap-2 items-center flex-shrink-0 z-10 relative border-t border-gray-200 dark:border-gray-700">
+      <div className="p-2 pb-[calc(2.5rem+env(safe-area-inset-bottom))] bg-white dark:bg-gray-800 flex gap-1 items-center flex-shrink-0 z-10 relative border-t border-gray-200 dark:border-gray-700">
         <div className="flex-1 bg-white dark:bg-gray-700 rounded-2xl flex items-center border border-gray-200 dark:border-gray-600 focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-transparent shadow-sm px-4 py-2 transition-all">
           <input
             className="flex-1 bg-transparent outline-none text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 text-[15px] max-h-32 py-1"
@@ -543,7 +543,7 @@ function ChatPage() {
         </div>
 
         <button
-          className={`p-3 rounded-full transition-all duration-200 shadow-sm
+          className={`p-2 rounded-full transition-all duration-200 shadow-sm
             ${input.trim()
               ? 'bg-primary-600 text-white hover:bg-primary-700 transform hover:scale-105'
               : 'bg-gray-200 text-gray-400 cursor-default'

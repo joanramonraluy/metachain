@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { MDS } from '@minima-global/mds';
+import { StatusBar, Style } from '@capacitor/status-bar';
+import { Capacitor } from '@capacitor/core';
 
 // Define available themes
 export type ThemeColor = 'sky' | 'cyan' | 'teal' | 'emerald' | 'slate' | 'gray' | 'zinc' | 'neutral' | 'stone';
@@ -221,6 +223,37 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
             }
         });
     }, [loaded]);
+
+
+    // Update System Bars (Status Bar & Navigation Bar) when mode changes
+    useEffect(() => {
+        const updateSystemBars = async () => {
+            if (!Capacitor.isNativePlatform()) return;
+
+            const isDark = mode === 'dark';
+
+            try {
+                // Status Bar
+                await StatusBar.setStyle({ style: isDark ? Style.Dark : Style.Light });
+                if (typeof (StatusBar as any).setBackgroundColor === 'function') {
+                    await StatusBar.setBackgroundColor({ color: '#00000000' });
+                }
+
+                // Navigation Bar - Dynamic access to bypass build-time resolution errors
+                const NavigationBarPlugin = (Capacitor as any).Plugins?.NavigationBar;
+                if (NavigationBarPlugin) {
+                    await NavigationBarPlugin.setColor({ color: isDark ? '#111827' : '#ffffff' });
+                }
+
+
+            } catch (e) {
+                // Plugins might not be available (web mode), ignore errors
+                console.warn('System bar styling failed:', e);
+            }
+        };
+
+        updateSystemBars();
+    }, [mode]);
 
     const setMode = (newMode: ThemeMode) => {
         console.log(`[ThemeContext] Setting mode to: ${newMode}`);

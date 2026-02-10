@@ -32,9 +32,17 @@
 }
 
 @layer base {
-  body {
-    @apply bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100 transition-colors duration-200;
+
+  html,
+  body,
+  #root {
+    @apply bg-gray-100 text-gray-900 dark:bg-gray-900 dark:text-gray-100 transition-colors duration-200;
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
   }
+
 }
 
 /* Hide scrollbar for Chrome, Safari and Opera */

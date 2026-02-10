@@ -12,7 +12,15 @@ const config: CapacitorConfig = {
       "localhost",
       "10.0.2.2"
     ]
-  }
+  },
+  plugins: {
+    StatusBar: {
+      overlaysWebView: true,
+    },
+    Keyboard: {
+      resize: "native",
+    },
+  },
 };
 
 export default config;

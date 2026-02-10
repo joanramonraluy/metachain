@@ -1,6 +1,7 @@
 import { Block, MDS, MinimaEvents } from "@minima-global/mds"
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react"
 import { minimaService } from "./services/minima.service"
+import { chatService } from "./services/chat.service"
 import useBeaconSender from "./hooks/useBeaconSender"
 import { MinimaSetup } from './components/setup/MinimaSetup';
 
@@ -394,12 +395,23 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
       if (document.visibilityState === 'visible') {
         console.log("👀 [AppContext] App resumed - checking session validity...");
         checkSession();
+        // Sync badge count / notifications on resume (in case messages arrived in background)
+        chatService.updateUnreadNotification();
+        // Also clear notifications on resume if desired, but user suggested clearing when opening app
+        chatService.clearNotifications();
       }
     };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, []);
+
+  // Request notification permissions on app load (Android 13+)
+  useEffect(() => {
+    if (loaded) {
+      chatService.requestNotificationPermission();
+    }
+  }, [loaded]);
 
   const context = {
     loaded,

@@ -209,7 +209,7 @@ export default function CheckContacts() {
 
   if (!loaded || loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-white dark:bg-gray-900 transition-colors">
+      <div className="flex items-center justify-center h-full bg-white dark:bg-gray-900 transition-colors">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
       </div>
     );
@@ -217,7 +217,7 @@ export default function CheckContacts() {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-screen bg-white dark:bg-gray-900 transition-colors">
+      <div className="flex items-center justify-center h-full bg-white dark:bg-gray-900 transition-colors">
         <p className="text-red-500">⚠️ {error}</p>
       </div>
     );
@@ -306,7 +306,7 @@ export default function CheckContacts() {
         </div>
       )}
 
-      <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-900 transition-colors">
+      <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-900 transition-colors">
         {/* Syncing Indicator */}
         {isSyncing && (
           <div className="bg-primary-500 text-white px-4 py-2 text-center text-sm font-medium flex items-center justify-center gap-2">
@@ -469,8 +469,8 @@ export default function CheckContacts() {
                           </h3>
                         </div>
                         <p className={`text-xs truncate mt-0.5 ${timeAgo(c.lastseen) === 'online'
-                            ? 'text-green-600 dark:text-green-400 font-medium'
-                            : 'text-gray-500 dark:text-gray-400'
+                          ? 'text-green-600 dark:text-green-400 font-medium'
+                          : 'text-gray-500 dark:text-gray-400'
                           }`}>
                           {timeAgo(c.lastseen)}
                         </p>

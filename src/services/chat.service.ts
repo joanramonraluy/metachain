@@ -6,6 +6,8 @@
 import { MDS } from "@minima-global/mds";
 import { runSQL } from "./database.service";
 
+import { LocalNotifications } from '@capacitor/local-notifications';
+
 export interface ChatMessage {
     id?: number;
     roomname: string;
@@ -30,6 +32,75 @@ class ChatService {
     private muteStatusCallbacks: (() => void)[] = [];
     private archiveStatusCallbacks: (() => void)[] = [];
     private favoriteStatusCallbacks: (() => void)[] = [];
+
+    /* ----------------------------------------------------------------------------
+      BADGE / NOTIFICATION MANAGEMENT (Android "Badge" via Notifications)
+    ---------------------------------------------------------------------------- */
+    async requestNotificationPermission() {
+        try {
+            const result = await LocalNotifications.requestPermissions();
+            if (result.display === 'granted') {
+                console.log("✅ [NOTIFICATIONS] Permission granted");
+            } else {
+                console.warn("⚠️ [NOTIFICATIONS] Permission denied / limited");
+            }
+        } catch (err) {
+            console.error("❌ [NOTIFICATIONS] Failed to request permission:", err);
+        }
+    }
+
+    async clearNotifications() {
+        try {
+            // Cancel our specific badge notification ID (999)
+            await LocalNotifications.cancel({ notifications: [{ id: 999 }] });
+            // Also clear badge count if supported by OS/Launcher
+            // await LocalNotifications.removeAllDeliveredNotifications(); // Optional
+        } catch (err) {
+            // Put it in a try/catch as it might fail on Web or some envs
+            console.warn("⚠️ [NOTIFICATIONS] clearNotifications failed (swallowed):", err);
+        }
+    }
+
+    async updateUnreadNotification() {
+        // Only run if native (optional check)
+        try {
+            const sql = "SELECT COUNT(*) as count FROM CHAT_MESSAGES WHERE read = 0 AND username != 'Me'";
+            MDS.sql(sql, async (res: any) => {
+                if (res.status && res.rows && res.rows.length > 0) {
+                    const count = parseInt(res.rows[0].COUNT);
+                    console.log("🔴 [NOTIFICATIONS] Unread count:", count);
+
+                    if (count > 0) {
+                        // Schedule or Update notification
+                        await LocalNotifications.schedule({
+                            notifications: [
+                                {
+                                    title: "MetaChain",
+                                    body: `You have ${count} unread message${count > 1 ? 's' : ''}`,
+                                    id: 999, // Constant ID to update the same notification
+                                    schedule: { at: new Date(Date.now() + 100) }, // Immediate
+                                    sound: undefined, // Default sound or null
+                                    attachments: undefined,
+                                    actionTypeId: "",
+                                    extra: {
+                                        unreadCount: count
+                                    },
+                                    // Android specific:
+                                    smallIcon: "ic_stat_icon_config_sample", // Use default or configure custom
+                                    iconColor: "#488AFF"
+                                }
+                            ]
+                        });
+                    } else {
+                        // If 0, ensure notification is gone
+                        await this.clearNotifications();
+                    }
+                }
+            });
+        } catch (err) {
+            console.error("❌ [NOTIFICATIONS] Failed to update notification:", err);
+        }
+    }
 
     /* ----------------------------------------------------------------------------
       CHAT STATUS (Archive, Favorite, Mute)
@@ -86,7 +157,14 @@ class ChatService {
                     resolve();
                 } else {
                     console.log("✅ [SQL] Chat marked as opened");
-                    resolve();
+                    // Also mark all messages in this chat as read
+                    // NOTE: The 'read' column in CHAT_MESSAGES is what we use for the badge.
+                    // We should update it here.
+                    const updateReadSql = `UPDATE CHAT_MESSAGES SET read=1 WHERE publickey='${publickey}' AND read=0`;
+                    MDS.sql(updateReadSql, () => {
+                        this.updateUnreadNotification(); // UPDATE BADGE AFTER OPENING
+                        resolve();
+                    });
                 }
             });
         });
@@ -301,6 +379,11 @@ class ChatService {
         try {
             await runSQL(sql);
             console.log("✅ [CHAT-DB] Insert success");
+
+            // Update badge count if message is not from 'Me'
+            if (username !== 'Me') {
+                this.updateUnreadNotification();
+            }
         } catch (err) {
             console.error("❌ [SQL] INSERT failed:", err);
             console.error("❌ [SQL] FAILED QUERY:", sql);
