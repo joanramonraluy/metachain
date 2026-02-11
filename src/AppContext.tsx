@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { minimaService } from "./services/minima.service"
 import { chatService } from "./services/chat.service"
 import useBeaconSender from "./hooks/useBeaconSender"
-import { MinimaSetup } from './components/setup/MinimaSetup';
+
 
 
 const defaultAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23cbd5e1'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E";
@@ -53,7 +53,7 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
   const [showDebugPanel, setShowDebugPanel] = useState(false)
 
   // New state for setup
-  const [needsSetup, setNeedsSetup] = useState(false);
+
 
   // Enable periodic beacon sending globally (only when MDS is loaded)
   useBeaconSender(loaded);
@@ -147,18 +147,10 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
 
       // Check for Stored UID (Standalone Mode)
       // Check for Stored UID (Standalone Mode or Native)
-      const isNative = (window as any).Capacitor?.isNativePlatform?.() || (window as any).Capacitor?.isNative;
+
       const storedUid = localStorage.getItem('minima_uid');
 
-      // If no UID is found...
-      if (!storedUid && !MDS.DEBUG_MINIDAPPID) {
-        // ...and we are in Native mode OR Debug mode
-        if (isNative || import.meta.env.DEV) {
-          console.log("No UID found in Native/Dev mode. Triggering Setup.");
-          setNeedsSetup(true);
-          return;
-        }
-      }
+
 
       if (storedUid) {
         console.log("Using Stored UID for connection:", storedUid);
@@ -430,12 +422,7 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
     sessionExpired // Exported for UI components to react
   }
 
-  if (needsSetup) {
-    return <MinimaSetup onComplete={(uid) => {
-      localStorage.setItem('minima_uid', uid);
-      window.location.reload();
-    }} />;
-  }
+
 
   return (
     <appContext.Provider value={context}>

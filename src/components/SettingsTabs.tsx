@@ -51,7 +51,7 @@ export function SettingsTabs({ vertical }: SettingsTabsProps) {
     // If vertical (mobile menu mode)
     if (vertical) {
         return (
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-100 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-100 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700 overflow-hidden">
                 {SETTINGS_TABS.map((tab) => {
                     const Icon = tab.icon;
                     // Disable if session expired, UNLESS it's Connect or Network
@@ -64,18 +64,18 @@ export function SettingsTabs({ vertical }: SettingsTabsProps) {
                             disabled={isDisabled}
                             className={`flex items-center p-4 transition-colors group ${isDisabled ? 'opacity-50 pointer-events-none grayscale' : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'}`}
                         >
-                            <div className="w-10 h-10 rounded-full bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 flex items-center justify-center mr-4 group-hover:bg-primary-100 dark:group-hover:bg-primary-900/40 transition-colors">
+                            <div className="w-10 h-10 rounded-full bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 flex items-center justify-center mr-4 flex-shrink-0 group-hover:bg-primary-100 dark:group-hover:bg-primary-900/40 transition-colors">
                                 <Icon size={20} />
                             </div>
-                            <div className="flex-1 min-w-0">
+                            <div className="flex-1 min-w-0 overflow-hidden">
                                 <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-0.5">
                                     {tab.label}
                                 </h3>
-                                <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
+                                <p className="text-sm text-gray-500 dark:text-gray-400 line-clamp-2 break-words">
                                     {tab.description}
                                 </p>
                             </div>
-                            <ChevronRight size={18} className="text-gray-400 dark:text-gray-500 ml-2" />
+                            <ChevronRight size={18} className="text-gray-400 dark:text-gray-500 ml-2 flex-shrink-0" />
                         </Link>
                     );
                 })}
@@ -87,7 +87,7 @@ export function SettingsTabs({ vertical }: SettingsTabsProps) {
     return (
         <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10 transition-colors">
             <div className="max-w-4xl mx-auto">
-                <nav className="flex overflow-x-auto scrollbar-hide -mb-px">
+                <nav className="flex justify-start sm:justify-center overflow-x-auto scrollbar-hide -mb-px">
                     {SETTINGS_TABS.map((tab) => {
                         const Icon = tab.icon;
                         // Disable if session expired, UNLESS it's Connect or Network

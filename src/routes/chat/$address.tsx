@@ -207,10 +207,8 @@ function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  // const attachmentsRef = useRef<HTMLDivElement>(null); // Ref for attachments menu container
-  const emojiPickerRef = useRef<HTMLDivElement>(null); // Ref for emoji picker (Desktop)
-  const emojiPickerMobileRef = useRef<HTMLDivElement>(null); // Ref for emoji picker (Mobile)
-  // Ref to track if we've already requested history for this contact (Prevent infinite loop)
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
+  const emojiPickerMobileRef = useRef<HTMLDivElement>(null);
   const historyRequestedFor = useRef<string | null>(null);
 
   const navigate = useNavigate();
@@ -236,12 +234,15 @@ function ChatPage() {
 
   // Auto-focus input on mount
   useEffect(() => {
+    // Don't auto-focus if emoji picker or transfer selector is open
+    if (showEmojiPicker || showTransferSelector) return;
+
     // Small timeout to ensure DOM is ready and potential animations are done
     const timer = setTimeout(() => {
       inputRef.current?.focus();
     }, 100);
     return () => clearTimeout(timer);
-  }, [address]); // Re-focus when switching chats
+  }, [address, showEmojiPicker, showTransferSelector]); // Re-focus when switching chats, but respect picker/selector state
 
   // Scroll to bottom when keyboard opens
   useEffect(() => {
@@ -2497,34 +2498,32 @@ function ChatPage() {
         <div ref={messagesEndRef} />
       </div>
       {/* INPUT BAR - Fixed at bottom */}
-      <div className="w-full max-w-full overflow-x-hidden px-1.5 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] bg-white dark:bg-gray-800 flex gap-0.5 items-center flex-shrink-0 z-10 relative border-t border-gray-200 dark:border-gray-700 transition-colors box-border">
+      <div className="w-full max-w-full px-1.5 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] bg-white dark:bg-gray-800 flex gap-0.5 items-center flex-shrink-0 z-10 relative border-t border-gray-200 dark:border-gray-700 transition-colors box-border">
 
-        {/* Emoji Picker Popover */}
         {showEmojiPicker && (
-          <div ref={emojiPickerRef} className="absolute bottom-16 left-2 z-50 animate-in slide-in-from-bottom-2 fade-in duration-200 shadow-2xl rounded-xl border border-gray-100 dark:border-gray-700 hidden sm:block">
+          <div ref={emojiPickerRef} className="absolute bottom-full mb-2 left-2 z-50 animate-in slide-in-from-bottom-2 fade-in duration-200 shadow-2xl rounded-xl border border-gray-100 dark:border-gray-700 hidden sm:block">
             <Suspense fallback={<div className="w-[320px] h-[400px] flex items-center justify-center bg-white dark:bg-gray-800 rounded-xl"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div></div>}>
               <EmojiPicker
                 onEmojiClick={onEmojiClick}
                 theme={mode === 'dark' ? 'dark' as any : 'light' as any}
                 width={320}
                 height={400}
-                searchDisabled={false}
+                searchDisabled={true}
                 skinTonesDisabled
                 previewConfig={{ showPreview: false }}
               />
             </Suspense>
           </div>
         )}
-        {/* Mobile Emoji Picker (Full Width) */}
         {showEmojiPicker && (
-          <div ref={emojiPickerMobileRef} className="absolute bottom-16 left-0 right-0 mx-2 z-50 animate-in slide-in-from-bottom-2 fade-in duration-200 shadow-2xl rounded-xl border border-gray-100 dark:border-gray-700 sm:hidden">
+          <div ref={emojiPickerMobileRef} className="absolute bottom-full mb-2 left-0 right-0 mx-2 z-50 animate-in slide-in-from-bottom-2 fade-in duration-200 shadow-2xl rounded-xl border border-gray-100 dark:border-gray-700 sm:hidden">
             <Suspense fallback={<div className="w-full h-[350px] flex items-center justify-center bg-white dark:bg-gray-800 rounded-xl"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div></div>}>
               <EmojiPicker
                 onEmojiClick={onEmojiClick}
                 theme={mode === 'dark' ? 'dark' as any : 'light' as any}
                 width="100%"
                 height={350}
-                searchDisabled={false}
+                searchDisabled={true}
                 skinTonesDisabled
                 previewConfig={{ showPreview: false }}
               />
@@ -2562,10 +2561,27 @@ function ChatPage() {
 
         <button
           className={`p-2 rounded-full transition-colors ${showEmojiPicker ? 'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-600 dark:text-yellow-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
-          onClick={(e) => {
-            e.stopPropagation(); // Stop propagation to prevent immediate close
-            // setShowAttachments(false); // Removed
-            setShowEmojiPicker(!showEmojiPicker);
+          onClick={async (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+
+            if (showEmojiPicker) {
+              setShowEmojiPicker(false);
+              return;
+            }
+
+            // Open sequence
+            // 1. Blur input
+            if (inputRef.current) inputRef.current.blur();
+
+            // 2. Hide keyboard
+            Keyboard.hide().catch(() => { });
+
+            // 3. Wait for keyboard to hide, then show picker
+            // The input will be disabled by the render when showEmojiPicker is true
+            setTimeout(() => {
+              setShowEmojiPicker(true);
+            }, 300);
           }}
           title="Emojis"
         >
@@ -2575,22 +2591,10 @@ function ChatPage() {
         <div className="flex-1 min-w-0 bg-white dark:bg-gray-700 rounded-2xl flex items-center border border-gray-200 dark:border-gray-600 focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-transparent shadow-sm px-3 py-2 transition-all">
           <input
             ref={inputRef}
-            className="flex-1 bg-transparent outline-none text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 text-[15px] max-h-32 py-1"
+            className="flex-1 bg-transparent outline-none text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 text-[15px] max-h-32 py-1 disabled:opacity-100 disabled:cursor-not-allowed"
             type="text"
             value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && blockReason === 'none' && !isBlocked && handleSendMessage()}
-            placeholder={
-              isBlocked ? "Unblock to send messages..." :
-                blockedByThem ? "You have been blocked by this user." :
-                  blockReason === 'pending' ? "Chat request pending..." :
-                    blockReason === 'recipient_restricted' ? "Messaging disabled (Recipient only accepts contacts)" :
-                      blockReason === 'incoming_restricted' ? "Messaging disabled" :
-                        blockReason === 'no_permission' ? "Messaging disabled" :
-                          blockReason !== 'none' ? "Chat blocked" :
-                            "Type a message"
-            }
-            disabled={isBlocked || blockedByThem || blockReason !== 'none'}
+            disabled={showEmojiPicker || isBlocked || blockedByThem || blockReason !== 'none'}
           />
         </div>
 

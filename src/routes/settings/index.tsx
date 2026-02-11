@@ -24,7 +24,7 @@ function SettingsIndex() {
     }, [navigate, sessionExpired]);
 
     return (
-        <div className="p-4 md:hidden">
+        <div className="p-4 md:hidden max-w-xl mx-auto w-full">
             <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-4 px-1">Menu</h2>
             <SettingsTabs vertical />
         </div>
