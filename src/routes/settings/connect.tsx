@@ -15,6 +15,35 @@ function ConnectSettings() {
     const [copied, setCopied] = useState(false)
     const [showManual, setShowManual] = useState(false)
 
+    const [rpcUid, setRpcUid] = useState('')
+
+    useEffect(() => {
+        const discovered = localStorage.getItem('minima_rpc_uid');
+        if (discovered) {
+            setRpcUid(discovered);
+        }
+    }, [])
+
+    const handleUseRpcUid = () => {
+        if (!rpcUid) return;
+        setUid(rpcUid);
+        setShowManual(true);
+        // We'll give the user a chance to see it filled, OR we could auto-click.
+        // The user asked to "simular que premem el botó", so let's do it after a tiny delay
+        setTimeout(() => {
+            localStorage.setItem('minima_uid', rpcUid.trim())
+
+            // Also apply the discovered MDS host if we have it
+            const rpcMdsHost = localStorage.getItem('minima_rpc_mds_host');
+            if (rpcMdsHost) {
+                console.log("🚀 [Settings] Applying discovered MDS Host:", rpcMdsHost);
+                localStorage.setItem('minima_mds_host', rpcMdsHost);
+            }
+
+            window.location.reload()
+        }, 500);
+    }
+
     // Auto-open manual entry if session is expired
     useEffect(() => {
         if (sessionExpired) {
@@ -61,13 +90,13 @@ function ConnectSettings() {
 
         // Save and Reload
         localStorage.setItem('minima_uid', uid.trim())
-        alert("UID Saved! restarts app...")
         window.location.reload()
     }
 
     const handleClear = () => {
         if (confirm("Are you sure? This will disconnect the app.")) {
             localStorage.removeItem('minima_uid')
+            localStorage.removeItem('minima_rpc_uid')
             localStorage.removeItem('MDS_ID') // Clear just in case
             window.location.reload()
         }
@@ -98,6 +127,11 @@ function ConnectSettings() {
                         <code className="text-sm font-mono text-gray-600 dark:text-gray-400 break-all flex-1">
                             {currentUid ? currentUid : 'Not Connected'}
                         </code>
+                        {currentUid && rpcUid === currentUid && (
+                            <span className="mx-2 px-1.5 py-0.5 bg-primary-100 dark:bg-primary-900/40 text-primary-600 dark:text-primary-400 text-[10px] font-bold rounded uppercase tracking-wider">
+                                RPC
+                            </span>
+                        )}
                         {currentUid && (
                             <button
                                 onClick={() => {
@@ -112,6 +146,39 @@ function ConnectSettings() {
                             </button>
                         )}
                     </div>
+
+                    {/* RPC Discovery Section (Shown if different OR if session expired) */}
+                    {rpcUid && (sessionExpired || rpcUid !== currentUid) && (
+                        <div className="mt-4 p-4 bg-primary-50 dark:bg-primary-900/20 border border-primary-100 dark:border-primary-800 rounded-lg">
+                            <div className="flex items-center justify-between mb-2">
+                                <label className="block text-xs font-semibold text-primary-700 dark:text-primary-300 uppercase tracking-wider">
+                                    Discovered via RPC
+                                </label>
+                                {rpcUid === currentUid && (
+                                    <span className="text-[10px] font-bold text-green-600 dark:text-green-400 uppercase tracking-wider">
+                                        Matches Current
+                                    </span>
+                                )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <code className="text-xs font-mono text-primary-600 dark:text-primary-400 break-all flex-1 bg-white dark:bg-black/20 p-2 rounded">
+                                    {rpcUid}
+                                </code>
+                                <button
+                                    onClick={handleUseRpcUid}
+                                    className="px-3 py-2 bg-primary-600 text-white text-xs font-medium rounded hover:bg-primary-700 transition-colors shrink-0"
+                                >
+                                    Use this UID
+                                </button>
+                            </div>
+                            <p className="mt-2 text-[10px] text-primary-500">
+                                {rpcUid === currentUid
+                                    ? "This matches your current UID. Use the button to force a clean reconnect if it's not working."
+                                    : "This UID was found by looking at your installed MiniDapps."}
+                            </p>
+                        </div>
+                    )}
+
                     {/* HELP TEXT FOR EXPIRY */}
                     <div className="mt-3 text-sm text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 p-3 rounded-md border border-amber-200 dark:border-amber-800/50">
                         <strong>Session Expired?</strong> The Minima Node restarted or stopped, so the UID changed.

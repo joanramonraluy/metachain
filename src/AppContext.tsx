@@ -145,19 +145,15 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
     if (!initialised.current) {
       initialised.current = true
 
-      // Check for Stored UID (Standalone Mode)
+      // NOTE: MDS patching (for Capacitor HTTP) is now handled globally in main.tsx
+      // to ensure it happens before any other service initialization.
+
       // Check for Stored UID (Standalone Mode or Native)
-
       const storedUid = localStorage.getItem('minima_uid');
-
-
 
       if (storedUid) {
         console.log("Using Stored UID for connection:", storedUid);
         MDS.DEBUG_MINIDAPPID = storedUid;
-        MDS.DEBUG_HOST = "127.0.0.1";
-        MDS.DEBUG_PORT = 9003;
-        (window as any).MDS_CONFIGURED = true; // Flag for debugging
       }
 
       minimaService.init()
@@ -186,33 +182,45 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
           await new Promise(r => setTimeout(r, 1000));
 
           try {
-            // STEP 1: Check Write Mode (Promisified)
-            console.log("1️⃣ [AppContext] Checking Write Mode...");
-            await new Promise<void>((resolve) => {
-              (MDS as any).executeRaw("checkmode", (res: any) => {
-                if (res.status && res.response) {
-                  const mode = res.response.mode;
-                  console.log(`📝 [AppContext] Detected mode: ${mode}`);
-                  if (mode === "WRITE") {
-                    setWriteMode(true);
-                    console.log("✅ [AppContext] Write Mode ENABLED");
-                  } else {
-                    setWriteMode(false);
-                    console.log("⚠️ [AppContext] Read Mode ACTIVE");
+            // STEP 1: Check Write Mode (with RETRY for node startup)
+            console.log("1️⃣ [AppContext] Checking Write Mode (Waiting for node)...");
+
+            const waitForNode = async (retries = 10): Promise<boolean> => {
+              for (let i = 1; i <= retries; i++) {
+                try {
+                  const res: any = await new Promise((resolve) => {
+                    (MDS as any).executeRaw("checkmode", resolve);
+                  });
+
+                  if (res && res.status) {
+                    const mode = res.response.mode;
+                    console.log(`✅ [AppContext] Node ready! Mode: ${mode} (Attempt ${i})`);
+                    if (mode === "WRITE") setWriteMode(true);
+                    return true;
                   }
-                } else {
-                  console.log("📝 [AppContext] Could not detect mode - defaulting to Read Mode");
-                  setWriteMode(false);
+
+                  console.warn(`⏳ [AppContext] Node not ready (Attempt ${i}/${retries})...`);
+                } catch (e) {
+                  console.warn(`⏳ [AppContext] Connection error (Attempt ${i}/${retries}):`, e);
                 }
-                resolve();
-              });
-            });
+                await new Promise(r => setTimeout(r, 2000));
+              }
+              return false;
+            };
+
+            const nodeReady = await waitForNode();
+            if (!nodeReady) {
+              console.error("❌ [AppContext] Node failed to respond after retries.");
+              // Proceed anyway to allow manual connection screen to show if needed
+            }
 
             // STEP 2: Initialize Database (Async)
             console.log("2️⃣ [AppContext] Initializing Database...");
             await minimaService.initDB();
             setDbReady(true);
             console.log("✅ [AppContext] Database ready");
+
+
 
             // STEP 2b: Post-DB Actions (Synchronous/Fast)
             // Even though these might be fast, we MUST await them to prevent request stacking
@@ -356,8 +364,8 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
 
       try {
         // TIMEOUT ENFORCEMENT: MDS.cmd can hang on 500 errors (invalid UID)
-        // We race against a 3s timeout to ensure we catch the failure
-        const timeout = new Promise<any>((_, reject) => setTimeout(() => reject(new Error("Session Check Timeout")), 3000));
+        // We race against a 10s timeout (longer for slow node startups)
+        const timeout = new Promise<any>((_, reject) => setTimeout(() => reject(new Error("Session Check Timeout")), 10000));
 
         const res = await Promise.race([MDS.cmd.block(), timeout]);
 

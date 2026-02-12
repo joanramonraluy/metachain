@@ -458,6 +458,22 @@ export async function initDB(): Promise<void> {
                                     } else {
                                         console.log("📂 [DB] METACHAIN_USERS table initialized");
                                     }
+
+                                    // Create SESSION_UID table for APK logic
+                                    const createSessionUidTable = `
+                                        CREATE TABLE IF NOT EXISTS SESSION_UID (
+                                            id INT PRIMARY KEY,
+                                            session_uid VARCHAR(1024) NOT NULL,
+                                            updated_at BIGINT NOT NULL
+                                        )`;
+
+                                    MDS.sql(createSessionUidTable, (res: any) => {
+                                        if (!res.status) {
+                                            console.error("❌ [DB] Failed to create SESSION_UID table:", res.error);
+                                        } else {
+                                            console.log("📂 [DB] SESSION_UID table initialized");
+                                        }
+                                    });
                                 });
                             });
                         });

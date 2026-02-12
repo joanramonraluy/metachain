@@ -987,6 +987,8 @@ function initDatabase() {
         });
     });
 
+
+
     // FINAL: Start Services
     chain.then(function () {
         MDS.log("✅ [INIT] Database sequence complete. Starting Services...");
@@ -3134,23 +3136,22 @@ var LAST_MAXIMA_EVENT_TIME = 0;
 var CONNECTION_TIMEOUT_MS = 120000; // 2 minutes - if no MAXIMA events, consider offline
 var WAS_OFFLINE = false;
 
+
+
+
 MDS.init(function (msg) {
     // Initialization
     if (msg.event == "inited") {
-        MDS.log("🚀 [SW-VERSION-CHECK] Service Worker v2.7 DEBUG - " + new Date().toISOString());
-
-        // IMMEDIATE INIT: Restore fast startup (like Reference Implementation)
-        // Race conditions are now handled by the DB_READY flag in the NEWBLOCK loop.
+        MDS.log("🚀 [SW] Inited event received. Version v3.0");
         MDS.log("⏰ [SW] Starting Database Initialization...");
         initDatabase();
     }
 
     // Periodic tasks via NEWBLOCK
     else if (msg.event == "NEWBLOCK") {
+
         // 1. WAIT FOR DB TO BE READY (Async Init)
-        // This prevents "Table Not Found" errors if Gossip runs before Init finishes.
         if (!DB_READY) {
-            MDS.log("⏳ [SW] Database initializing... Skipping periodic tasks.");
             return;
         }
 
