@@ -25,14 +25,14 @@ export default function AppLayout({ children }: AppLayoutProps) {
     <div className="flex bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 h-full w-full overflow-hidden transition-colors">
       <SideMenu isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
 
-      <div className="flex-1 flex flex-col relative min-h-0">
+      <div className="flex-1 flex flex-col relative min-h-0 min-w-0">
         {/* Only show global header on pages that don't have their own */}
         {!hasCustomHeader && (
           <Header onToggleMenu={() => setSidebarOpen(!sidebarOpen)} />
         )}
 
         {/* Main content area */}
-        <main className="flex-1 flex flex-col relative min-h-0">
+        <main className="flex-1 flex flex-col relative min-h-0 min-w-0">
           {children}
         </main>
       </div>

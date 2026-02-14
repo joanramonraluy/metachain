@@ -33,20 +33,13 @@ function DiscoverySettings() {
         if (limitRes?.status && limitRes.value) setDiscoveryLimit(parseInt(limitRes.value) || 5);
 
         // Fetch P2P Identity (My Maxima Info)
-        const maximaInfo = await MDS.cmd.maxima({ params: { action: "info" } });
+        const maximaInfo = await MDS.cmd.maxima();
         // @ts-ignore
         if (maximaInfo.status && maximaInfo.response) {
           // @ts-ignore
-          const pubkey = maximaInfo.response.publickey;
-          // @ts-ignore
-          const address = maximaInfo.response.contact;
-          // @ts-ignore
-          const checkRes = await MDS.cmd.maxima({ params: { action: "check" } });
-
-          // @ts-ignore
-          if (checkRes.status && checkRes.response && checkRes.response.connected) {
-            // Construct Identity String for others to use
-            setP2pIdentity(`${address}`);
+          const p2p = maximaInfo.response.p2pidentity;
+          if (p2p) {
+            setP2pIdentity(p2p);
           }
         }
 

@@ -453,7 +453,7 @@ export default function ChatsAndGroups() {
     const archivedCount = archivedChats.length + archivedGroups.length;
 
     return (
-        <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-900 overflow-x-hidden relative">
+        <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-900 transition-colors">
             {/* Context Menu */}
             {contextMenu && (
                 <div
@@ -554,8 +554,6 @@ export default function ChatsAndGroups() {
                         <Archive size={16} className="flex-shrink-0" />
                         <span className="hidden md:inline">Archived</span> {archivedCount > 0 && `(${archivedCount})`}
                     </button>
-
-
                 </div>
             </div>
 
@@ -761,37 +759,39 @@ export default function ChatsAndGroups() {
             </div>
 
             {/* FAB Menu Actions */}
-            {fabMenuOpen && (activeTab === 'all' || activeTab === 'favorites') && (
-                <div className="fixed bottom-24 right-6 flex flex-col items-end gap-3 z-50">
-                    <button
-                        onClick={() => { setFabMenuOpen(false); navigate({ to: "/create-group" }); }}
-                        className="flex items-center gap-3 px-4 py-2 bg-white dark:bg-gray-800 rounded-full shadow-lg text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all border border-gray-100 dark:border-gray-700"
-                    >
-                        <span className="font-medium text-sm">New Group</span>
-                        <div className="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center text-primary-600">
-                            <Users size={20} />
-                        </div>
-                    </button>
-                    <button
-                        onClick={() => { setFabMenuOpen(false); console.log("Create Channel"); /* TODO: Implement create channel */ }}
-                        className="flex items-center gap-3 px-4 py-2 bg-white dark:bg-gray-800 rounded-full shadow-lg text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all border border-gray-100 dark:border-gray-700"
-                    >
-                        <span className="font-medium text-sm">New Channel</span>
-                        <div className="w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-600">
-                            <Radio size={20} />
-                        </div>
-                    </button>
-                    <button
-                        onClick={() => { setFabMenuOpen(false); navigate({ to: "/contacts" }); }}
-                        className="flex items-center gap-3 px-4 py-2 bg-white dark:bg-gray-800 rounded-full shadow-lg text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all border border-gray-100 dark:border-gray-700"
-                    >
-                        <span className="font-medium text-sm">New Chat</span>
-                        <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600">
-                            <UserPlus size={20} />
-                        </div>
-                    </button>
-                </div>
-            )}
+            {
+                fabMenuOpen && (activeTab === 'all' || activeTab === 'favorites') && (
+                    <div className="fixed bottom-24 right-6 flex flex-col items-end gap-3 z-50">
+                        <button
+                            onClick={() => { setFabMenuOpen(false); navigate({ to: "/create-group" }); }}
+                            className="flex items-center gap-3 px-4 py-2 bg-white dark:bg-gray-800 rounded-full shadow-lg text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all border border-gray-100 dark:border-gray-700"
+                        >
+                            <span className="font-medium text-sm">New Group</span>
+                            <div className="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center text-primary-600">
+                                <Users size={20} />
+                            </div>
+                        </button>
+                        <button
+                            onClick={() => { setFabMenuOpen(false); console.log("Create Channel"); /* TODO: Implement create channel */ }}
+                            className="flex items-center gap-3 px-4 py-2 bg-white dark:bg-gray-800 rounded-full shadow-lg text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all border border-gray-100 dark:border-gray-700"
+                        >
+                            <span className="font-medium text-sm">New Channel</span>
+                            <div className="w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-600">
+                                <Radio size={20} />
+                            </div>
+                        </button>
+                        <button
+                            onClick={() => { setFabMenuOpen(false); navigate({ to: "/contacts" }); }}
+                            className="flex items-center gap-3 px-4 py-2 bg-white dark:bg-gray-800 rounded-full shadow-lg text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all border border-gray-100 dark:border-gray-700"
+                        >
+                            <span className="font-medium text-sm">New Chat</span>
+                            <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600">
+                                <UserPlus size={20} />
+                            </div>
+                        </button>
+                    </div>
+                )
+            }
 
             <div className="fixed bottom-6 right-6 z-50">
                 <button

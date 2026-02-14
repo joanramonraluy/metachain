@@ -1,14 +1,14 @@
 // src/routes/chat/$address.tsx
-import { useEffect, useRef, useState, useContext, useCallback, Suspense, lazy } from "react";
+import { useEffect, useRef, useState, useContext, useCallback, lazy, Suspense } from "react";
 import { useNavigate, createFileRoute } from "@tanstack/react-router";
 import { Keyboard } from '@capacitor/keyboard';
 import { MDS } from "@minima-global/mds";
 import { appContext } from "../../AppContext";
 import TransferSelector from "../../components/chat/TransferSelector";
-import { Trash2, User, BarChart, Archive, Star, Smile, Wallet } from "lucide-react";
+import { Trash2, User, BarChart, Archive, Star, Wallet } from "lucide-react";
 import MessageBubble from "../../components/chat/MessageBubble";
 
-import type { EmojiClickData } from "emoji-picker-react";
+
 import { minimaService } from "../../services/minima.service";
 import * as contactRequestsService from '../../services/contact-requests.service';
 import { transactionService } from "../../services/transaction.service";
@@ -16,9 +16,12 @@ import { requestProfile } from "../../services/profile.service";
 import InviteDialog from "../../components/chat/InviteDialog";
 import { useTheme } from "../../context/ThemeContext";
 import { getAndIncrementSequenceNumber } from "../../services/database.service";
+import { EmojiClickData } from "emoji-picker-react";
 
 // Lazy load EmojiPicker to reduce initial bundle size (~60KB)
 const EmojiPicker = lazy(() => import("emoji-picker-react"));
+
+
 
 // Helper for timeout
 const withTimeout = (promise: Promise<any>, ms: number) => {
@@ -184,6 +187,7 @@ function ChatPage() {
   const [showTransferSelector, setShowTransferSelector] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
+
   const [showMenu, setShowMenu] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showChatInfo, setShowChatInfo] = useState(false);
@@ -202,47 +206,30 @@ function ChatPage() {
   const [showInviteDialog, setShowInviteDialog] = useState(false);
   const [inviteSending, setInviteSending] = useState(false);
 
-  const { mode, chatBackground } = useTheme();
+  const { chatBackground, mode } = useTheme();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const emojiPickerRef = useRef<HTMLDivElement>(null);
-  const emojiPickerMobileRef = useRef<HTMLDivElement>(null);
   const historyRequestedFor = useRef<string | null>(null);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
+  const cursorPositionRef = useRef<number | null>(null);
+
 
   const navigate = useNavigate();
 
-  // Handle click outside to close popovers
+
+
+  // Auto-focus input
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      // If clicking outside emoji picker
-      const target = event.target as Node;
-      const isOutsideDesktop = !emojiPickerRef.current || !emojiPickerRef.current.contains(target);
-      const isOutsideMobile = !emojiPickerMobileRef.current || !emojiPickerMobileRef.current.contains(target);
-
-      if (showEmojiPicker && isOutsideDesktop && isOutsideMobile) {
-        setShowEmojiPicker(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [showEmojiPicker]);
-
-  // Auto-focus input on mount
-  useEffect(() => {
-    // Don't auto-focus if emoji picker or transfer selector is open
-    if (showEmojiPicker || showTransferSelector) return;
-
-    // Small timeout to ensure DOM is ready and potential animations are done
+    if (showTransferSelector) return;
     const timer = setTimeout(() => {
-      inputRef.current?.focus();
-    }, 100);
+      if (inputRef.current) {
+        inputRef.current.focus();
+      }
+    }, 150);
     return () => clearTimeout(timer);
-  }, [address, showEmojiPicker, showTransferSelector]); // Re-focus when switching chats, but respect picker/selector state
+  }, [address, showTransferSelector]);
 
   // Scroll to bottom when keyboard opens
   useEffect(() => {
@@ -259,6 +246,35 @@ function ChatPage() {
       showListener.then(l => l.remove());
       didShowListener.then(l => l.remove());
     };
+  }, []);
+
+  // Handle click outside to close emoji picker
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showEmojiPicker && emojiPickerRef.current && !emojiPickerRef.current.contains(event.target as Node)) {
+        setShowEmojiPicker(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showEmojiPicker]);
+
+  const onEmojiClick = useCallback((data: EmojiClickData) => {
+    setInput((prev) => {
+      // Use tracked cursor position or fallback to end of current state
+      const currentPos = cursorPositionRef.current ?? prev.length;
+
+      // Ensure strict bounds (in case ref is stale and out of bounds)
+      const safePos = Math.min(Math.max(0, currentPos), prev.length);
+
+      const textBefore = prev.substring(0, safePos);
+      const textAfter = prev.substring(safePos);
+
+      // Update cursor position for NEXT insertion immediately
+      cursorPositionRef.current = safePos + data.emoji.length;
+
+      return textBefore + data.emoji + textAfter;
+    });
   }, []);
 
   const { writeMode, userName, myPublicKey } = useContext(appContext);
@@ -1363,9 +1379,7 @@ function ChatPage() {
   /* ----------------------------------------------------------------------------
       SEND TEXT MESSAGE
   ---------------------------------------------------------------------------- */
-  const onEmojiClick = (emojiData: EmojiClickData) => {
-    setInput((prev) => prev + emojiData.emoji);
-  };
+
 
   const handleSendMessage = async () => {
     if (blockReason !== 'none') return; // Cannot send while blocked
@@ -2500,36 +2514,8 @@ function ChatPage() {
       {/* INPUT BAR - Fixed at bottom */}
       <div className="w-full max-w-full px-1.5 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] bg-white dark:bg-gray-800 flex gap-0.5 items-center flex-shrink-0 z-10 relative border-t border-gray-200 dark:border-gray-700 transition-colors box-border">
 
-        {showEmojiPicker && (
-          <div ref={emojiPickerRef} className="absolute bottom-full mb-2 left-2 z-50 animate-in slide-in-from-bottom-2 fade-in duration-200 shadow-2xl rounded-xl border border-gray-100 dark:border-gray-700 hidden sm:block">
-            <Suspense fallback={<div className="w-[320px] h-[400px] flex items-center justify-center bg-white dark:bg-gray-800 rounded-xl"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div></div>}>
-              <EmojiPicker
-                onEmojiClick={onEmojiClick}
-                theme={mode === 'dark' ? 'dark' as any : 'light' as any}
-                width={320}
-                height={400}
-                searchDisabled={true}
-                skinTonesDisabled
-                previewConfig={{ showPreview: false }}
-              />
-            </Suspense>
-          </div>
-        )}
-        {showEmojiPicker && (
-          <div ref={emojiPickerMobileRef} className="absolute bottom-full mb-2 left-0 right-0 mx-2 z-50 animate-in slide-in-from-bottom-2 fade-in duration-200 shadow-2xl rounded-xl border border-gray-100 dark:border-gray-700 sm:hidden">
-            <Suspense fallback={<div className="w-full h-[350px] flex items-center justify-center bg-white dark:bg-gray-800 rounded-xl"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div></div>}>
-              <EmojiPicker
-                onEmojiClick={onEmojiClick}
-                theme={mode === 'dark' ? 'dark' as any : 'light' as any}
-                width="100%"
-                height={350}
-                searchDisabled={true}
-                skinTonesDisabled
-                previewConfig={{ showPreview: false }}
-              />
-            </Suspense>
-          </div>
-        )}
+
+
 
         <button
           className={`p-2 rounded-full transition-colors ${!contact?.extradata?.minimaaddress
@@ -2542,7 +2528,7 @@ function ChatPage() {
               alert("Cannot send funds: This contact hasn't shared their Wallet Address yet. They need to come online once to sync their profile.");
               return;
             }
-            setShowEmojiPicker(false);
+
             // Small timeout to prevent UI flicker/bar effect
             setTimeout(() => {
               if (inputRef.current) inputRef.current.blur(); // Dismiss keyboard
@@ -2559,42 +2545,69 @@ function ChatPage() {
           <Wallet className="w-6 h-6" />
         </button>
 
-        <button
-          className={`p-2 rounded-full transition-colors ${showEmojiPicker ? 'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-600 dark:text-yellow-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
-          onClick={async (e) => {
-            e.stopPropagation();
-            e.preventDefault();
 
-            if (showEmojiPicker) {
-              setShowEmojiPicker(false);
-              return;
-            }
 
-            // Open sequence
-            // 1. Blur input
-            if (inputRef.current) inputRef.current.blur();
-
-            // 2. Hide keyboard
-            Keyboard.hide().catch(() => { });
-
-            // 3. Wait for keyboard to hide, then show picker
-            // The input will be disabled by the render when showEmojiPicker is true
-            setTimeout(() => {
-              setShowEmojiPicker(true);
-            }, 300);
-          }}
-          title="Emojis"
+        <div
+          className="flex-1 min-w-0 bg-white dark:bg-gray-700 rounded-2xl flex items-center border border-gray-200 dark:border-gray-600 focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-transparent shadow-sm px-3 py-2 transition-all cursor-text relative"
         >
-          <Smile className="w-6 h-6" />
-        </button>
+          {/* EMOJI PICKER CONTAINER */}
+          <div
+            ref={emojiPickerRef}
+            className={`absolute bottom-full mb-2 left-0 z-50 transition-all duration-200 shadow-2xl rounded-xl border border-gray-100 dark:border-gray-700 ${!showEmojiPicker ? 'opacity-0 scale-95 pointer-events-none invisible' : 'opacity-100 scale-100 visible'}`}
+          >
+            <Suspense fallback={<div className="h-[350px] w-[300px] bg-white dark:bg-gray-800 animate-pulse rounded-xl" />}>
+              <EmojiPicker
+                onEmojiClick={onEmojiClick}
+                theme={mode === "dark" ? "dark" as any : "light" as any}
+                width={320}
+                height={400}
+                searchDisabled={true}
+                skinTonesDisabled
+                previewConfig={{ showPreview: false }}
+              />
+            </Suspense>
+          </div>
 
-        <div className="flex-1 min-w-0 bg-white dark:bg-gray-700 rounded-2xl flex items-center border border-gray-200 dark:border-gray-600 focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-transparent shadow-sm px-3 py-2 transition-all">
+          <button
+            className={`p-1 mr-1 rounded-full transition-colors ${showEmojiPicker ? 'text-primary-500' : 'text-gray-400 hover:text-gray-600'}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!showEmojiPicker) {
+                Keyboard.hide().catch(() => { });
+              }
+              setShowEmojiPicker(!showEmojiPicker);
+            }}
+            title="Emoji"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </button>
+
           <input
             ref={inputRef}
-            className="flex-1 bg-transparent outline-none text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 text-[15px] max-h-32 py-1 disabled:opacity-100 disabled:cursor-not-allowed"
+            onFocus={() => setShowEmojiPicker(false)}
+            onKeyUp={(e) => { cursorPositionRef.current = e.currentTarget.selectionStart; }}
+            onClick={(e) => { cursorPositionRef.current = e.currentTarget.selectionStart; }}
+            onSelect={(e) => { cursorPositionRef.current = e.currentTarget.selectionStart; }}
+            className={`flex-1 bg-transparent outline-none text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 text-[15px] max-h-32 py-1 disabled:opacity-100 disabled:cursor-not-allowed`}
             type="text"
             value={input}
-            disabled={showEmojiPicker || isBlocked || blockedByThem || blockReason !== 'none'}
+            disabled={isBlocked || blockedByThem || blockReason !== 'none'}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSendMessage();
+              }
+            }}
+            placeholder={
+              isBlocked || blockedByThem
+                ? "Chat is blocked"
+                : blockReason !== 'none'
+                  ? "Waiting for approval..."
+                  : "Type a message..."
+            }
           />
         </div>
 
@@ -2611,59 +2624,58 @@ function ChatPage() {
             <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path>
           </svg>
         </button>
-      </div>
-      {
-        showTransferSelector && (
-          <TransferSelector
-            onSend={handleTransfer}
-            onCancel={() => setShowTransferSelector(false)}
-          />
-        )
-      }
 
-      {/* Read Mode Warning Dialog */}
-      {showReadModeWarning && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4 backdrop-blur-sm">
-          <div className="bg-white dark:bg-gray-900 rounded-2xl max-w-sm w-full p-6 shadow-xl animate-in fade-in zoom-in duration-200 border border-gray-100 dark:border-gray-800">
-            <div className="flex flex-col items-center text-center gap-4">
-              <div className="w-12 h-12 bg-yellow-100 dark:bg-yellow-900/30 rounded-full flex items-center justify-center text-yellow-600 dark:text-yellow-500">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-              </div>
-              <h3 className="text-lg font-bold text-gray-900 dark:text-white">Read Mode Active</h3>
-              <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed">
-                The application is in <strong>Read Mode</strong>. This transaction will appear in <strong>Pending Commands</strong> in Minima.
-                <br /><br />
-                You will need to approve it there to complete the transfer.
-              </p>
-              <div className="flex gap-3 w-full mt-2">
-                <button
-                  onClick={() => {
-                    setShowReadModeWarning(false);
-                    setPendingAction(null);
-                  }}
-                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-xl font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => {
-                    setShowReadModeWarning(false);
-                    if (pendingAction) pendingAction();
-                    setPendingAction(null);
-                  }}
-                  className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-xl font-medium hover:bg-primary-700 transition-colors shadow-lg shadow-primary-500/30"
-                >
-                  Proceed
-                </button>
+        {
+          showTransferSelector && (
+            <TransferSelector
+              onSend={handleTransfer}
+              onCancel={() => setShowTransferSelector(false)}
+            />
+          )
+        }
+
+        {/* Read Mode Warning Dialog */}
+        {showReadModeWarning && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4 backdrop-blur-sm">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl max-w-sm w-full p-6 shadow-xl animate-in fade-in zoom-in duration-200 border border-gray-100 dark:border-gray-800">
+              <div className="flex flex-col items-center text-center gap-4">
+                <div className="w-12 h-12 bg-yellow-100 dark:bg-yellow-900/30 rounded-full flex items-center justify-center text-yellow-600 dark:text-yellow-500">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white">Read Mode Active</h3>
+                <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed">
+                  The application is in <strong>Read Mode</strong>. This transaction will appear in <strong>Pending Commands</strong> in Minima.
+                  <br /><br />
+                  You will need to approve it there to complete the transfer.
+                </p>
+                <div className="flex gap-3 w-full mt-2">
+                  <button
+                    onClick={() => {
+                      setShowReadModeWarning(false);
+                      setPendingAction(null);
+                    }}
+                    className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-xl font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowReadModeWarning(false);
+                      if (pendingAction) pendingAction();
+                      setPendingAction(null);
+                    }}
+                    className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-xl font-medium hover:bg-primary-700 transition-colors shadow-lg shadow-primary-500/30"
+                  >
+                    Proceed
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
-
-
-    </div >
-  )
+        )}
+      </div>
+    </div>
+  );
 }
