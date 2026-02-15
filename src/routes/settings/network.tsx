@@ -14,8 +14,8 @@ function RouteComponent() {
 
   const fetchNetworkStatus = () => {
     setNetworkLoading(true);
-    // Cast to any to bypass strict parameter check
-    (MDS.cmd as any).network({ params: {} }, (res: any) => {
+    // Correct command is 'status' not 'network'
+    (MDS.cmd as any).status({ params: {} }, (res: any) => {
       setNetworkLoading(false);
       setLastUpdated(Date.now());
       if (res.status) {

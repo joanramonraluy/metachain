@@ -74,6 +74,33 @@ public class MainActivity extends BridgeActivity {
         });
 
         discoverMiniDappUid();
+        handleSSL();
+    }
+
+    private void handleSSL() {
+        try {
+            javax.net.ssl.TrustManager[] trustAllCerts = new javax.net.ssl.TrustManager[] {
+                    new javax.net.ssl.X509TrustManager() {
+                        public java.security.cert.X509Certificate[] getAcceptedIssuers() {
+                            return new java.security.cert.X509Certificate[] {};
+                        }
+
+                        public void checkClientTrusted(java.security.cert.X509Certificate[] certs, String authType) {
+                        }
+
+                        public void checkServerTrusted(java.security.cert.X509Certificate[] certs, String authType) {
+                        }
+                    }
+            };
+
+            javax.net.ssl.SSLContext sc = javax.net.ssl.SSLContext.getInstance("SSL");
+            sc.init(null, trustAllCerts, new java.security.SecureRandom());
+            javax.net.ssl.HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
+            javax.net.ssl.HttpsURLConnection.setDefaultHostnameVerifier((hostname, session) -> true);
+            Log.d("MainActivity", "🔓 Global SSL Validation Disabled for Native Proxy");
+        } catch (Exception e) {
+            Log.e("MainActivity", "❌ Failed to disable SSL validation", e);
+        }
     }
 
     private void discoverMiniDappUid() {

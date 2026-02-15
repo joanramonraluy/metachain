@@ -21,6 +21,7 @@ const config: CapacitorConfig = {
       resize: "native",
     },
   },
+  loggingBehavior: 'none',
 };
 
 export default config;

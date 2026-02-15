@@ -364,26 +364,34 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
 
       try {
         // TIMEOUT ENFORCEMENT: MDS.cmd can hang on 500 errors (invalid UID)
-        // We race against a 10s timeout (longer for slow node startups)
-        const timeout = new Promise<any>((_, reject) => setTimeout(() => reject(new Error("Session Check Timeout")), 10000));
+        // We race against a 15s timeout (increased from 10s for slow node startups/wakeups)
+        const timeout = new Promise<any>((_, reject) => setTimeout(() => reject(new Error("Session Check Timeout")), 15000));
 
         const res = await Promise.race([MDS.cmd.block(), timeout]);
 
         console.log("🕵️‍♂️ [AppContext] Session Check Result:", res);
 
-        // Check for specific "Incorrect Minima Dapp UID" error or general failure with connected MDS
+        // STRICT CHECK: Only flag as expired if the node EXPLICITLY rejects the UID.
+        // If it's a network error, timeout, or 500 without specific message, it might just be offline/busy.
         if (!res.status && typeof res.error === 'string' &&
           (res.error.includes("Incorrect Minima Dapp UID") || res.error.includes("Not allowed"))) {
-          console.warn("🚨 [AppContext] Session Expired / Invalid UID detected!");
+          console.warn("🚨 [AppContext] Session Expired - Invalid UID detected by Node!");
           setSessionExpired(true);
         } else if (res.status) {
-          // Recover if it starts working again (e.g. user updated it in another tab)
-          setSessionExpired(false);
+          // Recover if it starts working again
+          if (sessionExpired) {
+            console.log("✅ [AppContext] Session recovered!");
+            setSessionExpired(false);
+          }
+        } else {
+          // Generic failure (Timeout, Network Error, etc.)
+          console.warn("⚠️ [AppContext] Session Check Failed (Network/Timeout) - Keeping session active.");
+          // We DO NOT set sessionExpired=true here. We let checkHeartbeat handle the 'synced' state.
         }
       } catch (err) {
-        console.error("Session check failed (Network/Auth Error/Timeout):", err);
-        // If the request fails entirely (e.g. 500/404 or Timeout because UID is invalid), treat as expired
-        setSessionExpired(true);
+        console.error("❌ [AppContext] Session check exception (Network/Timeout):", err);
+        // Do NOT treat network errors/timeouts as expired permissions
+        // setSessionExpired(true); // <--- REMOVED
       }
     };
 

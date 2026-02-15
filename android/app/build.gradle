@@ -3,6 +3,11 @@ apply plugin: 'com.android.application'
 def version_code = (new Date().getTime() / 1000).toInteger()
 
 android {
+    packaging {
+        jniLibs {
+            useLegacyPackaging true
+        }
+    }
     namespace = "com.metachain.app"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {

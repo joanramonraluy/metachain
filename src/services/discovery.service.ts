@@ -225,23 +225,82 @@ export const getUsersWithStatus = async (): Promise<UserWithStatus[]> => {
 
     // Get own public key to exclude from list
     let myPublicKey = '';
+    let myAlias = '';
+
     try {
         const maximaInfo = await MDS.cmd.maxima({ params: { action: 'info' } });
+
         if (maximaInfo.status && maximaInfo.response) {
-            myPublicKey = (maximaInfo.response as any).publickey || '';
+            const response = maximaInfo.response as any;
+            myPublicKey = response.publickey || '';
+            myAlias = response.name || '';
         }
     } catch (err) {
-        console.warn('⚠️ [Discovery] Could not fetch own publickey:', err);
+        console.error('❌ [Discovery] Failed to fetch own publickey:', err);
     }
 
     // Convert map to array, exclude self, and sort
-    return Array.from(userMap.values())
-        .filter(user => !myPublicKey || user.publickey !== myPublicKey)  // Exclude self
+    const sortedUsers = Array.from(userMap.values())
+        .filter(user => {
+            // Debug log for checking each user against filters
+            // console.log(`🔍 [Discovery] Checking user: "${user.alias}" (${user.publickey?.substring(0, 8)}...) vs Self: "${myAlias}"`);
+
+            // 1. Exclude by Public Key (Case-Insensitive Match)
+            if (myPublicKey && user.publickey && user.publickey.toLowerCase() === myPublicKey.toLowerCase()) {
+                return false;
+            }
+
+            // 2. Exclude by Alias (Case-Insensitive Match)
+            if (myAlias && myAlias !== 'Anonymous' && myAlias !== 'Unknown') {
+                const userAlias = (user.alias || '').trim();
+                const myAliasClean = myAlias.trim();
+
+                if (userAlias && userAlias.toLowerCase() === myAliasClean.toLowerCase()) {
+                    return false;
+                }
+            }
+
+            return true;
+        })
         .sort((a, b) => {
             // Sort by Online status first, then recency
+            // This sort is CRITICAL for the deduplication step below to work effectively
             if (a.is_online !== b.is_online) return a.is_online ? -1 : 1;
             return b.last_updated - a.last_updated;
         });
+
+    // 3. Deduplicate by Alias (Case-Insensitive)
+    // We want to remove older/offline instances of the same user (same alias)
+    // BUT we must allow specific generic aliases (Anonymous, Unknown) to duplicate.
+    const uniqueAliasMap = new Map<string, boolean>();
+    const finalUsers: UserWithStatus[] = [];
+
+    for (const user of sortedUsers) {
+        // Normalize alias for comparison
+        const aliasKey = (user.alias || '').toLowerCase().trim();
+
+        // If no alias, or generic alias, we allow it (don't dedupe)
+        // Checks for 'anonymous', 'unknown', or empty string
+        if (!aliasKey || aliasKey === 'anonymous' || aliasKey === 'unknown') {
+            finalUsers.push(user);
+            continue;
+        }
+
+        // Check if we've already seen this alias
+        if (!uniqueAliasMap.has(aliasKey)) {
+            // First time seeing this alias.
+            // Since sortedUsers is already sorted by (Online > Offline) and (New > Old),
+            // the FIRST one we encounter is the "best" one to keep.
+            uniqueAliasMap.set(aliasKey, true);
+            finalUsers.push(user);
+        } else {
+            // We have already added a "better" version of this alias.
+            // Skip this one (it's either offline or older).
+            console.log(`🧹 [Discovery] Deduplicated user alias "${user.alias}" (dropped ${user.publickey.substring(0, 10)}...)`);
+        }
+    }
+
+    return finalUsers;
 };
 
 // Update local profile (for beacon generation)

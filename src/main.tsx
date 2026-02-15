@@ -1,6 +1,7 @@
 // src/main.tsx
 
 import { MDS } from "@minima-global/mds"
+import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import {
   createMemoryHistory,
   createRouter,
@@ -16,6 +17,12 @@ import "./index.css"
 import { routeTree } from "./routeTree.gen"
 
 
+// SUPER DEBUG: Log Environment immediately
+console.log("🚀 [Main] STARTUP ENV CHECK:");
+console.log("🚀 [Main] URL:", window.location.href);
+console.log("🚀 [Main] Hostname:", window.location.hostname);
+console.log("🚀 [Main] Protocol:", window.location.protocol);
+console.log("🚀 [Main] Native:", Capacitor.isNativePlatform());
 
 // Check if we need to restore a route after reload (e.g. from Settings check permissions)
 const lastRoute = localStorage.getItem("lastRoute");
@@ -120,15 +127,23 @@ if (catchAndIngest(urlUid, urlMds, urlRpcUid, 'URL')) {
 // GLOBAL MDS PATCH (Capacitor Standalone APK Only)
 // Forces HTTP protocol and sets host/port for local node connection
 // ============================================================================
-if ((window as any).Capacitor && window.location.hostname === 'localhost') {
+if (Capacitor.isNativePlatform()) {
   console.log("🚀 [GlobalPatch] CAPACITOR APK DETECTED - Locking Connection");
   const anyMDS = (MDS as any);
 
-  // 1. Determine Host (from local storage or default)
-  const lockedHost = localStorage.getItem('minima_mds_host') || "http://127.0.0.1:9003/";
-  const lockedMain = lockedHost + "mdscommand_/";
+  // FORCE 127.0.0.1 for all Native connections to bypass unreachable Emulator IPs.
+  // We dynamic detection protocol (HTTP vs HTTPS) but lock the target to loopback.
+  const storedMds = localStorage.getItem('minima_mds_host') || "";
+  const detectedProtocol = (urlMds?.startsWith('https') || storedMds.startsWith('https')) ? "https:" : "http:";
 
-  console.log("🚀 [GlobalPatch] Using Locked Host:", lockedHost);
+  let lockedHost = `${detectedProtocol}//127.0.0.1:9003/`;
+
+  if (Capacitor.isNativePlatform()) {
+    console.log(`🚀 [GlobalPatch] Syncing Protocol (${detectedProtocol}) -> Locked Host: ${lockedHost}`);
+    localStorage.setItem('minima_mds_host', lockedHost);
+  }
+
+  const lockedMain = lockedHost + "mdscommand_/";
 
   // 2. AGGRESSIVE LOCK: Use getters to prevent the library from overwriting these
   Object.defineProperty(anyMDS, 'filehost', {
@@ -147,41 +162,85 @@ if ((window as any).Capacitor && window.location.hostname === 'localhost') {
     configurable: true
   });
 
-  anyMDS.DEBUG_PROTOCOL = "http:";
+  anyMDS.DEBUG_PROTOCOL = detectedProtocol;
 
-  // 3. XHR HIJACK: Log all outgoing MDS requests to see EXACT URLs
+  // 3. XHR PROXY: Intercept MDS requests and route via Native HTTP (Bypasses CORS/SSL/Network Restrictions)
   const originalOpen = XMLHttpRequest.prototype.open;
+  const originalSend = XMLHttpRequest.prototype.send;
+
   XMLHttpRequest.prototype.open = function (method: string, url: string | URL) {
-    const urlStr = url.toString();
-    const isMds = urlStr.includes('9003') || urlStr.includes('mds') || urlStr.includes('127.0.0.1');
-
-    if (isMds) {
-      console.log(`📡 [XHR] ${method} -> ${urlStr}`);
-
-      this.addEventListener('load', function () {
-        console.log(`📡 [XHR] Response ${this.status} from ${urlStr}`);
-        console.log(`📡 [XHR] Body (${this.status}): "${this.responseText.substring(0, 300)}${this.responseText.length > 300 ? '...' : ''}"`);
-      });
-
-      this.addEventListener('error', function () {
-        console.error(`📡 [XHR] Network Error connecting to ${urlStr}`);
-      });
-    }
+    (this as any)._method = method;
+    (this as any)._url = url.toString();
     return originalOpen.apply(this, arguments as any);
+  };
+
+  XMLHttpRequest.prototype.send = function (body: any) {
+    const urlStr = (this as any)._url;
+    // Intercept ONLY MDS requests (Port 9003 or mdscommand)
+    if (urlStr && (urlStr.includes('9003') || urlStr.includes('mdscommand_'))) {
+      console.log(`🚀 [NativeProxy] Intercepting XHR -> CapacitorHttp: ${urlStr}`);
+      console.log(`🚀 [NativeProxy] Body:`, body);
+
+      const options = {
+        url: urlStr,
+        method: (this as any)._method || 'GET',
+        data: body,
+        headers: {
+          'Connection': 'close',
+          'Accept': '*/*',
+          'Content-Type': 'application/x-www-form-urlencoded'
+        }
+      };
+
+      // Execute via Native Bridge
+      CapacitorHttp.request(options).then((response) => {
+        // Map Native Response to XHR properties
+        Object.defineProperty(this, 'status', { value: response.status, writable: true });
+        Object.defineProperty(this, 'statusText', { value: (response.status === 200 ? 'OK' : 'ERROR'), writable: true });
+        Object.defineProperty(this, 'responseText', { value: (typeof response.data === 'string' ? response.data : JSON.stringify(response.data)), writable: true });
+        Object.defineProperty(this, 'response', { value: this.responseText, writable: true });
+        Object.defineProperty(this, 'readyState', { value: 4, writable: true });
+
+        // Trigger XHR events manually to satisfy mds.js
+        if (this.onreadystatechange) this.onreadystatechange(new Event('readystatechange'));
+        if (this.onload) this.onload(new ProgressEvent('load'));
+
+        console.log(`🚀 [NativeProxy] Success: ${urlStr} (${response.status})`);
+      }).catch((err) => {
+        console.error(`❌ [NativeProxy] Failed: ${urlStr}`, err);
+        Object.defineProperty(this, 'status', { value: 0, writable: true });
+        if (this.onerror) this.onerror(new ProgressEvent('error'));
+      });
+
+      return; // STOP execution of original XHR
+    }
+
+    // Fallback for non-MDS requests (assets, etc.)
+    return originalSend.apply(this, arguments as any);
   };
 
   // 4. Hijack init for UID handling
   const originalInit = anyMDS.init;
-  anyMDS.init = (callback: any) => {
+  anyMDS.init = function (callback: any) {
     // Final check for UID (should be in localStorage by now)
     if (!anyMDS.minidappuid) {
-      anyMDS.minidappuid = localStorage.getItem('minima_uid') || "0x00";
+      const stored = localStorage.getItem('minima_uid');
+      if (stored) {
+        console.log(`🚀 [GlobalPatch] Injecting Stored UID: ${stored}`);
+        anyMDS.minidappuid = stored;
+      } else {
+        console.warn("⚠️ [GlobalPatch] No UID found in Storage - defaulting to 0x00");
+        anyMDS.minidappuid = "0x00";
+      }
+    } else {
+      console.log(`🚀 [GlobalPatch] MDS already has UID: ${anyMDS.minidappuid}`);
     }
 
-    console.log("🚀 [GlobalPatch] MDS Init Hijacked. UID:", anyMDS.minidappuid);
-    console.log("🚀 [GlobalPatch] Final Hosts:", anyMDS.filehost, anyMDS.mainhost);
+    console.log("🚀 [GlobalPatch] MDS Init Hijacked. Context fixed. UID:", anyMDS.minidappuid);
+    console.log("🚀 [GlobalPatch] Target Hosts:", anyMDS.filehost, anyMDS.mainhost);
 
-    originalInit(callback);
+    // FIX: Context Binding - Use .call(this) to ensure 'this' refers to MDS object
+    return originalInit.call(anyMDS, callback);
   };
 }
 // ============================================================================

@@ -17,6 +17,76 @@ function ConnectSettings() {
 
     const [rpcUid, setRpcUid] = useState('')
 
+    // Diagnostics State
+    const [testing, setTesting] = useState(false)
+    const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null)
+
+    const runDiagnostics = async () => {
+        setTesting(true);
+        setTestResult(null);
+
+        let mdsHost = localStorage.getItem('minima_mds_host') || "http://127.0.0.1:9003/";
+        if (mdsHost.includes(':9003') || mdsHost.includes('127.0.0.1') || mdsHost.includes('localhost')) {
+            mdsHost = mdsHost.replace('https://', 'http://');
+        }
+        const currentUid = localStorage.getItem('minima_uid') || "";
+
+        let log = `--- Connection Diagnostics ---\n\n`;
+        log += `TARGET HOST: ${mdsHost}\n`;
+        log += `UID: ${currentUid ? currentUid.substring(0, 10) + "..." : "NONE"}\n\n`;
+
+        try {
+            // STEP 1: PING (Network Reachability)
+            log += `1. PING TEST (${mdsHost})... `;
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+            try {
+                const res = await fetch(mdsHost, {
+                    method: 'GET',
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+                log += `✅ OK (Status: ${res.status})\n`;
+            } catch (err: any) {
+                clearTimeout(timeoutId);
+                log += `❌ FAILED\n   Error: ${err.name}: ${err.message}\n`;
+                if (err.name === 'AbortError') {
+                    log += `   -> TIMEOUT: Node is offline or blocked by Android Battery Saver.\n`;
+                } else if (err.message.includes("Failed to fetch")) {
+                    log += `   -> CONNECTION REFUSED: Node is not listening on this port.\n`;
+                }
+                setTestResult({ success: false, message: log });
+                setTesting(false);
+                return;
+            }
+
+            // STEP 2: MDS COMMAND (Authentication)
+            log += `2. MDS AUTH TEST... `;
+            const cmdRes: any = await new Promise((resolve) => {
+                MDS.cmd.block((res: any) => resolve(res));
+            });
+
+            if (cmdRes.status) {
+                log += `✅ OK (Block: ${cmdRes.response.block})\n`;
+                log += `\n>> CONNECTION HEALTHY <<`;
+                setTestResult({ success: true, message: log });
+            } else {
+                log += `❌ FAILED\n   Response: ${JSON.stringify(cmdRes)}\n`;
+                if (cmdRes.error && (cmdRes.error.includes("Incorrect Minima Dapp UID") || cmdRes.error.includes("Not allowed"))) {
+                    log += `   -> INVALID UID: You must re-connect from Minima app.\n`;
+                }
+                setTestResult({ success: false, message: log });
+            }
+
+        } catch (e: any) {
+            log += `\n❌ UNEXPECTED ERROR: ${e.message}`;
+            setTestResult({ success: false, message: log });
+        } finally {
+            setTesting(false);
+        }
+    };
+
     useEffect(() => {
         const discovered = localStorage.getItem('minima_rpc_uid');
         if (discovered) {
@@ -97,7 +167,7 @@ function ConnectSettings() {
         if (confirm("Are you sure? This will disconnect the app.")) {
             localStorage.removeItem('minima_uid')
             localStorage.removeItem('minima_rpc_uid')
-            localStorage.removeItem('MDS_ID') // Clear just in case
+            localStorage.removeItem('MDS_ID')
             window.location.reload()
         }
     }
@@ -239,7 +309,36 @@ function ConnectSettings() {
                     </div>
                 )}
 
-            </div>
-        </div>
+                {/* DIAGNOSTICS TOOL */}
+                <div className="mt-8 border-t pt-6 dark:border-gray-700">
+                    <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Connection Diagnostics</h3>
+                    <p className="text-xs text-gray-500 mb-4">
+                        If you are experiencing issues, run this test to identify if it's a network timeout (Node offline) or an authentication error (Invalid UID).
+                    </p>
+
+                    <button
+                        onClick={runDiagnostics}
+                        disabled={testing}
+                        className="w-full bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 px-4 py-3 rounded-md font-medium transition-colors flex items-center justify-center border border-gray-200 dark:border-gray-600"
+                    >
+                        {testing ? (
+                            <span className="flex items-center">
+                                <span className="animate-spin h-4 w-4 border-2 border-gray-500 border-t-transparent rounded-full mr-2"></span>
+                                Running Tests...
+                            </span>
+                        ) : (
+                            "Run Connection Diagnostics"
+                        )}
+                    </button>
+
+                    {testResult && (
+                        <div className={`mt-4 p-4 rounded-md border text-xs font-mono whitespace-pre-wrap ${testResult.success ? 'bg-green-50 border-green-200 text-green-800 dark:bg-green-900/20 dark:border-green-800 dark:text-green-300' : 'bg-red-50 border-red-200 text-red-800 dark:bg-red-900/20 dark:border-red-800 dark:text-red-300'}`}>
+                            {testResult.message}
+                        </div>
+                    )}
+                </div>
+
+            </div >
+        </div >
     )
 }

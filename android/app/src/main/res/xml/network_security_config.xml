@@ -4,6 +4,17 @@
         <domain includeSubdomains="true">localhost</domain>
         <domain includeSubdomains="true">127.0.0.1</domain>
         <domain includeSubdomains="true">10.0.2.2</domain> <!-- Android Emulator Host Loopback -->
+        <domain includeSubdomains="true">10.0.2.16</domain> <!-- Minima Node IP in VM -->
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
     </domain-config>
+    <debug-overrides>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </debug-overrides>
     <base-config cleartextTrafficPermitted="true" />
 </network-security-config>

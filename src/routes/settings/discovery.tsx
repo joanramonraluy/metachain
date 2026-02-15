@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { MDS } from "@minima-global/mds";
 import { useAppContext } from "../../AppContext";
-import { Globe, Info, Copy, Check, ChevronUp, ChevronDown, RefreshCw, AlertTriangle } from "lucide-react";
+import { Globe, Info, Check, ChevronUp, ChevronDown, RefreshCw, AlertTriangle } from "lucide-react";
 
 export const Route = createFileRoute("/settings/discovery")({
   component: DiscoverySettings,
@@ -17,8 +17,6 @@ function DiscoverySettings() {
   const [inputMLSServer, setInputMLSServer] = useState("");
   const [hasStaticMLS, setHasStaticMLS] = useState(false);
   const [p2pIdentity, setP2pIdentity] = useState("");
-
-  const [copiedField, setCopiedField] = useState<string | null>(null);
   const [expandedAddress, setExpandedAddress] = useState<string | null>('staticMLS');
   const [enablingPermanent, setEnablingPermanent] = useState(false);
 
@@ -32,8 +30,10 @@ function DiscoverySettings() {
         if (intervalRes?.status && intervalRes.value) setDiscoveryInterval(parseInt(intervalRes.value) || 60);
         if (limitRes?.status && limitRes.value) setDiscoveryLimit(parseInt(limitRes.value) || 5);
 
+
         // Fetch P2P Identity (My Maxima Info)
-        const maximaInfo = await MDS.cmd.maxima();
+        // @ts-ignore
+        const maximaInfo = await MDS.cmd.maxima({ params: { action: "info" } });
         // @ts-ignore
         if (maximaInfo.status && maximaInfo.response) {
           // @ts-ignore
@@ -41,19 +41,32 @@ function DiscoverySettings() {
           if (p2p) {
             setP2pIdentity(p2p);
           }
-        }
 
-        // Fetch MLS
-        // @ts-ignore
-        const mlsRes = await MDS.cmd.maxima({ params: { action: "getmls" } });
-        // @ts-ignore
-        if (mlsRes.status && mlsRes.response && mlsRes.response.value) {
+          // Fetch MLS from the same info response
           // @ts-ignore
-          setStaticMLSServer(mlsRes.response.value);
-          setHasStaticMLS(true);
-        } else {
-          setStaticMLSServer("");
-          setHasStaticMLS(false);
+          const mls = maximaInfo.response.mls;
+          // @ts-ignore
+          const isStatic = maximaInfo.response.staticmls;
+
+          if (mls && isStatic) {
+            setStaticMLSServer(mls);
+            setHasStaticMLS(true);
+          } else {
+            console.log("ℹ️ [Discovery] No Static MLS configured. Auto-connecting to Community Node...");
+            // Auto-connect to Community Node
+            const communityNode = "MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60G1CZAEPFTCRYUNCPYTUMZ267P1W92V6RBK39NBWJNG9N5D3R58K4UA426QQGC8YBB2MJS3320QQ0NNCG7KPEU7BVKYSAD1HGRBNBE78R1W87C1TPG8NFHV5W0YMKV90CCC6AMMSP0KCB7GN5A1M6VJFT4T43K3E44DT50V0U9S4Q9FBRP3U19T70PKF3GU9B7G6857E2BBRJ5WK10608004DRUR4W@185.132.90.98:9001";
+            try {
+              // @ts-ignore
+              await MDS.cmd.maxextra({ params: { action: "staticmls", host: communityNode } });
+              setStaticMLSServer(communityNode); // Use hardcoded initially, will refresh on next load or manual refresh
+              setHasStaticMLS(true);
+              console.log("✅ [Discovery] Auto-connected to Community Node");
+            } catch (autoErr) {
+              console.warn("⚠️ [Discovery] Failed to auto-connect:", autoErr);
+              setStaticMLSServer("");
+              setHasStaticMLS(false);
+            }
+          }
         }
 
       } catch (err) {
@@ -64,24 +77,28 @@ function DiscoverySettings() {
     fetchDiscoverySettings();
   }, [loaded]);
 
-  const copyToClipboard = (text: string, fieldId: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedField(fieldId);
-    setTimeout(() => setCopiedField(null), 2000);
-  };
-
   const toggleAddress = (id: string) => {
     setExpandedAddress(expandedAddress === id ? null : id);
   };
+
 
   const handleSetMLSServer = async () => {
     if (!inputMLSServer.trim()) return;
     setEnablingPermanent(true);
     try {
       // @ts-ignore
-      const res = await MDS.cmd.maxima({ params: { action: "setmls", host: inputMLSServer.trim() } });
+      const res = await MDS.cmd.maxextra({ params: { action: "staticmls", host: inputMLSServer.trim() } });
       if (res.status) {
-        setStaticMLSServer(inputMLSServer.trim());
+        // After setting, we should refresh to get the standard address format from the node
+        // @ts-ignore
+        const info = await MDS.cmd.maxima({ params: { action: "info" } });
+        // @ts-ignore
+        if (info.status && info.response && info.response.mls) {
+          // @ts-ignore
+          setStaticMLSServer(info.response.mls);
+        } else {
+          setStaticMLSServer(inputMLSServer.trim());
+        }
         setHasStaticMLS(true);
         setInputMLSServer("");
       } else {
@@ -94,19 +111,55 @@ function DiscoverySettings() {
     }
   };
 
-  const handleForceReRegister = async () => {
+  const handleUseCommunityNode = async () => {
+    setEnablingPermanent(true);
+    const communityNode = "MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60G1CZAEPFTCRYUNCPYTUMZ267P1W92V6RBK39NBWJNG9N5D3R58K4UA426QQGC8YBB2MJS3320QQ0NNCG7KPEU7BVKYSAD1HGRBNBE78R1W87C1TPG8NFHV5W0YMKV90CCC6AMMSP0KCB7GN5A1M6VJFT4T43K3E44DT50V0U9S4Q9FBRP3U19T70PKF3GU9B7G6857E2BBRJ5WK10608004DRUR4W@185.132.90.98:9001";
+    try {
+      // @ts-ignore
+      const res = await MDS.cmd.maxextra({ params: { action: "staticmls", host: communityNode } });
+      if (res.status) {
+        setStaticMLSServer(communityNode);
+        setHasStaticMLS(true);
+        // Refresh full info
+        // @ts-ignore
+        const info = await MDS.cmd.maxima({ params: { action: "info" } });
+        // @ts-ignore
+        if (info.status && info.response && info.response.mls) {
+          // @ts-ignore
+          setStaticMLSServer(info.response.mls);
+        }
+      } else {
+        alert("Failed to set Community Node: " + res.error);
+      }
+    } catch (e) {
+      console.error("Error setting community node:", e);
+    } finally {
+      setEnablingPermanent(false);
+    }
+  };
+
+  const handleUseMyNodeAsServer = async () => {
     setEnablingPermanent(true);
     try {
-      // Just re-set the existing one to force logic if needed, or clear and set
-      // For now, implementing simple re-set
-      // @ts-ignore
-      const res = await MDS.cmd.maxima({ params: { action: "setmls", host: staticMLSServer } });
-      if (res.status) {
-        console.log("Forced re-register success");
+      // Using local p2p identity as static MLS
+      if (!p2pIdentity) {
+        alert("P2P Identity not ready yet. Please wait.");
+        return;
       }
-    } catch (e) { console.error(e); }
-    finally { setEnablingPermanent(false); }
-  }
+      // @ts-ignore
+      const res = await MDS.cmd.maxextra({ params: { action: "staticmls", host: p2pIdentity } });
+      if (res.status) {
+        setStaticMLSServer(p2pIdentity);
+        setHasStaticMLS(true);
+      } else {
+        alert("Failed to set local node as server: " + res.error);
+      }
+    } catch (e) {
+      console.error("Error setting local node:", e);
+    } finally {
+      setEnablingPermanent(false);
+    }
+  };
 
 
   return (
@@ -180,104 +233,118 @@ function DiscoverySettings() {
             </div>
           </div>
 
-          {/* Use This Node as MLS */}
-          <div className="bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800/50 rounded-lg p-4">
+          {/* CLIENT MODE: Connect to Network */}
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
             <div className="flex items-center gap-2 mb-3">
-              <Info className="text-primary-600 dark:text-primary-400" size={20} />
-              <h3 className="text-lg font-semibold text-primary-900 dark:text-primary-100">Use This Node as MLS Server</h3>
+              <Globe className="text-primary-600 dark:text-primary-400" size={20} />
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Client Mode</h3>
+              <span className="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded-full">Recommended</span>
             </div>
-            <p className="text-sm text-primary-800 dark:text-primary-200 mb-3">
-              For development/testing, other nodes can use this node as their Static MLS server.
+            <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+              To be discoverable by other users and receive offline messages, you should register with an always-online Discovery Server (MLS).
             </p>
 
-            {p2pIdentity ? (
-              <>
-                <div className="bg-white dark:bg-gray-900 rounded border border-primary-200 dark:border-primary-800 p-3 mb-3">
-                  <p className="text-xs text-primary-600 dark:text-primary-400 mb-1 font-semibold">Your P2P Identity:</p>
-                  <p className="text-xs font-mono text-gray-800 dark:text-gray-200 break-all">{p2pIdentity}</p>
+            {hasStaticMLS ? (
+              <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4 mb-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Check className="text-green-600 dark:text-green-400" size={20} />
+                  <span className="font-semibold text-green-800 dark:text-green-200">Connected to Discovery Network</span>
                 </div>
-                <button
-                  onClick={() => copyToClipboard(p2pIdentity, 'p2p')}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${copiedField === 'p2p' ? 'bg-green-100 text-green-700' : 'bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300 hover:bg-primary-200 dark:hover:bg-primary-900/60 border border-primary-300 dark:border-primary-700'}`}
-                >
-                  {copiedField === 'p2p' ? <Check size={16} /> : <Copy size={16} />}
-                  {copiedField === 'p2p' ? 'Copied!' : 'Copy P2P Identity'}
-                </button>
-              </>
+                <p className="text-xs text-gray-600 dark:text-gray-300 font-mono break-all mt-2">
+                  {staticMLSServer}
+                </p>
+              </div>
             ) : (
-              <p className="text-sm text-primary-700">Loading P2P identity...</p>
+              <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 mb-4">
+                <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                  You are not currently connected to a Discovery Server.
+                </p>
+              </div>
             )}
+
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={handleUseCommunityNode}
+                disabled={enablingPermanent}
+                className="w-full bg-primary-600 text-white py-2 px-4 rounded-lg font-medium hover:bg-primary-700 transition disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {enablingPermanent ? <RefreshCw size={16} className="animate-spin" /> : <Globe size={16} />}
+                Use Recommended Community Node
+              </button>
+
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-gray-300 dark:border-gray-600"></div>
+                </div>
+                <div className="relative flex justify-center text-sm">
+                  <span className="px-2 bg-white dark:bg-gray-800 text-gray-500">Or enter custom address</span>
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Custom MAX#..."
+                  value={inputMLSServer}
+                  onChange={(e) => setInputMLSServer(e.target.value)}
+                  className="flex-1 p-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                />
+                <button
+                  onClick={handleSetMLSServer}
+                  disabled={enablingPermanent || !inputMLSServer.trim()}
+                  className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg font-medium hover:bg-gray-300 dark:hover:bg-gray-600 transition disabled:opacity-50"
+                >
+                  Set
+                </button>
+              </div>
+            </div>
           </div>
 
-          {/* Static MLS Configuration */}
+          {/* SERVER MODE */}
           <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
             <button
-              onClick={() => toggleAddress('staticMLS')}
+              onClick={() => toggleAddress('serverMode')}
               className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-left"
             >
               <div className="flex items-center gap-2">
-                <h3 className="text-lg font-semibold text-gray-800 dark:text-white">Static MLS Server</h3>
-                {hasStaticMLS && <Check className="text-green-500" size={20} />}
+                <Info className="text-gray-500" />
+                <h3 className="text-lg font-semibold text-gray-800 dark:text-white">Server Mode (Advanced)</h3>
               </div>
-              {expandedAddress === 'staticMLS' ? <ChevronUp size={20} className="text-gray-500" /> : <ChevronDown size={20} className="text-gray-500" />}
+              {expandedAddress === 'serverMode' ? <ChevronUp size={20} className="text-gray-500" /> : <ChevronDown size={20} className="text-gray-500" />}
             </button>
 
-            {expandedAddress === 'staticMLS' && (
+            {expandedAddress === 'serverMode' && (
               <div className="p-4 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
+                <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 p-3 rounded mb-4">
+                  <p className="text-sm text-yellow-800 dark:text-yellow-200 font-medium flex items-center gap-2">
+                    <AlertTriangle size={16} /> Only for Always-On Devices
+                  </p>
+                  <p className="text-xs text-yellow-700 dark:text-yellow-300 mt-1">
+                    Do NOT use this on a mobile device. Only use if this node is running on a VPS or server with a public IP.
+                  </p>
+                </div>
+
                 <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
-                  Configure a permanent Maxima Lookup Service to enable a permanent MAX# address for P2P Discovery.
+                  If this node is a server, you can configure it to act as its own Discovery Service.
                 </p>
 
-                {hasStaticMLS ? (
-                  <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4 mb-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Check className="text-green-600 dark:text-green-400" size={20} />
-                      <span className="font-semibold text-green-800 dark:text-green-200">Static MLS Configured</span>
-                    </div>
-                    <p className="text-xs text-gray-600 dark:text-gray-300 font-mono break-all mt-2">
-                      {staticMLSServer}
-                    </p>
-                    <div className="mt-2 pt-2 border-t border-green-200 dark:border-green-800">
-                      <button
-                        onClick={handleForceReRegister}
-                        disabled={enablingPermanent}
-                        className="text-xs flex items-center gap-2 text-green-700 dark:text-green-300 hover:text-green-800 dark:hover:text-green-200 underline"
-                      >
-                        {enablingPermanent ? <RefreshCw size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                        Force Re-register Permanent Address
-                      </button>
-                    </div>
-                  </div>
-                ) : (
+                {p2pIdentity ? (
                   <>
-                    <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 mb-4">
-                      <div className="flex items-center gap-2">
-                        <AlertTriangle className="text-yellow-600 dark:text-yellow-400" size={20} />
-                        <span className="font-semibold text-yellow-800 dark:text-yellow-200">Static MLS Not Configured</span>
-                      </div>
-                      <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-2">
-                        Enter your Static MLS server address below to enable P2P Discovery.
-                      </p>
+                    <div className="bg-gray-100 dark:bg-gray-900 rounded p-3 mb-3">
+                      <p className="text-xs text-gray-500 mb-1 font-semibold">This Node's P2P Identity:</p>
+                      <p className="text-xs font-mono text-gray-800 dark:text-gray-200 break-all">{p2pIdentity}</p>
                     </div>
 
-                    <div className="space-y-3">
-                      <input
-                        type="text"
-                        placeholder="MAX#..."
-                        value={inputMLSServer}
-                        onChange={(e) => setInputMLSServer(e.target.value)}
-                        className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                      />
-                      <button
-                        onClick={handleSetMLSServer}
-                        disabled={enablingPermanent || !inputMLSServer.trim()}
-                        className="w-full bg-primary-600 text-white py-2 px-4 rounded-lg font-medium hover:bg-primary-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                      >
-                        {enablingPermanent && <RefreshCw size={16} className="animate-spin" />}
-                        Set Static MLS Server
-                      </button>
-                    </div>
+                    <button
+                      onClick={handleUseMyNodeAsServer}
+                      disabled={enablingPermanent}
+                      className="w-full border border-primary-600 text-primary-600 dark:text-primary-400 py-2 px-4 rounded-lg font-medium hover:bg-primary-50 dark:hover:bg-primary-900/20 transition disabled:opacity-50"
+                    >
+                      Use This Node as Discovery Server
+                    </button>
                   </>
+                ) : (
+                  <p className="text-sm text-gray-500">Loading identity...</p>
                 )}
               </div>
             )}
