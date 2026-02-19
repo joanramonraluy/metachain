@@ -10,8 +10,10 @@
 var LAST_GOSSIP = 0;
 var BEACON_INTERVAL = 60000; // 1 minute
 var MY_MAXIMA_PK = "";
+var MY_MAXIMA_ADDRESS = "";
 var BEACON_CACHE = {};
 var GOSSIP_INTERVAL = 30000; // 30 seconds
+var DISCOVERY_LIMIT = 5; // Default peer limit
 var LAST_BEACON_TIME = 0;
 
 // ============================================================================
@@ -556,13 +558,13 @@ function check3BlockConfirmation(txpowid, callback) {
 
             // Get current blockchain tip
             MDS.cmd("status", function (statusResponse) {
-                if (!statusResponse.status || !statusResponse.response) {
-                    MDS.log("⚠️ [SW-TX-CONFIRM] Could not get blockchain status");
+                if (!statusResponse.status || !statusResponse.response || !statusResponse.response.chain) {
+                    MDS.log("⚠️ [SW-TX-CONFIRM] Node not ready or no blockchain tip yet");
                     callback(null, 'pending');
                     return;
                 }
 
-                var currentBlock = statusResponse.response.chain && statusResponse.response.chain.block;
+                var currentBlock = statusResponse.response.chain.block;
 
                 if (currentBlock === undefined || currentBlock === null) {
                     MDS.log("⚠️ [SW-TX-CONFIRM] Could not get current block number");
@@ -791,7 +793,29 @@ function initDatabase() {
     MDS.cmd("maxima action:info", function (maxInfo) {
         if (maxInfo.status) {
             MY_MAXIMA_PK = maxInfo.response.publickey;
+            MY_MAXIMA_ADDRESS = maxInfo.response.contact;
             MDS.log("🔑 [SW] My Public Key: " + MY_MAXIMA_PK);
+        }
+    });
+
+    // Load Discovery Settings
+    MDS.keypair.get("discovery_interval", function (res) {
+        if (res.status && res.value) {
+            var val = parseInt(res.value);
+            if (val >= 30) { // Minimum 30s enforcement
+                GOSSIP_INTERVAL = val * 1000;
+                MDS.log("⚙️ [SW] Gossip Interval set to " + val + "s");
+            }
+        }
+    });
+
+    MDS.keypair.get("discovery_limit", function (res) {
+        if (res.status && res.value) {
+            var val = parseInt(res.value);
+            if (val > 0) {
+                DISCOVERY_LIMIT = val;
+                MDS.log("⚙️ [SW] Discovery Limit set to " + val + " peers");
+            }
         }
     });
 
@@ -999,9 +1023,12 @@ function initDatabase() {
             if (logRes.status) MDS.log("✅ [INIT] MINIMALOG listener registered");
         });
 
-        // Send initial beacon
-        sendBackgroundBeacon();
-        startGossip();
+        // Ensure the community MLS is configured before sending the first beacon
+        ensureCommunityMLS(function () {
+            // Send initial beacon (after MLS is guaranteed to be set)
+            sendBackgroundBeacon();
+            startGossip();
+        });
 
         // Register for periodic tasks
         MDS.cmd("event on newblock", function () {
@@ -1021,6 +1048,32 @@ function initDatabase() {
         MDS.log("📦 [INIT] Coin discovery scheduled for first NEWBLOCK event");
     });
 }
+
+// Ensures the Community Node MLS is set as the static MLS if none is configured.
+// This runs once at startup so new users don't need to visit Settings → Discovery.
+var COMMUNITY_MLS = "MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60G1CZAEPFTCRYUNCPYTUMZ267P1W92V6RBK39NBWJNG9N5D3R58K4UA426QQGC8YBB2MJS3320QQ0NNCG7KPEU7BVKYSAD1HGRBNBE78R1W87C1TPG8NFHV5W0YMKV90CCC6AMMSP0KCB7GN5A1M6VJFT4T43K3E44DT50V0U9S4Q9FBRP3U19T70PKF3GU9B7G6857E2BBRJ5WK10608004DRUR4W@185.132.90.98:9001";
+
+function ensureCommunityMLS(callback) {
+    MDS.cmd("maxima action:info", function (info) {
+        if (info.status && info.response.staticmls) {
+            // Already has a static MLS configured — leave it alone
+            MDS.log("✅ [MLS] Static MLS already configured: " + info.response.mls.substring(0, 20) + "...");
+            if (callback) callback();
+        } else {
+            // No static MLS — apply the community node automatically
+            MDS.log("🔧 [MLS] No static MLS. Auto-configuring Community Node...");
+            MDS.cmd("maxextra action:staticmls host:" + COMMUNITY_MLS, function (res) {
+                if (res.status) {
+                    MDS.log("✅ [MLS] Community Node configured successfully.");
+                } else {
+                    MDS.log("⚠️ [MLS] Could not configure Community Node: " + res.error);
+                }
+                if (callback) callback();
+            });
+        }
+    });
+}
+
 
 /**
  * MetaChain Service Worker - Group Message Handler
@@ -2802,6 +2855,8 @@ function sendBackgroundBeacon() {
         var myAddress = maxInfo.response.contact;
         var myName = maxInfo.response.name || "Anonymous";
         var myAvatar = maxInfo.response.icon ? decodeURIComponent(maxInfo.response.icon) : "";
+        var mls = maxInfo.response.mls;
+        var staticmls = maxInfo.response.staticmls;
 
         MDS.keypair.get("p2p_bio", function (bioRes) {
             var bio = (bioRes.status && bioRes.value) ? bioRes.value : "";
@@ -2877,6 +2932,20 @@ function sendBackgroundBeacon() {
                                 MDS.log("📡 [BG-BEACON] P2P broadcast sent");
                             });
 
+                            // MLS Broadcast (Bootstrap)
+                            if (mls && staticmls && mls !== myAddress) {
+                                var bootstrapBeacon = JSON.parse(JSON.stringify(beacon));
+                                bootstrapBeacon.type = "register"; // MLS expects 'register'
+
+                                MDS.cmd("maxima action:send to:" + mls + " application:metachain data:" + JSON.stringify(bootstrapBeacon), function (res) {
+                                    if (res.status) {
+                                        MDS.log("🌐 [BG-BEACON] Sent to MLS: " + mls);
+                                    } else {
+                                        MDS.log("⚠️ [BG-BEACON] MLS send failed: " + res.error);
+                                    }
+                                });
+                            }
+
                             // Save self to DB
                             handleBeacon(beacon, 'SELF');
                         });
@@ -2912,7 +2981,7 @@ function handleGetPeers(pubkey, maxjson) {
     MDS.log("🗣️ [GOSSIP] Peer request from " + (maxjson.alias || pubkey.substring(0, 10)));
 
     // Fetch known peers
-    var peerSql = "SELECT * FROM DISCOVERED_PEERS ORDER BY last_seen DESC LIMIT 50";
+    var peerSql = "SELECT * FROM DISCOVERED_PEERS ORDER BY last_seen DESC LIMIT 10";
     MDS.sql(peerSql, function (res) {
         if (res.status && res.rows && res.rows.length > 0) {
             var peers = [];
@@ -2947,16 +3016,38 @@ function handleGetPeers(pubkey, maxjson) {
                 });
             }
 
-            // Send response
+            // Send response DIRECTLY back to the requester via Maxima
             var replyPayload = {
                 app: "metachain",
                 type: "peers_response",
                 peers: peers
             };
-            var replyHex = "0x" + utf8ToHex(JSON.stringify(replyPayload)).toUpperCase();
 
-            MDS.cmd("maxima action:send publickey:" + pubkey + " application:metachain data:" + replyHex + " poll:false", function () {
-                MDS.log("✅ [GOSSIP] Sent " + peers.length + " peers");
+            // Look up the requester's Maxima address from our DB
+            var lookupSql = "SELECT ADDRESS FROM DISCOVERED_PEERS WHERE UPPER(PUBLICKEY)=UPPER('" + pubkey + "') LIMIT 1";
+            MDS.sql(lookupSql, function (addrRes) {
+                var requesterAddress = null;
+                if (addrRes.status && addrRes.rows && addrRes.rows.length > 0) {
+                    requesterAddress = addrRes.rows[0].ADDRESS;
+                }
+                // Also fall back to address from the request payload itself
+                if (!requesterAddress && maxjson.address) {
+                    requesterAddress = maxjson.address;
+                }
+
+                if (requesterAddress) {
+                    var cleanAddr = cleanMaximaAddress(requesterAddress);
+                    var cmd = "maxima action:send to:" + cleanAddr + " application:metachain data:" + JSON.stringify(replyPayload) + " poll:false";
+                    MDS.cmd(cmd, function (res) {
+                        if (res.status) {
+                            MDS.log("✅ [GOSSIP] Sent " + peers.length + " peers directly to " + (maxjson.alias || pubkey.substring(0, 10)));
+                        } else {
+                            MDS.log("⚠️ [GOSSIP] Direct send failed: " + res.error);
+                        }
+                    });
+                } else {
+                    MDS.log("⚠️ [GOSSIP] No address for " + (maxjson.alias || pubkey.substring(0, 10)) + " - cannot respond");
+                }
             });
         }
     });
@@ -3000,52 +3091,94 @@ function handlePeersResponse(pubkey, maxjson) {
 function startGossip() {
     MDS.log("🗣️ [GOSSIP] Starting discovery...");
 
-    // Try discovered peers first
-    MDS.sql("SELECT * FROM DISCOVERED_PEERS ORDER BY last_seen DESC LIMIT 5", function (res) {
-        if (res.status && res.rows && res.rows.length > 0) {
-            MDS.log("🗣️ [GOSSIP] Asking " + res.rows.length + " discovered peers...");
-            var pubkeys = [];
-            for (var i = 0; i < res.rows.length; i++) {
-                pubkeys.push(res.rows[i].PUBLICKEY);
+    // 0. Check for Test Mode
+    MDS.cmd("status", function (statusRes) {
+        if (statusRes.status && statusRes.response && statusRes.response.mode && statusRes.response.mode === "-test") {
+            MDS.log("🛑 [GOSSIP] Test mode detected. Skipping peer discovery.");
+            return;
+        }
+
+        // 1. Ask MLS (if configured) - "Super Peer"
+        MDS.cmd("maxima action:info", function (maxInfo) {
+            if (!maxInfo.status) {
+                MDS.log("⚠️ [GOSSIP] Could not get Maxima info for discovery");
+                return;
             }
-            askPeers(pubkeys);
-        } else {
-            // Fallback to contacts
-            MDS.cmd("maxcontacts", function (contactRes) {
-                if (contactRes.status && contactRes.response.contacts && contactRes.response.contacts.length > 0) {
-                    var targets = [];
-                    for (var i = 0; i < Math.min(5, contactRes.response.contacts.length); i++) {
-                        targets.push(contactRes.response.contacts[i].publickey);
+
+            var mls = maxInfo.response.mls;
+            var staticmls = maxInfo.response.staticmls;
+
+            if (mls) {
+                MDS.log("🗣️ [GOSSIP] MLS Found: " + mls + " (Static: " + staticmls + ")");
+                askPeers([mls], maxInfo);
+            } else {
+                MDS.log("ℹ️ [GOSSIP] No MLS configured in Maxima info");
+            }
+
+            // 2. Ask Discovered Peers (P2P Mesh)
+            MDS.sql("SELECT * FROM DISCOVERED_PEERS ORDER BY last_seen DESC LIMIT " + DISCOVERY_LIMIT, function (res) {
+                if (res.status && res.rows && res.rows.length > 0) {
+                    MDS.log("🗣️ [GOSSIP] Asking " + res.rows.length + " discovered peers...");
+                    var pubkeys = [];
+                    for (var i = 0; i < res.rows.length; i++) {
+                        pubkeys.push(res.rows[i].PUBLICKEY);
                     }
-                    MDS.log("🗣️ [GOSSIP] Asking " + targets.length + " contacts...");
-                    askPeers(targets);
+                    askPeers(pubkeys, maxInfo);
                 } else {
-                    MDS.log("⚠️ [GOSSIP] No peers to ask.");
+                    // Only log bootstrap if no local peers
+                    MDS.log("🗣️ [GOSSIP] No local peers found. Checking bootstrap options...");
+                    // 3. Fallback to Contacts (bootstrap if no peers)
+                    MDS.cmd("maxcontacts", function (contactRes) {
+                        var hasContacts = (contactRes.status && contactRes.response.contacts && contactRes.response.contacts.length > 0);
+                        if (hasContacts) {
+                            var targets = [];
+                            for (var i = 0; i < Math.min(DISCOVERY_LIMIT, contactRes.response.contacts.length); i++) {
+                                targets.push(contactRes.response.contacts[i].publickey);
+                            }
+                            MDS.log("🗣️ [GOSSIP] Asking " + targets.length + " contacts...");
+                            askPeers(targets, maxInfo);
+                        } else if (!mls) {
+                            MDS.log("⚠️ [GOSSIP] Complete isolation: No MLS, no peers, no contacts.");
+                        } else {
+                            MDS.log("ℹ️ [GOSSIP] No secondary peers/contacts. Waiting for MLS response...");
+                        }
+                    });
                 }
             });
-        }
+        });
     });
 }
 
-function askPeers(pubkeys) {
-    MDS.cmd("maxima action:info", function (maxInfo) {
-        var myAlias = (maxInfo.status) ? maxInfo.response.name : "Anonymous";
+function askPeers(pubkeys, maxInfo) {
+    var myAlias = (maxInfo && maxInfo.status) ? maxInfo.response.name : "Anonymous";
 
-        var requestPayload = {
-            app: "metachain",
-            type: "get_peers",
-            alias: myAlias
-        };
+    var requestPayload = {
+        app: "metachain",
+        type: "get_peers",
+        alias: myAlias,
+        address: MY_MAXIMA_ADDRESS || ""  // Include own address so MLS can reply directly
+    };
 
-        var hexData = "0x" + utf8ToHex(JSON.stringify(requestPayload)).toUpperCase();
+    var hexData = "0x" + utf8ToHex(JSON.stringify(requestPayload)).toUpperCase();
 
-        for (var i = 0; i < pubkeys.length; i++) {
-            var pk = pubkeys[i];
-            if (MY_MAXIMA_PK && pk === MY_MAXIMA_PK) continue;
+    for (var i = 0; i < pubkeys.length; i++) {
+        // Use cleanMaximaAddress to safely handle port numbers and odd spacing
+        var target = cleanMaximaAddress(pubkeys[i]);
+        if (MY_MAXIMA_PK && target === MY_MAXIMA_PK) continue;
+        if (MY_MAXIMA_ADDRESS && target === MY_MAXIMA_ADDRESS) continue;
 
-            MDS.cmd("maxima action:send publickey:" + pk + " application:metachain data:" + hexData + " poll:false");
-        }
-    });
+        var isMx = target.startsWith("Mx");
+        // Quote the address/publickey to handle potential special chars or length issues safely
+        // FIXED: Use plain JSON data like beacon.handler.js for consistency
+        var cmd = "maxima action:send " + (isMx ? "to:" + target : "publickey:\"" + target + "\"") + " application:metachain data:" + JSON.stringify(requestPayload) + " poll:false";
+
+        MDS.log("📤 [GOSSIP-OUT] Sending to " + (isMx ? "Address" : "PK") + ": " + target.substring(0, 20) + "...");
+        MDS.cmd(cmd, function (res) {
+            if (!res.status) {
+                MDS.log("⚠️ [GOSSIP-OUT] Failed to send: " + res.error);
+            }
+        });
+    }
 }
 
 function sendWelcomePackage(targetPubkey, targetAlias) {
@@ -3053,7 +3186,7 @@ function sendWelcomePackage(targetPubkey, targetAlias) {
 
     MDS.log("🎁 [GOSSIP] Sending Welcome Package to " + targetAlias);
 
-    var peerSql = "SELECT * FROM DISCOVERED_PEERS ORDER BY last_seen DESC LIMIT 50";
+    var peerSql = "SELECT * FROM DISCOVERED_PEERS ORDER BY last_seen DESC LIMIT 10";
     MDS.sql(peerSql, function (res) {
         if (res.status && res.rows && res.rows.length > 0) {
             var peers = [];
@@ -3105,6 +3238,23 @@ function sendWelcomePackage(targetPubkey, targetAlias) {
             });
         }
     });
+}
+
+/**
+ * Helper to clean Maxima Addresses
+ * - Removes spaces (causes NumberFormatException)
+ * - UPDATED: Keeps IP:Port because Minima needs it for routing to non-contacts (like MLS)
+ * - NOW: Uses a STRICT WHITELIST to remove invisible unicode chars
+ */
+function cleanMaximaAddress(input) {
+    if (!input) return "";
+
+    // Regular trim first
+    var clean = input.trim();
+
+    // STRICT: Only allow alphanumeric, @, ., and :
+    // This removes ALL potential invisible characters, tabs, non-breaking spaces, etc.
+    return clean.replace(/[^a-zA-Z0-9@.:]/g, "");
 }
 
 /**
@@ -3207,6 +3357,22 @@ MDS.init(function (msg) {
                     MDS.log("⚠️ [SERVICE] Coin discovery error: " + err);
                 });
             }
+        } else if (msg.data && msg.data.service === "UPDATE_SETTINGS") {
+            MDS.log("⚙️ [SERVICE] Settings update received");
+            if (msg.data.interval) {
+                var val = parseInt(msg.data.interval);
+                if (val >= 30) {
+                    GOSSIP_INTERVAL = val * 1000;
+                    MDS.log("⚙️ [SERVICE] Gossip Interval updated to " + val + "s");
+                }
+            }
+            if (msg.data.limit) {
+                var val = parseInt(msg.data.limit);
+                if (val > 0) {
+                    DISCOVERY_LIMIT = val;
+                    MDS.log("⚙️ [SERVICE] Discovery Limit updated to " + val + " peers");
+                }
+            }
         }
     }
 
@@ -3243,8 +3409,7 @@ MDS.init(function (msg) {
 
             try {
                 var maxjson = JSON.parse(jsonstr);
-                MDS.log("🔍 [MAXIMA-DEBUG-ALL] App: " + app + " Type: " + (maxjson.type || maxjson.messageType) + " From: " + pubkey.substring(0, 10));
-                MDS.log("🔍 [MAXIMA] Type: " + (maxjson.type || maxjson.messageType));
+                MDS.log("🔍 [MAXIMA-DEBUG] App: " + app + " Type: " + (maxjson.type || maxjson.messageType) + " From: " + pubkey.substring(0, 10));
 
                 // ================== GROUP MESSAGES ==================
                 if (app === "metachain-group" && (maxjson.messageType === "history_request" || maxjson.messageType === "history_response")) {
@@ -3307,13 +3472,13 @@ MDS.init(function (msg) {
 
                 // ================== GOSSIP ==================
                 if (maxjson.type === "get_peers") {
-                    MDS.log("📨 [MAXIMA-GOSSIP] get_peers request from " + pubkey.substring(0, 10));
+                    MDS.log("📨 [GOSSIP-IN] get_peers from " + (maxjson.alias || pubkey.substring(0, 10)));
                     handleGetPeers(pubkey, maxjson);
                     return;
                 }
 
                 if (maxjson.type === "peers_response") {
-                    MDS.log("📨 [MAXIMA-GOSSIP] peers_response from " + pubkey.substring(0, 10));
+                    MDS.log("📥 [GOSSIP-IN] peers_response from " + pubkey.substring(0, 10));
                     handlePeersResponse(pubkey, maxjson);
                     return;
                 }
@@ -3397,6 +3562,22 @@ MDS.init(function (msg) {
                     return;
                 }
 
+                // ================== DISCOVERY & GOSSIP ==================
+                if (maxjson.type === "get_peers") {
+                    handleGetPeers(pubkey, maxjson);
+                    return;
+                }
+
+                if (maxjson.type === "register") {
+                    handleBeacon(maxjson, 'MAXIMA'); // Use handleBeacon for registration too
+                    return;
+                }
+
+                if (maxjson.type === "peers_response") {
+                    handlePeersResponse(pubkey, maxjson);
+                    return;
+                }
+
                 // ================== CHAT MESSAGES (Default) ==================
                 // FILTER: Only process actual chat message types
                 var validChatTypes = ["text", "image", "video", "audio", "file", "charm", "token", "gif", "sticker", "voice"];
@@ -3405,10 +3586,9 @@ MDS.init(function (msg) {
                     return;
                 }
 
-                MDS.log("⚠️ [MAXIMA] Unhandled type: " + (maxjson.type || maxjson.messageType || "unknown"));
-
+                MDS.log("⚠️ [MAXIMA-TYPE] Unhandled: " + (maxjson.type || maxjson.messageType || "unknown"));
             } catch (e) {
-                MDS.log("❌ [MAXIMA] Parse error: " + e.message);
+                MDS.log("❌ [MAXIMA-PARSE] Error: " + e.message);
             }
         }
     }
@@ -3437,22 +3617,31 @@ MDS.init(function (msg) {
                     if (!hexMatch) return;
 
                     var hexData = hexMatch[1].substring(2);
-                    var jsonStr = hexToUtf8Simple(hexData);
+                    var jsonStr = hexToUtf8(hexData);
                     jsonStr = jsonStr.replace(/[\x00-\x1F\x7F-\x9F]/g, "").trim();
-                    var beacon = JSON.parse(jsonStr);
 
-                    if (beacon.app === "metachain" && (beacon.type === "BEACON" || beacon.type === "register")) {
-                        if (MY_MAXIMA_PK && beacon.pubkey === MY_MAXIMA_PK) {
-                            return; // Ignore self
+                    try {
+                        var beacon = JSON.parse(jsonStr);
+                        if (beacon.app === "metachain") {
+                            if (MY_MAXIMA_PK && beacon.pubkey === MY_MAXIMA_PK) {
+                                return; // Ignore self
+                            }
+
+                            if (beacon.type === "BEACON" || beacon.type === "register") {
+                                MDS.log("📡 [P2P-IN] Beacon: " + beacon.alias + " from " + (beacon.address || "unknown"));
+                                handleBeacon(beacon, 'P2P');
+                            } else if (beacon.type === "peers_response") {
+                                MDS.log("📥 [GOSSIP-IN] peers_response broadcast detected");
+                                handlePeersResponse(null, beacon);
+                            } else {
+                                MDS.log("ℹ️ [P2P-TYPE] Unhandled metachain type: " + beacon.type);
+                            }
                         }
-                        MDS.log("📡 [P2P] Beacon: " + beacon.alias);
-                        handleBeacon(beacon, 'P2P');
-                    } else if (beacon.app === "metachain" && beacon.type === "peers_response") {
-                        MDS.log("📨 [P2P-GOSSIP] peers_response broadcast received");
-                        handlePeersResponse(null, beacon);
+                    } catch (jsonErr) {
+                        // Silent fail for non-JSON or other apps
                     }
                 } catch (e) {
-                    // Silent fail
+                    MDS.log("❌ [P2P-ERR] Log processing error: " + e.message);
                 }
             }
         }

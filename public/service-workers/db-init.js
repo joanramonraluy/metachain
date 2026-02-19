@@ -23,7 +23,29 @@ function initDatabase() {
     MDS.cmd("maxima action:info", function (maxInfo) {
         if (maxInfo.status) {
             MY_MAXIMA_PK = maxInfo.response.publickey;
+            MY_MAXIMA_ADDRESS = maxInfo.response.contact;
             MDS.log("🔑 [SW] My Public Key: " + MY_MAXIMA_PK);
+        }
+    });
+
+    // Load Discovery Settings
+    MDS.keypair.get("discovery_interval", function (res) {
+        if (res.status && res.value) {
+            var val = parseInt(res.value);
+            if (val >= 30) { // Minimum 30s enforcement
+                GOSSIP_INTERVAL = val * 1000;
+                MDS.log("⚙️ [SW] Gossip Interval set to " + val + "s");
+            }
+        }
+    });
+
+    MDS.keypair.get("discovery_limit", function (res) {
+        if (res.status && res.value) {
+            var val = parseInt(res.value);
+            if (val > 0) {
+                DISCOVERY_LIMIT = val;
+                MDS.log("⚙️ [SW] Discovery Limit set to " + val + " peers");
+            }
         }
     });
 
@@ -231,9 +253,12 @@ function initDatabase() {
             if (logRes.status) MDS.log("✅ [INIT] MINIMALOG listener registered");
         });
 
-        // Send initial beacon
-        sendBackgroundBeacon();
-        startGossip();
+        // Ensure the community MLS is configured before sending the first beacon
+        ensureCommunityMLS(function () {
+            // Send initial beacon (after MLS is guaranteed to be set)
+            sendBackgroundBeacon();
+            startGossip();
+        });
 
         // Register for periodic tasks
         MDS.cmd("event on newblock", function () {
@@ -253,3 +278,29 @@ function initDatabase() {
         MDS.log("📦 [INIT] Coin discovery scheduled for first NEWBLOCK event");
     });
 }
+
+// Ensures the Community Node MLS is set as the static MLS if none is configured.
+// This runs once at startup so new users don't need to visit Settings → Discovery.
+var COMMUNITY_MLS = "MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60G1CZAEPFTCRYUNCPYTUMZ267P1W92V6RBK39NBWJNG9N5D3R58K4UA426QQGC8YBB2MJS3320QQ0NNCG7KPEU7BVKYSAD1HGRBNBE78R1W87C1TPG8NFHV5W0YMKV90CCC6AMMSP0KCB7GN5A1M6VJFT4T43K3E44DT50V0U9S4Q9FBRP3U19T70PKF3GU9B7G6857E2BBRJ5WK10608004DRUR4W@185.132.90.98:9001";
+
+function ensureCommunityMLS(callback) {
+    MDS.cmd("maxima action:info", function (info) {
+        if (info.status && info.response.staticmls) {
+            // Already has a static MLS configured — leave it alone
+            MDS.log("✅ [MLS] Static MLS already configured: " + info.response.mls.substring(0, 20) + "...");
+            if (callback) callback();
+        } else {
+            // No static MLS — apply the community node automatically
+            MDS.log("🔧 [MLS] No static MLS. Auto-configuring Community Node...");
+            MDS.cmd("maxextra action:staticmls host:" + COMMUNITY_MLS, function (res) {
+                if (res.status) {
+                    MDS.log("✅ [MLS] Community Node configured successfully.");
+                } else {
+                    MDS.log("⚠️ [MLS] Could not configure Community Node: " + res.error);
+                }
+                if (callback) callback();
+            });
+        }
+    });
+}
+

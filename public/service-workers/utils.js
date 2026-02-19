@@ -10,8 +10,10 @@
 var LAST_GOSSIP = 0;
 var BEACON_INTERVAL = 60000; // 1 minute
 var MY_MAXIMA_PK = "";
+var MY_MAXIMA_ADDRESS = "";
 var BEACON_CACHE = {};
 var GOSSIP_INTERVAL = 30000; // 30 seconds
+var DISCOVERY_LIMIT = 5; // Default peer limit
 var LAST_BEACON_TIME = 0;
 
 // ============================================================================

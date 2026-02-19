@@ -113,6 +113,8 @@ function sendBackgroundBeacon() {
         var myAddress = maxInfo.response.contact;
         var myName = maxInfo.response.name || "Anonymous";
         var myAvatar = maxInfo.response.icon ? decodeURIComponent(maxInfo.response.icon) : "";
+        var mls = maxInfo.response.mls;
+        var staticmls = maxInfo.response.staticmls;
 
         MDS.keypair.get("p2p_bio", function (bioRes) {
             var bio = (bioRes.status && bioRes.value) ? bioRes.value : "";
@@ -187,6 +189,20 @@ function sendBackgroundBeacon() {
                             MDS.cmd("message data:" + hexData, function (res) {
                                 MDS.log("📡 [BG-BEACON] P2P broadcast sent");
                             });
+
+                            // MLS Broadcast (Bootstrap)
+                            if (mls && staticmls && mls !== myAddress) {
+                                var bootstrapBeacon = JSON.parse(JSON.stringify(beacon));
+                                bootstrapBeacon.type = "register"; // MLS expects 'register'
+
+                                MDS.cmd("maxima action:send to:" + mls + " application:metachain data:" + JSON.stringify(bootstrapBeacon), function (res) {
+                                    if (res.status) {
+                                        MDS.log("🌐 [BG-BEACON] Sent to MLS: " + mls);
+                                    } else {
+                                        MDS.log("⚠️ [BG-BEACON] MLS send failed: " + res.error);
+                                    }
+                                });
+                            }
 
                             // Save self to DB
                             handleBeacon(beacon, 'SELF');

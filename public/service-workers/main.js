@@ -98,6 +98,22 @@ MDS.init(function (msg) {
                     MDS.log("⚠️ [SERVICE] Coin discovery error: " + err);
                 });
             }
+        } else if (msg.data && msg.data.service === "UPDATE_SETTINGS") {
+            MDS.log("⚙️ [SERVICE] Settings update received");
+            if (msg.data.interval) {
+                var val = parseInt(msg.data.interval);
+                if (val >= 30) {
+                    GOSSIP_INTERVAL = val * 1000;
+                    MDS.log("⚙️ [SERVICE] Gossip Interval updated to " + val + "s");
+                }
+            }
+            if (msg.data.limit) {
+                var val = parseInt(msg.data.limit);
+                if (val > 0) {
+                    DISCOVERY_LIMIT = val;
+                    MDS.log("⚙️ [SERVICE] Discovery Limit updated to " + val + " peers");
+                }
+            }
         }
     }
 
@@ -134,8 +150,7 @@ MDS.init(function (msg) {
 
             try {
                 var maxjson = JSON.parse(jsonstr);
-                MDS.log("🔍 [MAXIMA-DEBUG-ALL] App: " + app + " Type: " + (maxjson.type || maxjson.messageType) + " From: " + pubkey.substring(0, 10));
-                MDS.log("🔍 [MAXIMA] Type: " + (maxjson.type || maxjson.messageType));
+                MDS.log("🔍 [MAXIMA-DEBUG] App: " + app + " Type: " + (maxjson.type || maxjson.messageType) + " From: " + pubkey.substring(0, 10));
 
                 // ================== GROUP MESSAGES ==================
                 if (app === "metachain-group" && (maxjson.messageType === "history_request" || maxjson.messageType === "history_response")) {
@@ -198,13 +213,13 @@ MDS.init(function (msg) {
 
                 // ================== GOSSIP ==================
                 if (maxjson.type === "get_peers") {
-                    MDS.log("📨 [MAXIMA-GOSSIP] get_peers request from " + pubkey.substring(0, 10));
+                    MDS.log("📨 [GOSSIP-IN] get_peers from " + (maxjson.alias || pubkey.substring(0, 10)));
                     handleGetPeers(pubkey, maxjson);
                     return;
                 }
 
                 if (maxjson.type === "peers_response") {
-                    MDS.log("📨 [MAXIMA-GOSSIP] peers_response from " + pubkey.substring(0, 10));
+                    MDS.log("📥 [GOSSIP-IN] peers_response from " + pubkey.substring(0, 10));
                     handlePeersResponse(pubkey, maxjson);
                     return;
                 }
@@ -288,6 +303,22 @@ MDS.init(function (msg) {
                     return;
                 }
 
+                // ================== DISCOVERY & GOSSIP ==================
+                if (maxjson.type === "get_peers") {
+                    handleGetPeers(pubkey, maxjson);
+                    return;
+                }
+
+                if (maxjson.type === "register") {
+                    handleBeacon(maxjson, 'MAXIMA'); // Use handleBeacon for registration too
+                    return;
+                }
+
+                if (maxjson.type === "peers_response") {
+                    handlePeersResponse(pubkey, maxjson);
+                    return;
+                }
+
                 // ================== CHAT MESSAGES (Default) ==================
                 // FILTER: Only process actual chat message types
                 var validChatTypes = ["text", "image", "video", "audio", "file", "charm", "token", "gif", "sticker", "voice"];
@@ -296,10 +327,9 @@ MDS.init(function (msg) {
                     return;
                 }
 
-                MDS.log("⚠️ [MAXIMA] Unhandled type: " + (maxjson.type || maxjson.messageType || "unknown"));
-
+                MDS.log("⚠️ [MAXIMA-TYPE] Unhandled: " + (maxjson.type || maxjson.messageType || "unknown"));
             } catch (e) {
-                MDS.log("❌ [MAXIMA] Parse error: " + e.message);
+                MDS.log("❌ [MAXIMA-PARSE] Error: " + e.message);
             }
         }
     }
@@ -328,22 +358,31 @@ MDS.init(function (msg) {
                     if (!hexMatch) return;
 
                     var hexData = hexMatch[1].substring(2);
-                    var jsonStr = hexToUtf8Simple(hexData);
+                    var jsonStr = hexToUtf8(hexData);
                     jsonStr = jsonStr.replace(/[\x00-\x1F\x7F-\x9F]/g, "").trim();
-                    var beacon = JSON.parse(jsonStr);
 
-                    if (beacon.app === "metachain" && (beacon.type === "BEACON" || beacon.type === "register")) {
-                        if (MY_MAXIMA_PK && beacon.pubkey === MY_MAXIMA_PK) {
-                            return; // Ignore self
+                    try {
+                        var beacon = JSON.parse(jsonStr);
+                        if (beacon.app === "metachain") {
+                            if (MY_MAXIMA_PK && beacon.pubkey === MY_MAXIMA_PK) {
+                                return; // Ignore self
+                            }
+
+                            if (beacon.type === "BEACON" || beacon.type === "register") {
+                                MDS.log("📡 [P2P-IN] Beacon: " + beacon.alias + " from " + (beacon.address || "unknown"));
+                                handleBeacon(beacon, 'P2P');
+                            } else if (beacon.type === "peers_response") {
+                                MDS.log("📥 [GOSSIP-IN] peers_response broadcast detected");
+                                handlePeersResponse(null, beacon);
+                            } else {
+                                MDS.log("ℹ️ [P2P-TYPE] Unhandled metachain type: " + beacon.type);
+                            }
                         }
-                        MDS.log("📡 [P2P] Beacon: " + beacon.alias);
-                        handleBeacon(beacon, 'P2P');
-                    } else if (beacon.app === "metachain" && beacon.type === "peers_response") {
-                        MDS.log("📨 [P2P-GOSSIP] peers_response broadcast received");
-                        handlePeersResponse(null, beacon);
+                    } catch (jsonErr) {
+                        // Silent fail for non-JSON or other apps
                     }
                 } catch (e) {
-                    // Silent fail
+                    MDS.log("❌ [P2P-ERR] Log processing error: " + e.message);
                 }
             }
         }

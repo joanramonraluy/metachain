@@ -759,6 +759,33 @@ WHERE(${addressClause}) AND status = 'pending'`;
                     return;
                 }
 
+                // ================== DISCOVERY PROTOCOL ==================
+                // Handle peer registration beacons (from both Gossip and Beacon handlers)
+                if (json.type === "register") {
+                    console.log(`📡 [DISCOVERY] Received register from: ${json.alias || from.substring(0, 10)}`);
+                    const now = Date.now();
+                    const escapedAlias = (json.alias || 'Anonymous').replace(/'/g, "''");
+                    const escapedBio = (json.bio || '').replace(/'/g, "''");
+                    const escapedAddress = (json.address || '').replace(/'/g, "''");
+                    const allowChats = (json.allowNonContactChats !== undefined && json.allowNonContactChats !== null)
+                        ? (json.allowNonContactChats ? 1 : 0) : 1;
+                    const extraData = JSON.stringify(json).replace(/'/g, "''");
+                    const upsertSql = `MERGE INTO DISCOVERED_PEERS(publickey, alias, bio, address, last_seen, source, allow_non_contact_chats, extra_data)
+KEY(publickey)
+VALUES('${from}', '${escapedAlias}', '${escapedBio}', '${escapedAddress}', ${now}, 'MAXIMA', ${allowChats}, '${extraData}')`;
+                    this.runSQL(upsertSql).then(() => {
+                        console.log(`✅ [DISCOVERY] Peer registered/updated: ${json.alias}`);
+                        window.dispatchEvent(new CustomEvent('DISCOVERY_UPDATE'));
+                    }).catch(err => console.error(`❌ [DISCOVERY] Failed to register peer:`, err));
+                    return;
+                }
+
+                // get_peers is sent from clients to the MLS - handled entirely by the Service Worker.
+                // We silently ignore it here to avoid spamming logs.
+                if (json.type === "get_peers") {
+                    return;
+                }
+
                 // Normal message - FILTER: Only process actual chat message types
                 const validChatTypes = ["text", "image", "video", "audio", "file", "charm", "token", "gif", "sticker", "voice"];
                 if (!validChatTypes.includes(json.type)) {

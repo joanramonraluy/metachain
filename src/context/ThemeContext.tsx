@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { MDS } from '@minima-global/mds';
 import { StatusBar, Style } from '@capacitor/status-bar';
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, SystemBars, SystemBarsStyle, SystemBarType } from '@capacitor/core';
 
 // Define available themes
 export type ThemeColor = 'sky' | 'cyan' | 'teal' | 'emerald' | 'slate' | 'gray' | 'zinc' | 'neutral' | 'stone';
@@ -239,12 +239,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
                     await StatusBar.setBackgroundColor({ color: '#00000000' });
                 }
 
-                // Navigation Bar - Dynamic access to bypass build-time resolution errors
-                const NavigationBarPlugin = (Capacitor as any).Plugins?.NavigationBar;
-                if (NavigationBarPlugin) {
-                    await NavigationBarPlugin.setColor({ color: isDark ? '#111827' : '#ffffff' });
-                }
-
+                // Navigation Bar - Using Capacitor 8 SystemBars API
+                // We map the theme mode to SystemBars style
+                await SystemBars.setStyle({
+                    style: isDark ? SystemBarsStyle.Dark : SystemBarsStyle.Light,
+                    bar: SystemBarType.NavigationBar
+                });
 
             } catch (e) {
                 // Plugins might not be available (web mode), ignore errors

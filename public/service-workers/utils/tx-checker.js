@@ -165,13 +165,13 @@ function check3BlockConfirmation(txpowid, callback) {
 
             // Get current blockchain tip
             MDS.cmd("status", function (statusResponse) {
-                if (!statusResponse.status || !statusResponse.response) {
-                    MDS.log("⚠️ [SW-TX-CONFIRM] Could not get blockchain status");
+                if (!statusResponse.status || !statusResponse.response || !statusResponse.response.chain) {
+                    MDS.log("⚠️ [SW-TX-CONFIRM] Node not ready or no blockchain tip yet");
                     callback(null, 'pending');
                     return;
                 }
 
-                var currentBlock = statusResponse.response.chain && statusResponse.response.chain.block;
+                var currentBlock = statusResponse.response.chain.block;
 
                 if (currentBlock === undefined || currentBlock === null) {
                     MDS.log("⚠️ [SW-TX-CONFIRM] Could not get current block number");

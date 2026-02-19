@@ -25,7 +25,6 @@
     "@capacitor/core": "^8.0.2",
     "@capacitor/local-notifications": "^8.0.0",
     "@capacitor/status-bar": "^8.0.0",
-    "@capacitor/navigation-bar": "8.0.0",
     "@capacitor/keyboard": "8.0.0",
     "@minima-global/mds": "^0.14.11",
     "@tanstack/react-router": "^1.76.3",

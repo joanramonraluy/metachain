@@ -196,6 +196,12 @@ function DiscoverySettings() {
                       const safeVal = val < 30 ? 30 : val;
                       setDiscoveryInterval(safeVal);
                       MDS.keypair.set('discovery_interval', String(safeVal));
+                      // Send live update
+                      const cmd = `service command:UPDATE_SETTINGS data:${JSON.stringify({ interval: safeVal })}`;
+                      // @ts-ignore
+                      MDS.cmd(cmd, (res) => {
+                        if (!res.status) console.warn("Failed to update SW settings", res);
+                      });
                     }}
                   />
                   <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
@@ -222,6 +228,12 @@ function DiscoverySettings() {
                       const safeVal = val < 1 ? 1 : (val > 50 ? 50 : val);
                       setDiscoveryLimit(safeVal);
                       MDS.keypair.set('discovery_limit', String(safeVal));
+                      // Send live update
+                      const cmd = `service command:UPDATE_SETTINGS data:${JSON.stringify({ limit: safeVal })}`;
+                      // @ts-ignore
+                      MDS.cmd(cmd, (res) => {
+                        if (!res.status) console.warn("Failed to update SW settings", res);
+                      });
                     }}
                   />
                   <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
