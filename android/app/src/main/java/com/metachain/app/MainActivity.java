@@ -69,6 +69,8 @@ public class MainActivity extends BridgeActivity {
 
 
         final WebView webView = getBridge().getWebView();
+        webView.setFitsSystemWindows(false); // Ensure WebView extends behind navigation bar
+        webView.setBackgroundColor(android.graphics.Color.TRANSPARENT); // Allow seeing through to windowBackground if needed
 
         webView.setWebViewClient(new BridgeWebViewClient(getBridge()) {
             @Override
