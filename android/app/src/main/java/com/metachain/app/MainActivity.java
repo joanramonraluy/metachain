@@ -13,6 +13,11 @@ import android.graphics.Rect;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.graphics.Insets;
+import android.view.Window;
+import android.view.WindowManager;
+import androidx.core.content.ContextCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
+import androidx.core.view.WindowCompat;
 
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.BridgeWebViewClient;
@@ -28,7 +33,6 @@ import java.io.InputStreamReader;
 import org.json.JSONArray;
 
 public class MainActivity extends BridgeActivity {
-    private int lastKeyboardHeight = 0;
     private static final String PREF_CACHED_UID = "cached_metachain_uid";
     private static final int MAX_RETRIES = 5;
     private static final int RETRY_DELAY_MS = 3000;
@@ -36,6 +40,33 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        // Theme the Android Navigation Bar to match the app's dynamic theme
+        Window window = getWindow();
+        
+        // Edge-to-edge: This allows the app content to draw behind the status and navigation bars,
+        // which is necessary for the semi-transparent (alpha) color to show what's behind it.
+        WindowCompat.setDecorFitsSystemWindows(window, false);
+
+        window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+        // CRITICAL: TRANSLUCENT_NAVIGATION must be OFF for setNavigationBarColor() to support custom alpha/colors.
+        window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION);
+        
+        // Explicitly set the color from our resources (includes 40% alpha)
+        window.setNavigationBarColor(ContextCompat.getColor(this, R.color.navigationBarColor));
+        
+        // Detect if dark mode is active to set icon color
+        int nightModeFlags = getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
+        boolean isDarkMode = nightModeFlags == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+
+        WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(window, window.getDecorView());
+        if (controller != null) {
+            // If dark mode is active, icons should be light (false). If not, icons should be dark (true).
+            controller.setAppearanceLightNavigationBars(!isDarkMode);
+        }
+
+
+
 
         final WebView webView = getBridge().getWebView();
 
@@ -53,25 +84,7 @@ public class MainActivity extends BridgeActivity {
             }
         });
 
-        final View rootView = findViewById(android.R.id.content);
-        rootView.getViewTreeObserver().addOnGlobalLayoutListener(() -> {
-            Rect r = new Rect();
-            rootView.getWindowVisibleDisplayFrame(r);
-            int screenHeight = rootView.getRootView().getHeight();
-            int keyboardHeight = screenHeight - r.bottom;
-
-            if (Math.abs(keyboardHeight - lastKeyboardHeight) > 100) {
-                lastKeyboardHeight = keyboardHeight;
-                ViewGroup.LayoutParams params = webView.getLayoutParams();
-                if (keyboardHeight > 100) {
-                    params.height = r.bottom;
-                } else {
-                    params.height = ViewGroup.LayoutParams.MATCH_PARENT;
-                }
-                webView.setLayoutParams(params);
-                webView.requestLayout();
-            }
-        });
+        // Let Capacitor handle the WebView resizing instead of overriding it manually.
 
         discoverMiniDappUid();
         handleSSL();

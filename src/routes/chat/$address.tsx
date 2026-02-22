@@ -210,7 +210,7 @@ function ChatPage() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const historyRequestedFor = useRef<string | null>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const cursorPositionRef = useRef<number | null>(null);
@@ -220,18 +220,14 @@ function ChatPage() {
 
 
 
-  // Auto-focus input
+  // Reset textarea height when input is cleared (e.g. after sending a message)
   useEffect(() => {
-    if (showTransferSelector) return;
-    const timer = setTimeout(() => {
-      if (inputRef.current) {
-        inputRef.current.focus();
-      }
-    }, 150);
-    return () => clearTimeout(timer);
-  }, [address, showTransferSelector]);
+    if (input === '' && inputRef.current) {
+      inputRef.current.style.height = 'auto';
+    }
+  }, [input]);
 
-  // Scroll to bottom when keyboard opens
+  // Scroll to bottom when keyboard opens (keyboardDidShow only — avoids double scroll)
   useEffect(() => {
     const handleKeyboardShow = () => {
       setTimeout(() => {
@@ -239,11 +235,9 @@ function ChatPage() {
       }, 100);
     };
 
-    const showListener = Keyboard.addListener('keyboardWillShow', handleKeyboardShow);
     const didShowListener = Keyboard.addListener('keyboardDidShow', handleKeyboardShow);
 
     return () => {
-      showListener.then(l => l.remove());
       didShowListener.then(l => l.remove());
     };
   }, []);
@@ -879,23 +873,25 @@ function ChatPage() {
     pendingReload.current = false; // Clear pending flag as we are starting now
 
     try {
-      // 1. Try to load from cache
+      // 1. Try to load from cache — but ONLY if there are no messages already in state.
+      // If the user just sent a message (optimistic update), we skip the cache to prevent
+      // the new message from briefly disappearing before the DB fetch completes.
       const cacheKey = `cached_msgs_${targetKey}`;
       const cached = localStorage.getItem(cacheKey);
       if (cached) {
         try {
           const cachedMsgs = JSON.parse(cached);
-          // If we have cached messages, process them immediately
           if (Array.isArray(cachedMsgs) && cachedMsgs.length > 0) {
-            // We need to pass them through the parser logic or store parsed?
-            // Storing parsed is risky due to types.
-            // Let's assume we store PARSED messages in cache to save processing.
-            // Wait, check if we parsed rawMessages below.
-            // YES, we map rawMessages to parsedMessages.
-            // So we should store parsedMessages.
-            setMessages(deduplicateMessages(cachedMsgs));
-            console.log("⚠️ [CHAT-DB] Loaded messages from cache");
-            // Don't return, allow fetch to proceed and update
+            // Only apply cache if there is no current optimistic state (e.g. first load)
+            setMessages((currentMessages) => {
+              if (currentMessages.length === 0) {
+                console.log("⚠️ [CHAT-DB] Loaded messages from cache (first load)");
+                return deduplicateMessages(cachedMsgs);
+              }
+              // Already have messages (e.g. optimistic send) — skip cache to avoid flicker
+              console.log("⚠️ [CHAT-DB] Skipping cache load — optimistic messages exist");
+              return currentMessages;
+            });
           }
         } catch (e) { }
       }
@@ -1061,20 +1057,7 @@ function ChatPage() {
       if (contact?.publickey) {
         minimaService.sendReadReceipt(contact.publickey);
       }
-
-      // Transaction cleanup is now handled by Service Worker
-
-      // TRIGGER SYNC: Request history from peer to catch up on missed messages
-      if (contact?.publickey) {
-        // Guarded history sync inside initChat (can also be called by useEffect, this is a fallback)
-        if (historyRequestedFor.current !== contact.publickey) {
-          historyRequestedFor.current = contact.publickey;
-          console.log("🔄 [CHAT] Triggering history sync (init) with", contact.publickey);
-          setIsSyncing(true);
-          minimaService.requestChatHistory(contact.publickey)
-            .catch(err => console.error("❌ [CHAT] Sync request failed:", err));
-        }
-      }
+      // Note: history sync is handled by the contact-aware useEffect below (guarded)
     };
 
     initChat();
@@ -1133,8 +1116,10 @@ function ChatPage() {
         minimaService.requestChatHistory(contact.publickey).catch(console.error);
 
         // SMART SYNC: Trigger Status Check (Phase 1/2)
-        // This ensures we catch any gaps even if we bypassed the Global Sync Check
         minimaService.sendSyncStatusCheck(contact.publickey).catch(err => console.warn("Sync Check Failed:", err));
+
+        // Safety net: if peer is offline, the isSyncing spinner should not stay forever
+        setTimeout(() => setIsSyncing(false), 10000);
       } else {
         console.log(`Skipping duplicate history request for ${contact.publickey}`);
       }
@@ -1352,16 +1337,21 @@ function ChatPage() {
   /* ----------------------------------------------------------------------------
       AUTOSCROLL
   ---------------------------------------------------------------------------- */
-  const isInitialLoad = useRef(true);
+  // We track how many times messages have been set since entering the chat.
+  // The first few (cache + DB) should scroll instantly so there's no animation
+  // from top to bottom on open. After that, smooth scroll for new messages.
+  const scrollLoadCount = useRef(0);
 
-  // Reset initial load state when address changes
+  // Reset counter when switching chats
   useEffect(() => {
-    isInitialLoad.current = true;
+    scrollLoadCount.current = 0;
   }, [address]);
 
   const scrollToBottom = () => {
-    if (isInitialLoad.current) {
-      // Use requestAnimationFrame to ensure DOM is updated before scrolling
+    scrollLoadCount.current += 1;
+    const isInitial = scrollLoadCount.current <= 2; // cache + DB = first 2 loads
+    if (isInitial) {
+      // Instant jump — no animation. Double rAF to ensure DOM is painted.
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           if (scrollContainerRef.current) {
@@ -1369,7 +1359,6 @@ function ChatPage() {
           }
         });
       });
-      isInitialLoad.current = false;
     } else {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
@@ -2241,7 +2230,7 @@ function ChatPage() {
       {/* CHAT BODY - Scrollable */}
       <div
         ref={scrollContainerRef}
-        className={`flex-1 overflow-y-auto overflow-x-hidden flex flex-col p-2 sm:p-4 pb-20 
+        className={`flex-1 overflow-y-auto overflow-x-hidden flex flex-col p-2 sm:p-4 pb-2 sm:pb-4
           ${chatBackground === 'diagonal' ? 'bg-gray-50 dark:bg-gray-900' :
 
             chatBackground === 'default' ? 'bg-gray-50 dark:bg-gray-900' :
@@ -2512,7 +2501,7 @@ function ChatPage() {
         <div ref={messagesEndRef} />
       </div>
       {/* INPUT BAR - Fixed at bottom */}
-      <div className="w-full max-w-full px-1.5 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] bg-white dark:bg-gray-800 flex gap-0.5 items-center flex-shrink-0 z-10 relative border-t border-gray-200 dark:border-gray-700 transition-colors box-border">
+      <div className="w-full max-w-full px-1.5 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] bg-white dark:bg-gray-800 flex gap-0.5 items-center flex-shrink-0 z-10 relative border-t border-gray-200 dark:border-gray-700 transition-colors box-border">
 
 
 
@@ -2584,17 +2573,21 @@ function ChatPage() {
             </svg>
           </button>
 
-          <input
+          <textarea
             ref={inputRef}
+            rows={1}
             onFocus={() => setShowEmojiPicker(false)}
             onKeyUp={(e) => { cursorPositionRef.current = e.currentTarget.selectionStart; }}
             onClick={(e) => { cursorPositionRef.current = e.currentTarget.selectionStart; }}
             onSelect={(e) => { cursorPositionRef.current = e.currentTarget.selectionStart; }}
-            className={`flex-1 bg-transparent outline-none text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 text-[15px] max-h-32 py-1 disabled:opacity-100 disabled:cursor-not-allowed`}
-            type="text"
+            className={`flex-1 bg-transparent outline-none text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 text-[15px] max-h-32 py-1 disabled:opacity-100 disabled:cursor-not-allowed resize-none overflow-y-auto`}
             value={input}
             disabled={isBlocked || blockedByThem || blockReason !== 'none'}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value);
+              e.target.style.height = 'auto';
+              e.target.style.height = `${e.target.scrollHeight}px`;
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();

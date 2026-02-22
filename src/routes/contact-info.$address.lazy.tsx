@@ -398,9 +398,24 @@ function ContactInfoPage() {
         // Mark as requested
         profileRequestedRef.current = true;
 
-        // Auto-request profile
+        // Fix: Only send a live profile_request if the peer is likely online.
+        // Determined by last_seen from DISCOVERED_PEERS (populated for P2P peers).
+        // Maxima contacts (isMaximaContact=true) don't have lastseen — always request.
+        const ONLINE_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes — same as discovery.service
+        const lastSeenTs = contact.lastseen ? Number(contact.lastseen) : null;
+        const isLikelyOnline = isMaximaContact || (lastSeenTs !== null && (Date.now() - lastSeenTs) < ONLINE_THRESHOLD_MS);
+
+        if (!isLikelyOnline) {
+            // Peer is offline — use locally cached data from DISCOVERED_PEERS instead of
+            // sending a profile_request that will time out after 30 seconds with no response.
+            console.log('ℹ️ [PROFILE] Peer appears offline (last_seen too old). Using local cache data.');
+            setProfileLoaded(true); // Unblock the UI immediately
+            return;
+        }
+
+        // Auto-request profile (peer is online or is a Maxima contact)
         handleRequestProfile();
-    }, [contact, address]); // Added address dependency to be safe
+    }, [contact, address, isMaximaContact]); // Added isMaximaContact dependency
 
     const copyToClipboard = (text: string, fieldId: string) => {
         navigator.clipboard.writeText(text);

@@ -7,6 +7,7 @@ import { MDS } from "@minima-global/mds";
 import { runSQL } from "./database.service";
 
 import { LocalNotifications } from '@capacitor/local-notifications';
+import { Badge } from '@capawesome/capacitor-badge';
 
 export interface ChatMessage {
     id?: number;
@@ -64,7 +65,13 @@ class ChatService {
     async updateUnreadNotification() {
         // Only run if native (optional check)
         try {
-            const sql = "SELECT COUNT(*) as count FROM CHAT_MESSAGES WHERE read = 0 AND username != 'Me'";
+            const sql = `
+                SELECT COUNT(*) as count 
+                FROM CHAT_MESSAGES m
+                LEFT JOIN CHAT_STATUS s ON m.publickey = s.publickey
+                WHERE m.username != 'Me' 
+                AND (s.last_opened IS NULL OR m.date > s.last_opened)
+            `;
             MDS.sql(sql, async (res: any) => {
                 if (res.status && res.rows && res.rows.length > 0) {
                     const count = parseInt(res.rows[0].COUNT);
@@ -91,9 +98,20 @@ class ChatService {
                                 }
                             ]
                         });
+
+                        try {
+                            await Badge.set({ count });
+                        } catch (e) {
+                            console.warn("⚠️ [BADGE] Failed to set badge:", e);
+                        }
                     } else {
                         // If 0, ensure notification is gone
                         await this.clearNotifications();
+                        try {
+                            await Badge.clear();
+                        } catch (e) {
+                            console.warn("⚠️ [BADGE] Failed to clear badge:", e);
+                        }
                     }
                 }
             });

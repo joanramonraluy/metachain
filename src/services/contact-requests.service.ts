@@ -104,6 +104,13 @@ export async function getContactChatPermission(contactPublicKey: string): Promis
             const row = res.rows[0];
             const allowNonContactChats = row.ALLOW_NON_CONTACT_CHATS;
 
+            // NULL means the record predates this field (old Mainnet entries).
+            // Default to TRUE (open) — consistent with beacon.handler.js default.
+            if (allowNonContactChats === null || allowNonContactChats === undefined) {
+                console.log(`⚠️ [CHAT-PERM] NULL value for ${contactPublicKey.substring(0, 10)}... — defaulting to TRUE (legacy record)`);
+                return true;
+            }
+
             const permissionGranted = (
                 allowNonContactChats === true ||
                 allowNonContactChats === 1 ||

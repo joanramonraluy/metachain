@@ -297,7 +297,7 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
 
         {/* Text with Link Parsing - Hide if it's just the redundant token amount */}
         {text && (!isTokenTransfer || (isTokenTransfer && !text.includes(tokenAmount!.amount) && !text.includes(tokenAmount!.tokenName))) && (
-          <p className={`leading-relaxed whitespace-pre-wrap break-all mt-2 ${isTokenTransfer
+          <p className={`leading-relaxed whitespace-pre-wrap break-words mt-2 ${isTokenTransfer
             ? 'text-gray-600 dark:text-gray-300 font-normal border-t border-gray-200 dark:border-gray-600 pt-2 text-[15px]'
             : /^[\p{Extended_Pictographic}\s]{1,12}$/u.test(text) && !isCharm && !isTokenTransfer
               ? 'text-5xl leading-tight py-2' // Jumbo size for emojis

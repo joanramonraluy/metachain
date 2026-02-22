@@ -2761,8 +2761,8 @@ function handleBeacon(beacon, source) {
             return;
         }
 
-        // Check if this is our own beacon
-        if (MY_MAXIMA_PK && beacon.pubkey === MY_MAXIMA_PK) {
+        // Check if this is our own beacon — but always allow source='SELF' to save own record to DB
+        if (MY_MAXIMA_PK && beacon.pubkey === MY_MAXIMA_PK && source !== 'SELF') {
             MDS.log("⏭️ [BEACON-SELF] Ignoring own beacon from " + source);
             return;
         }

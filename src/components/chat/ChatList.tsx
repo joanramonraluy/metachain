@@ -75,30 +75,34 @@ export default function ChatList() {
 
             let contactsMap = new Map<string, Contact>();
 
-            // 1. Fetch Contacts (Might fail if offline)
-            try {
-                // Fetch contacts first with timeout
-                // MDS.cmd.maxcontacts() usually returns a promise (or we assume it does based on await usage)
+            // 1. Fetch Contacts Promise
+            const fetchContactsPromise = (async () => {
                 const contactsRes: any = await withTimeout(MDS.cmd.maxcontacts());
                 const contactsList: Contact[] = contactsRes?.response?.contacts || [];
 
-                // Create a map for quick lookup
                 contactsList.forEach((contact: Contact) => {
                     if (contact.publickey) {
                         contactsMap.set(contact.publickey, contact);
                     }
                 });
-            } catch (err: any) {
-                console.warn("⚠️ [CHAT-LIST] Failed to fetch contacts (offline/timeout):", err);
-                if (isMounted) setError(null); // Don't show error to user, just log warning
+            })();
+
+            // 2. Fetch Chats Promise
+            const fetchChatsPromise = fetchChats();
+
+            // Run both concurrently
+            const [contactsResult, chatsResult] = await Promise.allSettled([
+                fetchContactsPromise,
+                fetchChatsPromise
+            ]);
+
+            if (contactsResult.status === 'rejected') {
+                console.warn("⚠️ [CHAT-LIST] Failed to fetch contacts (offline/timeout):", contactsResult.reason);
             }
 
-            // 2. Fetch recent chats (Local DB - should always work)
-            try {
-                await fetchChats();
-            } catch (err: any) {
-                console.error("❌ [CHAT-LIST] Fetch chats error:", err);
-                if (isMounted) setError(err.message || "Unknown error");
+            if (chatsResult.status === 'rejected') {
+                console.error("❌ [CHAT-LIST] Fetch chats error:", chatsResult.reason);
+                if (isMounted) setError(chatsResult.reason?.message || "Unknown error");
             }
 
             if (isMounted) {

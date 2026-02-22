@@ -42,6 +42,10 @@ export const getMetachainUsers = async (): Promise<MetachainUser[]> => {
     return result.rows || [];
 };
 
+// A peer is considered "online" if their last beacon was seen within this window.
+// Beacons are sent every ~30s (GOSSIP_INTERVAL), so 10 min gives ample margin.
+const ONLINE_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
+
 // Combined: Get users with online/offline status
 export const getUsersWithStatus = async (): Promise<UserWithStatus[]> => {
     // Fetch both layers and merge in JS to ensure full visibility
@@ -193,7 +197,7 @@ export const getUsersWithStatus = async (): Promise<UserWithStatus[]> => {
                 alias: (alias && alias !== 'Unknown' && alias !== 'Anonymous') ? safeDecode(alias) : (existing.alias || alias),
                 bio: safeDecode(bio) || existing.bio,
                 address: address || existing.address,
-                is_online: true,
+                is_online: lastSeen ? (Date.now() - Number(lastSeen)) < ONLINE_THRESHOLD_MS : false,
                 source: source as 'P2P' | 'BOOTSTRAP',
                 last_updated: Math.max(existing.last_updated, lastSeen),
                 // Merge Extended Info
@@ -213,7 +217,7 @@ export const getUsersWithStatus = async (): Promise<UserWithStatus[]> => {
                 address: address,
                 first_seen: lastSeen,
                 last_updated: lastSeen,
-                is_online: true,
+                is_online: lastSeen ? (Date.now() - Number(lastSeen)) < ONLINE_THRESHOLD_MS : false,
                 source: source as 'P2P' | 'BOOTSTRAP',
                 // Extended Info
                 avatar: extendedInfo.avatar,
