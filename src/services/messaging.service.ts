@@ -8,6 +8,11 @@ import { runSQL, utf8ToHex, getAndIncrementSequenceNumber } from "./database.ser
 import { chatService, ChatMessage } from "./chat.service";
 import { offlineQueueService } from "./offline-queue.service";
 
+const VERBOSE_NETWORK_LOGS = false;
+const networkLog = (...args: any[]) => {
+    if (VERBOSE_NETWORK_LOGS) console.log(...args);
+};
+
 /* ----------------------------------------------------------------------------
    HELPER: Address Cleaner (Ported from Service Worker)
 ---------------------------------------------------------------------------- */
@@ -434,7 +439,7 @@ export async function retryMessage(data: {
 ---------------------------------------------------------------------------- */
 
 export async function sendReadReceipt(toPublicKey: string) {
-    console.log("📤 [READ-RECEIPT] Sending to", toPublicKey);
+    networkLog("📤 [READ-RECEIPT] Sending to", toPublicKey);
     try {
         const payload = {
             message: "",
@@ -456,7 +461,7 @@ export async function sendReadReceipt(toPublicKey: string) {
         if (toPublicKey.startsWith('0x')) {
             const mxAddress = await resolveMaximaAddressFromPubkey(toPublicKey);
             if (mxAddress) {
-                console.log(`🔍 [READ-RECEIPT] ✅ Found Maxima Address for ${toPublicKey.substring(0, 10)}...`);
+                networkLog(`🔍 [READ-RECEIPT] ✅ Found Maxima Address for ${toPublicKey.substring(0, 10)}...`);
                 sendParams.to = mxAddress;
             } else {
                 sendParams.publickey = toPublicKey;
@@ -468,7 +473,7 @@ export async function sendReadReceipt(toPublicKey: string) {
         }
 
         await MDS.cmd.maxima({ params: sendParams });
-        console.log("✅ [READ-RECEIPT] Sent successfully");
+        networkLog("✅ [READ-RECEIPT] Sent successfully");
 
         // Mark received messages as read locally
         // CRITICAL: Don't mark as 'read' if the message has an active transaction (pending/sent)
@@ -527,7 +532,7 @@ export async function sendDeliveryReceipt(toPublicKey: string) {
 ---------------------------------------------------------------------------- */
 
 export async function sendPing(toPublicKey: string) {
-    console.log("📡 [PING] Sending to", toPublicKey);
+    networkLog("📡 [PING] Sending to", toPublicKey);
     try {
         const payload = {
             message: "",
@@ -549,7 +554,7 @@ export async function sendPing(toPublicKey: string) {
         if (toPublicKey.startsWith('0x')) {
             const mxAddress = await resolveMaximaAddressFromPubkey(toPublicKey);
             if (mxAddress) {
-                console.log(`📡 [PING] ✅ Found Maxima Address`);
+                networkLog(`📡 [PING] ✅ Found Maxima Address`);
                 sendParams.to = mxAddress;
             } else {
                 sendParams.publickey = toPublicKey;
@@ -561,7 +566,7 @@ export async function sendPing(toPublicKey: string) {
         }
 
         await MDS.cmd.maxima({ params: sendParams });
-        console.log("✅ [PING] Sent successfully");
+        networkLog("✅ [PING] Sent successfully");
     } catch (err) {
         console.error("❌ [PING] Error sending:", err);
         throw err;

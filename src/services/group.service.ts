@@ -1,7 +1,7 @@
 import { MDS } from "@minima-global/mds";
 import { utf8ToHex } from "../utils/hex";
 import { offlineQueueService } from "./offline-queue.service";
-import { resolveMaximaAddress } from "./database.service";
+import { runSQL as dbRunSQL } from "./database.service";
 
 
 
@@ -382,9 +382,6 @@ class GroupService {
             `;
             await this.runSQL(insertSql);
 
-            // Get my Maxima contacts
-            const contacts = await this.getMyMaximaContacts();
-
             // Prepare message
             const maximaMessage: GroupMaximaMessage = {
                 messageType: "group_message",
@@ -398,7 +395,7 @@ class GroupService {
                 filedata
             };
 
-            // Send to group members who are also my contacts (selective propagation)
+            // Send to ALL group members (no Maxima contact required — uses Mx address routing)
             let sentCount = 0;
             for (const member of members) {
                 const memberPubkey = (member as any).PUBLICKEY;
@@ -406,29 +403,22 @@ class GroupService {
                 // Skip myself
                 if (memberPubkey === myPublicKey) continue;
 
-                // Check if this member is in my contacts
-                const isContact = contacts.some(c => c.publickey === memberPubkey);
-
-                if (isContact) {
-                    try {
-                        await this.sendMaximaMessage(memberPubkey, maximaMessage);
-                        sentCount++;
-                        console.log(`📤 [GROUP-MSG] Sent to contact: ${memberPubkey.substring(0, 20)}...`);
-                    } catch (err: any) {
-                        console.error(`❌ [GROUP-MSG] Failed to send to ${memberPubkey}:`, err);
-                        // Queue for offline retry
-                        await offlineQueueService.queueGroupMessage({
-                            groupId,
-                            targetPublicKey: memberPubkey,
-                            payload: maximaMessage
-                        });
-                    }
-                } else {
-                    console.log(`⏭️ [GROUP-MSG] Skipping non-contact: ${memberPubkey.substring(0, 20)}...`);
+                try {
+                    await this.sendMaximaMessage(memberPubkey, maximaMessage);
+                    sentCount++;
+                    console.log(`📤 [GROUP-MSG] Sent to: ${memberPubkey.substring(0, 20)}...`);
+                } catch (err: any) {
+                    console.error(`❌ [GROUP-MSG] Failed to send to ${memberPubkey}:`, err);
+                    // Queue for offline retry
+                    await offlineQueueService.queueGroupMessage({
+                        groupId,
+                        targetPublicKey: memberPubkey,
+                        payload: maximaMessage
+                    });
                 }
             }
 
-            console.log(`✅ [GROUP-MSG] Sent to ${sentCount} contact members in group: ${groupId}`);
+            console.log(`✅ [GROUP-MSG] Sent to ${sentCount} members in group: ${groupId}`);
         } catch (err) {
             console.error("❌ [GROUP-MSG] Message send failed:", err);
             throw err;
@@ -468,38 +458,40 @@ class GroupService {
     /* ----------------------------------------------------------------------------
       MAXIMA COMMUNICATION
     ---------------------------------------------------------------------------- */
-    private async sendMaximaMessage(toPublicKey: string, message: GroupMaximaMessage, isRetry: boolean = false): Promise<void> {
-        console.log(`📤 [MAXIMA] Sending type '${message.messageType}' to ${toPublicKey}${isRetry ? ' (RETRY)' : ''}...`);
+    private async sendMaximaMessage(toPublicKey: string, message: GroupMaximaMessage): Promise<void> {
+        console.log(`📤 [MAXIMA] Sending type '${message.messageType}' to ${toPublicKey.substring(0, 20)}...`);
         const jsonStr = JSON.stringify(message);
         const hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
 
+        // Resolve Mx address from DISCOVERED_PEERS (bypass Maxima contact requirement)
+        let sendCmd: string;
+        try {
+            const safeKey = toPublicKey.replace(/'/g, "''");
+            const peerRes = await dbRunSQL(
+                `SELECT ADDRESS FROM DISCOVERED_PEERS WHERE PUBLICKEY='${safeKey}' AND ADDRESS IS NOT NULL LIMIT 1`
+            );
+            if (peerRes && peerRes.rows && peerRes.rows.length > 0) {
+                const rawAddr = peerRes.rows[0].ADDRESS as string;
+                // Clean address (remove whitespace and invalid chars)
+                const mxAddr = rawAddr.replace(/\s+/g, "").replace(/[^a-zA-Z0-9@:._-]/g, "");
+                sendCmd = `maxima action:send to:${mxAddr} application:metachain-group data:${hexData} poll:true`;
+                console.log(`🔍 [MAXIMA] Using Mx address for group send`);
+            } else {
+                // Fallback: publickey routing (works for established Maxima contacts)
+                sendCmd = `maxima action:send publickey:${toPublicKey} application:metachain-group data:${hexData} poll:true`;
+                console.log(`⚠️ [MAXIMA] No Mx address found, falling back to publickey routing`);
+            }
+        } catch (resolveErr) {
+            console.warn(`⚠️ [MAXIMA] Address resolve failed, using publickey:`, resolveErr);
+            sendCmd = `maxima action:send publickey:${toPublicKey} application:metachain-group data:${hexData} poll:true`;
+        }
+
         const response = await new Promise<any>((resolve) => {
-            MDS.executeRaw("maxima action:send publickey:" + toPublicKey + " application:metachain-group data:" + hexData, (res: any) => {
-                resolve(res);
-            });
+            MDS.executeRaw(sendCmd, (res: any) => resolve(res));
         });
 
-        console.log(`📤 [MAXIMA] Send response:`, response);
-
         if (!response || (response as any).status === false) {
-            const errorMsg = (response as any).error || "MAXIMA send failed";
-
-            // Check for specific "No Contact found" error
-            if (errorMsg.includes("No Contact found") && !isRetry) {
-                console.log(`⚠️ [MAXIMA] Contact missing for ${toPublicKey}. Attempting to add contact and retry...`);
-
-                try {
-                    await this.ensureMaximaContact(toPublicKey);
-                    // Add a small delay to allow the contact add to propagate if needed (though usually immediate)
-                    await new Promise(r => setTimeout(r, 2000));
-                    return this.sendMaximaMessage(toPublicKey, message, true);
-                } catch (addErr) {
-                    console.error(`❌ [CONTACTS] Failed to add contact for retry:`, addErr);
-                    // Fall through to throw original error
-                }
-            }
-
-            throw new Error(errorMsg);
+            throw new Error((response as any)?.error || "MAXIMA send failed");
         }
     }
 
@@ -634,8 +626,6 @@ class GroupService {
                 `;
                 await this.runSQL(addMemberSql);
 
-                // Auto-add member as MAXIMA contact if not already
-                await this.ensureMaximaContact(member.publickey);
             }
         }
 
@@ -686,9 +676,6 @@ class GroupService {
         `;
         await this.runSQL(addSql);
 
-        // Auto-add as MAXIMA contact
-        await this.ensureMaximaContact(message.memberPublickey);
-
         console.log("✅ [GROUP-MEMBER] Added:", message.memberPublickey);
         this.notifyGroupUpdate();
     }
@@ -726,12 +713,10 @@ class GroupService {
                 historySince: Number(lastTimestamp)
             };
 
-            // 3. Get Members and My Contacts
+            // 3. Get Members
             const members = await this.getGroupMembers(groupId);
-            const contacts = await this.getMyMaximaContacts();
 
-            // 4. Send Request to ALL connected members (Mesh Sync)
-            // This increases reliability: if creator is offline, any peer can provide history.
+            // 4. Send Request to ALL members (Mesh Sync — no Maxima contact required)
             const { myPublicKey } = await this.getIdentity();
 
             let sentCount = 0;
@@ -741,16 +726,11 @@ class GroupService {
                 // Skip myself
                 if (memberPubkey === myPublicKey) continue;
 
-                // Check if this member is in my contacts
-                const isContact = contacts.some(c => c.publickey === memberPubkey);
-
-                if (isContact) {
-                    try {
-                        await this.sendMaximaMessage(memberPubkey, requestMsg);
-                        sentCount++;
-                    } catch (err) {
-                        console.warn(`⚠️ [HISTORY-SYNC] Failed to ask history from ${memberPubkey.substring(0, 10)}...`);
-                    }
+                try {
+                    await this.sendMaximaMessage(memberPubkey, requestMsg);
+                    sentCount++;
+                } catch (err) {
+                    console.warn(`⚠️ [HISTORY-SYNC] Failed to ask history from ${memberPubkey.substring(0, 10)}...`);
                 }
             }
 
@@ -908,53 +888,7 @@ class GroupService {
         });
     }
 
-    private async getMyMaximaContacts(): Promise<any[]> {
-        try {
-            const response = await MDS.cmd.maxcontacts();
-            if (response && (response as any).response && (response as any).response.contacts) {
-                return (response as any).response.contacts;
-            }
-            return [];
-        } catch (err) {
-            console.error("❌ [CONTACTS] Failed to get contacts:", err);
-            return [];
-        }
-    }
 
-    private async ensureMaximaContact(publickey: string): Promise<void> {
-        try {
-            // Check if contact already exists
-            const response = await MDS.cmd.maxcontacts();
-            if (response && (response as any).response && (response as any).response.contacts) {
-                const contacts = (response as any).response.contacts;
-                const exists = contacts.some((c: any) => c.publickey === publickey);
-                if (exists) {
-                    console.log("ℹ️ [CONTACTS] Contact exists:", publickey);
-                    return;
-                }
-            }
-
-            // Attempt to resolve Maxima Address (Mx...) derived from Discovery
-            const address = await resolveMaximaAddress(publickey);
-            const contactValue = address || publickey;
-
-            if (address) {
-                console.log(`📍 [CONTACTS] Resolved address for ${publickey.substring(0, 10)}... -> ${address}`);
-            } else {
-                console.warn(`⚠️ [CONTACTS] Could not resolve address for ${publickey.substring(0, 10)}..., trying public key directly.`);
-            }
-
-            // Add contact
-            await MDS.cmd.maxcontacts({
-                action: "add",
-                contact: contactValue
-            } as any);
-            console.log("✅ [CONTACTS] Auto-added:", contactValue);
-        } catch (err) {
-            console.error("❌ [CONTACTS] Failed to add:", err);
-            throw err; // Re-throw so the caller knows it failed
-        }
-    }
 
     /* ----------------------------------------------------------------------------
       CALLBACKS

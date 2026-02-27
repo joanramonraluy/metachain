@@ -772,254 +772,418 @@ function discoverOfflineTokens() {
  */
 
 function initDatabase() {
-    MDS.log("🚀 [SW] STARTING UP - v2.6 REPAIR");
+  MDS.log("🚀 [SW] STARTING UP - v2.6 REPAIR");
 
-    // Helper to run SQL as Promise
-    function runSQL(query) {
-        return new Promise(function (resolve, reject) {
-            MDS.sql(query, function (res) {
-                if (res.status) resolve(res);
-                else resolve({ status: false, error: res.error }); // Resolve even on error to keep chain moving
-            });
-        });
+  // Helper to run SQL as Promise
+  function runSQL(query) {
+    return new Promise(function (resolve, reject) {
+      MDS.sql(query, function (res) {
+        if (res.status) resolve(res);
+        else resolve({ status: false, error: res.error }); // Resolve even on error to keep chain moving
+      });
+    });
+  }
+
+  // Register for NEWBLOCK events
+  MDS.cmd("event on newblock", function (res) {});
+
+  // Get our own Maxima info
+  MDS.cmd("maxima action:info", function (maxInfo) {
+    if (maxInfo.status) {
+      MY_MAXIMA_PK = maxInfo.response.publickey;
+      MDS.log("🔑 [SW] My Public Key: " + MY_MAXIMA_PK);
+    }
+  });
+
+  // START SEQUENTIAL INIT
+  var chain = Promise.resolve();
+
+  // 1. TRANSACTIONS
+  chain = chain.then(function () {
+    var sql =
+      "CREATE TABLE IF NOT EXISTS TRANSACTIONS ( " +
+      "  id BIGINT AUTO_INCREMENT PRIMARY KEY, " +
+      "  txpowid VARCHAR(128) NOT NULL, " +
+      "  date BIGINT NOT NULL, " +
+      "  amount VARCHAR(64) NOT NULL, " +
+      "  tokenid VARCHAR(128) NOT NULL, " +
+      "  message VARCHAR(255), " +
+      "  status VARCHAR(32) DEFAULT 'pending' " +
+      " )";
+    return runSQL(sql).then(function (res) {
+      MDS.log(
+        res.status
+          ? "📂 [DB] TRANSACTIONS table checked/init"
+          : "❌ [DB] TRANSACTIONS init failed: " + res.error,
+      );
+      // REPAIR: Always run these ALTERs
+      return Promise.all([
+        runSQL(
+          "ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS type VARCHAR(32)",
+        ),
+        runSQL(
+          "ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS publickey VARCHAR(512)",
+        ),
+        runSQL(
+          "ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS message_timestamp BIGINT",
+        ),
+        runSQL(
+          "ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS metadata CLOB",
+        ),
+        runSQL(
+          "ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS pendinguid VARCHAR(128)",
+        ),
+        // FORCE ADD DATE COLUMN IF MISSING (Fix for 'Column DATE not found')
+        runSQL("ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS date BIGINT"),
+        runSQL("ALTER TABLE TRANSACTIONS ALTER COLUMN date SET NOT NULL"), // Enforce not null if possible, or ignore
+      ]);
+    });
+  });
+
+  // 2. CHAT_MESSAGES
+  chain = chain.then(function () {
+    var sql =
+      "CREATE TABLE IF NOT EXISTS CHAT_MESSAGES ( " +
+      "  id BIGINT AUTO_INCREMENT PRIMARY KEY, " +
+      "  roomname varchar(160) NOT NULL, " +
+      "  publickey varchar(512) NOT NULL, " +
+      "  username varchar(160) NOT NULL, " +
+      "  type varchar(64) NOT NULL, " +
+      "  message varchar(512) NOT NULL, " +
+      "  filedata clob(256K) NOT NULL, " +
+      "  customid varchar(128) NOT NULL DEFAULT '0x00', " +
+      "  state varchar(128) NOT NULL DEFAULT '', " +
+      "  read int NOT NULL DEFAULT 0, " +
+      "  amount int NOT NULL DEFAULT 0, " +
+      "  date bigint NOT NULL " +
+      " )";
+    return runSQL(sql).then(function (res) {
+      MDS.log(
+        res.status
+          ? "💾 [DB] CHAT_MESSAGES checked/init"
+          : "❌ [DB] CHAT_MESSAGES init failed",
+      );
+      return Promise.all([
+        runSQL(
+          "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS amount INT NOT NULL DEFAULT 0",
+        ),
+        runSQL(
+          "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS original_timestamp BIGINT",
+        ),
+        runSQL(
+          "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS txpowid VARCHAR(128)",
+        ),
+        runSQL(
+          "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS sender_seq INT DEFAULT 0",
+        ),
+        runSQL(
+          "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS customid VARCHAR(128)",
+        ),
+      ]);
+    });
+  });
+
+  // 3. CHAT_STATUS
+  chain = chain.then(function () {
+    var sql =
+      "CREATE TABLE IF NOT EXISTS CHAT_STATUS ( " +
+      "  publickey VARCHAR(512) PRIMARY KEY, " +
+      "  archived BOOLEAN NOT NULL DEFAULT FALSE, " +
+      "  archived_date BIGINT, " +
+      "  last_opened BIGINT, " +
+      "  favorite BOOLEAN NOT NULL DEFAULT FALSE, " +
+      "  blocked BOOLEAN NOT NULL DEFAULT FALSE, " +
+      "  blocked_by_them BOOLEAN NOT NULL DEFAULT FALSE " +
+      " )";
+    return runSQL(sql).then(function () {
+      return Promise.all([
+        runSQL(
+          "ALTER TABLE CHAT_STATUS ADD COLUMN IF NOT EXISTS favorite BOOLEAN NOT NULL DEFAULT FALSE",
+        ),
+        runSQL(
+          "ALTER TABLE CHAT_STATUS ADD COLUMN IF NOT EXISTS blocked BOOLEAN NOT NULL DEFAULT FALSE",
+        ),
+        runSQL(
+          "ALTER TABLE CHAT_STATUS ADD COLUMN IF NOT EXISTS blocked_by_them BOOLEAN NOT NULL DEFAULT FALSE",
+        ),
+      ]);
+    });
+  });
+
+  // 3.5 GROUPS (schema parity with frontend)
+  chain = chain.then(function () {
+    var groupsSql =
+      "CREATE TABLE IF NOT EXISTS GROUPS ( " +
+      "  group_id VARCHAR(256) PRIMARY KEY, " +
+      "  name VARCHAR(255) NOT NULL, " +
+      "  creator_publickey VARCHAR(512) NOT NULL, " +
+      "  created_date BIGINT NOT NULL, " +
+      "  avatar TEXT, " +
+      "  description TEXT " +
+      " )";
+
+    return runSQL(groupsSql).then(function (res) {
+      MDS.log(
+        res.status
+          ? "📂 [DB] GROUPS checked/init"
+          : "❌ [DB] GROUPS init failed: " + res.error,
+      );
+    });
+  });
+
+  // 3.6 GROUP_MEMBERS
+  chain = chain.then(function () {
+    var membersSql =
+      "CREATE TABLE IF NOT EXISTS GROUP_MEMBERS ( " +
+      "  group_id VARCHAR(256) NOT NULL, " +
+      "  publickey VARCHAR(512) NOT NULL, " +
+      "  username VARCHAR(255) NOT NULL, " +
+      "  joined_date BIGINT NOT NULL, " +
+      "  role VARCHAR(32) DEFAULT 'member', " +
+      "  PRIMARY KEY (group_id, publickey) " +
+      " )";
+
+    return runSQL(membersSql).then(function (res) {
+      MDS.log(
+        res.status
+          ? "📂 [DB] GROUP_MEMBERS checked/init"
+          : "❌ [DB] GROUP_MEMBERS init failed: " + res.error,
+      );
+    });
+  });
+
+  // 3.7 GROUP_MESSAGES
+  chain = chain.then(function () {
+    var messagesSql =
+      "CREATE TABLE IF NOT EXISTS GROUP_MESSAGES ( " +
+      "  id BIGINT AUTO_INCREMENT PRIMARY KEY, " +
+      "  group_id VARCHAR(256) NOT NULL, " +
+      "  sender_publickey VARCHAR(512) NOT NULL, " +
+      "  sender_username VARCHAR(255) NOT NULL, " +
+      "  type VARCHAR(32) NOT NULL, " +
+      "  message TEXT, " +
+      "  filedata TEXT, " +
+      "  date BIGINT NOT NULL, " +
+      "  read INTEGER DEFAULT 0, " +
+      "  propagated INTEGER DEFAULT 0 " +
+      " )";
+
+    return runSQL(messagesSql).then(function (res) {
+      MDS.log(
+        res.status
+          ? "📂 [DB] GROUP_MESSAGES checked/init"
+          : "❌ [DB] GROUP_MESSAGES init failed: " + res.error,
+      );
+
+      return runSQL(
+        "ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS propagated INTEGER DEFAULT 0",
+      );
+    });
+  });
+
+  // 4. MESSAGE_COUNTERS (for sequence tracking)
+  chain = chain.then(function () {
+    var sql =
+      "CREATE TABLE IF NOT EXISTS MESSAGE_COUNTERS ( " +
+      "  publickey VARCHAR(512) PRIMARY KEY, " +
+      "  next_seq INT NOT NULL DEFAULT 1 " +
+      " )";
+    return runSQL(sql).then(function (res) {
+      MDS.log(
+        res.status
+          ? "📊 [DB] MESSAGE_COUNTERS checked/init"
+          : "❌ [DB] MESSAGE_COUNTERS init failed",
+      );
+    });
+  });
+
+  // 5. MY_PROFILE
+  chain = chain.then(function () {
+    var sql =
+      "CREATE TABLE IF NOT EXISTS MY_PROFILE ( " +
+      "  id INT PRIMARY KEY, " +
+      "  avatar TEXT, " +
+      "  tags TEXT, " +
+      "  bio_extended TEXT, " +
+      "  social_links TEXT, " +
+      "  location TEXT, " +
+      "  last_updated BIGINT " +
+      " )";
+    return runSQL(sql).then(function () {
+      runSQL("INSERT IGNORE INTO MY_PROFILE (id) VALUES (1)");
+      return Promise.all([
+        runSQL("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS phone TEXT"),
+        runSQL("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS email TEXT"),
+        runSQL("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS website TEXT"),
+        runSQL("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS country TEXT"),
+        runSQL(
+          "ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS languages TEXT",
+        ),
+        runSQL(
+          "ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS allow_non_contact_chats BOOLEAN DEFAULT TRUE",
+        ),
+        runSQL(
+          "ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS privacy_l2 VARCHAR(20) DEFAULT 'public'",
+        ),
+        runSQL(
+          "ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS privacy_l3 VARCHAR(20) DEFAULT 'contacts'",
+        ),
+        runSQL(
+          "ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS minimaaddress TEXT",
+        ),
+      ]);
+    });
+  });
+
+  // 5. CONTACT_REQUESTS
+  chain = chain.then(function () {
+    var sql =
+      "CREATE TABLE IF NOT EXISTS CONTACT_REQUESTS ( " +
+      "  id BIGINT AUTO_INCREMENT PRIMARY KEY, " +
+      "  from_publickey VARCHAR(512) NOT NULL, " +
+      "  from_name VARCHAR(255), " +
+      "  from_avatar TEXT, " +
+      "  to_publickey VARCHAR(512) NOT NULL, " +
+      "  status VARCHAR(32) DEFAULT 'pending', " +
+      "  created_at BIGINT NOT NULL, " +
+      "  updated_at BIGINT " +
+      " )";
+    return runSQL(sql).then(function (res) {
+      MDS.log(
+        res.status
+          ? "📂 [DB] CONTACT_REQUESTS checked/init"
+          : "❌ [DB] CONTACT_REQUESTS init failed",
+      );
+      return runSQL(
+        "ALTER TABLE CONTACT_REQUESTS ADD COLUMN IF NOT EXISTS from_address VARCHAR(1024)",
+      );
+    });
+  });
+
+  // 6. DISCOVERED_PEERS (Explicit sequence)
+  chain = chain.then(function () {
+    var sql =
+      "CREATE TABLE IF NOT EXISTS DISCOVERED_PEERS ( " +
+      "  publickey VARCHAR(512) PRIMARY KEY, " +
+      "  alias VARCHAR(160) NOT NULL, " +
+      "  bio VARCHAR(512), " +
+      "  address VARCHAR(512) NOT NULL, " +
+      "  last_seen BIGINT NOT NULL, " +
+      "  source VARCHAR(20) NOT NULL" +
+      " )";
+    return runSQL(sql).then(function (res) {
+      MDS.log(
+        res.status
+          ? "📂 [DB] DISCOVERED_PEERS checked/init"
+          : "❌ [DB] DISCOVERED_PEERS init failed: " + res.error,
+      );
+      return Promise.all([
+        runSQL(
+          "ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS bio VARCHAR(512)",
+        ),
+        runSQL(
+          "ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS allow_non_contact_chats BOOLEAN DEFAULT TRUE",
+        ),
+        runSQL(
+          "ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS extra_data CLOB",
+        ),
+        runSQL(
+          "ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS avatar TEXT",
+        ),
+        runSQL(
+          "ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS minimaaddress VARCHAR(512)",
+        ),
+        runSQL(
+          "ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS source VARCHAR(20) DEFAULT 'P2P'",
+        ),
+      ]);
+    });
+  });
+
+  // 7. PERSONAL_CONTACTS
+  chain = chain.then(function () {
+    var sql =
+      "CREATE TABLE IF NOT EXISTS PERSONAL_CONTACTS ( publickey VARCHAR(512) PRIMARY KEY, created_at BIGINT )";
+    return runSQL(sql);
+  });
+
+  // 8. MAXIMA_CONTACT_REQUESTS
+  chain = chain.then(function () {
+    var sql =
+      "CREATE TABLE IF NOT EXISTS MAXIMA_CONTACT_REQUESTS ( " +
+      "  id BIGINT AUTO_INCREMENT PRIMARY KEY, " +
+      "  from_publickey VARCHAR(512) NOT NULL, " +
+      "  from_name VARCHAR(255), " +
+      "  to_publickey VARCHAR(512) NOT NULL, " +
+      "  status VARCHAR(32) DEFAULT 'pending', " +
+      "  created_at BIGINT NOT NULL, " +
+      "  updated_at BIGINT " +
+      " )";
+    return runSQL(sql);
+  });
+
+  // 9. METACHAIN_USERS
+  chain = chain.then(function () {
+    var sql =
+      "CREATE TABLE IF NOT EXISTS METACHAIN_USERS ( " +
+      "  user_id VARCHAR(512) PRIMARY KEY, " +
+      "  publickey VARCHAR(512) UNIQUE NOT NULL, " +
+      "  alias VARCHAR(160) NOT NULL, " +
+      "  address VARCHAR(512) NOT NULL, " +
+      "  first_seen BIGINT NOT NULL, " +
+      "  last_updated BIGINT NOT NULL" +
+      " )";
+    return runSQL(sql).then(function (res) {
+      MDS.log(
+        res.status
+          ? "📂 [DB] METACHAIN_USERS checked/init"
+          : "❌ [DB] METACHAIN_USERS init failed",
+      );
+      return Promise.all([
+        // Schema parity with Frontend variant
+        runSQL(
+          "ALTER TABLE METACHAIN_USERS ADD COLUMN IF NOT EXISTS avatar TEXT",
+        ),
+        runSQL(
+          "ALTER TABLE METACHAIN_USERS ADD COLUMN IF NOT EXISTS last_seen BIGINT",
+        ),
+      ]);
+    });
+  });
+
+  // FINAL: Start Services
+  chain.then(function () {
+    MDS.log("✅ [INIT] Database sequence complete. Starting Services...");
+    DB_READY = true;
+
+    // Enable logs for P2P beacons
+    MDS.cmd("logs on", function (logRes) {
+      if (logRes.status) MDS.log("✅ [INIT] MINIMALOG listener registered");
+    });
+
+    // Send initial beacon
+    sendBackgroundBeacon();
+    startGossip();
+
+    // Register for periodic tasks
+    MDS.cmd("event on newblock", function () {
+      MDS.log("✅ [INIT] NEWBLOCK listener registered for periodic tasks.");
+    });
+
+    // Trigger history sync to update message counters and chat list
+    // Uses timestamp optimization to only fetch new messages
+    if (typeof requestHistoryFromRecentContacts === "function") {
+      requestHistoryFromRecentContacts();
+    } else {
+      MDS.log(
+        "⚠️ [INIT] requestHistoryFromRecentContacts not loaded yet. Handlers might be missing.",
+      );
     }
 
-    // Register for NEWBLOCK events
-    MDS.cmd("event on newblock", function (res) { });
-
-    // Get our own Maxima info
-    MDS.cmd("maxima action:info", function (maxInfo) {
-        if (maxInfo.status) {
-            MY_MAXIMA_PK = maxInfo.response.publickey;
-            MDS.log("🔑 [SW] My Public Key: " + MY_MAXIMA_PK);
-        }
-    });
-
-    // START SEQUENTIAL INIT
-    var chain = Promise.resolve();
-
-    // 1. TRANSACTIONS
-    chain = chain.then(function () {
-        var sql = "CREATE TABLE IF NOT EXISTS TRANSACTIONS ( "
-            + "  id BIGINT AUTO_INCREMENT PRIMARY KEY, "
-            + "  txpowid VARCHAR(128) NOT NULL, "
-            + "  date BIGINT NOT NULL, "
-            + "  amount VARCHAR(64) NOT NULL, "
-            + "  tokenid VARCHAR(128) NOT NULL, "
-            + "  message VARCHAR(255), "
-            + "  status VARCHAR(32) DEFAULT 'pending' "
-            + " )";
-        return runSQL(sql).then(function (res) {
-            MDS.log(res.status ? "📂 [DB] TRANSACTIONS table checked/init" : "❌ [DB] TRANSACTIONS init failed: " + res.error);
-            // REPAIR: Always run these ALTERs
-            return Promise.all([
-                runSQL("ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS type VARCHAR(32)"),
-                runSQL("ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS publickey VARCHAR(512)"),
-                runSQL("ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS message_timestamp BIGINT"),
-                runSQL("ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS metadata CLOB"),
-                runSQL("ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS pendinguid VARCHAR(128)"),
-                // FORCE ADD DATE COLUMN IF MISSING (Fix for 'Column DATE not found')
-                runSQL("ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS date BIGINT"),
-                runSQL("ALTER TABLE TRANSACTIONS ALTER COLUMN date SET NOT NULL") // Enforce not null if possible, or ignore
-            ]);
-        });
-    });
-
-    // 2. CHAT_MESSAGES
-    chain = chain.then(function () {
-        var sql = "CREATE TABLE IF NOT EXISTS CHAT_MESSAGES ( "
-            + "  id BIGINT AUTO_INCREMENT PRIMARY KEY, "
-            + "  roomname varchar(160) NOT NULL, "
-            + "  publickey varchar(512) NOT NULL, "
-            + "  username varchar(160) NOT NULL, "
-            + "  type varchar(64) NOT NULL, "
-            + "  message varchar(512) NOT NULL, "
-            + "  filedata clob(256K) NOT NULL, "
-            + "  customid varchar(128) NOT NULL DEFAULT '0x00', "
-            + "  state varchar(128) NOT NULL DEFAULT '', "
-            + "  read int NOT NULL DEFAULT 0, "
-            + "  amount int NOT NULL DEFAULT 0, "
-            + "  date bigint NOT NULL "
-            + " )";
-        return runSQL(sql).then(function (res) {
-            MDS.log(res.status ? "💾 [DB] CHAT_MESSAGES checked/init" : "❌ [DB] CHAT_MESSAGES init failed");
-            return Promise.all([
-                runSQL("ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS amount INT NOT NULL DEFAULT 0"),
-                runSQL("ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS original_timestamp BIGINT"),
-                runSQL("ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS txpowid VARCHAR(128)"),
-                runSQL("ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS sender_seq INT DEFAULT 0"),
-                runSQL("ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS customid VARCHAR(128)")
-            ]);
-        });
-    });
-
-    // 3. CHAT_STATUS
-    chain = chain.then(function () {
-        var sql = "CREATE TABLE IF NOT EXISTS CHAT_STATUS ( "
-            + "  publickey VARCHAR(512) PRIMARY KEY, "
-            + "  archived BOOLEAN NOT NULL DEFAULT FALSE, "
-            + "  archived_date BIGINT, "
-            + "  last_opened BIGINT, "
-            + "  favorite BOOLEAN NOT NULL DEFAULT FALSE, "
-            + "  blocked BOOLEAN NOT NULL DEFAULT FALSE, "
-            + "  blocked_by_them BOOLEAN NOT NULL DEFAULT FALSE "
-            + " )";
-        return runSQL(sql).then(function () {
-            return Promise.all([
-                runSQL("ALTER TABLE CHAT_STATUS ADD COLUMN IF NOT EXISTS favorite BOOLEAN NOT NULL DEFAULT FALSE"),
-                runSQL("ALTER TABLE CHAT_STATUS ADD COLUMN IF NOT EXISTS blocked BOOLEAN NOT NULL DEFAULT FALSE"),
-                runSQL("ALTER TABLE CHAT_STATUS ADD COLUMN IF NOT EXISTS blocked_by_them BOOLEAN NOT NULL DEFAULT FALSE")
-            ]);
-        });
-    });
-
-    // 4. MESSAGE_COUNTERS (for sequence tracking)
-    chain = chain.then(function () {
-        var sql = "CREATE TABLE IF NOT EXISTS MESSAGE_COUNTERS ( "
-            + "  publickey VARCHAR(512) PRIMARY KEY, "
-            + "  next_seq INT NOT NULL DEFAULT 1 "
-            + " )";
-        return runSQL(sql).then(function (res) {
-            MDS.log(res.status ? "📊 [DB] MESSAGE_COUNTERS checked/init" : "❌ [DB] MESSAGE_COUNTERS init failed");
-        });
-    });
-
-    // 5. MY_PROFILE
-    chain = chain.then(function () {
-        var sql = "CREATE TABLE IF NOT EXISTS MY_PROFILE ( "
-            + "  id INT PRIMARY KEY, "
-            + "  avatar TEXT, "
-            + "  tags TEXT, "
-            + "  bio_extended TEXT, "
-            + "  social_links TEXT, "
-            + "  location TEXT, "
-            + "  last_updated BIGINT "
-            + " )";
-        return runSQL(sql).then(function () {
-            runSQL("INSERT IGNORE INTO MY_PROFILE (id) VALUES (1)");
-            return Promise.all([
-                runSQL("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS phone TEXT"),
-                runSQL("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS email TEXT"),
-                runSQL("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS website TEXT"),
-                runSQL("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS country TEXT"),
-                runSQL("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS languages TEXT"),
-                runSQL("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS allow_non_contact_chats BOOLEAN DEFAULT TRUE"),
-                runSQL("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS privacy_l2 VARCHAR(20) DEFAULT 'public'"),
-                runSQL("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS privacy_l3 VARCHAR(20) DEFAULT 'contacts'"),
-                runSQL("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS minimaaddress TEXT")
-            ]);
-        });
-    });
-
-    // 5. CONTACT_REQUESTS
-    chain = chain.then(function () {
-        var sql = "CREATE TABLE IF NOT EXISTS CONTACT_REQUESTS ( "
-            + "  id BIGINT AUTO_INCREMENT PRIMARY KEY, "
-            + "  from_publickey VARCHAR(512) NOT NULL, "
-            + "  from_name VARCHAR(255), "
-            + "  from_avatar TEXT, "
-            + "  to_publickey VARCHAR(512) NOT NULL, "
-            + "  status VARCHAR(32) DEFAULT 'pending', "
-            + "  created_at BIGINT NOT NULL, "
-            + "  updated_at BIGINT "
-            + " )";
-        return runSQL(sql).then(function (res) {
-            MDS.log(res.status ? "📂 [DB] CONTACT_REQUESTS checked/init" : "❌ [DB] CONTACT_REQUESTS init failed");
-            return runSQL("ALTER TABLE CONTACT_REQUESTS ADD COLUMN IF NOT EXISTS from_address VARCHAR(1024)");
-        });
-    });
-
-    // 6. DISCOVERED_PEERS (Explicit sequence)
-    chain = chain.then(function () {
-        var sql = "CREATE TABLE IF NOT EXISTS DISCOVERED_PEERS ( "
-            + "  publickey VARCHAR(512) PRIMARY KEY, "
-            + "  alias VARCHAR(160) NOT NULL, "
-            + "  bio VARCHAR(512), "
-            + "  address VARCHAR(512) NOT NULL, "
-            + "  last_seen BIGINT NOT NULL, "
-            + "  source VARCHAR(20) NOT NULL"
-            + " )";
-        return runSQL(sql).then(function (res) {
-            MDS.log(res.status ? "📂 [DB] DISCOVERED_PEERS checked/init" : "❌ [DB] DISCOVERED_PEERS init failed: " + res.error);
-            return Promise.all([
-                runSQL("ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS bio VARCHAR(512)"),
-                runSQL("ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS allow_non_contact_chats BOOLEAN DEFAULT TRUE"),
-                runSQL("ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS extra_data CLOB"),
-                runSQL("ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS avatar TEXT"),
-                runSQL("ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS minimaaddress VARCHAR(512)"),
-                runSQL("ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS source VARCHAR(20) DEFAULT 'P2P'")
-            ]);
-        });
-    });
-
-    // 7. PERSONAL_CONTACTS
-    chain = chain.then(function () {
-        var sql = "CREATE TABLE IF NOT EXISTS PERSONAL_CONTACTS ( publickey VARCHAR(512) PRIMARY KEY, created_at BIGINT )";
-        return runSQL(sql);
-    });
-
-    // 8. MAXIMA_CONTACT_REQUESTS
-    chain = chain.then(function () {
-        var sql = "CREATE TABLE IF NOT EXISTS MAXIMA_CONTACT_REQUESTS ( "
-            + "  id BIGINT AUTO_INCREMENT PRIMARY KEY, "
-            + "  from_publickey VARCHAR(512) NOT NULL, "
-            + "  from_name VARCHAR(255), "
-            + "  to_publickey VARCHAR(512) NOT NULL, "
-            + "  status VARCHAR(32) DEFAULT 'pending', "
-            + "  created_at BIGINT NOT NULL, "
-            + "  updated_at BIGINT "
-            + " )";
-        return runSQL(sql);
-    });
-
-    // 9. METACHAIN_USERS
-    chain = chain.then(function () {
-        var sql = "CREATE TABLE IF NOT EXISTS METACHAIN_USERS ( "
-            + "  user_id VARCHAR(512) PRIMARY KEY, "
-            + "  publickey VARCHAR(512) UNIQUE NOT NULL, "
-            + "  alias VARCHAR(160) NOT NULL, "
-            + "  address VARCHAR(512) NOT NULL, "
-            + "  first_seen BIGINT NOT NULL, "
-            + "  last_updated BIGINT NOT NULL"
-            + " )";
-        return runSQL(sql).then(function (res) {
-            MDS.log(res.status ? "📂 [DB] METACHAIN_USERS checked/init" : "❌ [DB] METACHAIN_USERS init failed");
-        });
-    });
-
-
-
-    // FINAL: Start Services
-    chain.then(function () {
-        MDS.log("✅ [INIT] Database sequence complete. Starting Services...");
-        DB_READY = true;
-
-        // Enable logs for P2P beacons
-        MDS.cmd("logs on", function (logRes) {
-            if (logRes.status) MDS.log("✅ [INIT] MINIMALOG listener registered");
-        });
-
-        // Send initial beacon
-        sendBackgroundBeacon();
-        startGossip();
-
-        // Register for periodic tasks
-        MDS.cmd("event on newblock", function () {
-            MDS.log("✅ [INIT] NEWBLOCK listener registered for periodic tasks.");
-        });
-
-        // Trigger history sync to update message counters and chat list
-        // Uses timestamp optimization to only fetch new messages
-        if (typeof requestHistoryFromRecentContacts === 'function') {
-            requestHistoryFromRecentContacts();
-        } else {
-            MDS.log("⚠️ [INIT] requestHistoryFromRecentContacts not loaded yet. Handlers might be missing.");
-        }
-
-        // Set flag to run coin discovery on first NEWBLOCK (when node is fully synced)
-        COIN_DISCOVERY_PENDING = true;
-        MDS.log("📦 [INIT] Coin discovery scheduled for first NEWBLOCK event");
-    });
+    // Set flag to run coin discovery on first NEWBLOCK (when node is fully synced)
+    COIN_DISCOVERY_PENDING = true;
+    MDS.log("📦 [INIT] Coin discovery scheduled for first NEWBLOCK event");
+  });
 }
 
 /**
@@ -1033,12 +1197,16 @@ function handleGroupMessage(pubkey, maxjson) {
     // Migration: Ensure propagated column exists
     var migrationSql = "ALTER TABLE GROUP_MESSAGES ADD COLUMN propagated INT DEFAULT 0";
     MDS.sql(migrationSql, function (migRes) {
-        var encoded = (maxjson.message || "").replace(/'/g, "''");
-        var messageTimestamp = maxjson.timestamp || Date.now();
-        var originalSender = maxjson.senderPublickey || pubkey;
+        var safeGroupId = escapeSql(maxjson.groupId || "");
+        var encoded = escapeSql(maxjson.message || "");
+        var messageTimestamp = Number(maxjson.timestamp) || Date.now();
+        var originalSender = escapeSql(maxjson.senderPublickey || pubkey);
+        var safeSenderUsername = escapeSql(maxjson.senderUsername || "Unknown");
+        var safeType = escapeSql(maxjson.type || "text");
+        var safeFileData = escapeSql(maxjson.filedata || "");
 
         // Check for duplicates
-        var checkSql = "SELECT id, propagated FROM GROUP_MESSAGES WHERE group_id='" + maxjson.groupId + "' AND sender_publickey='" + originalSender + "' AND date=" + messageTimestamp;
+        var checkSql = "SELECT id, propagated FROM GROUP_MESSAGES WHERE group_id='" + safeGroupId + "' AND sender_publickey='" + originalSender + "' AND date=" + messageTimestamp;
 
         MDS.sql(checkSql, function (checkRes) {
             var shouldPropagate = false;
@@ -1058,7 +1226,7 @@ function handleGroupMessage(pubkey, maxjson) {
             } else {
                 shouldPropagate = true;
                 var groupMsgSql = "INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read, propagated) VALUES "
-                    + "('" + maxjson.groupId + "','" + originalSender + "','" + maxjson.senderUsername + "','" + (maxjson.type || "text") + "','" + encoded + "','" + (maxjson.filedata || "") + "'," + messageTimestamp + ", 0, 1)";
+                    + "('" + safeGroupId + "','" + originalSender + "','" + safeSenderUsername + "','" + safeType + "','" + encoded + "','" + safeFileData + "'," + messageTimestamp + ", 0, 1)";
 
                 MDS.sql(groupMsgSql, function (res) {
                     if (res.status) {
@@ -1067,7 +1235,7 @@ function handleGroupMessage(pubkey, maxjson) {
                         MDS.log("❌ [DB] Failed to save group message: " + res.error);
                         if (res.error && res.error.indexOf('propagated') !== -1) {
                             var retrySql = "INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read) VALUES "
-                                + "('" + maxjson.groupId + "','" + originalSender + "','" + maxjson.senderUsername + "','" + (maxjson.type || "text") + "','" + encoded + "','" + (maxjson.filedata || "") + "'," + messageTimestamp + ", 0)";
+                                + "('" + safeGroupId + "','" + originalSender + "','" + safeSenderUsername + "','" + safeType + "','" + encoded + "','" + safeFileData + "'," + messageTimestamp + ", 0)";
                             MDS.sql(retrySql);
                         }
                     }
@@ -1084,7 +1252,8 @@ function handleGroupMessage(pubkey, maxjson) {
 function propagateGroupMessage(pubkey, maxjson) {
     MDS.log("🔄 [GROUP-MSG] Starting propagation...");
 
-    var membersSql = "SELECT * FROM GROUP_MEMBERS WHERE group_id='" + maxjson.groupId + "'";
+    var safeGroupId = escapeSql(maxjson.groupId || "");
+    var membersSql = "SELECT * FROM GROUP_MEMBERS WHERE group_id='" + safeGroupId + "'";
     MDS.sql(membersSql, function (memberRes) {
         if (!memberRes.status || !memberRes.rows) {
             MDS.log("❌ [GROUP-MSG] Failed to fetch members.");
@@ -1136,9 +1305,14 @@ function propagateGroupMessage(pubkey, maxjson) {
 
 function handleGroupInvite(pubkey, maxjson) {
     MDS.log("📨 [GROUP-INVITE] Processing...");
+    var safeGroupId = escapeSql(maxjson.groupId || "");
+    var safeGroupName = escapeSql(maxjson.groupName || "");
+    var safeCreatorPubkey = escapeSql(pubkey || "");
+    var safeDescription = escapeSql(maxjson.description || "");
+    var safeTimestamp = Number(maxjson.timestamp) || Date.now();
 
     var createGroupSql = "INSERT INTO GROUPS (group_id, name, creator_publickey, created_date, description) VALUES "
-        + "('" + maxjson.groupId + "','" + (maxjson.groupName || '').replace(/'/g, "''") + "','" + pubkey + "'," + maxjson.timestamp + ",'" + (maxjson.description || "").replace(/'/g, "''") + "')";
+        + "('" + safeGroupId + "','" + safeGroupName + "','" + safeCreatorPubkey + "'," + safeTimestamp + ",'" + safeDescription + "')";
 
     MDS.sql(createGroupSql, function (res) {
         MDS.log("✅ [GROUP-MGMT] Group created/exists");
@@ -1148,9 +1322,11 @@ function handleGroupInvite(pubkey, maxjson) {
                 if (idx >= maxjson.members.length) return;
                 var m = maxjson.members[idx];
                 var role = (m.publickey === pubkey) ? 'creator' : 'member';
+                var safeMemberPubkey = escapeSql(m.publickey || "");
+                var safeMemberUsername = escapeSql(m.username || "Unknown");
 
                 var addMemberSql = "INSERT INTO GROUP_MEMBERS (group_id, publickey, username, joined_date, role) VALUES "
-                    + "('" + maxjson.groupId + "','" + m.publickey + "','" + (m.username || 'Unknown').replace(/'/g, "''") + "'," + maxjson.timestamp + ",'" + role + "')";
+                    + "('" + safeGroupId + "','" + safeMemberPubkey + "','" + safeMemberUsername + "'," + safeTimestamp + ",'" + role + "')";
 
                 MDS.sql(addMemberSql, function () {
                     addMember(idx + 1);
@@ -1163,13 +1339,17 @@ function handleGroupInvite(pubkey, maxjson) {
 
 function handleGroupMemberUpdate(pubkey, maxjson) {
     MDS.log("🔄 [GROUP-MEMBER] Update: " + maxjson.messageType);
+    var safeGroupId = escapeSql(maxjson.groupId || "");
+    var safeTimestamp = Number(maxjson.timestamp) || Date.now();
+    var safeMemberPublickey = escapeSql(maxjson.memberPublickey || "");
+    var safeMemberUsername = escapeSql(maxjson.memberUsername || "Unknown");
 
     if (maxjson.messageType === "group_member_added") {
         var addMemberSql = "INSERT INTO GROUP_MEMBERS (group_id, publickey, username, joined_date, role) VALUES "
-            + "('" + maxjson.groupId + "','" + maxjson.memberPublickey + "','" + (maxjson.memberUsername || 'Unknown').replace(/'/g, "''") + "'," + maxjson.timestamp + ",'member')";
+            + "('" + safeGroupId + "','" + safeMemberPublickey + "','" + safeMemberUsername + "'," + safeTimestamp + ",'member')";
         MDS.sql(addMemberSql);
     } else {
-        var removeMemberSql = "DELETE FROM GROUP_MEMBERS WHERE group_id='" + maxjson.groupId + "' AND publickey='" + maxjson.memberPublickey + "'";
+        var removeMemberSql = "DELETE FROM GROUP_MEMBERS WHERE group_id='" + safeGroupId + "' AND publickey='" + safeMemberPublickey + "'";
         MDS.sql(removeMemberSql);
     }
 }
@@ -1296,6 +1476,12 @@ function handleChatMessage(pubkey, maxjson) {
             MDS.sql(insertSql, function (res) {
                 if (res.status) {
                     MDS.log("✅ [CHAT] Message saved from " + safeUsername);
+
+                    // 3. NOTIFY FRONTEND (Immediate Sync)
+                    // This triggers a UI refresh now that the message is safely in the DB
+                    MDS.comms.solo("CHAT_LIST_UPDATE", function () {
+                        MDS.log("📤 [CHAT-SYNC] Notification sent to frontend for " + safeUsername);
+                    });
 
                     // FIX: Auto-discover user on message receipt to fix "Unknown" in chat list
                     if (safeUsername && safeUsername !== "Unknown" && safeUsername !== "System") {
@@ -2889,7 +3075,7 @@ function sendBackgroundBeacon() {
 
 function startCleanupTimer() {
     var now = Date.now();
-    var TTL = 3600000; // 1 hour
+    var TTL = 600000; // 10 minutes
 
     var cleanupSql = "DELETE FROM DISCOVERED_PEERS WHERE last_seen < " + (now - TTL) + " AND source != 'SELF'";
     MDS.sql(cleanupSql, function (res) {
@@ -3110,13 +3296,12 @@ function sendWelcomePackage(targetPubkey, targetAlias) {
 /**
  * MetaChain Service Worker - Main Dispatcher
  * Minimal entry point that routes events to handlers
- * 
+ *
  * NOTE: This file is concatenated with handlers during build.
  * Build command: npm run build:service-worker
  */
 
 // ============================================================================
-
 
 // ============================================================================
 // MAIN EVENT DISPATCHER
@@ -3136,326 +3321,396 @@ var LAST_MAXIMA_EVENT_TIME = 0;
 var CONNECTION_TIMEOUT_MS = 120000; // 2 minutes - if no MAXIMA events, consider offline
 var WAS_OFFLINE = false;
 
-
-
-
 MDS.init(function (msg) {
-    // Initialization
-    if (msg.event == "inited") {
-        MDS.log("🚀 [SW] Inited event received. Version v3.0");
-        MDS.log("⏰ [SW] Starting Database Initialization...");
-        initDatabase();
+  // Initialization
+  if (msg.event == "inited") {
+    MDS.log("🚀 [SW] Inited event received. Version v3.0");
+    MDS.log("⏰ [SW] Starting Database Initialization...");
+    initDatabase();
+  }
+
+  // Periodic tasks via NEWBLOCK
+  else if (msg.event == "NEWBLOCK") {
+    // 1. WAIT FOR DB TO BE READY (Async Init)
+    if (!DB_READY) {
+      return;
     }
 
-    // Periodic tasks via NEWBLOCK
-    else if (msg.event == "NEWBLOCK") {
-
-        // 1. WAIT FOR DB TO BE READY (Async Init)
-        if (!DB_READY) {
-            return;
-        }
-
-        // Run one-time startup cleanup if not done yet
-        if (!INITIAL_CLEANUP_DONE) {
-            INITIAL_CLEANUP_DONE = true;
-            cleanupOrphanedChatMessages();
-        }
-
-        // Run coin discovery at block 5 (gives time for coins to sync)
-        if (COIN_DISCOVERY_PENDING) {
-            NEWBLOCK_COUNT++;
-            if (NEWBLOCK_COUNT >= 5) {
-                COIN_DISCOVERY_PENDING = false;
-                MDS.log("📦 [COIN-DISCOVERY] Running at block " + NEWBLOCK_COUNT + "...");
-                if (typeof discoverOfflineTokens === 'function') {
-                    discoverOfflineTokens().then(function (count) {
-                        if (count > 0) {
-                            MDS.log("📦 [COIN-DISCOVERY] Recovered " + count + " offline token(s)");
-                        }
-                    }).catch(function (err) {
-                        MDS.log("⚠️ [COIN-DISCOVERY] Error: " + err);
-                    });
-                }
-            }
-        }
-
-        var now = Date.now();
-
-        // Gossip interval
-        if (now - LAST_GOSSIP > GOSSIP_INTERVAL) {
-            LAST_GOSSIP = now;
-            startGossip();
-            startCleanupTimer();
-            sendBackgroundBeacon();
-            checkPendingTransactions(); // Check for zombie transactions
-            checkSentTransactions();    // Check for confirmations (sent -> confirmed)
-        }
+    // Run one-time startup cleanup if not done yet
+    if (!INITIAL_CLEANUP_DONE) {
+      INITIAL_CLEANUP_DONE = true;
+      cleanupOrphanedChatMessages();
     }
 
-    // Service commands from frontend
-    else if (msg.event == "MDS_SERVICECMD") {
-        if (msg.data && msg.data.service === "COINDISC") {
-            MDS.log("📦 [SERVICE] Coin discovery requested from frontend");
-            if (typeof discoverOfflineTokens === 'function') {
-                discoverOfflineTokens().then(function (count) {
-                    if (count > 0) {
-                        MDS.log("📦 [SERVICE] Recovered " + count + " offline token(s)");
-                    } else {
-                        MDS.log("📦 [SERVICE] No new offline tokens found");
-                    }
-                }).catch(function (err) {
-                    MDS.log("⚠️ [SERVICE] Coin discovery error: " + err);
-                });
-            }
+    // Run coin discovery at block 5 (gives time for coins to sync)
+    if (COIN_DISCOVERY_PENDING) {
+      NEWBLOCK_COUNT++;
+      if (NEWBLOCK_COUNT >= 5) {
+        COIN_DISCOVERY_PENDING = false;
+        MDS.log(
+          "📦 [COIN-DISCOVERY] Running at block " + NEWBLOCK_COUNT + "...",
+        );
+        if (typeof discoverOfflineTokens === "function") {
+          discoverOfflineTokens()
+            .then(function (count) {
+              if (count > 0) {
+                MDS.log(
+                  "📦 [COIN-DISCOVERY] Recovered " +
+                    count +
+                    " offline token(s)",
+                );
+              }
+            })
+            .catch(function (err) {
+              MDS.log("⚠️ [COIN-DISCOVERY] Error: " + err);
+            });
         }
+      }
     }
 
-    // MAXIMA messages
-    else if (msg.event == "MAXIMA") {
-        // Track connection state for reconnection detection
-        var now = Date.now();
-        var wasOffline = (now - LAST_MAXIMA_EVENT_TIME) > CONNECTION_TIMEOUT_MS;
+    var now = Date.now();
 
-        if (wasOffline && LAST_MAXIMA_EVENT_TIME > 0) {
-            MDS.log("🔄 [RECONNECT] Node back online after offline period. Triggering history sync...");
-            WAS_OFFLINE = true;
+    // Gossip interval
+    if (now - LAST_GOSSIP > GOSSIP_INTERVAL) {
+      LAST_GOSSIP = now;
+      startGossip();
+      startCleanupTimer();
+      sendBackgroundBeacon();
+      checkPendingTransactions(); // Check for zombie transactions
+      checkSentTransactions(); // Check for confirmations (sent -> confirmed)
+    }
+  }
 
-            // Notify frontend to retry queued messages immediately
-            MDS.comms.solo(JSON.stringify({
-                type: 'RECONNECTED',
-                timestamp: now
-            }));
-
-            // Trigger history sync from recent contacts
-            if (typeof requestHistoryFromRecentContacts === 'function') {
-                requestHistoryFromRecentContacts();
+  // Service commands from frontend
+  else if (msg.event == "MDS_SERVICECMD") {
+    if (msg.data && msg.data.service === "COINDISC") {
+      MDS.log("📦 [SERVICE] Coin discovery requested from frontend");
+      if (typeof discoverOfflineTokens === "function") {
+        discoverOfflineTokens()
+          .then(function (count) {
+            if (count > 0) {
+              MDS.log("📦 [SERVICE] Recovered " + count + " offline token(s)");
+            } else {
+              MDS.log("📦 [SERVICE] No new offline tokens found");
             }
-        }
+          })
+          .catch(function (err) {
+            MDS.log("⚠️ [SERVICE] Coin discovery error: " + err);
+          });
+      }
+    }
+  }
 
-        LAST_MAXIMA_EVENT_TIME = now;
-        MDS.log("📨 [MAXIMA] Event received. App: " + msg.data.application);
+  // MAXIMA messages
+  else if (msg.event == "MAXIMA") {
+    // Track connection state for reconnection detection
+    var now = Date.now();
+    var wasOffline = now - LAST_MAXIMA_EVENT_TIME > CONNECTION_TIMEOUT_MS;
 
-        if (msg.data.application && (msg.data.application.toLowerCase() == "metachain" || msg.data.application.toLowerCase() == "metachain-group")) {
-            var app = msg.data.application.toLowerCase();
-            var pubkey = msg.data.from;
-            var datastr = msg.data.data.substring(2);
-            var jsonstr = hexToUtf8(datastr);
+    if (wasOffline && LAST_MAXIMA_EVENT_TIME > 0) {
+      MDS.log(
+        "🔄 [RECONNECT] Node back online after offline period. Triggering history sync...",
+      );
+      WAS_OFFLINE = true;
 
-            try {
-                var maxjson = JSON.parse(jsonstr);
-                MDS.log("🔍 [MAXIMA-DEBUG-ALL] App: " + app + " Type: " + (maxjson.type || maxjson.messageType) + " From: " + pubkey.substring(0, 10));
-                MDS.log("🔍 [MAXIMA] Type: " + (maxjson.type || maxjson.messageType));
+      // Notify frontend to retry queued messages immediately
+      MDS.comms.solo(
+        JSON.stringify({
+          type: "RECONNECTED",
+          timestamp: now,
+        }),
+      );
 
-                // ================== GROUP MESSAGES ==================
-                if (app === "metachain-group" && (maxjson.messageType === "history_request" || maxjson.messageType === "history_response")) {
-                    MDS.log("ℹ️ [GROUP-SYNC] Ignoring: " + maxjson.messageType);
-                    return;
-                }
-
-                if ((app === "metachain-group" && maxjson.messageType === "group_message") || (maxjson.groupId && maxjson.messageType === "group_message")) {
-                    handleGroupMessage(pubkey, maxjson);
-                    return;
-                }
-
-                if (app === "metachain-group" && maxjson.messageType === "group_invite") {
-                    handleGroupInvite(pubkey, maxjson);
-                    return;
-                }
-
-                if (app === "metachain-group" && (maxjson.messageType === "group_member_added" || maxjson.messageType === "group_member_removed")) {
-                    handleGroupMemberUpdate(pubkey, maxjson);
-                    return;
-                }
-
-                // ================== CHAT MESSAGES ==================
-                if (maxjson.type === "read") {
-                    handleReadReceipt(pubkey);
-                    return;
-                }
-
-                if (maxjson.type === "delivery_receipt") {
-                    handleDeliveryReceipt(pubkey);
-                    return;
-                }
-
-                if (maxjson.type === "ping") {
-                    handlePing(pubkey);
-                    return;
-                }
-
-                if (maxjson.type === "pong") {
-                    handlePong(pubkey);
-                    return;
-                }
-
-                if (maxjson.type === "chat_history_request") {
-                    handleChatHistoryRequest(pubkey, maxjson);
-                    return;
-                }
-
-                if (maxjson.type === "chat_history_response") {
-                    handleChatHistoryResponse(pubkey, maxjson);
-                    return;
-                }
-
-                // ================== BEACONS & DISCOVERY ==================
-                if (maxjson.type === "register" || maxjson.type === "BEACON") {
-                    MDS.log("📡 [P2P] Beacon: " + maxjson.alias);
-                    handleBeacon(maxjson, 'MAXIMA');
-                    return;
-                }
-
-                // ================== GOSSIP ==================
-                if (maxjson.type === "get_peers") {
-                    MDS.log("📨 [MAXIMA-GOSSIP] get_peers request from " + pubkey.substring(0, 10));
-                    handleGetPeers(pubkey, maxjson);
-                    return;
-                }
-
-                if (maxjson.type === "peers_response") {
-                    MDS.log("📨 [MAXIMA-GOSSIP] peers_response from " + pubkey.substring(0, 10));
-                    handlePeersResponse(pubkey, maxjson);
-                    return;
-                }
-
-                // ================== PROFILE ==================
-                if (maxjson.type === "profile_request") {
-                    handleProfileRequest(pubkey, maxjson);
-                    return;
-                }
-
-                if (maxjson.type === "profile_response") {
-                    handleProfileResponse(pubkey, maxjson);
-                    return;
-                }
-
-                // ================== CONTACT REQUESTS ==================
-                if (maxjson.type === "contact_request") {
-                    handleContactRequest(pubkey, maxjson);
-                    return;
-                }
-
-                if (maxjson.type === "contact_declined") {
-                    handleContactDeclined(pubkey);
-                    return;
-                }
-
-                if (maxjson.type === "contact_cancelled") {
-                    handleContactCancelled(pubkey);
-                    return;
-                }
-
-                if (maxjson.type === "contact_accepted") {
-                    handleContactAccepted(pubkey, maxjson);
-                    return;
-                }
-
-                // ================== MAXIMA CONTACT REQUESTS ==================
-                if (maxjson.type === "maxima_contact_request") {
-                    handleMaximaContactRequest(pubkey, maxjson);
-                    return;
-                }
-
-                if (maxjson.type === "maxima_contact_accepted") {
-                    handleMaximaContactAccepted(pubkey, maxjson);
-                    return;
-                }
-
-                if (maxjson.type === "maxima_contact_declined") {
-                    handleMaximaContactDeclined(pubkey);
-                    return;
-                }
-
-                if (maxjson.type === "maxima_contact_cancelled") {
-                    handleMaximaContactCancelled(pubkey);
-                    return;
-                }
-
-                if (maxjson.type === "maxima_contact_removed") {
-                    handleMaximaContactRemoved(pubkey, maxjson);
-                    return;
-                }
-
-                if (maxjson.type === "contact_blocked") {
-                    handleContactBlocked(pubkey);
-                    return;
-                }
-
-                if (maxjson.type === "contact_unblocked") {
-                    handleContactUnblocked(pubkey);
-                    return;
-                }
-
-                // ================== SMART SYNCHRONIZATION ==================
-                if (maxjson.type === "sync_status_check") {
-                    handleSyncStatusCheck(pubkey, maxjson);
-                    return;
-                }
-
-                if (maxjson.type === "sync_status_report") {
-                    handleSyncStatusReport(pubkey, maxjson);
-                    return;
-                }
-
-                // ================== CHAT MESSAGES (Default) ==================
-                // FILTER: Only process actual chat message types
-                var validChatTypes = ["text", "image", "video", "audio", "file", "charm", "token", "gif", "sticker", "voice"];
-                if (validChatTypes.indexOf(maxjson.type) !== -1 && maxjson.message !== undefined) {
-                    handleChatMessage(pubkey, maxjson);
-                    return;
-                }
-
-                MDS.log("⚠️ [MAXIMA] Unhandled type: " + (maxjson.type || maxjson.messageType || "unknown"));
-
-            } catch (e) {
-                MDS.log("❌ [MAXIMA] Parse error: " + e.message);
-            }
-        }
+      // Trigger history sync from recent contacts
+      if (typeof requestHistoryFromRecentContacts === "function") {
+        requestHistoryFromRecentContacts();
+      }
     }
 
-    // MINIMALOG for P2P beacons
-    else if (msg.event == "MINIMALOG") {
-        if (msg.data && msg.data.message) {
-            var logMsg = msg.data.message;
+    LAST_MAXIMA_EVENT_TIME = now;
+    MDS.log("📨 [MAXIMA] Event received. App: " + msg.data.application);
 
-            // Ignore our own debug logs (prevent infinite loop)
-            if (logMsg.indexOf("[BEACON]") !== -1 ||
-                logMsg.indexOf("[P2P]") !== -1 ||
-                logMsg.indexOf("[SW]") !== -1 ||
-                logMsg.indexOf("[MAXIMA]") !== -1 ||
-                logMsg.indexOf("[GOSSIP]") !== -1 ||
-                logMsg.indexOf("[DB]") !== -1) {
-                return;
-            }
+    if (
+      msg.data.application &&
+      (msg.data.application.toLowerCase() == "metachain" ||
+        msg.data.application.toLowerCase() == "metachain-group")
+    ) {
+      var app = msg.data.application.toLowerCase();
+      var pubkey = msg.data.from;
+      var jsonstr = "";
+      if (msg.data.data.startsWith("0x")) {
+        datastr = msg.data.data.substring(2);
+        jsonstr = hexToUtf8(datastr);
+      } else {
+        jsonstr = msg.data.data;
+      }
 
-            // P2P beacon detection - use flexible pattern like example
-            var hexIndex = logMsg.toLowerCase().indexOf("0x7b");
-            if (hexIndex !== -1) {
-                try {
-                    var rawHex = logMsg.substring(hexIndex);
-                    var hexMatch = rawHex.match(/^(0x[0-9A-Fa-f]+)/);
-                    if (!hexMatch) return;
+      try {
+        var maxjson = JSON.parse(jsonstr);
+        MDS.log(
+          "🔍 [MAXIMA-DEBUG-ALL] App: " +
+            app +
+            " Type: " +
+            (maxjson.type || maxjson.messageType) +
+            " From: " +
+            pubkey.substring(0, 10),
+        );
+        MDS.log("🔍 [MAXIMA] Type: " + (maxjson.type || maxjson.messageType));
 
-                    var hexData = hexMatch[1].substring(2);
-                    var jsonStr = hexToUtf8Simple(hexData);
-                    jsonStr = jsonStr.replace(/[\x00-\x1F\x7F-\x9F]/g, "").trim();
-                    var beacon = JSON.parse(jsonStr);
-
-                    if (beacon.app === "metachain" && (beacon.type === "BEACON" || beacon.type === "register")) {
-                        if (MY_MAXIMA_PK && beacon.pubkey === MY_MAXIMA_PK) {
-                            return; // Ignore self
-                        }
-                        MDS.log("📡 [P2P] Beacon: " + beacon.alias);
-                        handleBeacon(beacon, 'P2P');
-                    } else if (beacon.app === "metachain" && beacon.type === "peers_response") {
-                        MDS.log("📨 [P2P-GOSSIP] peers_response broadcast received");
-                        handlePeersResponse(null, beacon);
-                    }
-                } catch (e) {
-                    // Silent fail
-                }
-            }
+        // ================== GROUP MESSAGES ==================
+        if (
+          app === "metachain-group" &&
+          (maxjson.messageType === "history_request" ||
+            maxjson.messageType === "history_response")
+        ) {
+          MDS.log("ℹ️ [GROUP-SYNC] Ignoring: " + maxjson.messageType);
+          return;
         }
+
+        if (
+          (app === "metachain-group" &&
+            maxjson.messageType === "group_message") ||
+          (maxjson.groupId && maxjson.messageType === "group_message")
+        ) {
+          handleGroupMessage(pubkey, maxjson);
+          return;
+        }
+
+        if (
+          app === "metachain-group" &&
+          maxjson.messageType === "group_invite"
+        ) {
+          handleGroupInvite(pubkey, maxjson);
+          return;
+        }
+
+        if (
+          app === "metachain-group" &&
+          (maxjson.messageType === "group_member_added" ||
+            maxjson.messageType === "group_member_removed")
+        ) {
+          handleGroupMemberUpdate(pubkey, maxjson);
+          return;
+        }
+
+        // ================== CHAT MESSAGES ==================
+        if (maxjson.type === "read") {
+          handleReadReceipt(pubkey);
+          return;
+        }
+
+        if (maxjson.type === "delivery_receipt") {
+          handleDeliveryReceipt(pubkey);
+          return;
+        }
+
+        if (maxjson.type === "ping") {
+          handlePing(pubkey);
+          return;
+        }
+
+        if (maxjson.type === "pong") {
+          handlePong(pubkey);
+          return;
+        }
+
+        if (maxjson.type === "chat_history_request") {
+          handleChatHistoryRequest(pubkey, maxjson);
+          return;
+        }
+
+        if (maxjson.type === "chat_history_response") {
+          handleChatHistoryResponse(pubkey, maxjson);
+          return;
+        }
+
+        // ================== BEACONS & DISCOVERY ==================
+        if (maxjson.type === "register" || maxjson.type === "BEACON") {
+          MDS.log("📡 [P2P] Beacon: " + maxjson.alias);
+          handleBeacon(maxjson, "MAXIMA");
+          return;
+        }
+
+        // ================== GOSSIP ==================
+        if (maxjson.type === "get_peers") {
+          MDS.log(
+            "📨 [MAXIMA-GOSSIP] get_peers request from " +
+              pubkey.substring(0, 10),
+          );
+          handleGetPeers(pubkey, maxjson);
+          return;
+        }
+
+        if (maxjson.type === "peers_response") {
+          MDS.log(
+            "📨 [MAXIMA-GOSSIP] peers_response from " + pubkey.substring(0, 10),
+          );
+          handlePeersResponse(pubkey, maxjson);
+          return;
+        }
+
+        // ================== PROFILE ==================
+        if (maxjson.type === "profile_request") {
+          handleProfileRequest(pubkey, maxjson);
+          return;
+        }
+
+        if (maxjson.type === "profile_response") {
+          handleProfileResponse(pubkey, maxjson);
+          return;
+        }
+
+        // ================== CONTACT REQUESTS ==================
+        if (maxjson.type === "contact_request") {
+          handleContactRequest(pubkey, maxjson);
+          return;
+        }
+
+        if (maxjson.type === "contact_declined") {
+          handleContactDeclined(pubkey);
+          return;
+        }
+
+        if (maxjson.type === "contact_cancelled") {
+          handleContactCancelled(pubkey);
+          return;
+        }
+
+        if (maxjson.type === "contact_accepted") {
+          handleContactAccepted(pubkey, maxjson);
+          return;
+        }
+
+        // ================== MAXIMA CONTACT REQUESTS ==================
+        if (maxjson.type === "maxima_contact_request") {
+          handleMaximaContactRequest(pubkey, maxjson);
+          return;
+        }
+
+        if (maxjson.type === "maxima_contact_accepted") {
+          handleMaximaContactAccepted(pubkey, maxjson);
+          return;
+        }
+
+        if (maxjson.type === "maxima_contact_declined") {
+          handleMaximaContactDeclined(pubkey);
+          return;
+        }
+
+        if (maxjson.type === "maxima_contact_cancelled") {
+          handleMaximaContactCancelled(pubkey);
+          return;
+        }
+
+        if (maxjson.type === "maxima_contact_removed") {
+          handleMaximaContactRemoved(pubkey, maxjson);
+          return;
+        }
+
+        if (maxjson.type === "contact_blocked") {
+          handleContactBlocked(pubkey);
+          return;
+        }
+
+        if (maxjson.type === "contact_unblocked") {
+          handleContactUnblocked(pubkey);
+          return;
+        }
+
+        // ================== SMART SYNCHRONIZATION ==================
+        if (maxjson.type === "sync_status_check") {
+          handleSyncStatusCheck(maxjson, pubkey);
+          return;
+        }
+
+        if (maxjson.type === "sync_status_report") {
+          handleSyncStatusReport(maxjson, pubkey);
+          return;
+        }
+
+        // ================== CHAT MESSAGES (Default) ==================
+        // FILTER: Only process actual chat message types
+        var validChatTypes = [
+          "text",
+          "image",
+          "video",
+          "audio",
+          "file",
+          "charm",
+          "token",
+          "gif",
+          "sticker",
+          "voice",
+        ];
+        if (
+          validChatTypes.indexOf(maxjson.type) !== -1 &&
+          maxjson.message !== undefined
+        ) {
+          handleChatMessage(pubkey, maxjson);
+          return;
+        }
+
+        MDS.log(
+          "⚠️ [MAXIMA] Unhandled type: " +
+            (maxjson.type || maxjson.messageType || "unknown"),
+        );
+      } catch (e) {
+        MDS.log("❌ [MAXIMA] Parse error: " + e.message);
+      }
     }
+  }
+
+  // MINIMALOG for P2P beacons
+  else if (msg.event == "MINIMALOG") {
+    if (msg.data && msg.data.message) {
+      var logMsg = msg.data.message;
+
+      // Ignore our own debug logs (prevent infinite loop)
+      if (
+        logMsg.indexOf("[BEACON]") !== -1 ||
+        logMsg.indexOf("[P2P]") !== -1 ||
+        logMsg.indexOf("[SW]") !== -1 ||
+        logMsg.indexOf("[MAXIMA]") !== -1 ||
+        logMsg.indexOf("[GOSSIP]") !== -1 ||
+        logMsg.indexOf("[DB]") !== -1
+      ) {
+        return;
+      }
+
+      // P2P beacon detection - use flexible pattern like example
+      var hexIndex = logMsg.toLowerCase().indexOf("0x7b");
+      if (hexIndex !== -1) {
+        try {
+          var rawHex = logMsg.substring(hexIndex);
+          var hexMatch = rawHex.match(/^(0x[0-9A-Fa-f]+)/);
+          if (!hexMatch) return;
+
+          var hexData = hexMatch[1].substring(2);
+          var jsonStr = hexToUtf8Simple(hexData);
+          jsonStr = jsonStr.replace(/[\x00-\x1F\x7F-\x9F]/g, "").trim();
+          var beacon = JSON.parse(jsonStr);
+
+          if (
+            beacon.app === "metachain" &&
+            (beacon.type === "BEACON" || beacon.type === "register")
+          ) {
+            if (MY_MAXIMA_PK && beacon.pubkey === MY_MAXIMA_PK) {
+              return; // Ignore self
+            }
+            MDS.log("📡 [P2P] Beacon: " + beacon.alias);
+            handleBeacon(beacon, "P2P");
+          } else if (
+            beacon.app === "metachain" &&
+            beacon.type === "peers_response"
+          ) {
+            MDS.log("📨 [P2P-GOSSIP] peers_response broadcast received");
+            handlePeersResponse(null, beacon);
+          }
+        } catch (e) {
+          // Silent fail
+        }
+      }
+    }
+  }
 });
 

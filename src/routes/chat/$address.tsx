@@ -1,16 +1,24 @@
 // src/routes/chat/$address.tsx
-import { useEffect, useRef, useState, useContext, useCallback, lazy, Suspense } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useContext,
+  useCallback,
+  lazy,
+  Suspense,
+} from "react";
 import { useNavigate, createFileRoute } from "@tanstack/react-router";
-import { Keyboard } from '@capacitor/keyboard';
+import { Keyboard } from "@capacitor/keyboard";
+import { Capacitor } from "@capacitor/core";
 import { MDS } from "@minima-global/mds";
 import { appContext } from "../../AppContext";
 import TransferSelector from "../../components/chat/TransferSelector";
 import { Trash2, User, BarChart, Archive, Star, Wallet } from "lucide-react";
 import MessageBubble from "../../components/chat/MessageBubble";
 
-
 import { minimaService } from "../../services/minima.service";
-import * as contactRequestsService from '../../services/contact-requests.service';
+import * as contactRequestsService from "../../services/contact-requests.service";
 import { transactionService } from "../../services/transaction.service";
 import { requestProfile } from "../../services/profile.service";
 import InviteDialog from "../../components/chat/InviteDialog";
@@ -21,18 +29,16 @@ import { EmojiClickData } from "emoji-picker-react";
 // Lazy load EmojiPicker to reduce initial bundle size (~60KB)
 const EmojiPicker = lazy(() => import("emoji-picker-react"));
 
-
-
 // Helper for timeout
 const withTimeout = (promise: Promise<any>, ms: number) => {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('Timeout')), ms);
+    const timer = setTimeout(() => reject(new Error("Timeout")), ms);
     promise
-      .then(value => {
+      .then((value) => {
         clearTimeout(timer);
         resolve(value);
       })
-      .catch(reason => {
+      .catch((reason) => {
         clearTimeout(timer);
         reject(reason);
       });
@@ -47,7 +53,7 @@ export const Route = createFileRoute("/chat/$address")({
 
 interface Contact {
   currentaddress: string;
-  publickey: string;  // Added: needed to send messages
+  publickey: string; // Added: needed to send messages
   extradata?: {
     minimaaddress?: string;
     name?: string;
@@ -62,7 +68,7 @@ interface ParsedMessage {
   charm: { id: string } | null;
   amount: number | null;
   timestamp?: number;
-  status?: 'pending' | 'sent' | 'delivered' | 'read' | 'failed' | 'zombie';
+  status?: "pending" | "sent" | "delivered" | "read" | "failed" | "zombie";
   tokenAmount?: { amount: string; tokenName: string }; // For token transfer messages
   isSystem?: boolean; // For system messages (centered)
   isCharm?: boolean; // For charm messages
@@ -73,8 +79,6 @@ interface ParsedMessage {
   originalTimestamp?: number; // Sender's creation time (for correct ordering across peers)
 }
 
-
-
 // Helper function to format relative time
 function formatRelativeTime(timestamp: number): string {
   const now = Date.now();
@@ -84,15 +88,13 @@ function formatRelativeTime(timestamp: number): string {
   const hours = Math.floor(minutes / 60);
   const days = Math.floor(hours / 24);
 
-  if (days > 0) return `${days} day${days > 1 ? 's' : ''} ago`;
-  if (hours > 0) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
-  if (minutes > 0) return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
-  return 'just now';
+  if (days > 0) return `${days} day${days > 1 ? "s" : ""} ago`;
+  if (hours > 0) return `${hours} hour${hours > 1 ? "s" : ""} ago`;
+  if (minutes > 0) return `${minutes} minute${minutes > 1 ? "s" : ""} ago`;
+  return "just now";
 }
 
 function ChatPage() {
-
-
   // Helper to remove duplicate messages (favors UUID/customid, then seq, then timestamp)
   // Helper to remove duplicate messages (favors UUID/customid, then seq, then timestamp)
   const deduplicateMessages = (msgs: ParsedMessage[]) => {
@@ -105,7 +107,7 @@ function ChatPage() {
     const unique = msgs.filter((m) => {
       // 1. Gather all available keys for this message
       const keys: { customId?: string; seqKey?: string; timeKey: string } = {
-        timeKey: `ts-${m.timestamp}-${m.charm ? 'charm' : m.tokenAmount ? 'token' : 'text'}-${m.text || ''}`
+        timeKey: `ts-${m.timestamp}-${m.charm ? "charm" : m.tokenAmount ? "token" : "text"}-${m.text || ""}`,
       };
 
       if (m.customid && m.customid !== "0x00" && m.customid !== "undefined") {
@@ -113,14 +115,15 @@ function ChatPage() {
       }
 
       if (m.sender_seq && m.sender_seq > 0) {
-        keys.seqKey = `seq-${m.fromMe ? 'me' : 'them'}-${m.sender_seq}`;
+        keys.seqKey = `seq-${m.fromMe ? "me" : "them"}-${m.sender_seq}`;
       }
 
       // 2. CHECK: If ANY of these keys have been seen, it is a duplicate
       let isDuplicate = false;
 
       if (keys.customId && seenCustomIds.has(keys.customId)) isDuplicate = true;
-      if (!isDuplicate && keys.seqKey && seenSeqKeys.has(keys.seqKey)) isDuplicate = true;
+      if (!isDuplicate && keys.seqKey && seenSeqKeys.has(keys.seqKey))
+        isDuplicate = true;
       if (!isDuplicate && seenTimeKeys.has(keys.timeKey)) isDuplicate = true;
 
       // 3. ACTION: If duplicate, drop it. If unique, register ALL its keys
@@ -141,14 +144,26 @@ function ChatPage() {
       // This fixes cases where recent messages have slightly mixed timestamps (e.g. Async insertion).
       // CRITICAL FIX: Check for != null instead of truthy to properly handle sender_seq=0 (pending transactions)
       // 1. Same sender logic (Ignored for System messages - they rely on timestamp)
-      if (a.fromMe === b.fromMe && !a.isSystem && !b.isSystem && a.sender_seq != null && b.sender_seq != null) {
+      if (
+        a.fromMe === b.fromMe &&
+        !a.isSystem &&
+        !b.isSystem &&
+        a.sender_seq != null &&
+        b.sender_seq != null
+      ) {
         // If either sequence is 0 (pending), treat it specially:
         // - 0 means "most recent pending", should come AFTER all confirmed messages
         // - Compare by timestamp if BOTH are 0 (multiple pending items)
         if (a.sender_seq === 0 && b.sender_seq === 0) {
           // Both pending - sort by timestamp
-          const timeA = a.originalTimestamp && a.originalTimestamp > 0 ? a.originalTimestamp : a.timestamp || 0;
-          const timeB = b.originalTimestamp && b.originalTimestamp > 0 ? b.originalTimestamp : b.timestamp || 0;
+          const timeA =
+            a.originalTimestamp && a.originalTimestamp > 0
+              ? a.originalTimestamp
+              : a.timestamp || 0;
+          const timeB =
+            b.originalTimestamp && b.originalTimestamp > 0
+              ? b.originalTimestamp
+              : b.timestamp || 0;
           return timeA - timeB;
         } else if (a.sender_seq === 0) {
           return 1; // a (pending) comes after b (confirmed)
@@ -161,8 +176,14 @@ function ChatPage() {
       }
 
       // 2. Different senders or missing seq: Timestamp
-      const timeA = a.originalTimestamp && a.originalTimestamp > 0 ? a.originalTimestamp : a.timestamp || 0;
-      const timeB = b.originalTimestamp && b.originalTimestamp > 0 ? b.originalTimestamp : b.timestamp || 0;
+      const timeA =
+        a.originalTimestamp && a.originalTimestamp > 0
+          ? a.originalTimestamp
+          : a.timestamp || 0;
+      const timeB =
+        b.originalTimestamp && b.originalTimestamp > 0
+          ? b.originalTimestamp
+          : b.timestamp || 0;
 
       return timeA - timeB;
     });
@@ -187,7 +208,6 @@ function ChatPage() {
   const [showTransferSelector, setShowTransferSelector] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
-
   const [showMenu, setShowMenu] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showChatInfo, setShowChatInfo] = useState(false);
@@ -201,8 +221,6 @@ function ChatPage() {
   const [showReadModeWarning, setShowReadModeWarning] = useState(false);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
 
-
-
   const [showInviteDialog, setShowInviteDialog] = useState(false);
   const [inviteSending, setInviteSending] = useState(false);
 
@@ -215,10 +233,7 @@ function ChatPage() {
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const cursorPositionRef = useRef<number | null>(null);
 
-
   const navigate = useNavigate();
-
-
 
   // Auto-focus input
   useEffect(() => {
@@ -233,25 +248,37 @@ function ChatPage() {
 
   // Scroll to bottom when keyboard opens
   useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
     const handleKeyboardShow = () => {
       setTimeout(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
       }, 100);
     };
 
-    const showListener = Keyboard.addListener('keyboardWillShow', handleKeyboardShow);
-    const didShowListener = Keyboard.addListener('keyboardDidShow', handleKeyboardShow);
+    const showListener = Keyboard.addListener(
+      "keyboardWillShow",
+      handleKeyboardShow,
+    );
+    const didShowListener = Keyboard.addListener(
+      "keyboardDidShow",
+      handleKeyboardShow,
+    );
 
     return () => {
-      showListener.then(l => l.remove());
-      didShowListener.then(l => l.remove());
+      showListener.then((l) => l.remove());
+      didShowListener.then((l) => l.remove());
     };
   }, []);
 
   // Handle click outside to close emoji picker
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (showEmojiPicker && emojiPickerRef.current && !emojiPickerRef.current.contains(event.target as Node)) {
+      if (
+        showEmojiPicker &&
+        emojiPickerRef.current &&
+        !emojiPickerRef.current.contains(event.target as Node)
+      ) {
         setShowEmojiPicker(false);
       }
     };
@@ -285,9 +312,16 @@ function ChatPage() {
   const [contactRequest, setContactRequest] = useState<any | null>(null);
   const [processingRequest, setProcessingRequest] = useState(false);
   // Chat blocking state
-  const [blockReason, setBlockReason] = useState<'none' | 'pending' | 'recipient_restricted' | 'incoming_restricted' | 'no_permission'>('none');
+  const [blockReason, setBlockReason] = useState<
+    | "none"
+    | "pending"
+    | "recipient_restricted"
+    | "incoming_restricted"
+    | "no_permission"
+  >("none");
 
-  const defaultAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23cbd5e1'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E";
+  const defaultAvatar =
+    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23cbd5e1'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E";
 
   const getAvatar = (c: Contact | null) => {
     if (!c) return defaultAvatar;
@@ -336,14 +370,27 @@ function ChatPage() {
           const safeMxAddress = address.replace(/'/g, "''");
 
           let resolveSql = `SELECT PUBLICKEY FROM DISCOVERED_PEERS WHERE ADDRESS = '${safeMxAddress}' LIMIT 1`;
-          let resolveRes: any = await withTimeout(MDS.sql(resolveSql), 3000).catch(() => ({ status: false }));
+          let resolveRes: any = await withTimeout(
+            MDS.sql(resolveSql),
+            3000,
+          ).catch(() => ({ status: false }));
 
-          if (!resolveRes.status || !resolveRes.rows || resolveRes.rows.length === 0) {
+          if (
+            !resolveRes.status ||
+            !resolveRes.rows ||
+            resolveRes.rows.length === 0
+          ) {
             resolveSql = `SELECT PUBLICKEY FROM DISCOVERED_PEERS WHERE ADDRESS LIKE '%${safeMxAddress}%' LIMIT 1`;
-            resolveRes = await withTimeout(MDS.sql(resolveSql), 3000).catch(() => ({ status: false }));
+            resolveRes = await withTimeout(MDS.sql(resolveSql), 3000).catch(
+              () => ({ status: false }),
+            );
           }
 
-          if (resolveRes.status && resolveRes.rows && resolveRes.rows.length > 0) {
+          if (
+            resolveRes.status &&
+            resolveRes.rows &&
+            resolveRes.rows.length > 0
+          ) {
             resolvedPublicKey = resolveRes.rows[0].PUBLICKEY;
             console.log(`✅ [CHAT] Resolved: ${resolvedPublicKey}`);
           } else {
@@ -352,13 +399,15 @@ function ChatPage() {
         }
 
         // 1. Try to find in Maxima contacts using the RESOLVED key
-        const res: any = await withTimeout(MDS.cmd.maxcontacts(), 5000).catch(() => ({ status: false }));
+        const res: any = await withTimeout(MDS.cmd.maxcontacts(), 5000).catch(
+          () => ({ status: false }),
+        );
         const list: Contact[] = (res as any)?.response?.contacts || [];
         const c = list.find(
           (x) =>
             x.publickey === resolvedPublicKey ||
             x.currentaddress === address ||
-            x.extradata?.minimaaddress === address
+            x.extradata?.minimaaddress === address,
         );
 
         if (c) {
@@ -369,16 +418,24 @@ function ChatPage() {
           if (c.publickey) {
             const safeKey = c.publickey.replace(/'/g, "''");
             const discSql = `SELECT * FROM DISCOVERED_PEERS WHERE publickey='${safeKey}'`;
-            const discRes: any = await withTimeout(MDS.sql(discSql), 2000).catch(() => ({ status: false }));
+            const discRes: any = await withTimeout(
+              MDS.sql(discSql),
+              2000,
+            ).catch(() => ({ status: false }));
 
             if (discRes.status && discRes.rows && discRes.rows.length > 0) {
               const peer = discRes.rows[0];
               let parsedExtra: any = {};
               try {
                 if (peer.EXTRA_DATA) {
-                  parsedExtra = typeof peer.EXTRA_DATA === 'string' ? JSON.parse(peer.EXTRA_DATA) : peer.EXTRA_DATA;
+                  parsedExtra =
+                    typeof peer.EXTRA_DATA === "string"
+                      ? JSON.parse(peer.EXTRA_DATA)
+                      : peer.EXTRA_DATA;
                 }
-              } catch (e) { console.warn("Error parsing extra", e); }
+              } catch (e) {
+                console.warn("Error parsing extra", e);
+              }
 
               if (!c.extradata) c.extradata = {};
 
@@ -392,39 +449,68 @@ function ChatPage() {
             }
           }
 
-          if (c.extradata?.minimaaddress && c.extradata.minimaaddress.includes("@")) {
-            console.warn("⚠️ [CHAT] Found contact with INVALID minimaaddress (Maxima ID detected), clearing it.");
+          if (
+            c.extradata?.minimaaddress &&
+            c.extradata.minimaaddress.includes("@")
+          ) {
+            console.warn(
+              "⚠️ [CHAT] Found contact with INVALID minimaaddress (Maxima ID detected), clearing it.",
+            );
             if (c.extradata) c.extradata.minimaaddress = "";
           }
 
           contactToSet = c;
         } else {
           // 2. If not found, try DISCOVERED_PEERS (using the RESOLVED key)
-          console.log(`🔍 [CHAT] Checking Discovery DB: ${resolvedPublicKey}...`);
-          const queryKey = resolvedPublicKey.startsWith('0x') ? resolvedPublicKey : address;
+          console.log(
+            `🔍 [CHAT] Checking Discovery DB: ${resolvedPublicKey}...`,
+          );
+          const queryKey = resolvedPublicKey.startsWith("0x")
+            ? resolvedPublicKey
+            : address;
           const safeQueryKey = queryKey.replace(/'/g, "''");
 
           const discoverySql = `SELECT * FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('${safeQueryKey}')`;
-          let discoveryRes: any = await withTimeout(MDS.sql(discoverySql), 3000).catch(() => ({ status: false }));
-          let foundInDiscovery = discoveryRes.status && discoveryRes.rows && discoveryRes.rows.length > 0;
+          let discoveryRes: any = await withTimeout(
+            MDS.sql(discoverySql),
+            3000,
+          ).catch(() => ({ status: false }));
+          let foundInDiscovery =
+            discoveryRes.status &&
+            discoveryRes.rows &&
+            discoveryRes.rows.length > 0;
 
           if (!foundInDiscovery) {
-            console.log(`⚠️ [CHAT] Not in DISCOVERED_PEERS, checking METACHAIN_USERS...`);
+            console.log(
+              `⚠️ [CHAT] Not in DISCOVERED_PEERS, checking METACHAIN_USERS...`,
+            );
             const registrySql = `SELECT * FROM METACHAIN_USERS WHERE UPPER(publickey)=UPPER('${safeQueryKey}')`;
-            discoveryRes = await withTimeout(MDS.sql(registrySql), 3000).catch(() => ({ status: false }));
+            discoveryRes = await withTimeout(MDS.sql(registrySql), 3000).catch(
+              () => ({ status: false }),
+            );
           }
 
-          if (discoveryRes.status && discoveryRes.rows && discoveryRes.rows.length > 0) {
+          if (
+            discoveryRes.status &&
+            discoveryRes.rows &&
+            discoveryRes.rows.length > 0
+          ) {
             const peer = discoveryRes.rows[0];
 
             if (foundInDiscovery) {
               let parsedExtra: any = {};
               try {
                 if (peer.EXTRA_DATA) {
-                  parsedExtra = typeof peer.EXTRA_DATA === 'string' ? JSON.parse(peer.EXTRA_DATA) : peer.EXTRA_DATA;
+                  parsedExtra =
+                    typeof peer.EXTRA_DATA === "string"
+                      ? JSON.parse(peer.EXTRA_DATA)
+                      : peer.EXTRA_DATA;
                 }
               } catch (e) {
-                console.warn("⚠️ [CHAT] Failed to parse extra_data from discovery", e);
+                console.warn(
+                  "⚠️ [CHAT] Failed to parse extra_data from discovery",
+                  e,
+                );
               }
 
               contactToSet = {
@@ -432,9 +518,10 @@ function ChatPage() {
                 currentaddress: peer.ADDRESS || address,
                 extradata: {
                   name: peer.ALIAS || "Unknown",
-                  minimaaddress: peer.MINIMAADDRESS || parsedExtra.minimaaddress || "",
-                  icon: peer.ICON || ""
-                }
+                  minimaaddress:
+                    peer.MINIMAADDRESS || parsedExtra.minimaaddress || "",
+                  icon: peer.ICON || "",
+                },
               };
             } else {
               contactToSet = {
@@ -443,32 +530,41 @@ function ChatPage() {
                 extradata: {
                   name: peer.ALIAS || peer.alias || "Unknown",
                   minimaaddress: "",
-                  icon: ""
-                }
+                  icon: "",
+                },
               };
             }
           } else {
             // 3. FALLBACK: Check local CHAT_MESSAGES history
             // If we are offline and have chatted with them before, we might have their name stored in the messages
-            console.log(`⚠️ [CHAT] Not in Discovery/Registry, checking local CHAT_MESSAGES for ${safeQueryKey}...`);
+            console.log(
+              `⚠️ [CHAT] Not in Discovery/Registry, checking local CHAT_MESSAGES for ${safeQueryKey}...`,
+            );
             // CASE INSENSITIVE CHECK for robustness
             const historySql = `SELECT roomname, username FROM CHAT_MESSAGES WHERE UPPER(publickey)=UPPER('${safeQueryKey}') ORDER BY date DESC LIMIT 1`;
-            const historyRes: any = await withTimeout(new Promise((resolve) => {
-              MDS.sql(historySql, (res: any) => resolve(res));
-            }), 2000).catch((err) => {
+            const historyRes: any = await withTimeout(
+              new Promise((resolve) => {
+                MDS.sql(historySql, (res: any) => resolve(res));
+              }),
+              2000,
+            ).catch((err) => {
               console.error("❌ [CHAT] History fallback SQL failed:", err);
               return { status: false };
             });
 
             console.log("⚠️ [CHAT] History result:", historyRes);
 
-            if (historyRes.status && historyRes.rows && historyRes.rows.length > 0) {
+            if (
+              historyRes.status &&
+              historyRes.rows &&
+              historyRes.rows.length > 0
+            ) {
               const row = historyRes.rows[0];
-              // Prefer roomname if set (usually recipient name), otherwise username? 
+              // Prefer roomname if set (usually recipient name), otherwise username?
               // Actually username is who sent it. If 'Me', it doesn't help.
               // But CHAT_MESSAGES stores 'roomname' as the *remote* party's name often (or empty).
               // Let's check what we have.
-              // In ChatService.insertMessage, roomname is stored. 
+              // In ChatService.insertMessage, roomname is stored.
               // Warning: often roomname is empty '' in direct chats.
               // But 'ChatsAndGroups' seems to use 'roomname' from the chat item.
 
@@ -481,11 +577,13 @@ function ChatPage() {
                 extradata: {
                   name: derivedName,
                   minimaaddress: "", // Can't recover this easily without token msg, but text works
-                  icon: ""
-                }
+                  icon: "",
+                },
               };
             } else {
-              console.log("⚠️ [CHAT] Contact not found anywhere. Using raw/resolved.");
+              console.log(
+                "⚠️ [CHAT] Contact not found anywhere. Using raw/resolved.",
+              );
 
               // Only use fallback "Unknown" if we DO NOT have cached data
               // If cached data exists, we prefer it over "Unknown User" fallback
@@ -495,10 +593,12 @@ function ChatPage() {
                   currentaddress: address,
                   extradata: {
                     name: "Unknown User",
-                  }
+                  },
                 };
               } else {
-                console.log("⚠️ [CHAT] Keeping cached contact instead of fallback Unknown");
+                console.log(
+                  "⚠️ [CHAT] Keeping cached contact instead of fallback Unknown",
+                );
                 // We keep contactToSet null so we don't overwrite cache with Unknown
               }
             }
@@ -514,7 +614,9 @@ function ChatPage() {
               if (cachedObj.extradata?.icon) {
                 if (!contactToSet.extradata) contactToSet.extradata = {};
                 contactToSet.extradata.icon = cachedObj.extradata.icon;
-                console.log("⚠️ [CHAT] Restore icon from cache (offline persistence)");
+                console.log(
+                  "⚠️ [CHAT] Restore icon from cache (offline persistence)",
+                );
               }
             } catch (e) {
               // Ignore parse error
@@ -525,16 +627,21 @@ function ChatPage() {
           // Update cache
           localStorage.setItem(cacheKey, JSON.stringify(contactToSet));
 
-          const isUnknown = contactToSet.extradata?.name === "Unknown User" || !contactToSet.extradata?.name;
+          const isUnknown =
+            contactToSet.extradata?.name === "Unknown User" ||
+            !contactToSet.extradata?.name;
           const isMissingAddress = !contactToSet.extradata?.minimaaddress;
 
           if ((isUnknown || isMissingAddress) && contactToSet.publickey) {
             // Non-critical, just warning log if fails
-            requestProfile(contactToSet.currentaddress || address, contactToSet.publickey)
-              .catch(err => console.warn("⚠️ [CHAT] Profile request failed:", err));
+            requestProfile(
+              contactToSet.currentaddress || address,
+              contactToSet.publickey,
+            ).catch((err) =>
+              console.warn("⚠️ [CHAT] Profile request failed:", err),
+            );
           }
         }
-
       } catch (err) {
         if (mounted) console.error("❌ [CHAT] Contact load error:", err);
       }
@@ -560,11 +667,11 @@ function ChatPage() {
       fetchContact();
     };
 
-    window.addEventListener('peer_updated' as any, handlePeerUpdate);
+    window.addEventListener("peer_updated" as any, handlePeerUpdate);
 
     return () => {
       mounted = false;
-      window.removeEventListener('peer_updated' as any, handlePeerUpdate);
+      window.removeEventListener("peer_updated" as any, handlePeerUpdate);
     };
   }, [address]);
 
@@ -583,8 +690,6 @@ function ChatPage() {
       console.error("❌ [CHAT] Check status error:", err);
     }
   };
-
-
 
   // State to track if there is a pending outgoing request (separate from blocking)
   const [isPendingOutgoing, setIsPendingOutgoing] = useState(false);
@@ -611,12 +716,16 @@ function ChatPage() {
     // Check for OUTGOING requests (I sent to them)
     // ... existing logic ...
 
-    const hasPendingOutgoing = await minimaService.checkPendingChatRequest(contact.publickey);
+    const hasPendingOutgoing = await minimaService.checkPendingChatRequest(
+      contact.publickey,
+    );
     setIsPendingOutgoing(hasPendingOutgoing);
     console.log(`🔍 [CHAT] Outgoing pending: ${hasPendingOutgoing}`);
 
-    // Check for INCOMING requests (they sent to me) 
-    const hasPendingIncoming = await minimaService.checkIncomingChatRequest(contact.publickey);
+    // Check for INCOMING requests (they sent to me)
+    const hasPendingIncoming = await minimaService.checkIncomingChatRequest(
+      contact.publickey,
+    );
     console.log(`🔍 [CHAT] Incoming pending: ${hasPendingIncoming}`);
 
     // Check if we're already Maxima contacts
@@ -632,8 +741,11 @@ function ChatPage() {
 
     // CRITICAL FIX: Check THEIR permission, not mine!
     // When I (sender) want to chat with THEM (recipient), I need to check if THEY allow non-contact chats
-    const recipientAllowsNonContacts = await minimaService.getContactChatPermission(contact.publickey);
-    console.log(`🔍 [CHAT] Recipient ${contact?.extradata?.name || contact.publickey.substring(0, 10)} allowsNonContacts: ${recipientAllowsNonContacts}`);
+    const recipientAllowsNonContacts =
+      await minimaService.getContactChatPermission(contact.publickey);
+    console.log(
+      `🔍 [CHAT] Recipient ${contact?.extradata?.name || contact.publickey.substring(0, 10)} allowsNonContacts: ${recipientAllowsNonContacts}`,
+    );
 
     // Also log MY setting for comparison/debugging
     const myAllowNonContacts = await minimaService.getChatPermission();
@@ -645,8 +757,8 @@ function ChatPage() {
     try {
       const escapeSql = (str: string) => str.replace(/'/g, "''");
       // Relaxed query: Check for ANY pending request from this user to us
-      const maximaReqSql = `SELECT * FROM MAXIMA_CONTACT_REQUESTS 
-                            WHERE from_publickey='${escapeSql(contact.publickey)}' 
+      const maximaReqSql = `SELECT * FROM MAXIMA_CONTACT_REQUESTS
+                            WHERE from_publickey='${escapeSql(contact.publickey)}'
                             AND status='pending'`;
 
       console.log(`🔍 [CHAT DEBUG] Checking Maxima Req SQL: ${maximaReqSql}`);
@@ -659,7 +771,7 @@ function ChatPage() {
 
         // FIX: Ensure UI sees the request object so the banner appears!
         const foundReq = maximaReqRes.rows[0];
-        if (!foundReq.type) foundReq.type = 'maxima';
+        if (!foundReq.type) foundReq.type = "maxima";
         setContactRequest(foundReq as any);
         console.log("🔔 [CHAT] Found incoming Maxima contact request");
 
@@ -674,20 +786,24 @@ function ChatPage() {
     if (isContact) {
       // Already Maxima contacts - always allow
       console.log("🔓 [CHAT] Allowing (Maxima Contact)");
-      setBlockReason('none');
+      setBlockReason("none");
     } else if (hasPendingIncoming || hasMaximaRequest) {
       // They sent ME a request - I should be able to REPLY to them IF they allow it
       // My allowNonContactChats only affects who can send TO me, not who I can send TO
       // Check if THEY allow non-contact chats (so I can send to them)
       if (recipientAllowsNonContacts) {
-        setBlockReason('none');
-        console.log("🔓 [CHAT] Allowing reply to incoming request (recipient allows non-contact chats)");
+        setBlockReason("none");
+        console.log(
+          "🔓 [CHAT] Allowing reply to incoming request (recipient allows non-contact chats)",
+        );
       } else {
         // They don't allow non-contact chats, so I can't send to them
         // But they can send to me (they already did - the request)
         // I must ACCEPT the request first to unlock the chat
-        setBlockReason('recipient_restricted');
-        console.log("🔒 [CHAT] Blocking reply (recipient doesn't allow non-contact chats). Must Accept Request first.");
+        setBlockReason("recipient_restricted");
+        console.log(
+          "🔒 [CHAT] Blocking reply (recipient doesn't allow non-contact chats). Must Accept Request first.",
+        );
       }
     } else if (hasPendingOutgoing) {
       // I sent THEM a request - check THEIR permission
@@ -695,33 +811,43 @@ function ChatPage() {
       // The request was sent because at some point we thought they didn't allow it,
       // but we should respect their current setting.
       if (recipientAllowsNonContacts) {
-        console.log("🔓 [CHAT] Allowing (pending request but recipient allows non-contact chats)");
-        setBlockReason('none');
+        console.log(
+          "🔓 [CHAT] Allowing (pending request but recipient allows non-contact chats)",
+        );
+        setBlockReason("none");
       } else {
-        console.log("🔒 [CHAT] Blocking (pending request, recipient doesn't allow non-contact chats)");
-        setBlockReason('recipient_restricted');
+        console.log(
+          "🔒 [CHAT] Blocking (pending request, recipient doesn't allow non-contact chats)",
+        );
+        setBlockReason("recipient_restricted");
       }
     } else {
       // No pending requests - check recipient's permission
       if (recipientAllowsNonContacts) {
         console.log("🔓 [CHAT] Allowing (recipient allows non-contact chats)");
-        setBlockReason('none');
+        setBlockReason("none");
       } else {
-        console.log("🔒 [CHAT] Blocking (recipient doesn't allow non-contact chats)");
-        setBlockReason('recipient_restricted');
+        console.log(
+          "🔒 [CHAT] Blocking (recipient doesn't allow non-contact chats)",
+        );
+        setBlockReason("recipient_restricted");
       }
-
     }
 
     // Check override logic (MOVED OUTSIDE ELSE)
     // Always check override logic (no condition to avoid stale state)
     if (myPublicKey && contact?.publickey) {
       // DEBUG LOGS
-      console.log("🔍 [CHAT DEBUG] Override Check (Post-Block) - MyPK:", myPublicKey, "ContactPK:", contact.publickey);
+      console.log(
+        "🔍 [CHAT DEBUG] Override Check (Post-Block) - MyPK:",
+        myPublicKey,
+        "ContactPK:",
+        contact.publickey,
+      );
       try {
         const sMy = myPublicKey.replace(/'/g, "''");
         const sPeer = contact.publickey.replace(/'/g, "''");
-        const sql = `SELECT * FROM CONTACT_REQUESTS 
+        const sql = `SELECT * FROM CONTACT_REQUESTS
                    WHERE ((from_publickey='${sMy}' AND to_publickey='${sPeer}')
                       OR (from_publickey='${sPeer}' AND to_publickey='${sMy}'))
                    AND status='accepted'`;
@@ -733,18 +859,24 @@ function ChatPage() {
         // console.log("🔍 [CHAT DEBUG] Override Res:", res);
 
         if (res.status && res.rows && res.rows.length > 0) {
-          console.log("🔓 [CHAT] Override: Found ACCEPTED request in DB -> Allow");
-          setBlockReason('none');
+          console.log(
+            "🔓 [CHAT] Override: Found ACCEPTED request in DB -> Allow",
+          );
+          setBlockReason("none");
         } else {
           // HISTORY OVERRIDE: If we have chatted before (sent/received messages), allow chat
           // This covers the case where users were chatting in "Open" mode but then one switched to "Contacts Only"
           // We don't want to break existing active chats.
           const historySql = `SELECT * FROM CHAT_MESSAGES WHERE publickey='${sPeer}' AND type!='system' LIMIT 1`;
-          const histRes = await new Promise<any>((resolve) => MDS.sql(historySql, resolve));
+          const histRes = await new Promise<any>((resolve) =>
+            MDS.sql(historySql, resolve),
+          );
 
           if (histRes.status && histRes.rows && histRes.rows.length > 0) {
-            console.log("🔓 [CHAT] Override: Found CHAT HISTORY -> Allow (Implied Contact)");
-            setBlockReason('none');
+            console.log(
+              "🔓 [CHAT] Override: Found CHAT HISTORY -> Allow (Implied Contact)",
+            );
+            setBlockReason("none");
           }
         }
       } catch (sqlErr) {
@@ -762,7 +894,9 @@ function ChatPage() {
   useEffect(() => {
     if (contact?.publickey) {
       checkChatStatus();
-      checkPending().catch(err => console.error("❌ [CHAT] Error checking pending:", err));
+      checkPending().catch((err) =>
+        console.error("❌ [CHAT] Error checking pending:", err),
+      );
     }
   }, [contact, checkPending]);
 
@@ -771,15 +905,16 @@ function ChatPage() {
   // simply polling the local DB state is safer and sufficient for "reactive" UI updates like this banner.
   useEffect(() => {
     // Polling replaced by event listener (handleNewMessage)
-
-    // return () => clearInterval(intervalId); 
+    // return () => clearInterval(intervalId);
   }, [contact, checkPending]);
 
   // Listen for balance updates to reload messages when transaction status changes
   // This ensures messages show updated pending/sent/confirmed status in real-time
   useEffect(() => {
     const handleBalanceUpdate = () => {
-      console.log('🔄 [CHAT] Balance updated - reloading messages to update transaction status');
+      console.log(
+        "🔄 [CHAT] Balance updated - reloading messages to update transaction status",
+      );
       loadMessagesFromDB();
     };
 
@@ -812,7 +947,7 @@ function ChatPage() {
     try {
       const [chatRequests, maximaRequests] = await Promise.all([
         minimaService.getChatRequests(myPublicKey),
-        minimaService.getMaximaContactRequests(myPublicKey)
+        minimaService.getMaximaContactRequests(myPublicKey),
       ]);
 
       console.log("🔍 [CHAT] Loading requests...");
@@ -821,7 +956,10 @@ function ChatPage() {
       console.log("🔍 [CHAT] Maxima Pending:", maximaRequests.length);
 
       // Tag Maxima requests so UI knows how to handle them
-      const taggedMaxima = maximaRequests.map((r: any) => ({ ...r, type: 'maxima' }));
+      const taggedMaxima = maximaRequests.map((r: any) => ({
+        ...r,
+        type: "maxima",
+      }));
 
       // Merge all requests
       const allRequests = [...chatRequests, ...taggedMaxima];
@@ -857,13 +995,12 @@ function ChatPage() {
     loadContactRequest();
   }, [loadContactRequest]);
 
-
   /* ----------------------------------------------------------------------------
       LOAD MESSAGES FROM DB
   ---------------------------------------------------------------------------- */
   // Helper to load messages from DB - reusable for initial load and after sending
   const loadMessagesFromDB = async () => {
-    // FIX: Use address instead of contact.publickey so we can see messages/history 
+    // FIX: Use address instead of contact.publickey so we can see messages/history
     // even if the user is not in our contacts list anymore
     const targetKey = address || contact?.publickey;
     if (!targetKey) return;
@@ -897,11 +1034,14 @@ function ChatPage() {
             console.log("⚠️ [CHAT-DB] Loaded messages from cache");
             // Don't return, allow fetch to proceed and update
           }
-        } catch (e) { }
+        } catch (e) {}
       }
 
       // 2. Fetch fresh with timeout
-      const rawMessages: any = await withTimeout(minimaService.getMessages(targetKey), 5000).catch(() => null);
+      const rawMessages: any = await withTimeout(
+        minimaService.getMessages(targetKey),
+        5000,
+      ).catch(() => null);
 
       if (Array.isArray(rawMessages)) {
         const parsedMessages = rawMessages.map((row: any) => {
@@ -915,7 +1055,10 @@ function ChatPage() {
           if (isToken) {
             try {
               const tokenData = JSON.parse(row.MESSAGE || "{}");
-              tokenAmount = { amount: tokenData.amount, tokenName: tokenData.tokenName };
+              tokenAmount = {
+                amount: tokenData.amount,
+                tokenName: tokenData.tokenName,
+              };
               // Fallback text in case UI fails
               displayText = `${Number(tokenData.amount)} ${tokenData.tokenName}`;
             } catch (err) {
@@ -929,21 +1072,28 @@ function ChatPage() {
           // Safer status parsing - do NOT default to 'sent' blindly
           let parsedStatus: any = row.STATE;
 
-          if (!parsedStatus || parsedStatus === 'null' || parsedStatus === 'undefined') {
+          if (
+            !parsedStatus ||
+            parsedStatus === "null" ||
+            parsedStatus === "undefined"
+          ) {
             // If state is missing, default based on type AND sender
             const username = row.USERNAME;
-            parsedStatus = (isCharm || isToken) && username === "Me" ? 'pending' : 'sent';
+            parsedStatus =
+              (isCharm || isToken) && username === "Me" ? "pending" : "sent";
           }
 
           // DEBUG LOG: See what we are loading
           if (isToken) {
-            console.log(`🔎 [CHAT-DB] Loaded Token: ID=${row.DATE}, Status=${parsedStatus}, Amount=${tokenAmount?.amount}`);
+            console.log(
+              `🔎 [CHAT-DB] Loaded Token: ID=${row.DATE}, Status=${parsedStatus}, Amount=${tokenAmount?.amount}`,
+            );
           }
 
           // CRITICAL FIX: If it's a token/charm from me, we MUST verify against the TRANSACTIONS table
           // because CHAT_MESSAGES might default to 'sent' or be outdated, while TRANSACTIONS knows the real "pending" state.
           // We can use the timestamp (row.DATE) which corresponds to message_timestamp in TRANSACTIONS?
-          // Let's assume we can check async or rely on what we have. 
+          // Let's assume we can check async or rely on what we have.
           // Since this is inside a map, we can't await easily without Promise.all.
           // For now, let's map it, and then do a second pass or Promise.all the list.
 
@@ -957,21 +1107,21 @@ function ChatPage() {
             username: row.USERNAME,
             // ROBUST FIX: Case-insensitive check and log for debugging
             isSystem: (() => {
-              const u = row.USERNAME ? String(row.USERNAME).trim() : '';
-              const t = row.TYPE ? String(row.TYPE).trim() : '';
-              const m = row.MESSAGE ? String(row.MESSAGE).trim() : '';
+              const u = row.USERNAME ? String(row.USERNAME).trim() : "";
+              const t = row.TYPE ? String(row.TYPE).trim() : "";
+              const m = row.MESSAGE ? String(row.MESSAGE).trim() : "";
 
               // Check 1: Username is System (case insensitive)
-              if (u.toLowerCase() === 'system') return true;
+              if (u.toLowerCase() === "system") return true;
 
               // Check 2: Type is system (case insensitive)
-              if (t.toLowerCase() === 'system') return true;
+              if (t.toLowerCase() === "system") return true;
 
               // Check 3: Automated system event text patterns (fallback)
-              if (m.toLowerCase().includes('chat accepted')) return true;
-              if (m.toLowerCase().includes('request accepted')) return true;
-              if (m.toLowerCase().includes('chat request sent')) return true;
-              if (m.toLowerCase().includes('user chat accepted')) return true;
+              if (m.toLowerCase().includes("chat accepted")) return true;
+              if (m.toLowerCase().includes("request accepted")) return true;
+              if (m.toLowerCase().includes("chat request sent")) return true;
+              if (m.toLowerCase().includes("user chat accepted")) return true;
 
               return false;
             })(),
@@ -982,43 +1132,52 @@ function ChatPage() {
             charm: charmObj,
             sender_seq: row.SENDER_SEQ != null ? Number(row.SENDER_SEQ) : null, // Map sequence number (Strict Number)
             customid: row.CUSTOMID, // Map custom ID for deduplication
-            originalTimestamp: row.ORIGINAL_TIMESTAMP ? Number(row.ORIGINAL_TIMESTAMP) : undefined // Convert to number
+            originalTimestamp: row.ORIGINAL_TIMESTAMP
+              ? Number(row.ORIGINAL_TIMESTAMP)
+              : undefined, // Convert to number
           };
         });
 
         // Phase 2: Async Status Verification for Pending/Sent Transactions
         // Match the sidebar logic: check TRANSACTIONS table for pending/sent status
-        const finalMessages = await Promise.all(parsedMessages.map(async (msg: any) => {
-          let finalStatus = msg.parsedStatus;
+        const finalMessages = await Promise.all(
+          parsedMessages.map(async (msg: any) => {
+            let finalStatus = msg.parsedStatus;
 
-          // Only check if it looks like a transaction from me
-          if ((msg.isToken || msg.isCharm) && msg.fromMe) {
-            // Check TRANSACTIONS table using the message timestamp as stateId
-            const tx = await transactionService.findPendingTransactionByStateId(msg.timestamp);
-            if (tx) {
-              // If we find a transaction with pending or sent status, show as pending in UI
-              if (tx.status === 'pending' || tx.status === 'sent') {
-                console.log(`🔄 [CHAT-DB] Found ${tx.status.toUpperCase()} tx for message ${msg.timestamp}. Showing as 'pending' in UI.`);
-                finalStatus = 'pending';
+            // Only check if it looks like a transaction from me
+            if ((msg.isToken || msg.isCharm) && msg.fromMe) {
+              // Check TRANSACTIONS table using the message timestamp as stateId
+              const tx =
+                await transactionService.findPendingTransactionByStateId(
+                  msg.timestamp,
+                );
+              if (tx) {
+                // If we find a transaction with pending or sent status, show as pending in UI
+                if (tx.status === "pending" || tx.status === "sent") {
+                  console.log(
+                    `🔄 [CHAT-DB] Found ${tx.status.toUpperCase()} tx for message ${msg.timestamp}. Showing as 'pending' in UI.`,
+                  );
+                  finalStatus = "pending";
+                }
               }
             }
-          }
 
-          return {
-            id: msg.id,
-            text: msg.displayText,
-            fromMe: msg.fromMe,
-            charm: msg.charm,
-            amount: msg.amount,
-            timestamp: msg.timestamp, // Already a number now
-            status: finalStatus,
-            tokenAmount: msg.tokenAmount,
-            sender_seq: msg.sender_seq,
-            customid: msg.customid,
-            originalTimestamp: msg.originalTimestamp,
-            isSystem: msg.isSystem
-          } as ParsedMessage;
-        }));
+            return {
+              id: msg.id,
+              text: msg.displayText,
+              fromMe: msg.fromMe,
+              charm: msg.charm,
+              amount: msg.amount,
+              timestamp: msg.timestamp, // Already a number now
+              status: finalStatus,
+              tokenAmount: msg.tokenAmount,
+              sender_seq: msg.sender_seq,
+              customid: msg.customid,
+              originalTimestamp: msg.originalTimestamp,
+              isSystem: msg.isSystem,
+            } as ParsedMessage;
+          }),
+        );
 
         const deduplicatedMessages = deduplicateMessages(finalMessages);
         setMessages(deduplicatedMessages);
@@ -1026,7 +1185,10 @@ function ChatPage() {
         // Cache the LAST 50 messages to save space for offline use
         try {
           const toCache = deduplicatedMessages.slice(-50);
-          localStorage.setItem(`cached_msgs_${targetKey}`, JSON.stringify(toCache));
+          localStorage.setItem(
+            `cached_msgs_${targetKey}`,
+            JSON.stringify(toCache),
+          );
         } catch (e) {
           console.warn("⚠️ [CHAT] Failed to cache messages", e);
         }
@@ -1038,7 +1200,9 @@ function ChatPage() {
 
       // If a reload was requested while we were running, run again immediately
       if (pendingReload.current) {
-        console.log("🔄 [CHAT] Pending reload detected - re-running loadMessagesFromDB");
+        console.log(
+          "🔄 [CHAT] Pending reload detected - re-running loadMessagesFromDB",
+        );
         loadMessagesFromDB();
       }
     }
@@ -1069,10 +1233,16 @@ function ChatPage() {
         // Guarded history sync inside initChat (can also be called by useEffect, this is a fallback)
         if (historyRequestedFor.current !== contact.publickey) {
           historyRequestedFor.current = contact.publickey;
-          console.log("🔄 [CHAT] Triggering history sync (init) with", contact.publickey);
+          console.log(
+            "🔄 [CHAT] Triggering history sync (init) with",
+            contact.publickey,
+          );
           setIsSyncing(true);
-          minimaService.requestChatHistory(contact.publickey)
-            .catch(err => console.error("❌ [CHAT] Sync request failed:", err));
+          minimaService
+            .requestChatHistory(contact.publickey)
+            .catch((err) =>
+              console.error("❌ [CHAT] Sync request failed:", err),
+            );
         }
       }
     };
@@ -1087,8 +1257,9 @@ function ChatPage() {
     };
   }, [address, contact?.publickey]);
 
-
-  const [appStatus, setAppStatus] = useState<'unknown' | 'checking' | 'installed' | 'not_found' | 'offline'>('unknown');
+  const [appStatus, setAppStatus] = useState<
+    "unknown" | "checking" | "installed" | "not_found" | "offline"
+  >("unknown");
   const [lastSeen, setLastSeen] = useState<number | null>(null);
 
   /* ----------------------------------------------------------------------------
@@ -1100,7 +1271,7 @@ function ChatPage() {
     // Always check app status when entering chat
     if (contact.publickey) {
       console.log(`📡 [PING] Starting check for: ${contact.publickey}`);
-      setAppStatus('checking');
+      setAppStatus("checking");
 
       // 1. Check if user is "Known" (in Discovery or Contacts)
       // This determines if they fall back to 'offline' or 'not_found' on timeout
@@ -1114,13 +1285,13 @@ function ChatPage() {
           isKnownUser = true;
         } else {
           // If not in discovery, check if it's a valid 0x key (implies we know them via contact)
-          if (contact.publickey.startsWith('0x')) {
+          if (contact.publickey.startsWith("0x")) {
             isKnownUser = true;
           }
         }
       });
 
-      minimaService.sendPing(contact.publickey).catch(err => {
+      minimaService.sendPing(contact.publickey).catch((err) => {
         console.error(`❌ [PING] Failed to send:`, err);
       });
 
@@ -1128,33 +1299,43 @@ function ChatPage() {
       // Only request if we haven't requested for this specific key yet in this session
       if (historyRequestedFor.current !== contact.publickey) {
         historyRequestedFor.current = contact.publickey;
-        console.log(`🔄 [CHAT] Triggering history sync for: ${contact.publickey}`);
+        console.log(
+          `🔄 [CHAT] Triggering history sync for: ${contact.publickey}`,
+        );
         setIsSyncing(true);
-        minimaService.requestChatHistory(contact.publickey).catch(console.error);
+        minimaService
+          .requestChatHistory(contact.publickey)
+          .catch(console.error);
 
         // SMART SYNC: Trigger Status Check (Phase 1/2)
         // This ensures we catch any gaps even if we bypassed the Global Sync Check
-        minimaService.sendSyncStatusCheck(contact.publickey).catch(err => console.warn("Sync Check Failed:", err));
+        minimaService
+          .sendSyncStatusCheck(contact.publickey)
+          .catch((err) => console.warn("Sync Check Failed:", err));
       } else {
-        console.log(`Skipping duplicate history request for ${contact.publickey}`);
+        console.log(
+          `Skipping duplicate history request for ${contact.publickey}`,
+        );
       }
 
       // Timeout for auto-check
       setTimeout(async () => {
         // Fetch last seen if needed
-        const lastSeenTimestamp = await minimaService.getPeerLastSeen(contact.publickey);
+        const lastSeenTimestamp = await minimaService.getPeerLastSeen(
+          contact.publickey,
+        );
 
         // Use callback to get current state
         setAppStatus((currentStatus) => {
-          if (currentStatus === 'checking') {
+          if (currentStatus === "checking") {
             // No Pong received yet. Decide fallback based on "Known" status.
             if (isKnownUser) {
               // Set last seen timestamp when offline
               setLastSeen(lastSeenTimestamp);
-              console.log('🕐 [PING] Last seen:', lastSeenTimestamp);
-              return 'offline';
+              console.log("🕐 [PING] Last seen:", lastSeenTimestamp);
+              return "offline";
             } else {
-              return 'not_found';
+              return "not_found";
             }
           }
           return currentStatus;
@@ -1164,11 +1345,11 @@ function ChatPage() {
 
     const handleNewMessage = (payload: any) => {
       // Handle Pong response
-      if (payload.type === 'pong') {
+      if (payload.type === "pong") {
         // Only update if it's from the current contact
         if (payload.from === contact?.publickey) {
-          console.log('✅ [PING] Pong received from current contact');
-          setAppStatus('installed');
+          console.log("✅ [PING] Pong received from current contact");
+          setAppStatus("installed");
           setLastSeen(null); // Clear last seen when user is online
           // Save that this user has the app installed
           if (contact.publickey) {
@@ -1180,14 +1361,20 @@ function ChatPage() {
 
       // Handle Contact Requests (Real-time Banner Update)
       // This eliminates the need for polling!
-      if (payload.type === 'contact_request' || payload.type === 'maxima_contact_request') {
+      if (
+        payload.type === "contact_request" ||
+        payload.type === "maxima_contact_request"
+      ) {
         console.log("🔔 [CHAT] Contact request received, refreshing UI...");
         checkPending();
         loadContactRequest();
       }
 
       // Handle Declined Requests
-      if (payload.type === 'contact_declined' || payload.type === 'maxima_contact_declined') {
+      if (
+        payload.type === "contact_declined" ||
+        payload.type === "maxima_contact_declined"
+      ) {
         console.log("🚫 [CHAT] Contact request declined, refreshing UI...");
         checkPending();
         loadContactRequest();
@@ -1195,17 +1382,20 @@ function ChatPage() {
       }
 
       // Handle contact accepted - CRITICAL for unblocking sender's chat
-      if (payload.type === 'contact_accepted' || payload.type === 'maxima_contact_accepted') {
-        console.log('✅ [CHAT] Contact accepted! Updating state.');
+      if (
+        payload.type === "contact_accepted" ||
+        payload.type === "maxima_contact_accepted"
+      ) {
+        console.log("✅ [CHAT] Contact accepted! Updating state.");
 
         // 1. Immediately unblock locally to feel responsive
-        setBlockReason('none');
+        setBlockReason("none");
         setIsPendingOutgoing(false); // Clear pending flag
-        setContactRequest(null);     // Clear request banner
+        setContactRequest(null); // Clear request banner
 
         // 2. Wait a moment for DB update from service worker, then verify
         setTimeout(async () => {
-          console.log('🔄 [CHAT] Verifying acceptance state...');
+          console.log("🔄 [CHAT] Verifying acceptance state...");
 
           // Reload everything
           loadMessagesFromDB();
@@ -1215,15 +1405,22 @@ function ChatPage() {
           checkPending();
 
           // Manual fallback removed for stability
-          console.log('✅ [CHAT] Chat fully unblocked and updated after acceptance');
+          console.log(
+            "✅ [CHAT] Chat fully unblocked and updated after acceptance",
+          );
 
-          console.log('✅ [CHAT] Chat fully unblocked and updated after acceptance');
+          console.log(
+            "✅ [CHAT] Chat fully unblocked and updated after acceptance",
+          );
         }, 1000); // Increased timeout significantly to allow SW to finish
         return;
       }
 
       // Handle Block/Unblock
-      if (payload.type === 'contact_blocked' || payload.type === 'contact_unblocked') {
+      if (
+        payload.type === "contact_blocked" ||
+        payload.type === "contact_unblocked"
+      ) {
         console.log("🔒 [CHAT] Block status changed, refreshing...");
         checkChatStatus();
         loadMessagesFromDB(); // Reload to show the system message
@@ -1231,7 +1428,7 @@ function ChatPage() {
       }
 
       // Handle contact request - reload to show the incoming request
-      if (payload.type === 'contact_request') {
+      if (payload.type === "contact_request") {
         console.log("📨 [CHAT] Received contact request");
         if (contact.publickey && myPublicKey) {
           console.log(`📨 [CHAT] From: ${contact.publickey.substring(0, 10)}`);
@@ -1246,7 +1443,7 @@ function ChatPage() {
       }
 
       // Handle contact declined - re-evaluate blocking state
-      if (payload.type === 'contact_declined') {
+      if (payload.type === "contact_declined") {
         console.log("🚫 [CHAT] Contact request declined");
 
         // Refresh messages to show the system message
@@ -1261,8 +1458,11 @@ function ChatPage() {
               // After profile refresh, re-run full checkPending logic
               checkPending();
             })
-            .catch(err => {
-              console.warn("⚠️ [CHAT] Could not refresh profile after decline:", err);
+            .catch((err) => {
+              console.warn(
+                "⚠️ [CHAT] Could not refresh profile after decline:",
+                err,
+              );
               // Even if profile refresh fails, still run checkPending
               checkPending();
             });
@@ -1271,13 +1471,16 @@ function ChatPage() {
       }
 
       // Reload messages for read/delivery receipts to update checkmarks
-      if (payload.type === 'read_receipt' || payload.type === 'delivery_receipt') {
+      if (
+        payload.type === "read_receipt" ||
+        payload.type === "delivery_receipt"
+      ) {
         loadMessagesFromDB(); // Refresh UI to show updated message states
         return;
       }
 
       // Re-check permissions when peer info updates (Critical fix for dynamic blocking)
-      if (payload.type === 'peer_discovered') {
+      if (payload.type === "peer_discovered") {
         console.log("🔄 [CHAT] Peer info updated, re-checking permissions...");
         checkPending();
         return;
@@ -1285,17 +1488,21 @@ function ChatPage() {
 
       // SMART SYNC: Handle Gap Report (Phase 2)
       // If peer reports we are missing messages, trigger a fetch.
-      if (payload.type === 'sync_status_report') {
-        console.log(`📊 [CHAT] Sync Report: Missing ${payload.missing_count} messages. Triggering fetch...`);
+      if (payload.type === "sync_status_report") {
+        console.log(
+          `📊 [CHAT] Sync Report: Missing ${payload.missing_count} messages. Triggering fetch...`,
+        );
         // Show syncing indicator
         setIsSyncing(true);
         // Request history (Optimized: SW will handle range or full fetch)
-        minimaService.requestChatHistory(contact.publickey).catch(console.error);
+        minimaService
+          .requestChatHistory(contact.publickey)
+          .catch(console.error);
         return;
       }
 
       // Skip loading for ping - it doesn't affect messages
-      if (payload.type === 'ping') {
+      if (payload.type === "ping") {
         return;
       }
 
@@ -1310,7 +1517,7 @@ function ChatPage() {
       });
 
       // Turn off syncing indicator if this was a history sync response
-      if (payload.type === 'history_sync') {
+      if (payload.type === "history_sync") {
         setIsSyncing(false);
       }
     };
@@ -1337,7 +1544,9 @@ function ChatPage() {
 
       // If it's the current contact, refresh state
       if (peer?.pubkey === contact?.publickey) {
-        console.log("🔄 [CHAT] Peer updated (beacon received), refreshing state...");
+        console.log(
+          "🔄 [CHAT] Peer updated (beacon received), refreshing state...",
+        );
         checkPending();
       }
     };
@@ -1365,7 +1574,8 @@ function ChatPage() {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           if (scrollContainerRef.current) {
-            scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+            scrollContainerRef.current.scrollTop =
+              scrollContainerRef.current.scrollHeight;
           }
         });
       });
@@ -1380,12 +1590,13 @@ function ChatPage() {
       SEND TEXT MESSAGE
   ---------------------------------------------------------------------------- */
 
-
   const handleSendMessage = async () => {
-    if (blockReason !== 'none') return; // Cannot send while blocked
+    if (blockReason !== "none") return; // Cannot send while blocked
     if (!input.trim()) return;
     if (!contact?.currentaddress && !contact?.publickey) {
-      console.error("[Send] Cannot send: no Maxima address or Public Key for contact");
+      console.error(
+        "[Send] Cannot send: no Maxima address or Public Key for contact",
+      );
       return;
     }
 
@@ -1397,14 +1608,23 @@ function ChatPage() {
     let targetApp = "metachain";
 
     // Handle "Dapp not detected" case
-    if (appStatus === 'not_found') {
-      const proceed = confirm("⚠️ The recipient doesn't seem to have MetaChain installed.\n\nDo you want to send this as a standard Maxima message (MaxSolo)?");
+    if (appStatus === "not_found") {
+      const proceed = confirm(
+        "⚠️ The recipient doesn't seem to have MetaChain installed.\n\nDo you want to send this as a standard Maxima message (MaxSolo)?",
+      );
       if (!proceed) return;
       targetApp = "maxima";
     }
 
     const timestamp = Date.now();
-    const newMsg: ParsedMessage = { text: input, fromMe: true, charm: null, amount: null, timestamp, status: 'sent' };
+    const newMsg: ParsedMessage = {
+      text: input,
+      fromMe: true,
+      charm: null,
+      amount: null,
+      timestamp,
+      status: "sent",
+    };
     setMessages((prev) => [...prev, newMsg]);
 
     // OPTIMISTIC UPDATE: Clear input immediately to make UI feel responsive
@@ -1414,7 +1634,17 @@ function ChatPage() {
       // FIX: Use publickey (0x) for reliable DB storage, fallback to currentaddress for network
       // This ensures messages are always stored with the same key format as the URL param
       // FIX: Pass timestamp to prevent flicker (optimistic UI vs DB re-fetch mismatch)
-      await minimaService.sendMessage(contact.publickey || contact.currentaddress, senderName, messageToSend, "text", "", 0, timestamp, recipientName, targetApp);
+      await minimaService.sendMessage(
+        contact.publickey || contact.currentaddress,
+        senderName,
+        messageToSend,
+        "text",
+        "",
+        0,
+        timestamp,
+        recipientName,
+        targetApp,
+      );
     } catch (err) {
       console.error("[Send] Error sending message:", err);
       // Optional: Restore input on failure? Or just show toast.
@@ -1430,24 +1660,31 @@ function ChatPage() {
     setProcessingRequest(true);
 
     try {
-      console.log(`[Chat] Accepting contact request from ${contactRequest.FROM_PUBLICKEY}`);
+      console.log(
+        `[Chat] Accepting contact request from ${contactRequest.FROM_PUBLICKEY}`,
+      );
 
       // OPTIMISTIC UPDATE: Clear the request immediately from UI
       setContactRequest(null);
-      setBlockReason('none');
+      setBlockReason("none");
       setProcessingRequest(false); // Stop spinner immediately
 
       // PERSISTENCE FIX: Update DB immediately so background polls don't revert state
       // This is crucial for offline mode
       try {
         // 1. Mark standard Contact Request as accepted (Case insensitive)
-        await contactRequestsService.updateLocalRequestStatus(contactRequest.FROM_PUBLICKEY, 'accepted');
+        await contactRequestsService.updateLocalRequestStatus(
+          contactRequest.FROM_PUBLICKEY,
+          "accepted",
+        );
 
         // 2. ALSO clear any matching "Maxima Contact Request" (New protocol)
-        // If we have a pending Maxima request from the same person, accepting the chat request 
+        // If we have a pending Maxima request from the same person, accepting the chat request
         // should strictly imply accepting the contact link too.
         const safePk = contactRequest.FROM_PUBLICKEY.replace(/'/g, "''");
-        await minimaService.runSQL(`UPDATE MAXIMA_CONTACT_REQUESTS SET status='accepted', updated_at=${Date.now()} WHERE UPPER(from_publickey)=UPPER('${safePk}') AND status='pending'`);
+        await minimaService.runSQL(
+          `UPDATE MAXIMA_CONTACT_REQUESTS SET status='accepted', updated_at=${Date.now()} WHERE UPPER(from_publickey)=UPPER('${safePk}') AND status='pending'`,
+        );
 
         // Fix Missing Accept Message: Insert it optimistically NOW so it appears immediately
         const now = Date.now();
@@ -1457,18 +1694,25 @@ function ChatPage() {
         `;
         await minimaService.runSQL(systemMsgSql);
 
-        console.log("[Chat] ✅ Local DB state forced to 'accepted' & system message added");
+        console.log(
+          "[Chat] ✅ Local DB state forced to 'accepted' & system message added",
+        );
       } catch (dbErr) {
         console.warn("[Chat] ⚠️ Failed to force local DB update:", dbErr);
       }
 
       // Perform network operations in background (SKIP message insert to avoid duplicate)
-      minimaService.acceptChatRequest(contactRequest.FROM_PUBLICKEY, contact.currentaddress, { skipMessageInsert: true })
+      minimaService
+        .acceptChatRequest(
+          contactRequest.FROM_PUBLICKEY,
+          contact.currentaddress,
+          { skipMessageInsert: true },
+        )
         .then(async () => {
           console.log("[Chat] ✅ Request accepted on network");
           await loadMessagesFromDB();
         })
-        .catch(err => {
+        .catch((err) => {
           console.error("[Chat] ❌ Network acceptance failed (queued?):", err);
         });
 
@@ -1491,7 +1735,9 @@ function ChatPage() {
     setProcessingRequest(true);
 
     try {
-      console.log(`[Chat] Declining contact request from ${contactRequest.FROM_PUBLICKEY}`);
+      console.log(
+        `[Chat] Declining contact request from ${contactRequest.FROM_PUBLICKEY}`,
+      );
 
       // OPTIMISTIC UPDATE: Clear the request immediately from UI
       setContactRequest(null);
@@ -1500,7 +1746,10 @@ function ChatPage() {
 
       // PERSISTENCE FIX: Force local DB update immediately
       try {
-        await contactRequestsService.updateLocalRequestStatus(contactRequest.FROM_PUBLICKEY, 'declined');
+        await contactRequestsService.updateLocalRequestStatus(
+          contactRequest.FROM_PUBLICKEY,
+          "declined",
+        );
 
         // Fix Missing Decline Message: Insert it optimistically NOW so it appears immediately
         const now = Date.now();
@@ -1511,18 +1760,23 @@ function ChatPage() {
          `;
         await minimaService.runSQL(systemMsgSql);
 
-        console.log("[Chat] ✅ Local DB state forced to 'declined' & system message added");
+        console.log(
+          "[Chat] ✅ Local DB state forced to 'declined' & system message added",
+        );
       } catch (dbErr) {
         console.warn("[Chat] ⚠️ Failed to force local DB update:", dbErr);
       }
 
       // Perform network operations in background (SKIP message insert to avoid duplicate)
-      minimaService.declineChatRequest(contactRequest.FROM_PUBLICKEY, { skipMessageInsert: true })
+      minimaService
+        .declineChatRequest(contactRequest.FROM_PUBLICKEY, {
+          skipMessageInsert: true,
+        })
         .then(async () => {
           console.log("[Chat] ✅ Request declined on network");
           await loadMessagesFromDB();
         })
-        .catch(err => {
+        .catch((err) => {
           console.error("[Chat] ❌ Network decline failed (queued?):", err);
         });
 
@@ -1533,7 +1787,6 @@ function ChatPage() {
 
       // Re-verify pending status
       checkPending();
-
     } catch (err: any) {
       console.error("Error declining request:", err);
       // alert(`Failed to decline request: ${err.message || err}`); // Suppress alert for optimistic flow
@@ -1546,19 +1799,23 @@ function ChatPage() {
       SEND CHARM
   ---------------------------------------------------------------------------- */
   const executeSendCharm = async (charmId: string, amount: number) => {
-    console.log(`DEBUG: executeSendCharm called. charmId=${charmId}, amount=${amount}`);
+    console.log(
+      `DEBUG: executeSendCharm called. charmId=${charmId}, amount=${amount}`,
+    );
 
     // STRICT CHECK: Must have Minima Address (Wallet) for Charms too?
-    // Actually Charms might NOT need wallet address if amount is 0? 
+    // Actually Charms might NOT need wallet address if amount is 0?
     // BUT sendCharmWithTokens uses 'send' command which implies amount transfer usually.
     // If amount > 0, we need address. If amount = 0, maybe not?
     // Let's stick to strict to be safe.
     if (!contact?.publickey || !contact?.extradata?.minimaaddress) {
       console.error("DEBUG: executeSendCharm ABORTED. Missing contact info:", {
         hasPublicKey: !!contact?.publickey,
-        hasMinimaAddress: !!contact?.extradata?.minimaaddress
+        hasMinimaAddress: !!contact?.extradata?.minimaaddress,
       });
-      alert("Cannot send Charm: Contact hasn't shared their Wallet Address yet.");
+      alert(
+        "Cannot send Charm: Contact hasn't shared their Wallet Address yet.",
+      );
       return;
     }
     // Use sender's name (from context) for payload, recipient's name for roomname
@@ -1569,12 +1826,14 @@ function ChatPage() {
     const tempTimestamp = Date.now();
 
     try {
-      console.log("⏳ [ChatPage] Sending charm (pending indicator will be shown)...");
+      console.log(
+        "⏳ [ChatPage] Sending charm (pending indicator will be shown)...",
+      );
 
       // FIX: Ensure address is valid for Minima (remove @host if present)
       let destAddress = contact.extradata.minimaaddress;
-      if (destAddress && destAddress.includes('@')) {
-        destAddress = destAddress.split('@')[0];
+      if (destAddress && destAddress.includes("@")) {
+        destAddress = destAddress.split("@")[0];
       }
 
       if (!contact?.publickey) throw new Error("Missing public key");
@@ -1586,7 +1845,7 @@ function ChatPage() {
         recipientName,
         charmId,
         amount,
-        tempTimestamp // Pass timestamp as stateId for tracking
+        tempTimestamp, // Pass timestamp as stateId for tracking
       );
 
       // Reload messages from DB to get the inserted message (it will be pending or sent)
@@ -1594,14 +1853,20 @@ function ChatPage() {
 
       // Only update to 'sent' if NOT pending
       if (!response || !response.pending) {
-        console.log("✅ [ChatPage] Charm sent successfully (not pending). Updating status to 'sent'.");
+        console.log(
+          "✅ [ChatPage] Charm sent successfully (not pending). Updating status to 'sent'.",
+        );
         setMessages((prev) =>
           prev.map((m) =>
-            m.timestamp === tempTimestamp ? { ...m, status: 'sent' as const } : m
-          )
+            m.timestamp === tempTimestamp
+              ? { ...m, status: "sent" as const }
+              : m,
+          ),
         );
       } else {
-        console.log("⚠️ [ChatPage] Charm command is pending (Read Mode). Keeping status as 'pending'.");
+        console.log(
+          "⚠️ [ChatPage] Charm command is pending (Read Mode). Keeping status as 'pending'.",
+        );
 
         // Pending message tracking is now handled by transaction polling service
       }
@@ -1612,21 +1877,30 @@ function ChatPage() {
     }
   };
 
-
-
   /* ----------------------------------------------------------------------------
       SEND TOKEN
   ---------------------------------------------------------------------------- */
-  const executeSendToken = async (tokenId: string, amount: string, tokenName: string) => {
-    console.log(`DEBUG: executeSendToken called. tokenId=${tokenId}, amount=${amount}`);
+  const executeSendToken = async (
+    tokenId: string,
+    amount: string,
+    tokenName: string,
+  ) => {
+    console.log(
+      `DEBUG: executeSendToken called. tokenId=${tokenId}, amount=${amount}`,
+    );
 
     // STRICT CHECK: Must have Minima Address (Wallet)
     if (!contact?.extradata?.minimaaddress || !contact?.publickey) {
-      console.error("DEBUG: executeSendToken ABORTED. Missing Minima Address:", {
-        hasPublicKey: !!contact?.publickey,
-        hasMinimaAddress: !!contact?.extradata?.minimaaddress,
-      });
-      alert("Cannot send funds: This contact hasn't shared their Wallet Address yet. They need to come online once to sync their profile.");
+      console.error(
+        "DEBUG: executeSendToken ABORTED. Missing Minima Address:",
+        {
+          hasPublicKey: !!contact?.publickey,
+          hasMinimaAddress: !!contact?.extradata?.minimaaddress,
+        },
+      );
+      alert(
+        "Cannot send funds: This contact hasn't shared their Wallet Address yet. They need to come online once to sync their profile.",
+      );
       return;
     }
 
@@ -1639,7 +1913,9 @@ function ChatPage() {
     // ATOMIC: Get and increment in one operation to prevent race conditions
     const tokenSeq = await getAndIncrementSequenceNumber(contact.publickey);
 
-    console.log(`🔢 [ChatPage] Assigning Sequence ${tokenSeq} to Token Message`);
+    console.log(
+      `🔢 [ChatPage] Assigning Sequence ${tokenSeq} to Token Message`,
+    );
 
     // Optimistic UI update - Show pending immediately
     const optimisticMsg: ParsedMessage = {
@@ -1649,11 +1925,13 @@ function ChatPage() {
       charm: null,
       amount: Number(amount),
       timestamp: tempTimestamp,
-      status: 'pending',
-      tokenAmount: { amount, tokenName }
+      status: "pending",
+      tokenAmount: { amount, tokenName },
     };
-    setMessages(prev => [...prev, optimisticMsg]);
-    console.log(`⏳ [ChatPage] Added optimistic pending token message (Seq: ${tokenSeq})`);
+    setMessages((prev) => [...prev, optimisticMsg]);
+    console.log(
+      `⏳ [ChatPage] Added optimistic pending token message (Seq: ${tokenSeq})`,
+    );
 
     // CRITICAL: Save optimistic message to database so UPDATE statements can find it later
     // This ensures that when MDS_PENDING updates the status to 'sent', the message exists in the DB
@@ -1666,10 +1944,15 @@ function ChatPage() {
     await new Promise<void>((resolve) => {
       MDS.sql(insertSql, async (res: any) => {
         if (res.status) {
-          console.log(`💾 [ChatPage] Saved optimistic message to DB: ${tempTimestamp} (Seq: ${tokenSeq})`);
+          console.log(
+            `💾 [ChatPage] Saved optimistic message to DB: ${tempTimestamp} (Seq: ${tokenSeq})`,
+          );
           // NOTE: No need to increment here - getAndIncrementSequenceNumber already did it atomically
         } else {
-          console.error("❌ [ChatPage] Failed to save optimistic message to DB:", res);
+          console.error(
+            "❌ [ChatPage] Failed to save optimistic message to DB:",
+            res,
+          );
         }
         resolve();
       });
@@ -1677,40 +1960,56 @@ function ChatPage() {
 
     // FIX: Ensure address is valid for Minima (remove @host if present)
     let destAddress = contact.extradata.minimaaddress;
-    if (destAddress && destAddress.includes('@')) {
-      destAddress = destAddress.split('@')[0];
+    if (destAddress && destAddress.includes("@")) {
+      destAddress = destAddress.split("@")[0];
     }
 
     try {
       // 1. Send the token via Minima with stateId (timestamp)
-      const tokenResponse = await minimaService.sendToken(tokenId, amount, destAddress, tokenName, tempTimestamp, myPublicKey, contact.publickey);
+      const tokenResponse = await minimaService.sendToken(
+        tokenId,
+        amount,
+        destAddress,
+        tokenName,
+        tempTimestamp,
+        myPublicKey,
+        contact.publickey,
+      );
 
       // Check if token send is pending
-      const isTokenPending = tokenResponse && (tokenResponse.pending || (tokenResponse.error && tokenResponse.error.toString().toLowerCase().includes("pending")));
+      const isTokenPending =
+        tokenResponse &&
+        (tokenResponse.pending ||
+          (tokenResponse.error &&
+            tokenResponse.error.toString().toLowerCase().includes("pending")));
 
       // Extract txpowid and pendinguid
       const txpowid = tokenResponse?.txpowid;
       const pendinguid = tokenResponse?.pendinguid;
 
-
-
       // Store transaction in TRANSACTIONS table if we have a txpowid OR pendinguid
       if (txpowid || pendinguid) {
         await minimaService.insertTransaction(
           txpowid,
-          'token',
+          "token",
           contact.publickey,
           tempTimestamp,
           { tokenId, amount, tokenName, username: senderName, seq: tokenSeq },
-          pendinguid
+          pendinguid,
         );
-        console.log(`💾[ChatPage] Token transaction tracked: ${txpowid || 'No TXPOWID'} (PendingUID: ${pendinguid || 'None'})`);
+        console.log(
+          `💾[ChatPage] Token transaction tracked: ${txpowid || "No TXPOWID"} (PendingUID: ${pendinguid || "None"})`,
+        );
       } else {
-        console.warn(`⚠️[ChatPage] Could not track token transaction: No txpowid AND no pendinguid`);
+        console.warn(
+          `⚠️[ChatPage] Could not track token transaction: No txpowid AND no pendinguid`,
+        );
       }
 
       if (isTokenPending) {
-        console.log("⚠️ [ChatPage] Token send is pending. Keeping status as 'pending' and NOT sending notification message.");
+        console.log(
+          "⚠️ [ChatPage] Token send is pending. Keeping status as 'pending' and NOT sending notification message.",
+        );
 
         // Pending message tracking is now handled by transaction polling service
 
@@ -1723,7 +2022,9 @@ function ChatPage() {
       }
 
       // 2. Only send a chat message confirming the transaction if token was sent successfully
-      console.log("✅ [ChatPage] Token sent successfully. Now sending notification message via Maxima...");
+      console.log(
+        "✅ [ChatPage] Token sent successfully. Now sending notification message via Maxima...",
+      );
       const recipientName = contact?.extradata?.name || "Unknown";
 
       // FIX: Use overrideSeq to send the EXACT sequence number we reserved (tokenSeq)
@@ -1733,7 +2034,7 @@ function ChatPage() {
         contact.publickey,
         senderName,
         tokenData,
-        'token',
+        "token",
         "",
         0,
         tempTimestamp,
@@ -1741,63 +2042,89 @@ function ChatPage() {
         "metachain",
         false, // Don't save second copy
         txpowid,
-        tokenSeq // Force sequence 12
+        tokenSeq, // Force sequence 12
       );
 
       // Now we must manually update the optimistic message with the TXPOWID and 'sent' state
       if (txpowid) {
         const updateSql = `UPDATE CHAT_MESSAGES SET state='sent', txpowid='${txpowid}' WHERE sender_seq=${tokenSeq} AND publickey='${contact.publickey}'`;
-        await new Promise<void>(resolve => MDS.sql(updateSql, () => resolve()));
+        await new Promise<void>((resolve) =>
+          MDS.sql(updateSql, () => resolve()),
+        );
       }
 
       // Check if message send is pending (shouldn't happen if token wasn't pending, but just in case)
-      const isMsgPending = msgResponse && (msgResponse.pending || (msgResponse.error && msgResponse.error.toString().toLowerCase().includes("pending")));
+      const isMsgPending =
+        msgResponse &&
+        (msgResponse.pending ||
+          (msgResponse.error &&
+            msgResponse.error.toString().toLowerCase().includes("pending")));
 
       // Only update to 'sent' if NOT pending
       if (!isMsgPending) {
-        console.log("✅ [ChatPage] Token sent successfully (not pending). Updating status to 'sent'.");
+        console.log(
+          "✅ [ChatPage] Token sent successfully (not pending). Updating status to 'sent'.",
+        );
         // Reload messages to show the sent message
         await loadMessagesFromDB();
       } else {
-        console.log("⚠️ [ChatPage] Message command is pending (Read Mode). Keeping status as 'pending'.");
+        console.log(
+          "⚠️ [ChatPage] Message command is pending (Read Mode). Keeping status as 'pending'.",
+        );
         // Reload messages to show the pending message
         await loadMessagesFromDB();
       }
-
     } catch (err: any) {
       console.error("Failed to send token:", err);
 
       // FIX: Notify user of failure
-      alert(`Sent failed: ${err.message || 'Unknown error'}`);
+      alert(`Sent failed: ${err.message || "Unknown error"}`);
 
       // Reload to ensure consistent state
       loadMessagesFromDB();
     }
   };
 
-
-
   /* ----------------------------------------------------------------------------
       HANDLE TRANSFER
   ---------------------------------------------------------------------------- */
-  const handleTransfer = async (data: { tokenId: string; amount: string; tokenName: string; charmId?: string }) => {
+  const handleTransfer = async (data: {
+    tokenId: string;
+    amount: string;
+    tokenName: string;
+    charmId?: string;
+  }) => {
     // Debugging trace
-    console.log("📍 [TRACE 1] handleTransfer entered. Data:", JSON.stringify(data));
+    console.log(
+      "📍 [TRACE 1] handleTransfer entered. Data:",
+      JSON.stringify(data),
+    );
     console.log("📍 [TRACE 1] WriteMode:", writeMode);
-    console.log("📍 [TRACE 1] FULL CONTACT OBJECT:", JSON.stringify(contact, null, 2));
+    console.log(
+      "📍 [TRACE 1] FULL CONTACT OBJECT:",
+      JSON.stringify(contact, null, 2),
+    );
 
     // RELAXED SAFE CHECK: Allow fallback to currentaddress (Maxima Identity)
     // Legacy contacts might not have 'minimaaddress' yet.
-    if (!contact || (!contact.extradata?.minimaaddress && !contact.currentaddress)) {
-      console.error("📍 [TRACE ABORT] No valid address found (minimaaddress OR currentaddress).");
-      if (contact) console.error("📍 [TRACE ABORT] Contact keys:", Object.keys(contact));
+    if (
+      !contact ||
+      (!contact.extradata?.minimaaddress && !contact.currentaddress)
+    ) {
+      console.error(
+        "📍 [TRACE ABORT] No valid address found (minimaaddress OR currentaddress).",
+      );
+      if (contact)
+        console.error("📍 [TRACE ABORT] Contact keys:", Object.keys(contact));
 
       alert("This contact does not have a valid address. Cannot send value.");
       return;
     }
 
     if (!contact.extradata?.minimaaddress) {
-      console.warn("⚠️ [TRACE WARN] Missing 'minimaaddress'. Will attempt to fallback to 'currentaddress' during send.");
+      console.warn(
+        "⚠️ [TRACE WARN] Missing 'minimaaddress'. Will attempt to fallback to 'currentaddress' during send.",
+      );
     }
 
     console.log("📍 [TRACE 2] Info check passed. Closing selector...");
@@ -1838,15 +2165,19 @@ function ChatPage() {
 
     try {
       // Check if there's a pending INCOMING request and auto-decline it
-      const hasPendingIncoming = await minimaService.checkIncomingChatRequest(contact.publickey);
+      const hasPendingIncoming = await minimaService.checkIncomingChatRequest(
+        contact.publickey,
+      );
       if (hasPendingIncoming) {
-        console.log("🗑️ [DELETE] Auto-declining pending incoming request before deleting chat");
+        console.log(
+          "🗑️ [DELETE] Auto-declining pending incoming request before deleting chat",
+        );
         await minimaService.declineChatRequest(contact.publickey);
       }
       await minimaService.deleteAllMessages(contact.publickey);
       console.log("✅ Chat deleted successfully");
       // Navigate back to chat list
-      navigate({ to: '/' });
+      navigate({ to: "/" });
     } catch (err) {
       console.error("❌ Failed to delete chat:", err);
     }
@@ -1894,7 +2225,6 @@ function ChatPage() {
     }
   };
 
-
   /* ----------------------------------------------------------------------------
       SEND INVITATION
   ---------------------------------------------------------------------------- */
@@ -1902,7 +2232,7 @@ function ChatPage() {
     if (!contact?.publickey) return;
 
     // Extra safety check
-    if (appStatus !== 'not_found') {
+    if (appStatus !== "not_found") {
       console.warn("Cannot send invite: App status is not 'not_found'");
       return;
     }
@@ -1915,11 +2245,10 @@ function ChatPage() {
       // Close dialog
       setShowInviteDialog(false);
 
-      // Optional: Show a toast or feedback? 
-      // For now, we just close the dialog. The user will see the message in MaxSolo if they check sent messages, 
+      // Optional: Show a toast or feedback?
+      // For now, we just close the dialog. The user will see the message in MaxSolo if they check sent messages,
       // but here we just want to confirm the action was taken.
       alert("Invitation sent successfully via Maxima!");
-
     } catch (err) {
       console.error("Failed to send invitation:", err);
       alert("Failed to send invitation. Please try again.");
@@ -1927,7 +2256,6 @@ function ChatPage() {
       setInviteSending(false);
     }
   };
-
 
   /* ----------------------------------------------------------------------------
       RENDER
@@ -1938,23 +2266,37 @@ function ChatPage() {
       <div className="bg-primary-600 dark:bg-gray-800 text-white p-4 pt-[calc(1rem+env(safe-area-inset-top))] px-4 flex items-center gap-3 flex-shrink-0 shadow-sm z-30 transition-colors border-b border-primary-700 dark:border-gray-700">
         {/* Back button */}
         <button
-          onClick={() => navigate({ to: '/' })}
+          onClick={() => navigate({ to: "/" })}
           className="p-2 hover:bg-white/10 rounded-full transition-colors"
           title="Back"
         >
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+          <svg
+            className="w-6 h-6"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M10 19l-7-7m0 0l7-7m-7 7h18"
+            />
           </svg>
         </button>
 
         <div
-          className={`flex items-center gap-3 flex-1 min-w-0 transition-opacity ${appStatus !== 'checking' && appStatus !== 'not_found'
-            ? 'cursor-pointer hover:opacity-90'
-            : ''
-            }`}
+          className={`flex items-center gap-3 flex-1 min-w-0 transition-opacity ${
+            appStatus !== "checking" && appStatus !== "not_found"
+              ? "cursor-pointer hover:opacity-90"
+              : ""
+          }`}
           onClick={() => {
-            if (appStatus !== 'checking' && appStatus !== 'not_found') {
-              navigate({ to: `/contact-info/${address}`, search: { returnTo: `/chat/${address}` } });
+            if (appStatus !== "checking" && appStatus !== "not_found") {
+              navigate({
+                to: `/contact-info/${address}`,
+                search: { returnTo: `/chat/${address}` },
+              });
             }
           }}
         >
@@ -1968,7 +2310,7 @@ function ChatPage() {
               {contact?.extradata?.name || "Unknown"}
             </strong>
             <div className="flex items-center gap-1">
-              {appStatus === 'installed' ? (
+              {appStatus === "installed" ? (
                 <>
                   <span className="text-xs text-green-200 flex items-center gap-1">
                     <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
@@ -1978,20 +2320,35 @@ function ChatPage() {
                     <>
                       <span className="text-xs text-gray-400">•</span>
                       <span className="text-xs opacity-80 flex items-center gap-1">
-                        <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        <svg
+                          className="w-3 h-3 animate-spin"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                        >
+                          <circle
+                            className="opacity-25"
+                            cx="12"
+                            cy="12"
+                            r="10"
+                            stroke="currentColor"
+                            strokeWidth="4"
+                          ></circle>
+                          <path
+                            className="opacity-75"
+                            fill="currentColor"
+                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                          ></path>
                         </svg>
                         Syncing...
                       </span>
                     </>
                   )}
                 </>
-              ) : appStatus === 'checking' ? (
+              ) : appStatus === "checking" ? (
                 <span className="text-xs opacity-80 cursor-default">
                   Checking status...
                 </span>
-              ) : appStatus === 'not_found' ? (
+              ) : appStatus === "not_found" ? (
                 <div className="flex items-center gap-1">
                   <span className="text-xs text-red-200 cursor-default">
                     Dapp not detected
@@ -2007,9 +2364,11 @@ function ChatPage() {
                     Send Invite
                   </button>
                 </div>
-              ) : appStatus === 'offline' ? (
+              ) : appStatus === "offline" ? (
                 <span className="text-xs opacity-80 truncate block cursor-default">
-                  {lastSeen ? `Last seen ${formatRelativeTime(lastSeen)}` : 'Offline'}
+                  {lastSeen
+                    ? `Last seen ${formatRelativeTime(lastSeen)}`
+                    : "Offline"}
                 </span>
               ) : (
                 <span className="text-xs opacity-80 truncate block">
@@ -2026,8 +2385,18 @@ function ChatPage() {
             className="opacity-80 hover:opacity-100"
             onClick={() => setShowMenu(!showMenu)}
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"
+              />
             </svg>
           </button>
 
@@ -2038,7 +2407,10 @@ function ChatPage() {
                 className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 rounded-t-lg transition-colors text-left"
                 onClick={() => {
                   setShowMenu(false);
-                  navigate({ to: `/contact-info/${address}`, search: { returnTo: `/chat/${address}` } });
+                  navigate({
+                    to: `/contact-info/${address}`,
+                    search: { returnTo: `/chat/${address}` },
+                  });
                 }}
               >
                 <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
@@ -2050,11 +2422,26 @@ function ChatPage() {
                 className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
                 onClick={() => {
                   setShowMenu(false);
-                  navigate({ to: `/contact-info/${address}`, search: { returnTo: `/chat/${address}`, tab: 'settings' } });
+                  navigate({
+                    to: `/contact-info/${address}`,
+                    search: { returnTo: `/chat/${address}`, tab: "settings" },
+                  });
                 }}
               >
                 <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
+                    />
+                  </svg>
                 </div>
                 <span className="font-medium">Actions</span>
               </button>
@@ -2080,7 +2467,9 @@ function ChatPage() {
                 <div className="w-8 h-8 rounded-full bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center text-yellow-600 dark:text-yellow-400">
                   <Star size={16} fill={isFavorite ? "currentColor" : "none"} />
                 </div>
-                <span className="font-medium">{isFavorite ? 'Unfavorite Chat' : 'Favorite Chat'}</span>
+                <span className="font-medium">
+                  {isFavorite ? "Unfavorite Chat" : "Favorite Chat"}
+                </span>
               </button>
               <button
                 className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
@@ -2092,7 +2481,9 @@ function ChatPage() {
                 <div className="w-8 h-8 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center text-orange-600 dark:text-orange-400">
                   <Archive size={16} />
                 </div>
-                <span className="font-medium">{isArchived ? 'Unarchive Chat' : 'Archive Chat'}</span>
+                <span className="font-medium">
+                  {isArchived ? "Unarchive Chat" : "Archive Chat"}
+                </span>
               </button>
               <button
                 className="flex items-center gap-3 w-full p-3 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 rounded-b-lg transition-colors text-left border-t border-gray-100 dark:border-gray-700"
@@ -2114,9 +2505,12 @@ function ChatPage() {
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-gray-800 md:bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-sm w-full p-6 animate-in zoom-in-95 fade-in duration-200 border border-gray-700 md:border-gray-200 dark:border-gray-700">
-            <h3 className="text-lg font-bold text-white md:text-gray-900 dark:text-white mb-2">Delete Chat?</h3>
+            <h3 className="text-lg font-bold text-white md:text-gray-900 dark:text-white mb-2">
+              Delete Chat?
+            </h3>
             <p className="text-gray-300 md:text-gray-600 dark:text-gray-300 mb-6">
-              This will permanently delete all messages in this conversation. This action cannot be undone.
+              This will permanently delete all messages in this conversation.
+              This action cannot be undone.
             </p>
             <div className="flex gap-3">
               <button
@@ -2152,13 +2546,25 @@ function ChatPage() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-gray-800 md:bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full p-6 animate-in zoom-in-95 fade-in duration-200 border border-gray-700 md:border-gray-200 dark:border-gray-700">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-white md:text-gray-900 dark:text-white">Chat Statistics</h3>
+              <h3 className="text-lg font-bold text-white md:text-gray-900 dark:text-white">
+                Chat Statistics
+              </h3>
               <button
                 onClick={() => setShowChatInfo(false)}
                 className="text-gray-400 md:text-gray-500 hover:text-gray-300 md:hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
                 </svg>
               </button>
             </div>
@@ -2168,13 +2574,27 @@ function ChatPage() {
               <div className="flex items-center justify-between p-3 bg-gray-700/50 md:bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-primary-500/20 rounded-full flex items-center justify-center">
-                    <svg className="w-5 h-5 text-primary-400 md:text-primary-600 dark:text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                    <svg
+                      className="w-5 h-5 text-primary-400 md:text-primary-600 dark:text-primary-400"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                      />
                     </svg>
                   </div>
-                  <span className="font-medium text-gray-300 md:text-gray-700 dark:text-gray-300">Total Messages</span>
+                  <span className="font-medium text-gray-300 md:text-gray-700 dark:text-gray-300">
+                    Total Messages
+                  </span>
                 </div>
-                <span className="text-lg font-bold text-white md:text-gray-900 dark:text-white">{messages.length}</span>
+                <span className="text-lg font-bold text-white md:text-gray-900 dark:text-white">
+                  {messages.length}
+                </span>
               </div>
 
               {/* Charms Sent/Received */}
@@ -2183,12 +2603,15 @@ function ChatPage() {
                   <div className="w-10 h-10 bg-purple-500/20 rounded-full flex items-center justify-center">
                     <span className="text-xl">✨</span>
                   </div>
-                  <span className="font-medium text-gray-300 md:text-gray-700 dark:text-gray-300">Charms</span>
+                  <span className="font-medium text-gray-300 md:text-gray-700 dark:text-gray-300">
+                    Charms
+                  </span>
                 </div>
                 <div className="text-right">
                   <div className="text-sm text-gray-400 md:text-gray-500 dark:text-gray-400">
-                    Sent: {messages.filter(m => m.charm && m.fromMe).length} |
-                    Received: {messages.filter(m => m.charm && !m.fromMe).length}
+                    Sent: {messages.filter((m) => m.charm && m.fromMe).length} |
+                    Received:{" "}
+                    {messages.filter((m) => m.charm && !m.fromMe).length}
                   </div>
                 </div>
               </div>
@@ -2197,16 +2620,30 @@ function ChatPage() {
               <div className="flex items-center justify-between p-3 bg-gray-700/50 md:bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-green-500/20 rounded-full flex items-center justify-center">
-                    <svg className="w-5 h-5 text-green-400 md:text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    <svg
+                      className="w-5 h-5 text-green-400 md:text-green-600 dark:text-green-400"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
                     </svg>
                   </div>
-                  <span className="font-medium text-gray-300 md:text-gray-700 dark:text-gray-300">Token Transfers</span>
+                  <span className="font-medium text-gray-300 md:text-gray-700 dark:text-gray-300">
+                    Token Transfers
+                  </span>
                 </div>
                 <div className="text-right">
                   <div className="text-sm text-gray-400 md:text-gray-500 dark:text-gray-400">
-                    Sent: {messages.filter(m => m.tokenAmount && m.fromMe).length} |
-                    Received: {messages.filter(m => m.tokenAmount && !m.fromMe).length}
+                    Sent:{" "}
+                    {messages.filter((m) => m.tokenAmount && m.fromMe).length} |
+                    Received:{" "}
+                    {messages.filter((m) => m.tokenAmount && !m.fromMe).length}
                   </div>
                 </div>
               </div>
@@ -2216,11 +2653,23 @@ function ChatPage() {
                 <div className="flex items-center justify-between p-3 bg-gray-700/50 md:bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-orange-500/20 rounded-full flex items-center justify-center">
-                      <svg className="w-5 h-5 text-orange-400 md:text-orange-600 dark:text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      <svg
+                        className="w-5 h-5 text-orange-400 md:text-orange-600 dark:text-orange-400"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                        />
                       </svg>
                     </div>
-                    <span className="font-medium text-gray-300 md:text-gray-700 dark:text-gray-300">First Message</span>
+                    <span className="font-medium text-gray-300 md:text-gray-700 dark:text-gray-300">
+                      First Message
+                    </span>
                   </div>
                   <span className="text-sm text-gray-400 md:text-gray-600 dark:text-gray-400">
                     {new Date(messages[0].timestamp).toLocaleDateString()}
@@ -2241,59 +2690,79 @@ function ChatPage() {
       {/* CHAT BODY - Scrollable */}
       <div
         ref={scrollContainerRef}
-        className={`flex-1 overflow-y-auto overflow-x-hidden flex flex-col p-2 sm:p-4 pb-20 
-          ${chatBackground === 'diagonal' ? 'bg-gray-50 dark:bg-gray-900' :
-
-            chatBackground === 'default' ? 'bg-gray-50 dark:bg-gray-900' :
-              'bg-gray-50 dark:bg-gray-900' /* Base for patterns */
+        className={`flex-1 overflow-y-auto overflow-x-hidden flex flex-col p-2 sm:p-4 pb-20
+          ${
+            chatBackground === "diagonal"
+              ? "bg-gray-50 dark:bg-gray-900"
+              : chatBackground === "default"
+                ? "bg-gray-50 dark:bg-gray-900"
+                : "bg-gray-50 dark:bg-gray-900" /* Base for patterns */
           }`}
       >
         {/* Pattern Overlays - Fixed positioning ensures they cover full screen even with scroll */}
-        {chatBackground === 'dots' && (
+        {chatBackground === "dots" && (
           <div
             className="fixed inset-0 opacity-[0.05] dark:opacity-[0.1] pointer-events-none z-0"
             style={{
               backgroundImage: `radial-gradient(#0f172a 1.5px, transparent 1.5px)`,
-              backgroundSize: '24px 24px'
+              backgroundSize: "24px 24px",
             }}
           />
         )}
-        {chatBackground === 'grid' && (
+        {chatBackground === "grid" && (
           <div
             className="fixed inset-0 opacity-[0.4] dark:opacity-[0.05] pointer-events-none z-0"
             style={{
               backgroundImage: `linear-gradient(#cbd5e1 1px, transparent 1px), linear-gradient(to right, #cbd5e1 1px, transparent 1px)`,
-              backgroundSize: '20px 20px'
+              backgroundSize: "20px 20px",
             }}
           />
         )}
-        {chatBackground === 'diagonal' && (
+        {chatBackground === "diagonal" && (
           <div
             className="fixed inset-0 opacity-[0.4] dark:opacity-[0.1] pointer-events-none z-0"
             style={{
-              backgroundImage: `repeating-linear-gradient(45deg, #e2e8f0 0px, #e2e8f0 2px, transparent 2px, transparent 12px)`
+              backgroundImage: `repeating-linear-gradient(45deg, #e2e8f0 0px, #e2e8f0 2px, transparent 2px, transparent 12px)`,
             }}
           />
         )}
 
-
         {/* Contact Request Banner */}
         {/* Contact Request Banner (Checking logic updated to use relaxed SQL) */}
-        {(contactRequest || blockReason === 'incoming_restricted') && (
+        {(contactRequest || blockReason === "incoming_restricted") && (
           <div className="sticky top-0 z-20 mb-4 mx-2 mt-2">
             <div className="bg-primary-50/95 dark:bg-gray-800/95 backdrop-blur-sm border border-primary-200 dark:border-gray-700 rounded-lg shadow-sm p-4 animate-in fade-in slide-in-from-top-2 duration-300">
               <div className="flex items-start gap-3">
                 <div className="flex-shrink-0 w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center">
-                  <svg className="w-5 h-5 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                  <svg
+                    className="w-5 h-5 text-primary-600"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"
+                    />
                   </svg>
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-900 dark:text-white mb-1">
-                    {(contactRequest as any)?.type === 'maxima' ? 'Maxima Contact Request' : 'Chat Request'}
+                    {(contactRequest as any)?.type === "maxima"
+                      ? "Maxima Contact Request"
+                      : "Chat Request"}
                   </p>
                   <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">
-                    <strong>{contact?.extradata?.name || contactRequest?.FROM_NAME || "Unknown"}</strong> {(contactRequest as any)?.type === 'maxima' ? 'wants to add you as a contact.' : 'wants to contact you.'}
+                    <strong>
+                      {contact?.extradata?.name ||
+                        contactRequest?.FROM_NAME ||
+                        "Unknown"}
+                    </strong>{" "}
+                    {(contactRequest as any)?.type === "maxima"
+                      ? "wants to add you as a contact."
+                      : "wants to contact you."}
                   </p>
 
                   {/* FORCED ACCEPT OPTION */}
@@ -2301,22 +2770,33 @@ function ChatPage() {
                     <button
                       onClick={async () => {
                         // Logic for accepting Maxima Request
-                        if ((contactRequest as any)?.type === 'maxima' || (!contactRequest && blockReason === 'incoming_restricted')) {
+                        if (
+                          (contactRequest as any)?.type === "maxima" ||
+                          (!contactRequest &&
+                            blockReason === "incoming_restricted")
+                        ) {
                           // If contactRequest is missing but we are here, assume Maxima request found by SQL
-                          console.log("[UI] Accepting Maxima Request (via Service)");
+                          console.log(
+                            "[UI] Accepting Maxima Request (via Service)",
+                          );
                           if (contact && contact.publickey) {
                             try {
                               // OPTIMISTIC UPDATE: Clear the request immediately from UI (BEFORE DB operations!)
                               setContactRequest(null);
-                              setBlockReason('none');
+                              setBlockReason("none");
 
                               // PERSISTENCE FIX: Force local DB update immediately to prevent banner reappearing
                               // This is crucial for offline mode or slow network
                               try {
-                                const validPk = contact.publickey.replace(/'/g, "''");
+                                const validPk = contact.publickey.replace(
+                                  /'/g,
+                                  "''",
+                                );
                                 const now = Date.now();
 
-                                await minimaService.runSQL(`UPDATE MAXIMA_CONTACT_REQUESTS SET status='accepted', updated_at=${now} WHERE UPPER(from_publickey)=UPPER('${validPk}') AND status='pending'`);
+                                await minimaService.runSQL(
+                                  `UPDATE MAXIMA_CONTACT_REQUESTS SET status='accepted', updated_at=${now} WHERE UPPER(from_publickey)=UPPER('${validPk}') AND status='pending'`,
+                                );
 
                                 // Insert system message optimistically
                                 const systemMsgSql = `
@@ -2325,25 +2805,45 @@ function ChatPage() {
                                 `;
                                 await minimaService.runSQL(systemMsgSql);
 
-                                console.log("[Chat] ✅ Forced local Maxima request update to 'accepted' & added message");
+                                console.log(
+                                  "[Chat] ✅ Forced local Maxima request update to 'accepted' & added message",
+                                );
 
                                 // Background network call (SKIP message insert, NO AWAIT)
-                                minimaService.acceptMaximaContactRequest(contact.publickey, contact.currentaddress || "", { skipMessageInsert: true })
+                                minimaService
+                                  .acceptMaximaContactRequest(
+                                    contact.publickey,
+                                    contact.currentaddress || "",
+                                    { skipMessageInsert: true },
+                                  )
                                   .then(() => {
-                                    console.log("[Chat] ✅ Maxima request accepted on network");
+                                    console.log(
+                                      "[Chat] ✅ Maxima request accepted on network",
+                                    );
                                     loadMessagesFromDB();
                                   })
-                                  .catch(e => console.error("Error accepting Maxima request on network:", e));
+                                  .catch((e) =>
+                                    console.error(
+                                      "Error accepting Maxima request on network:",
+                                      e,
+                                    ),
+                                  );
 
                                 // Refresh pending state and reload messages
                                 checkPending();
                                 loadMessagesFromDB();
                               } catch (localErr) {
-                                console.warn("[Chat] ⚠️ Failed to force local update:", localErr);
+                                console.warn(
+                                  "[Chat] ⚠️ Failed to force local update:",
+                                  localErr,
+                                );
                                 alert("Failed to accept locally");
                               }
                             } catch (e) {
-                              console.error("Error accepting Maxima request:", e);
+                              console.error(
+                                "Error accepting Maxima request:",
+                                e,
+                              );
                               alert("Failed to accept Maxima request");
                             }
                           }
@@ -2358,19 +2858,25 @@ function ChatPage() {
                     </button>
                     <button
                       onClick={async () => {
-                        if ((contactRequest as any)?.type === 'maxima') {
-                          console.log("[UI] Declining Maxima Request (Optimistic)");
+                        if ((contactRequest as any)?.type === "maxima") {
+                          console.log(
+                            "[UI] Declining Maxima Request (Optimistic)",
+                          );
                           if (contact && contact.publickey) {
-
                             // OPTIMISTIC UPDATE
                             setContactRequest(null);
 
                             try {
                               // Force local DB update immediately
-                              const validPk = contact.publickey.replace(/'/g, "''");
+                              const validPk = contact.publickey.replace(
+                                /'/g,
+                                "''",
+                              );
                               const now = Date.now();
 
-                              await minimaService.runSQL(`UPDATE MAXIMA_CONTACT_REQUESTS SET status='declined', updated_at=${now} WHERE UPPER(from_publickey)=UPPER('${validPk}') AND status='pending'`);
+                              await minimaService.runSQL(
+                                `UPDATE MAXIMA_CONTACT_REQUESTS SET status='declined', updated_at=${now} WHERE UPPER(from_publickey)=UPPER('${validPk}') AND status='pending'`,
+                              );
 
                               // Insert system message optimistically
                               const systemMsgSql = `
@@ -2379,20 +2885,37 @@ function ChatPage() {
                               `;
                               await minimaService.runSQL(systemMsgSql);
 
-                              console.log("[Chat] ✅ Forced local Maxima request update to 'declined'");
+                              console.log(
+                                "[Chat] ✅ Forced local Maxima request update to 'declined'",
+                              );
 
                               // Background network call (SKIP message insert)
-                              minimaService.declineMaximaContactRequest(contact.publickey, contact.currentaddress || "", { skipMessageInsert: true })
+                              minimaService
+                                .declineMaximaContactRequest(
+                                  contact.publickey,
+                                  contact.currentaddress || "",
+                                  { skipMessageInsert: true },
+                                )
                                 .then(() => {
-                                  console.log("[Chat] ✅ Maxima request declined on network");
+                                  console.log(
+                                    "[Chat] ✅ Maxima request declined on network",
+                                  );
                                   loadMessagesFromDB();
                                 })
-                                .catch(e => console.error("Error declining Maxima request on network:", e));
+                                .catch((e) =>
+                                  console.error(
+                                    "Error declining Maxima request on network:",
+                                    e,
+                                  ),
+                                );
 
                               checkPending();
                               // loadMessagesFromDB(); // Done in background success
                             } catch (e) {
-                              console.error("Error updating local Maxima request:", e);
+                              console.error(
+                                "Error updating local Maxima request:",
+                                e,
+                              );
                             }
                           }
                         } else {
@@ -2420,9 +2943,13 @@ function ChatPage() {
                   <span className="text-xl">📨</span>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 dark:text-white mb-1">Chat Request Sent</p>
+                  <p className="text-sm font-medium text-gray-900 dark:text-white mb-1">
+                    Chat Request Sent
+                  </p>
                   <p className="text-sm text-gray-600 dark:text-gray-300">
-                    You have sent a request to <strong>{contact?.extradata?.name || "this user"}</strong>. Waiting for them to accept before you can chat.
+                    You have sent a request to{" "}
+                    <strong>{contact?.extradata?.name || "this user"}</strong>.
+                    Waiting for them to accept before you can chat.
                   </p>
                 </div>
               </div>
@@ -2431,29 +2958,53 @@ function ChatPage() {
         )}
 
         {/* Pending Transactions Indicator */}
-        {messages.filter(m => m.status === 'pending' && (m.isCharm || m.isToken)).length > 0 && (
+        {messages.filter(
+          (m) => m.status === "pending" && (m.isCharm || m.isToken),
+        ).length > 0 && (
           <div className="sticky top-0 z-20 mb-4 mx-2 mt-2">
-            {messages.filter(m => m.status === 'pending' && (m.isCharm || m.isToken)).map((msg) => (
-              <div key={msg.timestamp} className="bg-primary-50/95 backdrop-blur-sm border border-primary-200 rounded-lg shadow-sm p-4 mb-2 animate-in fade-in slide-in-from-top-2 duration-300">
-                <div className="flex items-start gap-3">
-                  <div className="flex-shrink-0 w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center">
-                    <svg className="w-5 h-5 text-primary-600 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-900 leading-tight">
-                      Sending {msg.tokenAmount
-                        ? <span className="font-semibold">{msg.tokenAmount.amount} {msg.tokenAmount.tokenName}</span>
-                        : <span className="font-semibold">{msg.amount} MINIMA</span>}
-                    </p>
-                    <p className="text-xs text-primary-600 font-medium mt-0.5">
-                      Waiting for confirmation...
-                    </p>
+            {messages
+              .filter((m) => m.status === "pending" && (m.isCharm || m.isToken))
+              .map((msg) => (
+                <div
+                  key={msg.timestamp}
+                  className="bg-primary-50/95 backdrop-blur-sm border border-primary-200 rounded-lg shadow-sm p-4 mb-2 animate-in fade-in slide-in-from-top-2 duration-300"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0 w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center">
+                      <svg
+                        className="w-5 h-5 text-primary-600 animate-spin"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                        />
+                      </svg>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-gray-900 leading-tight">
+                        Sending{" "}
+                        {msg.tokenAmount ? (
+                          <span className="font-semibold">
+                            {msg.tokenAmount.amount} {msg.tokenAmount.tokenName}
+                          </span>
+                        ) : (
+                          <span className="font-semibold">
+                            {msg.amount} MINIMA
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-xs text-primary-600 font-medium mt-0.5">
+                        Waiting for confirmation...
+                      </p>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              ))}
           </div>
         )}
 
@@ -2461,71 +3012,84 @@ function ChatPage() {
           <div className="flex-1 flex items-center justify-center z-0">
             <div className="bg-[#FFF5C4] dark:bg-yellow-900/30 text-gray-800 dark:text-yellow-200 text-[12.5px] p-3 rounded-lg shadow-sm text-center max-w-xs leading-relaxed select-none border border-yellow-200 dark:border-yellow-800">
               <span className="text-yellow-600 mr-1">🔒</span>
-              Messages are end-to-end encrypted. No one outside of this chat, not even MetaChain, can read or listen to them.
+              Messages are end-to-end encrypted. No one outside of this chat,
+              not even MetaChain, can read or listen to them.
             </div>
           </div>
         )}
 
-        {messages.filter(m => m.status !== 'pending' && m.status !== 'zombie').map((msg, i, arr) => {
-          const currentDate = new Date(msg.timestamp || 0).toDateString();
-          const prevDate = i > 0 ? new Date(arr[i - 1].timestamp || 0).toDateString() : null;
-          const showDate = currentDate !== prevDate;
+        {messages
+          .filter((m) => m.status !== "pending" && m.status !== "zombie")
+          .map((msg, i, arr) => {
+            const currentDate = new Date(msg.timestamp || 0).toDateString();
+            const prevDate =
+              i > 0 ? new Date(arr[i - 1].timestamp || 0).toDateString() : null;
+            const showDate = currentDate !== prevDate;
 
-          return (
-            <div key={msg.timestamp} className="flex flex-col w-full z-0 relative">
-              {showDate && msg.timestamp && (
-                <div className="flex justify-center my-3 sticky top-2 z-10">
-                  <span className="text-xs text-gray-600 dark:text-gray-300 font-medium bg-[#E1F3FB] dark:bg-gray-800 border border-white/50 dark:border-gray-700 px-3 py-1.5 rounded-lg shadow-sm uppercase tracking-wide backdrop-blur-sm">
-                    {new Date(msg.timestamp).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
-                  </span>
-                </div>
-              )}
-              {msg.isSystem ? (
-                // System message (centered)
-                (<div className="flex justify-center my-2">
-                  <span className={`text-xs px-3 py-1.5 rounded-full ${msg.text?.toLowerCase().includes('accepted')
-                    ? 'text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/40' // Accepted = Green
-                    : msg.text?.toLowerCase().includes('declined') || msg.text?.toLowerCase().includes('blocked')
-                      ? 'text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-900/40' // Declined or Blocked = Red
-                      : msg.text?.toLowerCase().includes('unblocked')
-                        ? 'text-gray-600 dark:text-gray-300 bg-gray-200 dark:bg-gray-700' // Unblocked = Neutral/Gray
-                        : 'text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800' // Default
-                    }`}>
-                    {msg.text}
-                  </span>
-                </div>)
-              ) : (
-                <MessageBubble
-                  fromMe={msg.fromMe}
-                  text={msg.text}
-                  charm={msg.charm}
-                  amount={msg.amount}
-                  timestamp={msg.timestamp}
-                  status={msg.status}
-                  tokenAmount={msg.tokenAmount}
-                />
-              )}
-            </div>
-          )
-        })}
+            return (
+              <div
+                key={msg.timestamp}
+                className="flex flex-col w-full z-0 relative"
+              >
+                {showDate && msg.timestamp && (
+                  <div className="flex justify-center my-3 sticky top-2 z-10">
+                    <span className="text-xs text-gray-600 dark:text-gray-300 font-medium bg-[#E1F3FB] dark:bg-gray-800 border border-white/50 dark:border-gray-700 px-3 py-1.5 rounded-lg shadow-sm uppercase tracking-wide backdrop-blur-sm">
+                      {new Date(msg.timestamp).toLocaleDateString("en-US", {
+                        month: "long",
+                        day: "numeric",
+                      })}
+                    </span>
+                  </div>
+                )}
+                {msg.isSystem ? (
+                  // System message (centered)
+                  <div className="flex justify-center my-2">
+                    <span
+                      className={`text-xs px-3 py-1.5 rounded-full ${
+                        msg.text?.toLowerCase().includes("accepted")
+                          ? "text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/40" // Accepted = Green
+                          : msg.text?.toLowerCase().includes("declined") ||
+                              msg.text?.toLowerCase().includes("blocked")
+                            ? "text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-900/40" // Declined or Blocked = Red
+                            : msg.text?.toLowerCase().includes("unblocked")
+                              ? "text-gray-600 dark:text-gray-300 bg-gray-200 dark:bg-gray-700" // Unblocked = Neutral/Gray
+                              : "text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800" // Default
+                      }`}
+                    >
+                      {msg.text}
+                    </span>
+                  </div>
+                ) : (
+                  <MessageBubble
+                    fromMe={msg.fromMe}
+                    text={msg.text}
+                    charm={msg.charm}
+                    amount={msg.amount}
+                    timestamp={msg.timestamp}
+                    status={msg.status}
+                    tokenAmount={msg.tokenAmount}
+                  />
+                )}
+              </div>
+            );
+          })}
 
         <div ref={messagesEndRef} />
       </div>
       {/* INPUT BAR - Fixed at bottom */}
       <div className="w-full max-w-full px-1.5 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] bg-white dark:bg-gray-800 flex gap-0.5 items-center flex-shrink-0 z-10 relative border-t border-gray-200 dark:border-gray-700 transition-colors box-border">
-
-
-
-
         <button
-          className={`p-2 rounded-full transition-colors ${!contact?.extradata?.minimaaddress
-            ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed'
-            : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
-            }`}
+          className={`p-2 rounded-full transition-colors ${
+            !contact?.extradata?.minimaaddress
+              ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
+              : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+          }`}
           onClick={(e) => {
             e.stopPropagation();
             if (!contact?.extradata?.minimaaddress) {
-              alert("Cannot send funds: This contact hasn't shared their Wallet Address yet. They need to come online once to sync their profile.");
+              alert(
+                "Cannot send funds: This contact hasn't shared their Wallet Address yet. They need to come online once to sync their profile.",
+              );
               return;
             }
 
@@ -2545,20 +3109,20 @@ function ChatPage() {
           <Wallet className="w-6 h-6" />
         </button>
 
-
-
-        <div
-          className="flex-1 min-w-0 bg-white dark:bg-gray-700 rounded-2xl flex items-center border border-gray-200 dark:border-gray-600 focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-transparent shadow-sm px-3 py-2 transition-all cursor-text relative"
-        >
+        <div className="flex-1 min-w-0 bg-white dark:bg-gray-700 rounded-2xl flex items-center border border-gray-200 dark:border-gray-600 focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-transparent shadow-sm px-3 py-2 transition-all cursor-text relative">
           {/* EMOJI PICKER CONTAINER */}
           <div
             ref={emojiPickerRef}
-            className={`absolute bottom-full mb-2 left-0 z-50 transition-all duration-200 shadow-2xl rounded-xl border border-gray-100 dark:border-gray-700 ${!showEmojiPicker ? 'opacity-0 scale-95 pointer-events-none invisible' : 'opacity-100 scale-100 visible'}`}
+            className={`absolute bottom-full mb-2 left-0 z-50 transition-all duration-200 shadow-2xl rounded-xl border border-gray-100 dark:border-gray-700 ${!showEmojiPicker ? "opacity-0 scale-95 pointer-events-none invisible" : "opacity-100 scale-100 visible"}`}
           >
-            <Suspense fallback={<div className="h-[350px] w-[300px] bg-white dark:bg-gray-800 animate-pulse rounded-xl" />}>
+            <Suspense
+              fallback={
+                <div className="h-[350px] w-[300px] bg-white dark:bg-gray-800 animate-pulse rounded-xl" />
+              }
+            >
               <EmojiPicker
                 onEmojiClick={onEmojiClick}
-                theme={mode === "dark" ? "dark" as any : "light" as any}
+                theme={mode === "dark" ? ("dark" as any) : ("light" as any)}
                 width={320}
                 height={400}
                 searchDisabled={true}
@@ -2569,34 +3133,50 @@ function ChatPage() {
           </div>
 
           <button
-            className={`p-1 mr-1 rounded-full transition-colors ${showEmojiPicker ? 'text-primary-500' : 'text-gray-400 hover:text-gray-600'}`}
+            className={`p-1 mr-1 rounded-full transition-colors ${showEmojiPicker ? "text-primary-500" : "text-gray-400 hover:text-gray-600"}`}
             onClick={(e) => {
               e.stopPropagation();
               if (!showEmojiPicker) {
-                Keyboard.hide().catch(() => { });
+                Keyboard.hide().catch(() => {});
               }
               setShowEmojiPicker(!showEmojiPicker);
             }}
             title="Emoji"
           >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            <svg
+              className="w-6 h-6"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
             </svg>
           </button>
 
           <input
             ref={inputRef}
             onFocus={() => setShowEmojiPicker(false)}
-            onKeyUp={(e) => { cursorPositionRef.current = e.currentTarget.selectionStart; }}
-            onClick={(e) => { cursorPositionRef.current = e.currentTarget.selectionStart; }}
-            onSelect={(e) => { cursorPositionRef.current = e.currentTarget.selectionStart; }}
+            onKeyUp={(e) => {
+              cursorPositionRef.current = e.currentTarget.selectionStart;
+            }}
+            onClick={(e) => {
+              cursorPositionRef.current = e.currentTarget.selectionStart;
+            }}
+            onSelect={(e) => {
+              cursorPositionRef.current = e.currentTarget.selectionStart;
+            }}
             className={`flex-1 bg-transparent outline-none text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 text-[15px] max-h-32 py-1 disabled:opacity-100 disabled:cursor-not-allowed`}
             type="text"
             value={input}
-            disabled={isBlocked || blockedByThem || blockReason !== 'none'}
+            disabled={isBlocked || blockedByThem || blockReason !== "none"}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
+              if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 handleSendMessage();
               }
@@ -2604,7 +3184,7 @@ function ChatPage() {
             placeholder={
               isBlocked || blockedByThem
                 ? "Chat is blocked"
-                : blockReason !== 'none'
+                : blockReason !== "none"
                   ? "Waiting for approval..."
                   : "Type a message..."
             }
@@ -2613,26 +3193,34 @@ function ChatPage() {
 
         <button
           className={`p-2 rounded-full transition-all duration-200 shadow-sm
-            ${input.trim() && blockReason === 'none' && !isBlocked
-              ? 'bg-primary-600 text-white hover:bg-primary-700 transform hover:scale-105'
-              : 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-default'
+            ${
+              input.trim() && blockReason === "none" && !isBlocked
+                ? "bg-primary-600 text-white hover:bg-primary-700 transform hover:scale-105"
+                : "bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-default"
             }`}
           onClick={handleSendMessage}
-          disabled={!input.trim() || blockReason !== 'none' || isBlocked || blockedByThem}
+          disabled={
+            !input.trim() ||
+            blockReason !== "none" ||
+            isBlocked ||
+            blockedByThem
+          }
         >
-          <svg className="w-5 h-5 translate-x-0.5" viewBox="0 0 24 24" fill="currentColor">
+          <svg
+            className="w-5 h-5 translate-x-0.5"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+          >
             <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path>
           </svg>
         </button>
 
-        {
-          showTransferSelector && (
-            <TransferSelector
-              onSend={handleTransfer}
-              onCancel={() => setShowTransferSelector(false)}
-            />
-          )
-        }
+        {showTransferSelector && (
+          <TransferSelector
+            onSend={handleTransfer}
+            onCancel={() => setShowTransferSelector(false)}
+          />
+        )}
 
         {/* Read Mode Warning Dialog */}
         {showReadModeWarning && (
@@ -2640,14 +3228,29 @@ function ChatPage() {
             <div className="bg-white dark:bg-gray-900 rounded-2xl max-w-sm w-full p-6 shadow-xl animate-in fade-in zoom-in duration-200 border border-gray-100 dark:border-gray-800">
               <div className="flex flex-col items-center text-center gap-4">
                 <div className="w-12 h-12 bg-yellow-100 dark:bg-yellow-900/30 rounded-full flex items-center justify-center text-yellow-600 dark:text-yellow-500">
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  <svg
+                    className="w-6 h-6"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                    />
                   </svg>
                 </div>
-                <h3 className="text-lg font-bold text-gray-900 dark:text-white">Read Mode Active</h3>
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+                  Read Mode Active
+                </h3>
                 <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed">
-                  The application is in <strong>Read Mode</strong>. This transaction will appear in <strong>Pending Commands</strong> in Minima.
-                  <br /><br />
+                  The application is in <strong>Read Mode</strong>. This
+                  transaction will appear in <strong>Pending Commands</strong>{" "}
+                  in Minima.
+                  <br />
+                  <br />
                   You will need to approve it there to complete the transfer.
                 </p>
                 <div className="flex gap-3 w-full mt-2">

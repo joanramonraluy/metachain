@@ -96,6 +96,9 @@ export const getUsersWithStatus = async (): Promise<UserWithStatus[]> => {
 
     // ...
 
+    const ONLINE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+    const now = Date.now();
+
     // 2. Add/Update with Discovered Peers (Online)
     discoveredPeers.forEach(peer => {
         // Robust case-insensitive extraction
@@ -193,7 +196,7 @@ export const getUsersWithStatus = async (): Promise<UserWithStatus[]> => {
                 alias: (alias && alias !== 'Unknown' && alias !== 'Anonymous') ? safeDecode(alias) : (existing.alias || alias),
                 bio: safeDecode(bio) || existing.bio,
                 address: address || existing.address,
-                is_online: true,
+                is_online: (now - lastSeen) < ONLINE_THRESHOLD_MS,
                 source: source as 'P2P' | 'BOOTSTRAP',
                 last_updated: Math.max(existing.last_updated, lastSeen),
                 // Merge Extended Info
@@ -213,7 +216,7 @@ export const getUsersWithStatus = async (): Promise<UserWithStatus[]> => {
                 address: address,
                 first_seen: lastSeen,
                 last_updated: lastSeen,
-                is_online: true,
+                is_online: (now - lastSeen) < ONLINE_THRESHOLD_MS,
                 source: source as 'P2P' | 'BOOTSTRAP',
                 // Extended Info
                 avatar: extendedInfo.avatar,

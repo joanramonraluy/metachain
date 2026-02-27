@@ -200,7 +200,7 @@ function sendBackgroundBeacon() {
 
 function startCleanupTimer() {
     var now = Date.now();
-    var TTL = 3600000; // 1 hour
+    var TTL = 600000; // 10 minutes
 
     var cleanupSql = "DELETE FROM DISCOVERED_PEERS WHERE last_seen < " + (now - TTL) + " AND source != 'SELF'";
     MDS.sql(cleanupSql, function (res) {

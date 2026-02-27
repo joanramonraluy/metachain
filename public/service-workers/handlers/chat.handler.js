@@ -121,6 +121,12 @@ function handleChatMessage(pubkey, maxjson) {
                 if (res.status) {
                     MDS.log("✅ [CHAT] Message saved from " + safeUsername);
 
+                    // 3. NOTIFY FRONTEND (Immediate Sync)
+                    // This triggers a UI refresh now that the message is safely in the DB
+                    MDS.comms.solo("CHAT_LIST_UPDATE", function () {
+                        MDS.log("📤 [CHAT-SYNC] Notification sent to frontend for " + safeUsername);
+                    });
+
                     // FIX: Auto-discover user on message receipt to fix "Unknown" in chat list
                     if (safeUsername && safeUsername !== "Unknown" && safeUsername !== "System") {
                         var safeAvatar = escapeSql(maxjson.avatar || "");

@@ -129,7 +129,7 @@ function ConnectSettings() {
             // 3. URL Parameter (Fallback)
             // 4. Debug ID (Vite/Dev)
 
-            const mdsUid = (window as any).MDS?.minidappuid;
+            const mdsUid = MDS.minidappuid;
             const urlParams = new URLSearchParams(window.location.search);
             const urlUid = urlParams.get('uid');
 

@@ -9,12 +9,16 @@ function handleGroupMessage(pubkey, maxjson) {
     // Migration: Ensure propagated column exists
     var migrationSql = "ALTER TABLE GROUP_MESSAGES ADD COLUMN propagated INT DEFAULT 0";
     MDS.sql(migrationSql, function (migRes) {
-        var encoded = (maxjson.message || "").replace(/'/g, "''");
-        var messageTimestamp = maxjson.timestamp || Date.now();
-        var originalSender = maxjson.senderPublickey || pubkey;
+        var safeGroupId = escapeSql(maxjson.groupId || "");
+        var encoded = escapeSql(maxjson.message || "");
+        var messageTimestamp = Number(maxjson.timestamp) || Date.now();
+        var originalSender = escapeSql(maxjson.senderPublickey || pubkey);
+        var safeSenderUsername = escapeSql(maxjson.senderUsername || "Unknown");
+        var safeType = escapeSql(maxjson.type || "text");
+        var safeFileData = escapeSql(maxjson.filedata || "");
 
         // Check for duplicates
-        var checkSql = "SELECT id, propagated FROM GROUP_MESSAGES WHERE group_id='" + maxjson.groupId + "' AND sender_publickey='" + originalSender + "' AND date=" + messageTimestamp;
+        var checkSql = "SELECT id, propagated FROM GROUP_MESSAGES WHERE group_id='" + safeGroupId + "' AND sender_publickey='" + originalSender + "' AND date=" + messageTimestamp;
 
         MDS.sql(checkSql, function (checkRes) {
             var shouldPropagate = false;
@@ -34,7 +38,7 @@ function handleGroupMessage(pubkey, maxjson) {
             } else {
                 shouldPropagate = true;
                 var groupMsgSql = "INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read, propagated) VALUES "
-                    + "('" + maxjson.groupId + "','" + originalSender + "','" + maxjson.senderUsername + "','" + (maxjson.type || "text") + "','" + encoded + "','" + (maxjson.filedata || "") + "'," + messageTimestamp + ", 0, 1)";
+                    + "('" + safeGroupId + "','" + originalSender + "','" + safeSenderUsername + "','" + safeType + "','" + encoded + "','" + safeFileData + "'," + messageTimestamp + ", 0, 1)";
 
                 MDS.sql(groupMsgSql, function (res) {
                     if (res.status) {
@@ -43,7 +47,7 @@ function handleGroupMessage(pubkey, maxjson) {
                         MDS.log("❌ [DB] Failed to save group message: " + res.error);
                         if (res.error && res.error.indexOf('propagated') !== -1) {
                             var retrySql = "INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read) VALUES "
-                                + "('" + maxjson.groupId + "','" + originalSender + "','" + maxjson.senderUsername + "','" + (maxjson.type || "text") + "','" + encoded + "','" + (maxjson.filedata || "") + "'," + messageTimestamp + ", 0)";
+                                + "('" + safeGroupId + "','" + originalSender + "','" + safeSenderUsername + "','" + safeType + "','" + encoded + "','" + safeFileData + "'," + messageTimestamp + ", 0)";
                             MDS.sql(retrySql);
                         }
                     }
@@ -60,7 +64,8 @@ function handleGroupMessage(pubkey, maxjson) {
 function propagateGroupMessage(pubkey, maxjson) {
     MDS.log("🔄 [GROUP-MSG] Starting propagation...");
 
-    var membersSql = "SELECT * FROM GROUP_MEMBERS WHERE group_id='" + maxjson.groupId + "'";
+    var safeGroupId = escapeSql(maxjson.groupId || "");
+    var membersSql = "SELECT * FROM GROUP_MEMBERS WHERE group_id='" + safeGroupId + "'";
     MDS.sql(membersSql, function (memberRes) {
         if (!memberRes.status || !memberRes.rows) {
             MDS.log("❌ [GROUP-MSG] Failed to fetch members.");
@@ -112,9 +117,14 @@ function propagateGroupMessage(pubkey, maxjson) {
 
 function handleGroupInvite(pubkey, maxjson) {
     MDS.log("📨 [GROUP-INVITE] Processing...");
+    var safeGroupId = escapeSql(maxjson.groupId || "");
+    var safeGroupName = escapeSql(maxjson.groupName || "");
+    var safeCreatorPubkey = escapeSql(pubkey || "");
+    var safeDescription = escapeSql(maxjson.description || "");
+    var safeTimestamp = Number(maxjson.timestamp) || Date.now();
 
     var createGroupSql = "INSERT INTO GROUPS (group_id, name, creator_publickey, created_date, description) VALUES "
-        + "('" + maxjson.groupId + "','" + (maxjson.groupName || '').replace(/'/g, "''") + "','" + pubkey + "'," + maxjson.timestamp + ",'" + (maxjson.description || "").replace(/'/g, "''") + "')";
+        + "('" + safeGroupId + "','" + safeGroupName + "','" + safeCreatorPubkey + "'," + safeTimestamp + ",'" + safeDescription + "')";
 
     MDS.sql(createGroupSql, function (res) {
         MDS.log("✅ [GROUP-MGMT] Group created/exists");
@@ -124,9 +134,11 @@ function handleGroupInvite(pubkey, maxjson) {
                 if (idx >= maxjson.members.length) return;
                 var m = maxjson.members[idx];
                 var role = (m.publickey === pubkey) ? 'creator' : 'member';
+                var safeMemberPubkey = escapeSql(m.publickey || "");
+                var safeMemberUsername = escapeSql(m.username || "Unknown");
 
                 var addMemberSql = "INSERT INTO GROUP_MEMBERS (group_id, publickey, username, joined_date, role) VALUES "
-                    + "('" + maxjson.groupId + "','" + m.publickey + "','" + (m.username || 'Unknown').replace(/'/g, "''") + "'," + maxjson.timestamp + ",'" + role + "')";
+                    + "('" + safeGroupId + "','" + safeMemberPubkey + "','" + safeMemberUsername + "'," + safeTimestamp + ",'" + role + "')";
 
                 MDS.sql(addMemberSql, function () {
                     addMember(idx + 1);
@@ -139,13 +151,17 @@ function handleGroupInvite(pubkey, maxjson) {
 
 function handleGroupMemberUpdate(pubkey, maxjson) {
     MDS.log("🔄 [GROUP-MEMBER] Update: " + maxjson.messageType);
+    var safeGroupId = escapeSql(maxjson.groupId || "");
+    var safeTimestamp = Number(maxjson.timestamp) || Date.now();
+    var safeMemberPublickey = escapeSql(maxjson.memberPublickey || "");
+    var safeMemberUsername = escapeSql(maxjson.memberUsername || "Unknown");
 
     if (maxjson.messageType === "group_member_added") {
         var addMemberSql = "INSERT INTO GROUP_MEMBERS (group_id, publickey, username, joined_date, role) VALUES "
-            + "('" + maxjson.groupId + "','" + maxjson.memberPublickey + "','" + (maxjson.memberUsername || 'Unknown').replace(/'/g, "''") + "'," + maxjson.timestamp + ",'member')";
+            + "('" + safeGroupId + "','" + safeMemberPublickey + "','" + safeMemberUsername + "'," + safeTimestamp + ",'member')";
         MDS.sql(addMemberSql);
     } else {
-        var removeMemberSql = "DELETE FROM GROUP_MEMBERS WHERE group_id='" + maxjson.groupId + "' AND publickey='" + maxjson.memberPublickey + "'";
+        var removeMemberSql = "DELETE FROM GROUP_MEMBERS WHERE group_id='" + safeGroupId + "' AND publickey='" + safeMemberPublickey + "'";
         MDS.sql(removeMemberSql);
     }
 }

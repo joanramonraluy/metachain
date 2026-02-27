@@ -4,7 +4,7 @@
  */
 
 import { MDS } from "@minima-global/mds";
-import { runSQL } from "./database.service";
+import { escapeSql, runSQL } from "./database.service";
 
 import { LocalNotifications } from '@capacitor/local-notifications';
 
@@ -410,9 +410,10 @@ class ChatService {
 
     getMessages(publickey: string): Promise<ChatMessage[]> {
         return new Promise((resolve) => {
+            const safePublickey = escapeSql(publickey);
             const sql = `
                 SELECT * FROM CHAT_MESSAGES
-                WHERE publickey='${publickey}'
+                WHERE publickey='${safePublickey}'
                 ORDER BY COALESCE(original_timestamp, date) ASC, sender_seq ASC, id ASC
             `;
             MDS.sql(sql, (res: any) => {
@@ -429,9 +430,10 @@ class ChatService {
 
     getLastMessageTimestamp(publickey: string): Promise<number> {
         return new Promise((resolve) => {
+            const safePublickey = escapeSql(publickey);
             const sql = `
                 SELECT MAX(date) as last_date FROM CHAT_MESSAGES
-                WHERE publickey='${publickey}'
+                WHERE publickey='${safePublickey}'
             `;
             MDS.sql(sql, (res: any) => {
                 if (!res.status || !res.rows || res.rows.length === 0 || !res.rows[0].LAST_DATE) {
@@ -445,7 +447,8 @@ class ChatService {
 
     deleteAllMessages(publickey: string): Promise<void> {
         return new Promise((resolve, reject) => {
-            const sql = `DELETE FROM CHAT_MESSAGES WHERE publickey='${publickey}'`;
+            const safePublickey = escapeSql(publickey);
+            const sql = `DELETE FROM CHAT_MESSAGES WHERE publickey='${safePublickey}'`;
             console.log("🔥 [CHAT-DB-DEBUG] DELETING ALL MESSAGES for:", publickey);
             MDS.sql(sql, (res: any) => {
                 if (!res.status) {

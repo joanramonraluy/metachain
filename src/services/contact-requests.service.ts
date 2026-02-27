@@ -6,6 +6,11 @@
 import { MDS } from "@minima-global/mds";
 import { runSQL, utf8ToHex, escapeSql } from "./database.service";
 
+const VERBOSE_CONTACT_REQUEST_LOGS = false;
+const contactReqLog = (...args: any[]) => {
+    if (VERBOSE_CONTACT_REQUEST_LOGS) console.log(...args);
+};
+
 /* ----------------------------------------------------------------------------
    HELPER FUNCTIONS
 ---------------------------------------------------------------------------- */
@@ -254,7 +259,7 @@ export async function saveChatRequest(fromPublicKey: string, fromName: string, f
 
 export async function checkPendingChatRequest(publickey: string): Promise<boolean> {
     try {
-        console.log(`🔍 [checkPendingContactRequest] Checking for identifier: ${publickey}`);
+        contactReqLog(`🔍 [checkPendingContactRequest] Checking for identifier: ${publickey}`);
 
         let checkPublicKey = await resolveHexPublicKey(publickey);
         let checkAddress: string | null = null;
@@ -280,7 +285,7 @@ export async function checkPendingChatRequest(publickey: string): Promise<boolea
 
         sql += `) AND status = 'pending'`;
 
-        console.log(`🔍 [checkPendingContactRequest] SQL:`, sql);
+        contactReqLog(`🔍 [checkPendingContactRequest] SQL:`, sql);
         const res = await runSQL(sql);
         const hasPending = res.rows && res.rows.length > 0;
 
@@ -294,7 +299,7 @@ export async function checkPendingChatRequest(publickey: string): Promise<boolea
 
 export async function checkIncomingChatRequest(fromPublickey: string): Promise<boolean> {
     try {
-        console.log(`🔍 [checkIncomingContactRequest] Checking for incoming request from: ${fromPublickey}`);
+        contactReqLog(`🔍 [checkIncomingContactRequest] Checking for incoming request from: ${fromPublickey}`);
         const safeFromPublicKey = escapeSql(fromPublickey);
 
         const myPublicKey = await getMyPublicKey();
@@ -305,7 +310,7 @@ export async function checkIncomingChatRequest(fromPublickey: string): Promise<b
                      AND to_publickey = '${safeMyPublicKey}' 
                      AND status = 'pending'`;
 
-        console.log(`🔍 [checkIncomingContactRequest] SQL:`, sql);
+        contactReqLog(`🔍 [checkIncomingContactRequest] SQL:`, sql);
         const res = await runSQL(sql);
         const hasIncoming = res.rows && res.rows.length > 0;
 
