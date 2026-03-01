@@ -32,6 +32,7 @@ class ChatService {
     private muteStatusCallbacks: (() => void)[] = [];
     private archiveStatusCallbacks: (() => void)[] = [];
     private favoriteStatusCallbacks: (() => void)[] = [];
+    private chatListUpdateCallbacks: (() => void)[] = [];
 
     /* ----------------------------------------------------------------------------
       BADGE / NOTIFICATION MANAGEMENT (Android "Badge" via Notifications)
@@ -631,6 +632,21 @@ class ChatService {
 
     private notifyFavoriteStatusChange() {
         this.favoriteStatusCallbacks.forEach(cb => cb());
+    }
+
+    onChatListUpdate(cb: () => void) {
+        this.chatListUpdateCallbacks.push(cb);
+    }
+
+    removeChatListUpdateCallback(cb: () => void) {
+        const index = this.chatListUpdateCallbacks.indexOf(cb);
+        if (index > -1) {
+            this.chatListUpdateCallbacks.splice(index, 1);
+        }
+    }
+
+    notifyChatListUpdate() {
+        this.chatListUpdateCallbacks.forEach(cb => cb());
     }
 }
 

@@ -61,8 +61,8 @@ MDS.init(function (msg) {
               if (count > 0) {
                 MDS.log(
                   "📦 [COIN-DISCOVERY] Recovered " +
-                    count +
-                    " offline token(s)",
+                  count +
+                  " offline token(s)",
                 );
               }
             })
@@ -154,11 +154,11 @@ MDS.init(function (msg) {
         var maxjson = JSON.parse(jsonstr);
         MDS.log(
           "🔍 [MAXIMA-DEBUG-ALL] App: " +
-            app +
-            " Type: " +
-            (maxjson.type || maxjson.messageType) +
-            " From: " +
-            pubkey.substring(0, 10),
+          app +
+          " Type: " +
+          (maxjson.type || maxjson.messageType) +
+          " From: " +
+          pubkey.substring(0, 10),
         );
         MDS.log("🔍 [MAXIMA] Type: " + (maxjson.type || maxjson.messageType));
 
@@ -195,6 +195,30 @@ MDS.init(function (msg) {
             maxjson.messageType === "group_member_removed")
         ) {
           handleGroupMemberUpdate(pubkey, maxjson);
+          return;
+        }
+
+        if (
+          app === "metachain-group" &&
+          maxjson.messageType === "group_member_unbanned"
+        ) {
+          handleGroupMemberUnbanned(pubkey, maxjson);
+          return;
+        }
+
+        if (
+          app === "metachain-group" &&
+          (maxjson.messageType === "group_rename" || maxjson.messageType === "group_update_details")
+        ) {
+          handleGroupUpdateDetails(pubkey, maxjson);
+          return;
+        }
+
+        if (
+          app === "metachain-group" &&
+          maxjson.messageType === "group_role_update"
+        ) {
+          handleGroupRoleUpdate(pubkey, maxjson);
           return;
         }
 
@@ -240,7 +264,7 @@ MDS.init(function (msg) {
         if (maxjson.type === "get_peers") {
           MDS.log(
             "📨 [MAXIMA-GOSSIP] get_peers request from " +
-              pubkey.substring(0, 10),
+            pubkey.substring(0, 10),
           );
           handleGetPeers(pubkey, maxjson);
           return;
@@ -357,7 +381,7 @@ MDS.init(function (msg) {
 
         MDS.log(
           "⚠️ [MAXIMA] Unhandled type: " +
-            (maxjson.type || maxjson.messageType || "unknown"),
+          (maxjson.type || maxjson.messageType || "unknown"),
         );
       } catch (e) {
         MDS.log("❌ [MAXIMA] Parse error: " + e.message);

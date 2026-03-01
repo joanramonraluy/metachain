@@ -408,6 +408,30 @@ export async function initDB(): Promise<void> {
                     });
                   }
 
+                  // Create GROUP_BANS table
+                  const createGroupBansTable = `
+                                    CREATE TABLE IF NOT EXISTS GROUP_BANS (
+                                        group_id VARCHAR(256) NOT NULL,
+                                        publickey VARCHAR(512) NOT NULL,
+                                        username VARCHAR(255) DEFAULT 'Unknown',
+                                        banned_by VARCHAR(512) NOT NULL,
+                                        banned_at BIGINT NOT NULL,
+                                        PRIMARY KEY (group_id, publickey)
+                                    )`;
+
+                  MDS.sql(createGroupBansTable, (res: any) => {
+                    if (!res.status) {
+                      console.error("❌ [DB] Failed to create GROUP_BANS table:", res.error);
+                    } else {
+                      console.log("📂 [DB] GROUP_BANS table initialized");
+                      // Migration
+                      MDS.sql(
+                        "ALTER TABLE GROUP_BANS ADD COLUMN IF NOT EXISTS username VARCHAR(255) DEFAULT 'Unknown'",
+                        () => { },
+                      );
+                    }
+                  });
+
                   // Create CONTACT_REQUESTS table for bidirectional contact requests
                   const createContactRequestsTable = `
                                         CREATE TABLE IF NOT EXISTS CONTACT_REQUESTS (
@@ -558,19 +582,19 @@ export async function initDB(): Promise<void> {
                     // Schema parity with Service Worker variant
                     MDS.sql(
                       "ALTER TABLE METACHAIN_USERS ADD COLUMN IF NOT EXISTS user_id VARCHAR(512)",
-                      () => {},
+                      () => { },
                     );
                     MDS.sql(
                       "ALTER TABLE METACHAIN_USERS ADD COLUMN IF NOT EXISTS address VARCHAR(512)",
-                      () => {},
+                      () => { },
                     );
                     MDS.sql(
                       "ALTER TABLE METACHAIN_USERS ADD COLUMN IF NOT EXISTS first_seen BIGINT",
-                      () => {},
+                      () => { },
                     );
                     MDS.sql(
                       "ALTER TABLE METACHAIN_USERS ADD COLUMN IF NOT EXISTS last_updated BIGINT",
-                      () => {},
+                      () => { },
                     );
                   }
 
@@ -589,7 +613,6 @@ export async function initDB(): Promise<void> {
                         res.error,
                       );
                     } else {
-                      console.log("📂 [DB] SESSION_UID table initialized");
                     }
                   });
                 });
@@ -695,7 +718,7 @@ export function getAndIncrementSequenceNumber(
   // 3. Update the queue tail so the next request waits for US
   // catch() ensures failures don't block the queue forever
   seqQueues[publicKey] = myTask
-    .then(() => {})
+    .then(() => { })
     .catch((err) => {
       console.warn(`⚠️ [SEQ-MUTEX] Task failed, queue continuing:`, err);
     });

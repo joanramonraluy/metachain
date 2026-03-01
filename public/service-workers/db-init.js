@@ -17,7 +17,7 @@ function initDatabase() {
   }
 
   // Register for NEWBLOCK events
-  MDS.cmd("event on newblock", function (res) {});
+  MDS.cmd("event on newblock", function (res) { });
 
   // Get our own Maxima info
   MDS.cmd("maxima action:info", function (maxInfo) {
@@ -209,6 +209,31 @@ function initDatabase() {
 
       return runSQL(
         "ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS propagated INTEGER DEFAULT 0",
+      );
+    });
+  });
+
+  // 3.8 GROUP_BANS
+  chain = chain.then(function () {
+    var bansSql =
+      "CREATE TABLE IF NOT EXISTS GROUP_BANS ( " +
+      "  group_id VARCHAR(256) NOT NULL, " +
+      "  publickey VARCHAR(512) NOT NULL, " +
+      "  username VARCHAR(255) DEFAULT 'Unknown', " +
+      "  banned_by VARCHAR(512) NOT NULL, " +
+      "  banned_at BIGINT NOT NULL, " +
+      "  PRIMARY KEY (group_id, publickey) " +
+      " )";
+
+    return runSQL(bansSql).then(function (res) {
+      MDS.log(
+        res.status
+          ? "📂 [DB] GROUP_BANS checked/init"
+          : "❌ [DB] GROUP_BANS init failed: " + res.error,
+      );
+
+      return runSQL(
+        "ALTER TABLE GROUP_BANS ADD COLUMN IF NOT EXISTS username VARCHAR(255) DEFAULT 'Unknown'",
       );
     });
   });

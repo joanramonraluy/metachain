@@ -88,7 +88,7 @@ export default function ChatsAndGroups() {
         });
         return map;
       }
-    } catch (e) {}
+    } catch (e) { }
     return new Map();
   });
 
@@ -233,7 +233,7 @@ export default function ChatsAndGroups() {
       if (cached) {
         try {
           setGroups(JSON.parse(cached));
-        } catch (e) {}
+        } catch (e) { }
       }
     }
   };
@@ -357,19 +357,14 @@ export default function ChatsAndGroups() {
       fetchGroups();
     };
 
-    // Listen for solo messages from service worker
-    const handleSoloMessage = (msg: string) => {
-      if (msg === "CHAT_LIST_UPDATE") {
-        console.log(
-          "🔄 [ChatsAndGroups] Chat list update triggered by service worker",
-        );
-        fetchChats();
-      }
+    const handleChatListUpdate = () => {
+      console.log(
+        "🔄 [ChatsAndGroups] Chat list update triggered by service worker",
+      );
+      fetchChats();
     };
 
-    // Register solo listener
-    (window as any).MDS_SOLO_LISTENER = handleSoloMessage;
-
+    minimaService.onChatListUpdate(handleChatListUpdate);
     minimaService.onNewMessage(handleNewMessage);
     minimaService.onArchiveStatusChange(fetchChats);
     minimaService.onFavoriteStatusChange(fetchChats);
@@ -377,7 +372,7 @@ export default function ChatsAndGroups() {
     groupService.onGroupUpdate(fetchGroups);
 
     return () => {
-      delete (window as any).MDS_SOLO_LISTENER;
+      minimaService.removeChatListUpdateCallback(handleChatListUpdate);
       minimaService.removeNewMessageCallback(handleNewMessage);
       minimaService.removeArchiveStatusCallback(fetchChats);
       minimaService.removeFavoriteStatusCallback(fetchChats);
@@ -571,11 +566,10 @@ export default function ChatsAndGroups() {
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
           <button
             onClick={() => setActiveTab("all")}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${
-              activeTab === "all"
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === "all"
                 ? "bg-primary-600 text-white shadow-md"
                 : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
-            }`}
+              }`}
           >
             <LayoutGrid size={16} className="flex-shrink-0" />
             <span className="hidden md:inline">All</span>{" "}
@@ -583,11 +577,10 @@ export default function ChatsAndGroups() {
           </button>
           <button
             onClick={() => setActiveTab("individuals")}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${
-              activeTab === "individuals"
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === "individuals"
                 ? "bg-primary-600 text-white shadow-md"
                 : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
-            }`}
+              }`}
           >
             <MessageCircle size={16} className="flex-shrink-0" />
             <span className="hidden md:inline">Individuals</span>{" "}
@@ -595,11 +588,10 @@ export default function ChatsAndGroups() {
           </button>
           <button
             onClick={() => setActiveTab("groups")}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${
-              activeTab === "groups"
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === "groups"
                 ? "bg-primary-600 text-white shadow-md"
                 : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
-            }`}
+              }`}
           >
             <Users size={16} className="flex-shrink-0" />
             <span className="hidden md:inline">Groups</span>{" "}
@@ -607,11 +599,10 @@ export default function ChatsAndGroups() {
           </button>
           <button
             onClick={() => setActiveTab("requests")}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${
-              activeTab === "requests"
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === "requests"
                 ? "bg-primary-600 text-white shadow-md"
                 : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
-            }`}
+              }`}
           >
             <Inbox size={16} className="flex-shrink-0" />
             <span className="hidden md:inline">Non-Contacts</span>{" "}
@@ -619,11 +610,10 @@ export default function ChatsAndGroups() {
           </button>
           <button
             onClick={() => setActiveTab("favorites")}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${
-              activeTab === "favorites"
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === "favorites"
                 ? "bg-primary-600 text-white shadow-md"
                 : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
-            }`}
+              }`}
           >
             <Star size={16} className="flex-shrink-0" />
             <span className="hidden md:inline">Favorites</span>{" "}
@@ -631,11 +621,10 @@ export default function ChatsAndGroups() {
           </button>
           <button
             onClick={() => setActiveTab("archived")}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${
-              activeTab === "archived"
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === "archived"
                 ? "bg-primary-600 text-white shadow-md"
                 : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
-            }`}
+              }`}
           >
             <Archive size={16} className="flex-shrink-0" />
             <span className="hidden md:inline">Archived</span>{" "}
@@ -713,11 +702,10 @@ export default function ChatsAndGroups() {
                 key={group.group_id}
                 to="/groups/$groupId"
                 params={{ groupId: group.group_id }}
-                className={`block rounded-xl p-4 cursor-pointer transition-all duration-200 ${
-                  (group.unreadCount || 0) > 0
+                className={`block rounded-xl p-4 cursor-pointer transition-all duration-200 ${(group.unreadCount || 0) > 0
                     ? "bg-primary-50 dark:bg-primary-900/10 shadow-md hover:shadow-lg border-2 border-primary-200 dark:border-primary-800"
                     : "bg-white dark:bg-gray-800 shadow-sm hover:shadow-md border border-gray-100 dark:border-gray-700"
-                }`}
+                  }`}
               >
                 <div className="flex items-center gap-3">
                   <div className="relative flex-shrink-0">
@@ -785,8 +773,8 @@ export default function ChatsAndGroups() {
                   longPressTimerRef.current = setTimeout(() => {
                     longPressTriggeredRef.current = true;
                     const syntheticEvent = {
-                      preventDefault: () => {},
-                      stopPropagation: () => {},
+                      preventDefault: () => { },
+                      stopPropagation: () => { },
                       clientX: clientX,
                       clientY: clientY,
                     } as React.MouseEvent;
@@ -811,11 +799,10 @@ export default function ChatsAndGroups() {
                   }
                 }}
                 style={{ WebkitTouchCallout: "none" } as any}
-                className={`block rounded-xl p-4 cursor-pointer transition-all duration-200 select-none ${
-                  (chat.unreadCount || 0) > 0
+                className={`block rounded-xl p-4 cursor-pointer transition-all duration-200 select-none ${(chat.unreadCount || 0) > 0
                     ? "bg-primary-50 dark:bg-primary-900/10 shadow-md hover:shadow-lg border-2 border-primary-200 dark:border-primary-800"
                     : "bg-white dark:bg-gray-800 shadow-sm hover:shadow-md border border-gray-100 dark:border-gray-700"
-                }`}
+                  }`}
               >
                 <div className="flex items-center gap-3">
                   <div className="relative flex-shrink-0">
@@ -937,11 +924,10 @@ export default function ChatsAndGroups() {
               setFabMenuOpen(!fabMenuOpen);
             else navigate({ to: "/contacts" });
           }}
-          className={`w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 ${
-            fabMenuOpen
+          className={`w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 ${fabMenuOpen
               ? "bg-gray-700 text-white rotate-45"
               : "bg-primary-600 text-white"
-          }`}
+            }`}
         >
           {activeTab === "groups" ? (
             <Users size={24} />

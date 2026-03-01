@@ -177,7 +177,8 @@ function handleMaximaContactAccepted(pubkey, maxjson) {
     });
 
     // Add from_address if provided
-    if (maxjson.from_address) {
+    // Guarded by type check to prevent accidental maxcontacts additions if routing fails
+    if (maxjson.type === 'maxima_contact_accepted' && maxjson.from_address) {
         MDS.cmd("maxcontacts action:add contact:" + maxjson.from_address, function () {
             MDS.log("✅ [MAXIMA CONTACT] Added via from_address");
         });

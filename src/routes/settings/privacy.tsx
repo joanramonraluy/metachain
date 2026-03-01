@@ -30,9 +30,16 @@ function RouteComponent() {
         const l3 = await MDS.keypair.get('profile_privacy_level_3');
         if (l3 && l3.status && l3.value) setLevel3Visibility(l3.value as VisibilityLevel);
 
-        const chats = await MDS.keypair.get('profile_chat_permission_allow_all');
-        if (chats && chats.status) {
+        const chats = await MDS.keypair.get('allow_noncontact_chats');
+        if (chats && chats.status && chats.value !== "") { // Note: MDS sometimes returns "" instead of undefined
           setAllowNonContactChats(chats.value === "true");
+        } else {
+          // Migration fallback
+          const oldChats = await MDS.keypair.get('profile_chat_permission_allow_all');
+          if (oldChats && oldChats.status && oldChats.value !== "") {
+            setAllowNonContactChats(oldChats.value === "true");
+            await MDS.keypair.set('allow_noncontact_chats', oldChats.value);
+          }
         }
       } catch (e) {
         console.error("Failed to load privacy settings", e);
@@ -86,7 +93,7 @@ function RouteComponent() {
     setAllowNonContactChats(newValue);
     setSaving(true);
     try {
-      await MDS.keypair.set('profile_chat_permission_allow_all', newValue ? "true" : "false");
+      await MDS.keypair.set('allow_noncontact_chats', newValue ? "true" : "false");
       const sql = `UPDATE MY_PROFILE SET allow_non_contact_chats = ${newValue} WHERE id = 1`;
       // @ts-ignore
       await MDS.sql(sql);

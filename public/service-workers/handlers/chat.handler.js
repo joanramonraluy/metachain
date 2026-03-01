@@ -165,17 +165,8 @@ function sendDeliveryReceipt(toPublicKey) {
     var jsonStr = JSON.stringify(payload);
     var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
 
-    // We reuse the smart sending logic from handlePing or simple send
-    // Simple send is enough for receipt, or we can look up address if needed commonly
-    // For now, let's use the simplest robust method: send to publickey
-
-    // NOTE: If we want to support Mx addresses for non-contacts, we'd query DB
-    // But for simplicity in this handler, we trust the publickey source
-
-    var sendCmd = "maxima action:send publickey:" + toPublicKey + " application:metachain data:" + hexData + " poll:false";
-    MDS.cmd(sendCmd, function (res) {
-        if (res.status) MDS.log("✅ [DELIVERY] Sent receipt to " + toPublicKey.substring(0, 10));
-    });
+    // Use smart Address Resolution for non-contacts
+    resolveAndSend(toPublicKey, hexData, "DELIVERY", false);
 }
 
 function handleReadReceipt(pubkey) {
@@ -731,28 +722,12 @@ function handleSyncStatusCheck(msg, fromKey) {
 function handleSyncStatusReport(msg, fromKey) {
     MDS.log("📊 [SMART-SYNC] Report from " + fromKey.substring(0, 10) + ": Missing " + msg.missing_count + " messages.");
 
-    // Store this 'gap' state potentially?
-    // For now, let's trigger the 'gap detected' flow we already have?
-    // OR just emit an event so the frontend knows.
-
-    // If we are missing messages, we should probably just ask for them immediately if it's a small number?
-    // User plan says: "Phase 1: Chat List updates... without downloading".
-    // So we just need to notify the Frontend.
-
-    // We can use 'peer_updated' or a new 'sync_state_update' event.
-    // Let's send a specific event the Frontend can listen to relative to this peer.
-    // Actually, we can reuse 'chat_history_response' type logic to just push a "meta" message? 
-    // No, cleaner to keep it separate.
-
-    // We will just log it for now as per Phase 1 reqs (UI implementation is next).
-    // BUT, let's be proactive: If the gap is small (< 50), auto-fetch immediately?
-    // The user said "Global Sync Check... Chat List updates... without downloading".
-    // So we strictly wait for Phase 2 (Lazy Sync) to fetch.
-
-    // We send this to frontend via NEWBLOCK or just rely on 'notifyNewMessage' in MinimaService which listens to Maxima?
-    // 'minima.service.ts' processes all incoming Maxima messages.
-    // So if we just let this message pass through to 'minima.service.ts', it will be dispatched to UI.
-    // PERFECT. We don't need to do anything here if 'minima.service.ts' handles generic types.
-    // Checking 'minima.service.ts'... it filters specific types. 
-    // We need to add 'sync_status_report' to 'minima.service.ts'.
+    // Emit the report to the frontend so minima.service.ts can present it to the UI
+    var payload = {
+        type: "sync_status_report",
+        missing_count: msg.missing_count,
+        fromKey: fromKey,
+        last_message_preview: msg.last_message_preview
+    };
+    MDS.comms.solo(JSON.stringify(payload));
 }

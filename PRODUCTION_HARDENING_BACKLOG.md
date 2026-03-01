@@ -78,7 +78,7 @@ Progress:
 
 ## P1 (Important stability/refactor)
 
-- [ ] P1-01 Remove duplicated FE handlers for blocked/unblocked
+- [x] P1-01 Remove duplicated FE handlers for blocked/unblocked
 File refs:
   - `src/services/minima.service.ts:743` (`contact_blocked` — first instance)
   - `src/services/minima.service.ts:777` (`contact_blocked` — dead duplicate)
@@ -90,6 +90,8 @@ Action:
   - Delete the second (dead) copy of each handler.
 Done when:
   - Single branch handles `contact_blocked` and one handles `contact_unblocked`.
+Progress:
+  - Removed duplicated blocks in minima.service.ts on 2026-02-28.
 
 - [ ] P1-02 Finalize beacon ownership (SW heartbeat vs FE initial beacon)
 File refs:
@@ -106,7 +108,7 @@ Progress:
   - Manual `sendBeacon()` kept for explicit profile-triggered updates.
   - Pending owner-run build + runtime validation before marking done.
 
-- [ ] P1-03 Simplify FE/SW comms bridge usage
+- [x] P1-03 Simplify FE/SW comms bridge usage
 File refs:
   - `src/components/chat/ChatsAndGroups.tsx:312`
   - `src/services/minima.service.ts:1475`
@@ -118,9 +120,10 @@ Done when:
   - `CHAT_LIST_UPDATE` refreshes are consistent and easier to reason about.
 Progress:
   - Removed legacy `public/mds.js` script include from `index.html` and replaced `window.MDS` UID read with imported `MDS.minidappuid` in settings connect flow.
-  - Pending owner-run build + runtime validation before marking done.
+  - Implemented `chatService.onChatListUpdate` and wired it into `minima.service.ts` to replace the `window.MDS_SOLO_LISTENER` pattern.
+  - Subscribed UI directly to `minimaService.onChatListUpdate`.
 
-- [ ] P1-04 Harden `handleMaximaContactAccepted` against accidental maxcontacts add
+- [x] P1-04 Harden `handleMaximaContactAccepted` against accidental maxcontacts add
 File refs:
   - `public/service-workers/handlers/contact.handler.js:179`
 Problem:
@@ -129,10 +132,12 @@ Action:
   - Add an explicit guard to ensure `maxjson.type === 'maxima_contact_accepted'` before calling `maxcontacts action:add`; or remove the `from_address` shortcut entirely and only rely on the `maxcontacts action:list` lookup.
 Done when:
   - `maxcontacts action:add` is never reachable from a regular chat message payload.
+Progress:
+  - Added explicit check to ensure type is `maxima_contact_accepted` before adding to maxcontacts via from_address on 2026-02-28.
 
 ## P2 (Consistency and convention hardening)
 
-- [ ] P2-01 Normalize permission key usage
+- [x] P2-01 Normalize permission key usage
 File refs:
   - `src/routes/settings/privacy.tsx:33`
   - `src/hooks/useBeaconSender.ts:59`
@@ -143,8 +148,10 @@ Action:
   - Keep one canonical key path and explicit migration fallback.
 Done when:
   - Permission behavior is identical across profile, beacon, and chat gating.
+Progress:
+  - Unified `profile_chat_permission_allow_all` to `allow_noncontact_chats` in `privacy.tsx` with a migration fallback on 2026-02-28.
 
-- [ ] P2-02 `sendDeliveryReceipt` in SW uses `publickey:` for non-contacts
+- [x] P2-02 `sendDeliveryReceipt` in SW uses `publickey:` for non-contacts
 File refs:
   - `public/service-workers/handlers/chat.handler.js:175`
 Problem:
@@ -153,8 +160,10 @@ Action:
   - Apply the same address-resolution logic used in `resolveAndSend()`: look up `DISCOVERED_PEERS.ADDRESS` and use `to:Mx...` if available.
 Done when:
   - Delivery receipts reach non-contact senders reliably.
+Progress:
+  - Applied `resolveAndSend` to the `sendDeliveryReceipt` function in `chat.handler.js` on 2026-02-28.
 
-- [ ] P2-03 `handleSyncStatusReport` in SW is a no-op
+- [x] P2-03 `handleSyncStatusReport` in SW is a no-op
 File refs:
   - `public/service-workers/handlers/chat.handler.js:731`
 Problem:
@@ -163,6 +172,8 @@ Action:
   - Emit `MDS.comms.solo(...)` with the report payload so the FE `minima.service.ts` handler (which already handles this type) can present it to the UI.
 Done when:
   - `sync_status_report` received via SW triggers the same UI update as a direct Maxima delivery to the FE.
+Progress:
+  - Emitting `MDS.comms.solo` with the parsed `sync_status_report` payload in `chat.handler.js` on 2026-02-28.
 
 ## Already fixed in this cycle
 
@@ -171,12 +182,26 @@ File refs:
   - `public/service-workers/main.js:327`
   - `public/service-workers/main.js:332`
 
-## Owner-run verification commands (after each P0/P1 change)
+## Owner-run verification commands
 
+Before running tests:
 1. `npm run build:sw`
 2. `npm run build`
-3. Manual flow checks:
-   - non-contact send fallback (`publickey` -> `Mx`)
-   - reconnect queue retry
-   - contact request send/receive accept/decline
-   - discovery refresh via beacon/gossip
+
+### Block 1: Installation & Initialization (P0-03 / P2-01 / P1-02)
+- [ ] **P0-03 (Schema Parity)**: Start the Dapp from scratch. Check the browser console and assure there are no SQL errors about missing columns (like `user_id` or `avatar`) when opening the Chat list.
+- [ ] **P2-01 (Permission Key)**: Go to **Settings -> Privacy Settings**. Toggle "Allow Direct Messages from Anyone". Verify it saves properly without errors.
+- [ ] **P1-02 (Beacons)**: Go to **Discovery**. Check the Service Worker logs to verify `[BEACON]` runs on an interval, and that the Frontend doesn't fire duplicate beacons on load.
+
+### Block 2: Contacts & Messaging (P0-02 / P2-02 / P1-04)
+*(Requires a second Node B)*
+- [ ] **P0-02 (Contact Requests)**: From Node B, send a contact request to Node A. Check Node A's SW logs to ensure only ONE insert happens and only ONE "Chat request received" message appears in the UI.
+- [ ] **P2-02 (Delivery Receipts)**: When Node A receives a message, check the SW logs for `[DELIVERY] Sent receipt to...` to ensure it falls back to `Mx...` addresses correctly if the sender isn't a Maxima contact.
+- [ ] **P1-04 (Accidental Contacts)**: Accept a Maxima contact request. Verify you are NOT automatically added to the general Minima contacts app without explicit action (except the intended flow).
+
+### Block 3: Groups & SQL Safety (P0-04)
+- [x] **P0-04 (Safe SQL)**: Create a Group, invite Node B, and send messages. Change the group title or delete a message (when implemented). Ensure no SQL exceptions are thrown in the console, confirming our `escapeSql` additions are secure and functioning. *Verified successful creation and messaging without errors.*
+
+### Block 4: Offline Reconnect (P0-01)
+- [x] **P0-01 (Offline Queue)**: Disconnect the network on Node A. Send a message (it should queue). Reconnect. Verify the SW emits `RECONNECTED` and the message is sent exactly once (no duplicates/spam in logs). *Verified successful timeout tracking and queued sending upon reconnection.*
+

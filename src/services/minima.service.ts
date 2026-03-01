@@ -180,6 +180,18 @@ class MinimaService {
     return chatService.getRecentChats();
   }
 
+  onChatListUpdate(cb: () => void) {
+    chatService.onChatListUpdate(cb);
+  }
+
+  removeChatListUpdateCallback(cb: () => void) {
+    chatService.removeChatListUpdateCallback(cb);
+  }
+
+  notifyChatListUpdate() {
+    chatService.notifyChatListUpdate();
+  }
+
   // Callbacks delegated to ChatService
   onNewMessage(cb: MessageCallback) {
     return chatService.onNewMessage(cb);
@@ -358,7 +370,7 @@ SELECT * FROM TRANSACTIONS
               const escapedBio = (peer.bio || "").replace(/'/g, "''");
               const allowChats =
                 peer.allowNonContactChats !== undefined &&
-                peer.allowNonContactChats !== null
+                  peer.allowNonContactChats !== null
                   ? peer.allowNonContactChats
                     ? 1
                     : 0
@@ -386,6 +398,31 @@ VALUES('${peer.pubkey}', '${escapedAlias}', '${escapedBio}', '${peer.address}', 
           return;
         }
 
+        // Handle Internal Solo Messages from Service Worker
+        if (json.type === "MDS_SOLO") {
+          console.log(
+            "🚀 [SERVICE] Solo message received from SW:",
+            json.message,
+          );
+
+          if (json.message === "CHAT_LIST_UPDATE") {
+            // New unified listener approach vs global window attached listener
+            this.notifyChatListUpdate();
+          } else {
+            try {
+              const parsedMsg = JSON.parse(json.message);
+              if (parsedMsg.type === "group_update") {
+                console.log(`🚀 [SERVICE] Group ${parsedMsg.groupId} updated to ${parsedMsg.name}`);
+                // Fire an event that GroupDetails or Groups list can listen to
+                window.dispatchEvent(new CustomEvent("GROUP_UPDATE", { detail: parsedMsg }));
+              }
+            } catch (e) {
+              // Not JSON, ignore
+            }
+          }
+          return;
+        }
+
         // Handle Internal Sync - Peer Discovered from Beacon
         if (json.type === "peer_discovered") {
           console.log(
@@ -402,7 +439,7 @@ VALUES('${peer.pubkey}', '${escapedAlias}', '${escapedBio}', '${peer.address}', 
             const escapedBio = (peer.bio || "").replace(/'/g, "''");
             const allowChats =
               peer.allowNonContactChats !== undefined &&
-              peer.allowNonContactChats !== null
+                peer.allowNonContactChats !== null
                 ? peer.allowNonContactChats
                   ? 1
                   : 0
@@ -510,7 +547,7 @@ VALUES('${peer.pubkey}', '${escapedAlias}', '${escapedBio}', '${peer.address}', 
           // Use a safe default for allowChats if missing
           const allowChats =
             json.allowNonContactChats !== undefined &&
-            json.allowNonContactChats !== null
+              json.allowNonContactChats !== null
               ? json.allowNonContactChats
                 ? 1
                 : 0

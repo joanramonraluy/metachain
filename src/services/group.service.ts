@@ -42,6 +42,8 @@ export interface GroupMaximaMessage {
     | "group_member_added"
     | "group_member_removed"
     | "group_info_updated"
+    | "group_member_unbanned"
+    | "group_update_details"
     | "history_request"
     | "history_response";
     groupId: string;
@@ -218,13 +220,82 @@ class GroupService {
             await this.runSQL(`DELETE FROM GROUP_MESSAGES WHERE group_id = '${groupId}'`);
             // Delete members
             await this.runSQL(`DELETE FROM GROUP_MEMBERS WHERE group_id = '${groupId}'`);
+            // Delete bans
+            await this.runSQL(`DELETE FROM GROUP_BANS WHERE group_id = '${groupId}'`);
             // Delete group
             await this.runSQL(`DELETE FROM GROUPS WHERE group_id = '${groupId}'`);
 
             console.log("✅ [GROUP-MGMT] Deleted:", groupId);
-            this.notifyGroupUpdate();
+            this.notifyGroupUpdate(groupId);
         } catch (err) {
             console.error("❌ [GROUP-MGMT] Failed to delete group:", err);
+            throw err;
+        }
+    }
+
+    async updateGroupDetails(groupId: string, newName: string | null, newDescription: string | null, myPublicKey: string): Promise<void> {
+        try {
+            const updates: string[] = [];
+            if (newName !== null) updates.push(`name = '${newName.replace(/'/g, "''")}'`);
+            if (newDescription !== null) updates.push(`description = '${newDescription.replace(/'/g, "''")}'`);
+
+            if (updates.length > 0) {
+                const sql = `UPDATE GROUPS SET ${updates.join(', ')} WHERE group_id = '${groupId}'`;
+                await this.runSQL(sql);
+                console.log(`✅ [GROUP-MGMT] Updated group ${groupId} details locally.`);
+            }
+
+            // Construct maxjson payload for broadcast
+            const payload: any = {
+                app: "metachain-group",
+                type: "group_update_details",
+                messageType: "group_update_details",
+                groupId: groupId,
+                timestamp: Date.now()
+            };
+            if (newName !== null) payload.newName = newName;
+            if (newDescription !== null) payload.newDescription = newDescription;
+
+            const members = await this.getGroupMembers(groupId);
+            let propagatedCount = 0;
+
+            // Send to all members (except self)
+            for (const member of members) {
+                const pubkey = (member as any).PUBLICKEY || member.publickey;
+                if (!pubkey || pubkey === myPublicKey) continue;
+
+                try {
+                    // Try to resolve Maxima address from DISCOVERED_PEERS
+                    const res = await this.runSQL(`SELECT address FROM DISCOVERED_PEERS WHERE publickey='${pubkey.replace(/'/g, "''")}'`);
+                    if (res.rows && res.rows.length > 0) {
+                        const address = res.rows[0].ADDRESS || res.rows[0].address;
+                        const jsonStr = JSON.stringify(payload);
+                        const hexData = "0x" + Array.from(new TextEncoder().encode(jsonStr))
+                            .map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+
+                        await MDS.cmd.maxima({
+                            params: {
+                                action: 'send',
+                                to: address,
+                                application: 'metachain-group',
+                                data: hexData,
+                                poll: false
+                            } as any
+                        });
+                        propagatedCount++;
+                    } else {
+                        console.warn(`[GROUP-RENAME] No address found for member ${pubkey}`);
+                    }
+                } catch (e) {
+                    console.error(`[GROUP-RENAME] Failed to send to ${pubkey}:`, e);
+                }
+            }
+
+            console.log(`✅ [GROUP-RENAME] Broadcasted name change to ${propagatedCount} members.`);
+            this.notifyGroupUpdate();
+
+        } catch (err) {
+            console.error("❌ [GROUP-MGMT] Failed to rename group:", err);
             throw err;
         }
     }
@@ -232,6 +303,68 @@ class GroupService {
     /* ----------------------------------------------------------------------------
       MEMBER MANAGEMENT
     ---------------------------------------------------------------------------- */
+
+    async updateMemberRole(groupId: string, memberPubkey: string, newRole: 'admin' | 'member', myPublicKey: string): Promise<void> {
+        try {
+            // Optimistic update locally
+            const sql = `UPDATE GROUP_MEMBERS SET role = '${newRole}' WHERE group_id = '${groupId}' AND publickey = '${memberPubkey}'`;
+            await this.runSQL(sql);
+            console.log(`✅ [GROUP-MGMT] Updated role for ${memberPubkey} to ${newRole} locally.`);
+
+            // Construct maxjson payload for broadcast
+            const payload = {
+                app: "metachain-group",
+                type: "group_role_update",
+                messageType: "group_role_update",
+                groupId: groupId,
+                targetPubkey: memberPubkey,
+                newRole: newRole,
+                timestamp: Date.now()
+            };
+
+            const members = await this.getGroupMembers(groupId);
+            let propagatedCount = 0;
+
+            // Send to all members (except self)
+            for (const member of members) {
+                const pubkey = (member as any).PUBLICKEY || member.publickey;
+                if (!pubkey || pubkey === myPublicKey) continue;
+
+                try {
+                    // Try to resolve Maxima address from DISCOVERED_PEERS
+                    const res = await this.runSQL(`SELECT address FROM DISCOVERED_PEERS WHERE publickey='${pubkey.replace(/'/g, "''")}'`);
+                    if (res.rows && res.rows.length > 0) {
+                        const address = res.rows[0].ADDRESS || res.rows[0].address;
+                        const jsonStr = JSON.stringify(payload);
+                        const hexData = "0x" + Array.from(new TextEncoder().encode(jsonStr))
+                            .map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+
+                        await MDS.cmd.maxima({
+                            params: {
+                                action: 'send',
+                                to: address,
+                                application: 'metachain-group',
+                                data: hexData,
+                                poll: false
+                            } as any
+                        });
+                        propagatedCount++;
+                    } else {
+                        console.warn(`[GROUP-ROLE] No address found for member ${pubkey}`);
+                    }
+                } catch (e) {
+                    console.error(`[GROUP-ROLE] Failed to send to ${pubkey}:`, e);
+                }
+            }
+
+            console.log(`✅ [GROUP-ROLE] Broadcasted role change to ${propagatedCount} members.`);
+            this.notifyGroupUpdate();
+        } catch (err) {
+            console.error("❌ [GROUP-MGMT] Failed to update member role:", err);
+            throw err;
+        }
+    }
+
     async addMember(
         groupId: string,
         publickey: string,
@@ -240,6 +373,12 @@ class GroupService {
         myUsername: string
     ): Promise<void> {
         try {
+            // 🚫 Check if the member is banned
+            const isBanned = await this.isMemberBanned(groupId, publickey);
+            if (isBanned) {
+                throw new Error(`This user has been removed from the group and cannot be re-added. Only the group creator can unban them from Group Info.`);
+            }
+
             const now = Date.now();
 
             // Add to database
@@ -299,30 +438,42 @@ class GroupService {
     ): Promise<void> {
         try {
             // Get member info before deleting
-            const memberSql = `SELECT * FROM GROUP_MEMBERS WHERE group_id = '${groupId}' AND publickey = '${publickey}'`;
+            const memberSql = `
+                SELECT m.*, COALESCE(d.alias, m.username) as resolved_name
+                FROM GROUP_MEMBERS m
+                LEFT JOIN DISCOVERED_PEERS d ON UPPER(m.publickey) = UPPER(d.publickey)
+                WHERE m.group_id = '${groupId}' AND m.publickey = '${publickey}'
+            `;
             const memberRes = await this.runSQL(memberSql);
             if (!memberRes.rows || memberRes.rows.length === 0) {
                 throw new Error("Member not found");
             }
             const member = memberRes.rows[0] as any;
-
-            // Remove from database
-            const sql = `DELETE FROM GROUP_MEMBERS WHERE group_id = '${groupId}' AND publickey = '${publickey}'`;
-            await this.runSQL(sql);
+            // Use the best available name (resolved from Discovery DB or stored username)
+            const memberUsername = member.RESOLVED_NAME || member.resolved_name || member.USERNAME || member.username || "Unknown";
 
             // Get group info
             const group = await this.getGroupInfo(groupId);
             if (!group) throw new Error("Group not found");
 
-            // Notify all remaining members
-            const members = await this.getGroupMembers(groupId);
-            for (const m of members) {
+            // Get all members (including the one to be removed) BEFORE deleting
+            const allMembers = await this.getGroupMembers(groupId);
+
+            // Remove from database
+            const sql = `DELETE FROM GROUP_MEMBERS WHERE group_id = '${groupId}' AND publickey = '${publickey}'`;
+            await this.runSQL(sql);
+
+            // 🚫 Auto-ban the removed member to prevent re-entry
+            await this.banMember(groupId, publickey, myPublicKey, memberUsername);
+
+            // Notify ALL members including the removed one (so they clean up their local state)
+            for (const m of allMembers) {
                 try {
                     await this.sendMemberRemovedNotification(
                         groupId,
                         (group as any).NAME,
                         publickey,
-                        member.USERNAME,
+                        memberUsername,
                         (m as any).PUBLICKEY,
                         myPublicKey,
                         myUsername
@@ -340,12 +491,131 @@ class GroupService {
     }
 
     async leaveGroup(groupId: string, myPublicKey: string, myUsername: string): Promise<void> {
-        await this.removeMember(groupId, myPublicKey, myPublicKey, myUsername);
+        // Leaving is NOT a ban — use a direct delete to skip the auto-ban logic
+        const memberSql = `SELECT * FROM GROUP_MEMBERS WHERE group_id = '${groupId}' AND publickey = '${myPublicKey}'`;
+        const memberRes = await this.runSQL(memberSql);
+        if (!memberRes.rows || memberRes.rows.length === 0) return;
+
+        await this.runSQL(`DELETE FROM GROUP_MEMBERS WHERE group_id = '${groupId}' AND publickey = '${myPublicKey}'`);
+
+        const group = await this.getGroupInfo(groupId);
+        if (!group) return;
+
+        const members = await this.getGroupMembers(groupId);
+        for (const m of members) {
+            try {
+                await this.sendMemberRemovedNotification(
+                    groupId,
+                    (group as any).NAME,
+                    myPublicKey,
+                    myUsername,
+                    (m as any).PUBLICKEY,
+                    myPublicKey,
+                    myUsername
+                );
+            } catch (err) {
+                console.error(`❌ [GROUP-LEAVE] Failed to notify:`, err);
+            }
+        }
+
+        this.notifyGroupUpdate();
+    }
+
+    /* ----------------------------------------------------------------------------
+      BAN MANAGEMENT
+    ---------------------------------------------------------------------------- */
+    async banMember(groupId: string, publickey: string, bannedBy: string, username: string = "Unknown"): Promise<void> {
+        try {
+            const now = Date.now();
+            const sql = `MERGE INTO GROUP_BANS (group_id, publickey, username, banned_by, banned_at) KEY(group_id, publickey) VALUES ('${groupId}', '${publickey}', '${username.replace(/'/g, "''")}', '${bannedBy}', ${now})`;
+            await this.runSQL(sql);
+            console.log(`✅ [GROUP-BAN] Banned ${publickey.substring(0, 10)} from group ${groupId}`);
+        } catch (err) {
+            console.error("❌ [GROUP-BAN] Failed to ban member:", err);
+            throw err;
+        }
+    }
+
+    async unbanMember(groupId: string, publickey: string): Promise<void> {
+        try {
+            const sql = `DELETE FROM GROUP_BANS WHERE group_id = '${groupId}' AND publickey = '${publickey}'`;
+            await this.runSQL(sql);
+            console.log(`✅ [GROUP-BAN] Unbanned ${publickey.substring(0, 10)} from group ${groupId}`);
+
+            // Broadcast unban
+            const group = await this.getGroupInfo(groupId);
+            if (!group) return;
+
+            const { myPublicKey: senderPub, myUsername: senderName } = await this.getIdentity();
+
+            const payload: any = {
+                app: "metachain-group",
+                messageType: "group_member_unbanned",
+                groupId,
+                groupName: (group as any).NAME,
+                senderPublickey: senderPub,
+                senderUsername: senderName,
+                timestamp: Date.now(),
+                memberPublickey: publickey
+            };
+
+            const members = await this.getGroupMembers(groupId);
+            for (const m of members) {
+                const p = (m as any).PUBLICKEY;
+                if (p && p !== senderPub) {
+                    await this.sendMaximaMessage(p, payload);
+                }
+            }
+
+            this.notifyGroupUpdate();
+        } catch (err) {
+            console.error("❌ [GROUP-BAN] Failed to unban member:", err);
+            throw err;
+        }
+    }
+
+    async isMemberBanned(groupId: string, publickey: string): Promise<boolean> {
+        try {
+            const sql = `SELECT * FROM GROUP_BANS WHERE group_id = '${groupId}' AND UPPER(publickey) = UPPER('${publickey}')`;
+            const res = await this.runSQL(sql);
+            return res.rows && res.rows.length > 0;
+        } catch (err) {
+            return false;
+        }
+    }
+
+    async getGroupBans(groupId: string): Promise<Array<{ publickey: string; username: string; resolved_name: string; banned_by: string; banned_at: number }>> {
+        try {
+            const sql = `
+                SELECT
+                    b.*,
+                    COALESCE(d.alias, u.alias, b.username) as resolved_name
+                FROM GROUP_BANS b
+                LEFT JOIN DISCOVERED_PEERS d ON UPPER(b.publickey) = UPPER(d.publickey)
+                LEFT JOIN METACHAIN_USERS u ON UPPER(b.publickey) = UPPER(u.publickey)
+                WHERE b.group_id = '${groupId}'
+                ORDER BY b.banned_at DESC
+            `;
+            const res = await this.runSQL(sql);
+            return res.rows || [];
+        } catch (err) {
+            console.error("❌ [GROUP-BAN] Failed to get bans:", err);
+            return [];
+        }
     }
 
     async getGroupMembers(groupId: string): Promise<GroupMember[]> {
         try {
-            const sql = `SELECT * FROM GROUP_MEMBERS WHERE group_id = '${groupId}' ORDER BY joined_date ASC`;
+            const sql = `
+                SELECT 
+                    m.*,
+                    COALESCE(d.alias, u.alias, m.username) as resolved_name
+                FROM GROUP_MEMBERS m
+                LEFT JOIN DISCOVERED_PEERS d ON UPPER(m.publickey) = UPPER(d.publickey)
+                LEFT JOIN METACHAIN_USERS u ON UPPER(m.publickey) = UPPER(u.publickey)
+                WHERE m.group_id = '${groupId}' 
+                ORDER BY m.joined_date ASC
+            `;
             const res = await this.runSQL(sql);
             return res.rows || [];
         } catch (err) {
@@ -585,6 +855,9 @@ class GroupService {
                 case "group_member_removed":
                     await this.handleMemberRemoved(message);
                     break;
+                case "group_member_unbanned":
+                    await this.handleMemberUnbanned(message);
+                    break;
                 case "history_request":
                     await this.handleHistoryRequest(message, fromPublicKey);
                     break;
@@ -683,10 +956,34 @@ class GroupService {
     private async handleMemberRemoved(message: GroupMaximaMessage): Promise<void> {
         if (!message.memberPublickey) return;
 
+        const { myPublicKey } = await this.getIdentity();
+
+        if (message.memberPublickey === myPublicKey) {
+            console.log("🚫 [GROUP-MEMBER] I have been removed/banned from the group.");
+            await this.deleteGroup(message.groupId); // already calls notifyGroupUpdate(groupId)
+            return;
+        }
+
         const removeSql = `DELETE FROM GROUP_MEMBERS WHERE group_id = '${message.groupId}' AND publickey = '${message.memberPublickey}'`;
         await this.runSQL(removeSql);
 
+        // If removed by someone else, auto-ban locally as well
+        if (message.senderPublickey && message.senderPublickey !== message.memberPublickey) {
+            const now = Date.now();
+            const safeUsername = (message.memberUsername || "Unknown").replace(/'/g, "''");
+            const banSql = `MERGE INTO GROUP_BANS (group_id, publickey, username, banned_by, banned_at) KEY(group_id, publickey) VALUES ('${message.groupId}', '${message.memberPublickey}', '${safeUsername}', '${message.senderPublickey}', ${now})`;
+            await this.runSQL(banSql);
+        }
+
         console.log("✅ [GROUP-MEMBER] Removed:", message.memberPublickey);
+        this.notifyGroupUpdate(message.groupId);
+    }
+
+    private async handleMemberUnbanned(message: GroupMaximaMessage): Promise<void> {
+        if (!message.memberPublickey) return;
+        const sql = `DELETE FROM GROUP_BANS WHERE group_id = '${message.groupId}' AND publickey = '${message.memberPublickey}'`;
+        await this.runSQL(sql);
+        console.log("✅ [GROUP-BAN] Unbanned via broadcast:", message.memberPublickey);
         this.notifyGroupUpdate();
     }
 
@@ -919,8 +1216,10 @@ class GroupService {
         this.groupMessageCallbacks.forEach(cb => cb(message));
     }
 
-    private notifyGroupUpdate() {
+    private notifyGroupUpdate(groupId?: string) {
         this.groupUpdateCallbacks.forEach(cb => cb());
+        // Also fire a window event so routes subscribed via window.addEventListener are notified
+        window.dispatchEvent(new CustomEvent("GROUP_UPDATE", { detail: { type: "group_update", groupId: groupId || "" } }));
     }
 }
 

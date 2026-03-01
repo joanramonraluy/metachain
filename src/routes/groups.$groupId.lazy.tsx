@@ -201,11 +201,47 @@ function ChatPage() {
     // Subscribe to new group messages
     groupService.onGroupMessage(handleNewMessage);
 
+    // Subscribe to group data updates (like name changes)
+    const handleGroupUpdate = async (e: any) => {
+      if (!e.detail || e.detail.groupId !== address) return;
+
+      // Check if the group still exists (we may have been kicked)
+      try {
+        const group = await groupService.getGroupInfo(address);
+        if (!group) {
+          // Group was deleted — we were kicked. Navigate away.
+          console.log("🚫 [GROUP-CHAT] Group no longer exists, navigating away.");
+          navigate({ to: "/" });
+          return;
+        }
+      } catch {
+        navigate({ to: "/" });
+        return;
+      }
+
+      // Group still exists — update name if provided
+      if (e.detail.name) {
+        setContact(prev => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            extradata: {
+              ...prev.extradata,
+              name: e.detail.name
+            }
+          };
+        });
+      }
+    };
+    window.addEventListener("GROUP_UPDATE", handleGroupUpdate);
+
     // Cleanup: remove listener when component unmounts or dependencies change
     return () => {
       groupService.removeGroupMessageCallback(handleNewMessage);
+      window.removeEventListener("GROUP_UPDATE", handleGroupUpdate);
     };
   }, [address]);
+
 
   /* ----------------------------------------------------------------------------
       AUTOSCROLL

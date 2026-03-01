@@ -123,11 +123,11 @@ function CreateGroupPage() {
   const defaultAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23cbd5e1'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E";
 
   return (
-    <div className="h-full flex flex-col bg-gray-50">
-      <div className="bg-primary-600 text-white p-4 flex items-center gap-3 shadow-sm">
+    <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-900">
+      <div className="bg-primary-600 dark:bg-gray-800 text-white p-4 flex items-center gap-3 shadow-sm border-b dark:border-gray-700">
         <button
           onClick={() => navigate({ to: "/" })}
-          className="p-2 hover:bg-white/10 rounded-full transition-colors"
+          className="p-2 hover:bg-white/10 dark:hover:bg-gray-700 rounded-full transition-colors"
         >
           <ArrowLeft size={24} />
         </button>
@@ -136,9 +136,9 @@ function CreateGroupPage() {
 
       <div className="flex-1 overflow-y-auto p-4 pb-20">
         <div className="max-w-2xl mx-auto space-y-6">
-          <div className="bg-white rounded-lg shadow-sm p-4 space-y-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Group Name *
               </label>
               <input
@@ -146,20 +146,20 @@ function CreateGroupPage() {
                 value={groupName}
                 onChange={(e) => setGroupName(e.target.value)}
                 placeholder="Enter group name"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-gray-900 bg-white placeholder-gray-400"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-gray-900 dark:text-white bg-white dark:bg-gray-700 placeholder-gray-400 dark:placeholder-gray-500"
                 maxLength={50}
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Description (optional)
               </label>
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Enter group description"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-gray-900 bg-white placeholder-gray-400 resize-none"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-gray-900 dark:text-white bg-white dark:bg-gray-700 placeholder-gray-400 dark:placeholder-gray-500 resize-none"
                 rows={3}
                 maxLength={200}
               />
@@ -167,29 +167,29 @@ function CreateGroupPage() {
           </div>
 
           {/* Create Button */}
-          <div className="bg-white rounded-lg shadow-sm p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
             <button
               onClick={handleCreateGroup}
               disabled={!groupName.trim() || selectedContacts.size === 0 || creating}
-              className="w-full py-3 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed shadow-md"
+              className="w-full py-3 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 transition-colors disabled:bg-gray-300 disabled:text-gray-100 disabled:cursor-not-allowed dark:disabled:bg-gray-700 dark:disabled:text-gray-400 shadow-md"
             >
               {creating ? "Creating..." : selectedContacts.size > 0 ? `Create Group with ${selectedContacts.size} ${selectedContacts.size === 1 ? "member" : "members"}` : "Select members to continue"}
             </button>
           </div>
 
-          <div className="bg-white rounded-lg shadow-sm p-4">
-            <h2 className="text-lg font-semibold text-gray-900 mb-3">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
               Add Members ({selectedContacts.size} selected)
             </h2>
 
-            <div className="flex gap-2 mb-4 border-b border-gray-200">
+            <div className="flex gap-2 mb-4 border-b border-gray-200 dark:border-gray-700">
               {(['all', 'contacts', 'community'] as const).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
                   className={`pb-2 px-3 text-sm font-medium capitalize transition-colors relative ${activeTab === tab
-                    ? "text-primary-600 border-b-2 border-primary-600 -mb-px"
-                    : "text-gray-500 hover:text-gray-700"
+                    ? "text-primary-600 dark:text-primary-400 border-b-2 border-primary-600 dark:border-primary-400 -mb-px"
+                    : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
                     }`}
                 >
                   {tab}
@@ -202,12 +202,12 @@ function CreateGroupPage() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search contacts..."
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-gray-900 bg-white placeholder-gray-400 mb-4"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-gray-900 dark:text-white bg-white dark:bg-gray-700 placeholder-gray-400 dark:placeholder-gray-500 mb-4"
             />
 
             <div className="space-y-2 max-h-96 overflow-y-auto">
               {filteredContacts.length === 0 ? (
-                <p className="text-gray-500 text-center py-8">No contacts found</p>
+                <p className="text-gray-500 dark:text-gray-400 text-center py-8">No contacts found</p>
               ) : (
                 filteredContacts.map((contact) => {
                   const isSelected = selectedContacts.has(contact.publickey);
@@ -220,8 +220,8 @@ function CreateGroupPage() {
                       key={contact.publickey}
                       onClick={() => toggleContact(contact.publickey)}
                       className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors ${isSelected
-                        ? "bg-primary-50 border-2 border-[#0088cc]"
-                        : "bg-gray-50 border-2 border-transparent hover:bg-gray-100"
+                        ? "bg-primary-50 dark:bg-primary-900/30 border-2 border-[#0088cc] dark:border-primary-500"
+                        : "bg-gray-50 dark:bg-gray-700/50 border-2 border-transparent hover:bg-gray-100 dark:hover:bg-gray-600"
                         }`}
                     >
                       <img
@@ -233,7 +233,7 @@ function CreateGroupPage() {
                         }}
                       />
                       <div className="flex-1 min-w-0">
-                        <p className="font-medium text-gray-900 truncate">
+                        <p className="font-medium text-gray-900 dark:text-white truncate">
                           {contact.extradata?.name || contact.currentaddress}
                         </p>
                       </div>
