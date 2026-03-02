@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, useContext } from "react";
 import { useNavigate, createLazyFileRoute } from "@tanstack/react-router";
 import { MDS } from "@minima-global/mds";
 import { appContext } from "../AppContext";
-import { Trash2, Info } from "lucide-react";
+import { Trash2, User, BarChart, Settings } from "lucide-react";
 import { groupService } from "../services/group.service";
 import MessageBubble from "../components/chat/MessageBubble";
 import { useTheme } from "../context/ThemeContext";
@@ -31,10 +31,11 @@ interface ParsedMessage {
   charm: { id: string } | null;
   amount: number | null;
   timestamp?: number;
-  status?: 'pending' | 'sent' | 'delivered' | 'read' | 'failed' | 'zombie';
+  status?: 'pending' | 'sent' | 'delivered' | 'read' | 'failed' | 'zombie' | 'confirmed';
   tokenAmount?: { amount: string; tokenName: string }; // For token transfer messages
   senderPublicKey?: string;
   senderUsername?: string; // Added to store original username
+  type?: string;
 }
 
 
@@ -61,8 +62,10 @@ function ChatPage() {
   const [contactsMap, setContactsMap] = useState<Record<string, { name: string; icon?: string }>>({});
   const [input, setInput] = useState("");
   const [showMenu, setShowMenu] = useState(false);
+  const [showChatInfo, setShowChatInfo] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [memberCount, setMemberCount] = useState<number>(0);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -104,6 +107,25 @@ function ChatPage() {
     fetchGroupData();
   }, [address]);
 
+  // Handle click outside menu
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setShowMenu(false);
+      }
+    };
+
+    if (showMenu) {
+      document.addEventListener("mousedown", handleClickOutside);
+    } else {
+      document.removeEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [showMenu]);
+
 
 
   /* ----------------------------------------------------------------------------
@@ -138,6 +160,7 @@ function ChatPage() {
             tokenAmount: undefined,
             senderPublicKey: row.SENDER_PUBLICKEY,
             senderUsername: row.SENDER_USERNAME, // Map sender username
+            type: row.TYPE,
           };
 
           return parsed;
@@ -387,7 +410,7 @@ function ChatPage() {
         </div>
 
         {/* Header Actions */}
-        <div className="flex gap-4 relative">
+        <div className="flex gap-4 relative" ref={menuRef}>
           <button
             className="opacity-80 hover:opacity-100"
             onClick={() => setShowMenu(!showMenu)}
@@ -399,16 +422,50 @@ function ChatPage() {
 
           {/* Dropdown Menu */}
           {showMenu && (
-            <div className="absolute top-10 right-0 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 min-w-[180px] z-50 animate-in slide-in-from-top-2 fade-in duration-200">
+            <div className="absolute top-10 right-0 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 min-w-[200px] z-50 animate-in slide-in-from-top-2 fade-in duration-200">
               <button
-                className="flex items-center gap-3 w-full p-3 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-t-lg transition-colors text-left"
+                className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 rounded-t-lg transition-colors text-left"
                 onClick={() => {
                   setShowMenu(false);
-                  navigate({ to: '/group-info/$groupId', params: { groupId: address } });
+                  navigate({
+                    to: '/group-info/$groupId',
+                    params: { groupId: address },
+                    search: { returnTo: `/groups/${address}` },
+                  });
                 }}
               >
-                <Info size={18} />
-                <span className="font-medium">Group Info</span>
+                <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
+                  <User size={16} />
+                </div>
+                <span className="font-medium">Info</span>
+              </button>
+              <button
+                className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
+                onClick={() => {
+                  setShowMenu(false);
+                  navigate({
+                    to: '/group-info/$groupId',
+                    params: { groupId: address },
+                    search: { returnTo: `/groups/${address}`, tab: "settings" },
+                  });
+                }}
+              >
+                <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+                  <Settings size={16} />
+                </div>
+                <span className="font-medium">Actions</span>
+              </button>
+              <button
+                className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
+                onClick={() => {
+                  setShowMenu(false);
+                  setShowChatInfo(true);
+                }}
+              >
+                <div className="w-8 h-8 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-600 dark:text-purple-400">
+                  <BarChart size={16} />
+                </div>
+                <span className="font-medium">Chat Info</span>
               </button>
               <button
                 className="flex items-center gap-3 w-full p-3 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 rounded-b-lg transition-colors text-left border-t border-gray-100 dark:border-gray-700"
@@ -417,13 +474,107 @@ function ChatPage() {
                   setShowDeleteConfirm(true);
                 }}
               >
-                <Trash2 size={18} />
+                <div className="w-8 h-8 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center text-red-600 dark:text-red-400">
+                  <Trash2 size={16} />
+                </div>
                 <span className="font-medium">Exit Group</span>
               </button>
             </div>
           )}
         </div>
       </div>
+
+      {/* Chat Info Dialog */}
+      {showChatInfo && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-800 md:bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full p-6 animate-in zoom-in-95 fade-in duration-200 border border-gray-700 md:border-gray-200 dark:border-gray-700">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-white md:text-gray-900 dark:text-white">
+                Chat Statistics
+              </h3>
+              <button
+                onClick={() => setShowChatInfo(false)}
+                className="text-gray-400 md:text-gray-500 hover:text-gray-300 md:hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Total Messages */}
+              <div className="flex items-center justify-between p-3 bg-gray-700/50 md:bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-primary-500/20 rounded-full flex items-center justify-center">
+                    <svg className="w-5 h-5 text-primary-400 md:text-primary-600 dark:text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                    </svg>
+                  </div>
+                  <span className="font-medium text-gray-300 md:text-gray-700 dark:text-gray-300">Total Messages</span>
+                </div>
+                <span className="text-lg font-bold text-white md:text-gray-900 dark:text-white">{messages.length}</span>
+              </div>
+
+              {/* Charms Sent/Received */}
+              <div className="flex items-center justify-between p-3 bg-gray-700/50 md:bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-purple-500/20 rounded-full flex items-center justify-center">
+                    <span className="text-xl">✨</span>
+                  </div>
+                  <span className="font-medium text-gray-300 md:text-gray-700 dark:text-gray-300">Charms</span>
+                </div>
+                <div className="text-right">
+                  <div className="text-sm text-gray-400 md:text-gray-500 dark:text-gray-400">
+                    Sent: {messages.filter(m => m.charm && m.fromMe).length} | Received: {messages.filter(m => m.charm && !m.fromMe).length}
+                  </div>
+                </div>
+              </div>
+
+              {/* Tokens Transferred */}
+              <div className="flex items-center justify-between p-3 bg-gray-700/50 md:bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-green-500/20 rounded-full flex items-center justify-center">
+                    <svg className="w-5 h-5 text-green-400 md:text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <span className="font-medium text-gray-300 md:text-gray-700 dark:text-gray-300">Token Transfers</span>
+                </div>
+                <div className="text-right">
+                  <div className="text-sm text-gray-400 md:text-gray-500 dark:text-gray-400">
+                    Sent: {messages.filter(m => m.tokenAmount && m.fromMe).length} | Received: {messages.filter(m => m.tokenAmount && !m.fromMe).length}
+                  </div>
+                </div>
+              </div>
+
+              {/* First Message Date */}
+              {messages.length > 0 && messages[0].timestamp && (
+                <div className="flex items-center justify-between p-3 bg-gray-700/50 md:bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-orange-500/20 rounded-full flex items-center justify-center">
+                      <svg className="w-5 h-5 text-orange-400 md:text-orange-600 dark:text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                    </div>
+                    <span className="font-medium text-gray-300 md:text-gray-700 dark:text-gray-300">First Message</span>
+                  </div>
+                  <span className="text-sm text-gray-400 md:text-gray-600 dark:text-gray-400">
+                    {new Date(messages[0].timestamp).toLocaleDateString()}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <button
+              onClick={() => setShowChatInfo(false)}
+              className="w-full mt-6 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors font-medium"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Delete Confirmation Dialog */}
       {showDeleteConfirm && (
@@ -543,21 +694,28 @@ function ChatPage() {
                   </span>
                 </div>
               )}
-              {/* Message Bubble with Sender Info */}
-              <div className={`flex ${msg.fromMe ? 'justify-end' : 'justify-start'} mb-2`}>
-                <MessageBubble
-                  fromMe={msg.fromMe}
-                  text={msg.text}
-                  charm={msg.charm}
-                  amount={msg.amount}
-                  timestamp={msg.timestamp}
-                  status={msg.status}
-                  tokenAmount={msg.tokenAmount}
-                  senderName={!msg.fromMe && msg.senderPublicKey ? (contactsMap[msg.senderPublicKey]?.name || msg.senderUsername || msg.senderPublicKey.substring(0, 6)) : undefined}
-                  senderImage={!msg.fromMe && msg.senderPublicKey ? contactsMap[msg.senderPublicKey]?.icon : undefined}
-                  onAvatarClick={!msg.fromMe && msg.senderPublicKey ? () => navigate({ to: `/contact-info/${msg.senderPublicKey}`, search: { returnTo: `/groups/${address}` } }) : undefined}
-                />
-              </div>
+              {msg.type === 'system' ? (
+                <div className="flex justify-center my-4 z-10 w-full">
+                  <span className="text-xs text-center text-gray-500 bg-gray-100/80 dark:bg-gray-800/80 dark:text-gray-400 px-4 py-2 rounded-xl backdrop-blur-sm max-w-[80%] mx-auto">
+                    {msg.text}
+                  </span>
+                </div>
+              ) : (
+                <div className={`flex ${msg.fromMe ? 'justify-end' : 'justify-start'} mb-2`}>
+                  <MessageBubble
+                    fromMe={msg.fromMe}
+                    text={msg.text}
+                    charm={msg.charm}
+                    amount={msg.amount}
+                    timestamp={msg.timestamp}
+                    status={msg.status}
+                    tokenAmount={msg.tokenAmount}
+                    senderName={!msg.fromMe && msg.senderPublicKey ? (contactsMap[msg.senderPublicKey]?.name || msg.senderUsername || msg.senderPublicKey.substring(0, 6)) : undefined}
+                    senderImage={!msg.fromMe && msg.senderPublicKey ? contactsMap[msg.senderPublicKey]?.icon : undefined}
+                    onAvatarClick={!msg.fromMe && msg.senderPublicKey ? () => navigate({ to: `/contact-info/${msg.senderPublicKey}`, search: { returnTo: `/groups/${address}` } }) : undefined}
+                  />
+                </div>
+              )}
             </div>
           );
         })}

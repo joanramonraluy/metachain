@@ -168,7 +168,7 @@ class GroupService {
             // 6. Insert initial "Group Created" message
             const initialMsgSql = `
                 INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read)
-                VALUES ('${groupId}', '${myPublicKey}', '${myUsername.replace(/'/g, "''")}', 'text', 'You created the group', '', ${now}, 1)
+                VALUES ('${groupId}', '${myPublicKey}', '${myUsername.replace(/'/g, "''")}', 'system', 'You created the group', '', ${now}, 1)
             `;
             await this.runSQL(initialMsgSql);
 

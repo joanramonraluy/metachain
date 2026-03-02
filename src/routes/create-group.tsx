@@ -155,14 +155,23 @@ function CreateGroupPage() {
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Description (optional)
               </label>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Enter group description"
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-gray-900 dark:text-white bg-white dark:bg-gray-700 placeholder-gray-400 dark:placeholder-gray-500 resize-none"
-                rows={3}
-                maxLength={200}
-              />
+              <div className="relative">
+                <textarea
+                  value={description}
+                  onChange={(e) => {
+                    if (e.target.value.length <= 255) {
+                      setDescription(e.target.value);
+                    }
+                  }}
+                  placeholder="Enter group description"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-gray-900 dark:text-white bg-white dark:bg-gray-700 placeholder-gray-400 dark:placeholder-gray-500 resize-none pr-12"
+                  rows={3}
+                  maxLength={255}
+                />
+                <span className={`absolute bottom-2 right-2 text-[10px] font-medium ${description.length >= 240 ? 'text-red-500' : 'text-gray-400'}`}>
+                  {description.length}/255
+                </span>
+              </div>
             </div>
           </div>
 

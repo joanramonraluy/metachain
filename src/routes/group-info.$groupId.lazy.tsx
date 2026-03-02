@@ -1,16 +1,17 @@
 import { createLazyFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, useContext, useCallback } from "react";
-import { ArrowLeft, Trash2, Users, Edit2, Check, X, ShieldOff, UserPlus, Search } from "lucide-react";
+import { ArrowLeft, Trash2, Users, Edit2, Check, X, ShieldOff, UserPlus, Search, Copy } from "lucide-react";
 import { groupService } from "../services/group.service";
 import { chatService } from "../services/chat.service";
 import { appContext } from "../AppContext";
 import { MDS } from "@minima-global/mds";
+import { GroupTabs, GroupTab } from "../components/group/GroupTabs";
+import { MoreVertical } from "lucide-react";
 
 export const Route = createLazyFileRoute("/group-info/$groupId")({
   component: GroupInfoPage,
 });
 
-import { MoreVertical } from "lucide-react";
 
 interface GroupMember {
   publickey: string;
@@ -27,8 +28,13 @@ const shortenKey = (key: string) => {
 
 function GroupInfoPage() {
   const { groupId } = Route.useParams();
+  const search: any = Route.useSearch();
   const navigate = useNavigate();
   const { myPublicKey, userName } = useContext(appContext);
+
+  const [activeTab, setActiveTab] = useState<GroupTab>(search.tab === 'settings' ? 'settings' : 'profile');
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+
 
   const [groupName, setGroupName] = useState<string>("Group");
   const [members, setMembers] = useState<GroupMember[]>([]);
@@ -108,6 +114,13 @@ function GroupInfoPage() {
       setLoading(false);
     }
   }, [groupId, myPublicKey]);
+
+  const copyToClipboard = (text: string, fieldId: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedField(fieldId);
+      setTimeout(() => setCopiedField(null), 2000);
+    });
+  };
 
   useEffect(() => {
     if (groupId) {
@@ -287,271 +300,332 @@ function GroupInfoPage() {
       {/* HEADER */}
       <div className="sticky top-0 z-10 bg-white/80 dark:bg-gray-800/80 backdrop-blur-md border-b border-gray-200 dark:border-gray-700 px-4 py-3 flex items-center gap-3">
         <button
-          onClick={() => navigate({ to: `/groups/${groupId}` })}
+          onClick={() => {
+            if (search.returnTo) {
+              navigate({ to: search.returnTo });
+            } else {
+              navigate({ to: `/groups/${groupId}` });
+            }
+          }}
           className="p-2 -ml-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors text-gray-700 dark:text-gray-200"
         >
           <ArrowLeft size={20} />
         </button>
-        <span className="font-semibold text-lg text-gray-900 dark:text-white">Group Info</span>
+        <div className="flex flex-col min-w-0">
+          <h1 className="text-lg font-semibold text-gray-800 dark:text-white truncate leading-tight">
+            {groupName}
+          </h1>
+          <span className="text-xs text-gray-500 dark:text-gray-400 truncate">
+            Group Info
+          </span>
+        </div>
       </div>
+
+      {/* Tab Navigation */}
+      <GroupTabs activeTab={activeTab} onTabChange={setActiveTab} />
 
       <div className="flex-1 w-full max-w-2xl mx-auto p-4 pb-32 space-y-6">
 
-        {/* GROUP HEADER CARD */}
-        <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col items-center relative">
-          <div className="w-24 h-24 bg-primary-500 rounded-full flex items-center justify-center text-white text-4xl font-bold mb-4 shadow-lg shadow-primary-500/30">
-            {groupName.charAt(0).toUpperCase()}
-          </div>
+        {activeTab === 'profile' && (
+          <div className="space-y-6">
+            {/* GROUP HEADER CARD */}
+            <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col items-center relative">
+              <div className="w-24 h-24 bg-primary-500 rounded-full flex items-center justify-center text-white text-4xl font-bold mb-4 shadow-lg shadow-primary-500/30">
+                {groupName.charAt(0).toUpperCase()}
+              </div>
 
-          {isEditingName ? (
-            <div className="flex items-center gap-2 mb-2 w-full max-w-xs">
-              <input
-                type="text"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                autoFocus
-                onBlur={handleSaveName}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleSaveName();
-                  if (e.key === 'Escape') { setNewName(groupName); setIsEditingName(false); }
-                }}
-                className="flex-1 bg-gray-50 dark:bg-gray-900 border border-primary-500 rounded-lg px-3 py-1.5 text-gray-900 dark:text-white text-center font-semibold focus:outline-none"
-                disabled={savingName}
-              />
-              <button
-                onClick={handleSaveName}
-                disabled={savingName}
-                className="p-1.5 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors disabled:opacity-50"
-              >
-                <Check size={18} />
-              </button>
-            </div>
-          ) : (
-            <div className="flex items-center justify-center gap-2 mb-1 w-full relative group/name">
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white text-center break-all px-8">{groupName}</h1>
-              {(isCreator || myRole === 'admin') && (
-                <button
-                  onClick={() => { setNewName(groupName); setIsEditingName(true); }}
-                  className="absolute right-0 p-1.5 text-gray-400 opacity-0 group-hover/name:opacity-100 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-900/30 rounded-full transition-all"
-                  title="Rename Group"
-                >
-                  <Edit2 size={16} />
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* DESCRIPTION */}
-          {isEditingDesc ? (
-            <div className="w-full mt-3 mb-4 flex flex-col items-end gap-2">
-              <textarea
-                value={newDesc}
-                onChange={(e) => setNewDesc(e.target.value)}
-                autoFocus
-                onBlur={handleSaveDesc}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape') { setNewDesc(description); setIsEditingDesc(false); }
-                }}
-                className="w-full bg-gray-50 dark:bg-gray-900 border border-primary-500 rounded-lg px-3 py-2 text-sm text-gray-700 dark:text-gray-300 focus:outline-none resize-none"
-                rows={3}
-                placeholder="Add a group description..."
-                disabled={savingDesc}
-              />
-            </div>
-          ) : (
-            <div className={`mt-3 mb-4 w-full relative group/desc flex items-start ${description ? "justify-center text-center" : "justify-center"}`}>
-              {description ? (
-                <p className="text-gray-600 dark:text-gray-300 text-sm italic px-8 whitespace-pre-wrap text-center max-w-sm">
-                  {description}
-                </p>
-              ) : (isCreator || myRole === 'admin') ? (
-                <p className="text-gray-400 dark:text-gray-500 text-sm italic cursor-pointer hover:text-primary-500 transition-colors"
-                  onClick={() => { setNewDesc(description); setIsEditingDesc(true); }}>
-                  Add a description...
-                </p>
-              ) : null}
-
-              {description && (isCreator || myRole === 'admin') && (
-                <button
-                  onClick={() => { setNewDesc(description); setIsEditingDesc(true); }}
-                  className="absolute right-0 top-0 p-1.5 text-gray-400 opacity-0 group-hover/desc:opacity-100 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-900/30 rounded-full transition-all"
-                  title="Edit Description"
-                >
-                  <Edit2 size={14} />
-                </button>
-              )}
-            </div>
-          )}
-
-          <p className="text-gray-500 dark:text-gray-400 text-sm mt-3">{members.length} members</p>
-        </div>
-
-        {/* ACTIONS */}
-        <div className="bg-white dark:bg-gray-800 rounded-2xl overflow-hidden shadow-sm border border-gray-100 dark:border-gray-700">
-          <button
-            onClick={() => setShowDeleteConfirm(true)}
-            className="w-full flex items-center gap-3 p-4 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-left font-medium"
-          >
-            <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
-              <Trash2 size={20} />
-            </div>
-            Exit Group
-          </button>
-        </div>
-
-        {/* MEMBERS LIST */}
-        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
-          <div className="p-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Users size={18} className="text-gray-500" />
-              <span className="font-semibold text-gray-900 dark:text-white">Members</span>
-            </div>
-            <div className="flex items-center gap-2">
-              {(isCreator || myRole === 'admin') && (
-                <button
-                  onClick={openAddMember}
-                  className="flex items-center gap-1.5 text-xs font-semibold text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/30 hover:bg-primary-100 dark:hover:bg-primary-900/50 px-3 py-1.5 rounded-full transition-colors"
-                >
-                  <UserPlus size={13} />
-                  Add
-                </button>
-              )}
-              <span className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-1 rounded-full">
-                {members.length}
-              </span>
-            </div>
-          </div>
-
-          <div className="divide-y divide-gray-100 dark:divide-gray-700">
-            {loading ? (
-              <div className="p-8 text-center text-gray-500">Loading members...</div>
-            ) : (
-              members.map((member, i) => (
-                <div key={member.publickey || i} className={`relative ${activeMenuPubkey === member.publickey ? 'z-30' : 'z-0'}`}>
-                  <button
-                    onClick={() => {
-                      if (!member.isMe) {
-                        navigate({
-                          to: `/contact-info/${member.publickey}`,
-                          search: { returnTo: `/group-info/${groupId}` }
-                        });
-                      }
+              {isEditingName ? (
+                <div className="flex items-center gap-2 mb-2 w-full max-w-xs">
+                  <input
+                    type="text"
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    autoFocus
+                    onBlur={handleSaveName}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleSaveName();
+                      if (e.key === 'Escape') { setNewName(groupName); setIsEditingName(false); }
                     }}
-                    className={`w-full p-4 flex items-center gap-3 transition-all text-left group
-                                  ${member.isMe
-                        ? 'bg-primary-50/50 dark:bg-primary-900/10 cursor-default'
-                        : 'hover:bg-gray-100 dark:hover:bg-gray-700/50 cursor-pointer active:scale-[0.99]'
-                      }`}
+                    className="flex-1 bg-gray-50 dark:bg-gray-900 border border-primary-500 rounded-lg px-3 py-1.5 text-gray-900 dark:text-white text-center font-semibold focus:outline-none"
+                    disabled={savingName}
+                  />
+                  <button
+                    onClick={handleSaveName}
+                    disabled={savingName}
+                    className="p-1.5 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors disabled:opacity-50"
                   >
-                    <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 flex-shrink-0 flex items-center justify-center text-gray-600 dark:text-gray-300 font-medium text-sm group-hover:bg-gray-300 dark:group-hover:bg-gray-600 transition-colors">
-                      {member.isMe ? 'You' : (member.name && member.name !== "Unknown Member" && member.name !== "Unknown" ? member.name.charAt(0).toUpperCase() : '?')}
-                    </div>
-                    <div className="flex-1 min-w-0 pr-10">
-                      <div>
-                        <p className="text-sm font-medium text-gray-900 dark:text-white truncate flex items-center gap-2">
-                          {member.isMe ? 'You' : (member.name && member.name !== "Unknown Member" && member.name !== "Unknown" ? member.name : shortenKey(member.publickey))}
-                          {member.role === 'creator' && (
-                            <span className="text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-400 px-1.5 py-0.5 rounded-md uppercase tracking-wide flex-shrink-0">Creator</span>
-                          )}
-                          {member.role === 'admin' && (
-                            <span className="text-[10px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-400 px-1.5 py-0.5 rounded-md uppercase tracking-wide flex-shrink-0">Admin</span>
-                          )}
-                        </p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate font-mono">
-                          {shortenKey(member.publickey)}
-                        </p>
-                      </div>
-                    </div>
+                    <Check size={18} />
                   </button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-center gap-2 mb-1 w-full relative group/name">
+                  <h1 className="text-2xl font-bold text-gray-900 dark:text-white text-center break-all px-8">{groupName}</h1>
+                  {(isCreator || myRole === 'admin') && (
+                    <button
+                      onClick={() => { setNewName(groupName); setIsEditingName(true); }}
+                      className="absolute right-0 p-1.5 text-gray-400 opacity-0 group-hover/name:opacity-100 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-900/30 rounded-full transition-all"
+                      title="Rename Group"
+                    >
+                      <Edit2 size={16} />
+                    </button>
+                  )}
+                </div>
+              )}
 
-                  {/* Context Menu for Admins/Creators to manage roles */}
-                  {!member.isMe && member.role !== 'creator' && (myRole === 'creator' || myRole === 'admin') && (
-                    <div className="absolute right-4 top-1/2 -translate-y-1/2">
+              {/* DESCRIPTION */}
+              {isEditingDesc ? (
+                <div className="w-full mt-3 mb-4 flex flex-col items-end gap-2">
+                  <div className="relative w-full">
+                    <textarea
+                      value={newDesc}
+                      onChange={(e) => {
+                        if (e.target.value.length <= 255) {
+                          setNewDesc(e.target.value);
+                        }
+                      }}
+                      autoFocus
+                      onBlur={handleSaveDesc}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Escape') { setNewDesc(description); setIsEditingDesc(false); }
+                      }}
+                      className="w-full bg-gray-50 dark:bg-gray-900 border border-primary-500 rounded-lg px-3 py-2 text-sm text-gray-700 dark:text-gray-300 focus:outline-none resize-none pr-12"
+                      rows={3}
+                      placeholder="Add a group description..."
+                      disabled={savingDesc}
+                    />
+                    <span className={`absolute bottom-2 right-2 text-[10px] font-medium ${newDesc.length >= 240 ? 'text-red-500' : 'text-gray-400'}`}>
+                      {newDesc.length}/255
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className={`mt-3 mb-4 w-full relative group/desc flex items-start ${description ? "justify-center text-center" : "justify-center"}`}>
+                  {description ? (
+                    <p className="text-gray-600 dark:text-gray-300 text-sm italic px-8 whitespace-pre-wrap text-center max-w-sm break-words">
+                      {description}
+                    </p>
+                  ) : (isCreator || myRole === 'admin') ? (
+                    <p className="text-gray-400 dark:text-gray-500 text-sm italic cursor-pointer hover:text-primary-500 transition-colors"
+                      onClick={() => { setNewDesc(description); setIsEditingDesc(true); }}>
+                      Add a description...
+                    </p>
+                  ) : null}
+
+                  {description && (isCreator || myRole === 'admin') && (
+                    <button
+                      onClick={() => { setNewDesc(description); setIsEditingDesc(true); }}
+                      className="absolute right-0 top-0 p-1.5 text-gray-400 opacity-0 group-hover/desc:opacity-100 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-900/30 rounded-full transition-all"
+                      title="Edit Description"
+                    >
+                      <Edit2 size={14} />
+                    </button>
+                  )}
+                </div>
+              )}
+
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'settings' && (
+          <div className="space-y-6">
+            {/* MEMBERS LIST */}
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
+              <div className="p-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Users size={18} className="text-gray-500" />
+                  <span className="font-semibold text-gray-900 dark:text-white">Members</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {(isCreator || myRole === 'admin') && (
+                    <button
+                      onClick={openAddMember}
+                      className="flex items-center gap-1.5 text-xs font-semibold text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/30 hover:bg-primary-100 dark:hover:bg-primary-900/50 px-3 py-1.5 rounded-full transition-colors"
+                    >
+                      <UserPlus size={13} />
+                      Add
+                    </button>
+                  )}
+                  <span className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-1 rounded-full">
+                    {members.length}
+                  </span>
+                </div>
+              </div>
+
+              <div className="divide-y divide-gray-100 dark:divide-gray-700">
+                {loading ? (
+                  <div className="p-8 text-center text-gray-500">Loading members...</div>
+                ) : (
+                  members.map((member, i) => (
+                    <div key={member.publickey || i} className={`relative ${activeMenuPubkey === member.publickey ? 'z-30' : 'z-0'}`}>
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setActiveMenuPubkey(activeMenuPubkey === member.publickey ? null : member.publickey);
+                        onClick={() => {
+                          if (!member.isMe) {
+                            navigate({
+                              to: `/contact-info/${member.publickey}`,
+                              search: { returnTo: `/group-info/${groupId}` }
+                            });
+                          }
                         }}
-                        className="p-2 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-full transition-colors"
+                        className={`w-full p-4 flex items-center gap-3 transition-all text-left group
+                                  ${member.isMe
+                            ? 'bg-primary-50/50 dark:bg-primary-900/10 cursor-default'
+                            : 'hover:bg-gray-100 dark:hover:bg-gray-700/50 cursor-pointer active:scale-[0.99]'
+                          }`}
                       >
-                        <MoreVertical size={18} />
+                        <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 flex-shrink-0 flex items-center justify-center text-gray-600 dark:text-gray-300 font-medium text-sm group-hover:bg-gray-300 dark:group-hover:bg-gray-600 transition-colors">
+                          {member.isMe ? 'You' : (member.name && member.name !== "Unknown Member" && member.name !== "Unknown" ? member.name.charAt(0).toUpperCase() : '?')}
+                        </div>
+                        <div className="flex-1 min-w-0 pr-10">
+                          <div>
+                            <p className="text-sm font-medium text-gray-900 dark:text-white truncate flex items-center gap-2">
+                              {member.isMe ? 'You' : (member.name && member.name !== "Unknown Member" && member.name !== "Unknown" ? member.name : shortenKey(member.publickey))}
+                              {member.role === 'creator' && (
+                                <span className="text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-400 px-1.5 py-0.5 rounded-md uppercase tracking-wide flex-shrink-0">Creator</span>
+                              )}
+                              {member.role === 'admin' && (
+                                <span className="text-[10px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-400 px-1.5 py-0.5 rounded-md uppercase tracking-wide flex-shrink-0">Admin</span>
+                              )}
+                            </p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 truncate font-mono">
+                              {shortenKey(member.publickey)}
+                            </p>
+                          </div>
+                        </div>
                       </button>
-                      {activeMenuPubkey === member.publickey && (
-                        <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-20 py-1"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {member.role === 'member' && (isCreator || myRole === 'admin') && (
-                            <button
-                              onClick={() => handleRoleChange(member.publickey, 'admin')}
-                              className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+
+                      {/* Context Menu for Admins/Creators to manage roles */}
+                      {!member.isMe && member.role !== 'creator' && (myRole === 'creator' || myRole === 'admin') && (
+                        <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveMenuPubkey(activeMenuPubkey === member.publickey ? null : member.publickey);
+                            }}
+                            className="p-2 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-full transition-colors"
+                          >
+                            <MoreVertical size={18} />
+                          </button>
+                          {activeMenuPubkey === member.publickey && (
+                            <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-20 py-1"
+                              onClick={(e) => e.stopPropagation()}
                             >
-                              Promote to Admin
-                            </button>
-                          )}
-                          {member.role === 'admin' && isCreator && (
-                            <button
-                              onClick={() => handleRoleChange(member.publickey, 'member')}
-                              className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
-                            >
-                              Demote to Member
-                            </button>
-                          )}
-                          {/* Remove option: admins can remove members, creator can remove anyone */}
-                          {(isCreator || (myRole === 'admin' && member.role === 'member')) && (
-                            <button
-                              onClick={() => handleRemoveMember(member.publickey)}
-                              className="w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 border-t border-gray-100 dark:border-gray-700 mt-1"
-                            >
-                              Remove from Group
-                            </button>
+                              {member.role === 'member' && (isCreator || myRole === 'admin') && (
+                                <button
+                                  onClick={() => handleRoleChange(member.publickey, 'admin')}
+                                  className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                                >
+                                  Promote to Admin
+                                </button>
+                              )}
+                              {member.role === 'admin' && isCreator && (
+                                <button
+                                  onClick={() => handleRoleChange(member.publickey, 'member')}
+                                  className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                                >
+                                  Demote to Member
+                                </button>
+                              )}
+                              {/* Remove option: admins can remove members, creator can remove anyone */}
+                              {(isCreator || (myRole === 'admin' && member.role === 'member')) && (
+                                <button
+                                  onClick={() => handleRemoveMember(member.publickey)}
+                                  className="w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 border-t border-gray-100 dark:border-gray-700 mt-1"
+                                >
+                                  Remove from Group
+                                </button>
+                              )}
+                            </div>
                           )}
                         </div>
                       )}
                     </div>
-                  )}
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* BANNED MEMBERS — visible to Creator and Admins */}
-        {(isCreator || myRole === 'admin') && bannedMembers.length > 0 && (
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-red-100 dark:border-red-900/50">
-            <div className="p-4 border-b border-red-100 dark:border-red-900/50 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <ShieldOff size={18} className="text-red-500" />
-                <span className="font-semibold text-red-600 dark:text-red-400">Banned Members</span>
+                  ))
+                )}
               </div>
-              <span className="text-xs bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 px-2 py-1 rounded-full">
-                {bannedMembers.length}
-              </span>
             </div>
-            <div className="divide-y divide-red-50 dark:divide-red-900/20">
-              {bannedMembers.map((banned) => (
-                <div key={banned.publickey} className="p-4 flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex-shrink-0 flex items-center justify-center text-red-500">
-                    <ShieldOff size={16} />
+
+            {/* BANNED MEMBERS — visible to Creator and Admins */}
+            {(isCreator || myRole === 'admin') && bannedMembers.length > 0 && (
+              <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-red-100 dark:border-red-900/50">
+                <div className="p-4 border-b border-red-100 dark:border-red-900/50 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <ShieldOff size={18} className="text-red-500" />
+                    <span className="font-semibold text-red-600 dark:text-red-400">Banned Members</span>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                      {banned.username && banned.username !== "Unknown" ? banned.username : shortenKey(banned.publickey)}
-                    </p>
-                    <p className="text-xs text-gray-400 dark:text-gray-500">
-                      Banned {new Date(banned.banned_at).toLocaleDateString()}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => handleUnban(banned.publickey)}
-                    className="flex-shrink-0 text-xs px-3 py-1.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full font-medium hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors"
-                  >
-                    Unban
-                  </button>
+                  <span className="text-xs bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 px-2 py-1 rounded-full">
+                    {bannedMembers.length}
+                  </span>
                 </div>
-              ))}
+                <div className="divide-y divide-red-50 dark:divide-red-900/20">
+                  {bannedMembers.map((banned) => (
+                    <div key={banned.publickey} className="p-4 flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex-shrink-0 flex items-center justify-center text-red-500">
+                        <ShieldOff size={16} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                          {banned.username && banned.username !== "Unknown" ? banned.username : shortenKey(banned.publickey)}
+                        </p>
+                        <p className="text-xs text-gray-400 dark:text-gray-500">
+                          Banned {new Date(banned.banned_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleUnban(banned.publickey)}
+                        className="flex-shrink-0 text-xs px-3 py-1.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full font-medium hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors"
+                      >
+                        Unban
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* EXIT GROUP BUTTON */}
+            <div className="bg-white dark:bg-gray-800 rounded-2xl overflow-hidden shadow-sm border border-gray-100 dark:border-gray-700">
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                className="w-full flex items-center gap-3 p-4 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-left font-medium"
+              >
+                <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                  <Trash2 size={20} />
+                </div>
+                Exit Group
+              </button>
             </div>
           </div>
         )}
+
+        {activeTab === 'tech' && (
+          <div className="space-y-6">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden transition-colors">
+              {/* Group ID */}
+              <div className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors group border-b border-gray-100 dark:border-gray-700">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Group ID (Public Key)</span>
+                  <button
+                    onClick={() => copyToClipboard(groupId || "", 'groupid')}
+                    className="text-primary-600 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-primary-50 rounded"
+                    title="Copy"
+                  >
+                    {copiedField === 'groupid' ? <Check size={16} /> : <Copy size={16} />}
+                  </button>
+                </div>
+                <p className="text-sm font-mono text-gray-800 dark:text-gray-200 break-all">{groupId}</p>
+              </div>
+              {/* Role */}
+              <div className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors group">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm font-medium text-gray-500 dark:text-gray-400">My Role</span>
+                </div>
+                <p className="text-sm font-mono text-gray-800 dark:text-gray-200 break-all">{myRole.toUpperCase()}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
 
       {/* EXIT CONFIRMATION DIALOG */}

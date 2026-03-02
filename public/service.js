@@ -1367,7 +1367,19 @@ function handleGroupInvite(pubkey, maxjson) {
 
                 if (maxjson.members) {
                     var addMember = function (idx) {
-                        if (idx >= maxjson.members.length) return;
+                        if (idx >= maxjson.members.length) {
+                            var creatorName = escapeSql(maxjson.senderUsername || "Someone");
+                            var systemMsg = creatorName + " created the group";
+                            var checkMsgSql = "SELECT id FROM GROUP_MESSAGES WHERE group_id='" + safeGroupId + "' AND type='system' AND message='" + systemMsg + "'";
+                            MDS.sql(checkMsgSql, function (checkRes) {
+                                if (checkRes.status && (!checkRes.rows || checkRes.rows.length === 0)) {
+                                    var initialMsgSql = "INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read, propagated) VALUES "
+                                        + "('" + safeGroupId + "', '" + safeCreatorPubkey + "', '" + creatorName + "', 'system', '" + systemMsg + "', '', " + safeTimestamp + ", 0, 1)";
+                                    MDS.sql(initialMsgSql);
+                                }
+                            });
+                            return;
+                        }
                         var m = maxjson.members[idx];
                         var role = (m.publickey === pubkey) ? 'creator' : 'member';
                         var safeMemberPubkey = escapeSql(m.publickey || "");
