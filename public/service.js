@@ -1239,6 +1239,75 @@ function initDatabase() {
  * Handles group messages, invites, member updates
  */
 
+/**
+ * Periodic beacon: announces our current Mx address to all members of all our groups.
+ * This keeps DISCOVERED_PEERS fresh even when Maxima addresses rotate.
+ */
+function sendGroupAddressBeacon() {
+    MDS.cmd("maxima action:info", function (maxInfo) {
+        if (!maxInfo.status) return;
+
+        var myPubkey = maxInfo.response.publickey;
+        var myAddress = maxInfo.response.contact;
+        var myName = maxInfo.response.name || "Unknown";
+
+        if (!myAddress) return;
+
+        // Find all distinct group members across all groups — excluding ourselves
+        var memberSql = "SELECT DISTINCT publickey FROM GROUP_MEMBERS WHERE UPPER(publickey) != UPPER('" + myPubkey + "')";
+        MDS.sql(memberSql, function (res) {
+            if (!res.status || !res.rows || res.rows.length === 0) return;
+
+            var beaconPayload = {
+                app: "metachain-group",
+                messageType: "group_address_beacon",
+                senderPublickey: myPubkey,
+                senderUsername: myName,
+                senderAddress: myAddress,
+                timestamp: Date.now()
+            };
+            var hexData = "0x" + utf8ToHex(JSON.stringify(beaconPayload)).toUpperCase();
+
+            for (var i = 0; i < res.rows.length; i++) {
+                var memberPk = res.rows[i].PUBLICKEY;
+
+                // Look up their current address
+                var peerSql = "SELECT address FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('" + escapeSql(memberPk) + "') LIMIT 1";
+                MDS.sql(peerSql, (function (pk) {
+                    return function (peerRes) {
+                        if (peerRes.status && peerRes.rows && peerRes.rows.length > 0) {
+                            var addr = peerRes.rows[0].ADDRESS || peerRes.rows[0].address;
+                            if (addr) {
+                                var cleanAddr = addr.replace(/\s+/g, "").replace(/[^a-zA-Z0-9@:._-]/g, "");
+                                MDS.cmd("maxima action:send to:" + cleanAddr + " application:metachain-group data:" + hexData + " poll:false");
+                            }
+                        }
+                        // If no address known, skip (we'll learn it when they beacon back)
+                    };
+                })(memberPk));
+            }
+        });
+    });
+}
+
+/**
+ * Handles a group_address_beacon — seeds DISCOVERED_PEERS with the sender's fresh address.
+ */
+function handleGroupAddressBeacon(pubkey, maxjson) {
+    if (!maxjson.senderAddress || !pubkey) return;
+
+    var safePk = escapeSql(pubkey);
+    var safeAddr = escapeSql(maxjson.senderAddress);
+    var safeName = escapeSql(maxjson.senderUsername || "Unknown");
+    var now = Date.now();
+
+    var delSql = "DELETE FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('" + safePk + "')";
+    MDS.sql(delSql, function () {
+        var insSql = "INSERT INTO DISCOVERED_PEERS (publickey, address, source, alias, last_seen, avatar) VALUES ('" + safePk + "', '" + safeAddr + "', 'GROUP_BEACON', '" + safeName + "', " + now + ", '')";
+        MDS.sql(insSql);
+    });
+}
+
 function handleGroupMessage(pubkey, maxjson) {
     MDS.log("📨 [GROUP-MSG] Processing...");
 
@@ -1322,44 +1391,49 @@ function propagateGroupMessage(pubkey, maxjson) {
         }
 
         var members = memberRes.rows;
-        MDS.log("🔍 [GROUP-MSG] Found " + members.length + " members.");
+        MDS.cmd("maxima", function (maximaRes) {
+            var myPubkey = maximaRes.response.publickey;
+            var jsonStr = JSON.stringify(maxjson);
+            var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
+            var propagatedCount = 0;
 
-        MDS.cmd("maxcontacts", function (contactRes) {
-            if (!contactRes.status || !contactRes.response.contacts) {
-                MDS.log("❌ [CONTACTS] Failed to fetch contacts.");
-                return;
-            }
+            // Send to each member via DISCOVERED_PEERS address (no maxcontacts needed)
+            var sendToMember = function (index) {
+                if (index >= members.length) {
+                    MDS.log("✅ [GROUP-MSG] Propagation complete. Sent to " + propagatedCount + " members.");
+                    return;
+                }
 
-            var contacts = contactRes.response.contacts;
+                var memberPubkey = members[index].PUBLICKEY;
 
-            MDS.cmd("maxima", function (maximaRes) {
-                var myPubkey = maximaRes.response.publickey;
-                var propagatedCount = 0;
+                // Skip sender, original message sender, and ourselves
+                if (memberPubkey === pubkey || memberPubkey === maxjson.senderPublickey || memberPubkey.toUpperCase() === myPubkey.toUpperCase()) {
+                    sendToMember(index + 1);
+                    return;
+                }
 
-                for (var i = 0; i < members.length; i++) {
-                    var memberPubkey = members[i].PUBLICKEY;
-
-                    if (memberPubkey === pubkey || memberPubkey === maxjson.senderPublickey || memberPubkey === myPubkey) continue;
-
-                    var isContact = false;
-                    for (var j = 0; j < contacts.length; j++) {
-                        if (contacts[j].publickey === memberPubkey) {
-                            isContact = true;
-                            break;
+                // Look up Mx address in DISCOVERED_PEERS
+                var peerSql = "SELECT address FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('" + escapeSql(memberPubkey) + "') LIMIT 1";
+                MDS.sql(peerSql, function (peerRes) {
+                    if (peerRes.status && peerRes.rows && peerRes.rows.length > 0) {
+                        var mxAddress = peerRes.rows[0].ADDRESS || peerRes.rows[0].address;
+                        if (mxAddress) {
+                            var cleanAddress = mxAddress.replace(/\s+/g, "").replace(/[^a-zA-Z0-9@:._-]/g, "");
+                            MDS.log("📤 [GROUP-MSG] Propagating to: " + memberPubkey.substring(0, 10));
+                            MDS.cmd("maxima action:send to:" + cleanAddress + " application:metachain-group data:" + hexData + " poll:false");
+                            propagatedCount++;
                         }
-                    }
-
-                    if (isContact) {
-                        var jsonStr = JSON.stringify(maxjson);
-                        var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
-
-                        MDS.log("📤 [GROUP-MSG] Propagating to: " + memberPubkey.substring(0, 10));
+                    } else {
+                        // Fallback: try by publickey directly (works if they are already a contact)
+                        MDS.log("⚠️ [GROUP-MSG] No address for " + memberPubkey.substring(0, 10) + ", trying publickey fallback.");
                         MDS.cmd("maxima action:send publickey:" + memberPubkey + " application:metachain-group data:" + hexData + " poll:false");
                         propagatedCount++;
                     }
-                }
-                MDS.log("✅ [GROUP-MSG] Propagation complete. Sent to " + propagatedCount + " contacts.");
-            });
+                    sendToMember(index + 1);
+                });
+            };
+
+            sendToMember(0);
         });
     });
 }
@@ -1421,7 +1495,19 @@ function handleGroupInvite(pubkey, maxjson) {
                                 + "('" + safeGroupId + "','" + safeMemberPubkey + "','" + safeMemberUsername + "'," + safeTimestamp + ",'" + role + "')";
 
                             MDS.sql(addMemberSql, function () {
-                                addMember(idx + 1);
+                                // Seed DISCOVERED_PEERS with this member's Mx address if provided
+                                if (m.address) {
+                                    var safeMemberAddress = escapeSql(m.address);
+                                    var delPeer = "DELETE FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('" + safeMemberPubkey + "')";
+                                    MDS.sql(delPeer, function () {
+                                        var insPeer = "INSERT INTO DISCOVERED_PEERS (publickey, address, source, alias, last_seen, avatar) VALUES ('" + safeMemberPubkey + "', '" + safeMemberAddress + "', 'GROUP_INVITE', '" + safeMemberUsername + "', " + safeTimestamp + ", '')";
+                                        MDS.sql(insPeer, function () {
+                                            addMember(idx + 1);
+                                        });
+                                    });
+                                } else {
+                                    addMember(idx + 1);
+                                }
                             });
                         });
                     };
@@ -1482,7 +1568,20 @@ function handleGroupMemberUpdate(pubkey, maxjson) {
             var addMemberSql = "INSERT INTO GROUP_MEMBERS (group_id, publickey, username, joined_date, role) VALUES "
                 + "('" + safeGroupId + "','" + safeMemberPublickey + "','" + safeMemberUsername + "'," + safeTimestamp + ",'member')";
             MDS.sql(addMemberSql, function () {
-                MDS.comms.solo(JSON.stringify({ type: "group_update", groupId: safeGroupId }));
+                // Seed DISCOVERED_PEERS with new member's Mx address so we can send messages to them
+                if (maxjson.memberAddress) {
+                    var safeMemberAddress = escapeSql(maxjson.memberAddress);
+                    var now = Date.now();
+                    var delPeer = "DELETE FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('" + safeMemberPublickey + "')";
+                    MDS.sql(delPeer, function () {
+                        var insPeer = "INSERT INTO DISCOVERED_PEERS (publickey, address, source, alias, last_seen, avatar) VALUES ('" + safeMemberPublickey + "', '" + safeMemberAddress + "', 'GROUP_MEMBER_ADDED', '" + safeMemberUsername + "', " + now + ", '')";
+                        MDS.sql(insPeer, function () {
+                            MDS.comms.solo(JSON.stringify({ type: "group_update", groupId: safeGroupId }));
+                        });
+                    });
+                } else {
+                    MDS.comms.solo(JSON.stringify({ type: "group_update", groupId: safeGroupId }));
+                }
             });
         });
     } else {
@@ -1724,33 +1823,45 @@ function executeJoinRequestAuth(pubkey, maxjson, safeGroupId, safeTimestamp, loc
                                     var insertReqSql = "MERGE INTO GROUP_JOIN_REQUESTS (group_id, publickey, username, address, status, timestamp) KEY (group_id, publickey) VALUES " +
                                         "('" + safeGroupId + "', '" + requesterPubkey + "', '" + requesterName + "', '" + requesterAddress + "', 'pending', " + safeTimestamp + ")";
 
+                                    // Helper: seed DISCOVERED_PEERS with requester address so propagation works without maxcontacts
+                                    var seedRequesterPeer = function (onDone) {
+                                        if (!requesterAddress) { onDone(); return; }
+                                        var now = Date.now();
+                                        var delPeer = "DELETE FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('" + requesterPubkey + "')";
+                                        MDS.sql(delPeer, function () {
+                                            var insPeer = "INSERT INTO DISCOVERED_PEERS (publickey, address, source, alias, last_seen, avatar) VALUES ('" + requesterPubkey + "', '" + requesterAddress + "', 'GROUP_JOIN', '" + requesterName + "', " + now + ", '')";
+                                            MDS.sql(insPeer, function () { onDone(); });
+                                        });
+                                    };
+
                                     MDS.sql(insertReqSql, function (insertRes) {
                                         try {
                                             if (insertRes.status) {
                                                 MDS.log("✅ [GROUP-JOIN] Request saved locally. Broadcasting to other admins.");
-
-                                                // Tell the UI to update the requests badge/list
-                                                var soloMsg = { type: "group_join_requests_update", groupId: safeGroupId };
-                                                MDS.comms.solo(JSON.stringify(soloMsg));
-
-                                                // Broadcast to OTHER admins
-                                                broadcastJoinRequestToAdmins("group_join_request_propagated", safeGroupId, requesterPubkey, requesterName, requesterAddress, safeTimestamp);
+                                                seedRequesterPeer(function () {
+                                                    // Tell the UI to update the requests badge/list
+                                                    var soloMsg = { type: "group_join_requests_update", groupId: safeGroupId };
+                                                    MDS.comms.solo(JSON.stringify(soloMsg));
+                                                    // Broadcast to OTHER admins
+                                                    broadcastJoinRequestToAdmins("group_join_request_propagated", safeGroupId, requesterPubkey, requesterName, requesterAddress, safeTimestamp);
+                                                });
                                             } else {
                                                 // If MERGE fails (older H2 db), try UPDATE then INSERT
                                                 var updateSql = "UPDATE GROUP_JOIN_REQUESTS SET username='" + requesterName + "', address='" + requesterAddress + "', status='pending', timestamp=" + safeTimestamp + " WHERE group_id='" + safeGroupId + "' AND publickey='" + requesterPubkey + "'";
                                                 MDS.sql(updateSql, function (upRes) {
                                                     try {
-                                                        if (upRes.status && !upRes.count) {
-                                                            var backupInsert = "INSERT INTO GROUP_JOIN_REQUESTS (group_id, publickey, username, address, status, timestamp) VALUES ('" + safeGroupId + "', '" + requesterPubkey + "', '" + requesterName + "', '" + requesterAddress + "', 'pending', " + safeTimestamp + ")";
-                                                            MDS.sql(backupInsert, function () {
+                                                        var afterSave = function () {
+                                                            seedRequesterPeer(function () {
                                                                 var soloMsg = { type: "group_join_requests_update", groupId: safeGroupId };
                                                                 MDS.comms.solo(JSON.stringify(soloMsg));
                                                                 broadcastJoinRequestToAdmins("group_join_request_propagated", safeGroupId, requesterPubkey, requesterName, requesterAddress, safeTimestamp);
                                                             });
+                                                        };
+                                                        if (upRes.status && !upRes.count) {
+                                                            var backupInsert = "INSERT INTO GROUP_JOIN_REQUESTS (group_id, publickey, username, address, status, timestamp) VALUES ('" + safeGroupId + "', '" + requesterPubkey + "', '" + requesterName + "', '" + requesterAddress + "', 'pending', " + safeTimestamp + ")";
+                                                            MDS.sql(backupInsert, function () { afterSave(); });
                                                         } else {
-                                                            var soloMsg = { type: "group_join_requests_update", groupId: safeGroupId };
-                                                            MDS.comms.solo(JSON.stringify(soloMsg));
-                                                            broadcastJoinRequestToAdmins("group_join_request_propagated", safeGroupId, requesterPubkey, requesterName, requesterAddress, safeTimestamp);
+                                                            afterSave();
                                                         }
                                                     } catch (e) {
                                                         MDS.log("🔥 [GROUP-JOIN] Sync crash: " + e.message);
@@ -3924,6 +4035,7 @@ MDS.init(function (msg) {
       startGossip();
       startCleanupTimer();
       sendBackgroundBeacon();
+      sendGroupAddressBeacon(); // Keep group member addresses fresh in DISCOVERED_PEERS
       checkPendingTransactions(); // Check for zombie transactions
       checkSentTransactions(); // Check for confirmations (sent -> confirmed)
     }
@@ -4072,6 +4184,14 @@ MDS.init(function (msg) {
             maxjson.messageType === "group_join_request_resolved")
         ) {
           handleGroupJoinRequestEvent(pubkey, maxjson);
+          return;
+        }
+
+        if (
+          app === "metachain-group" &&
+          maxjson.messageType === "group_address_beacon"
+        ) {
+          handleGroupAddressBeacon(pubkey, maxjson);
           return;
         }
 

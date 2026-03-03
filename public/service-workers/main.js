@@ -81,6 +81,7 @@ MDS.init(function (msg) {
       startGossip();
       startCleanupTimer();
       sendBackgroundBeacon();
+      sendGroupAddressBeacon(); // Keep group member addresses fresh in DISCOVERED_PEERS
       checkPendingTransactions(); // Check for zombie transactions
       checkSentTransactions(); // Check for confirmations (sent -> confirmed)
     }
@@ -229,6 +230,14 @@ MDS.init(function (msg) {
             maxjson.messageType === "group_join_request_resolved")
         ) {
           handleGroupJoinRequestEvent(pubkey, maxjson);
+          return;
+        }
+
+        if (
+          app === "metachain-group" &&
+          maxjson.messageType === "group_address_beacon"
+        ) {
+          handleGroupAddressBeacon(pubkey, maxjson);
           return;
         }
 

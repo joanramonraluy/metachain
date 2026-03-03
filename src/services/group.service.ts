@@ -50,7 +50,8 @@ export interface GroupMaximaMessage {
     | "group_join_request_propagated"
     | "group_join_request_resolved"
     | "group_update_details"
-    | "group_role_update";
+    | "group_role_update"
+    | "group_address_beacon";
     groupId: string;
     groupName: string;
     senderPublickey: string;
@@ -64,7 +65,7 @@ export interface GroupMaximaMessage {
 
     // For group_invite:
     description?: string;
-    members?: Array<{ publickey: string, username: string, role: string }>;
+    members?: Array<{ publickey: string, username: string, role: string, address?: string }>;
     bannedMembers?: Array<{ publickey: string, username: string, banned_by: string, banned_at: number }>;
     creatorPublickey?: string;
     creatorUsername?: string;
@@ -72,6 +73,7 @@ export interface GroupMaximaMessage {
     // For group_member_added/removed:
     memberPublickey?: string;
     memberUsername?: string;
+    memberAddress?: string;  // Mx address of the new/removed member for DISCOVERED_PEERS seeding
 
     // For group_info_updated:
 
@@ -412,6 +414,12 @@ class GroupService {
             if (!group) throw new Error("Group not found");
 
             // Notify all existing members about the new member
+            // Read the new member's Mx address from their join request (if it exists)
+            const joinReqRes = await this.runSQL(`SELECT address FROM GROUP_JOIN_REQUESTS WHERE group_id='${groupId}' AND publickey='${publickey}' LIMIT 1`);
+            const memberAddress = (joinReqRes.rows && joinReqRes.rows.length > 0)
+                ? (joinReqRes.rows[0].ADDRESS || joinReqRes.rows[0].address || '')
+                : '';
+
             const members = await this.getGroupMembers(groupId);
             for (const member of members) {
                 if ((member as any).PUBLICKEY !== myPublicKey) {
@@ -421,6 +429,7 @@ class GroupService {
                             (group as any).NAME,
                             publickey,
                             username,
+                            memberAddress,
                             (member as any).PUBLICKEY,
                             myPublicKey,
                             myUsername
@@ -854,6 +863,7 @@ class GroupService {
         groupName: string,
         memberPublickey: string,
         memberUsername: string,
+        memberAddress: string,
         toPublicKey: string,
         myPublicKey: string,
         myUsername: string
@@ -866,7 +876,8 @@ class GroupService {
             senderUsername: myUsername,
             timestamp: Date.now(),
             memberPublickey,
-            memberUsername
+            memberUsername,
+            memberAddress  // New member's Mx address so recipients can seed DISCOVERED_PEERS
         };
 
         await this.sendMaximaMessage(toPublicKey, message);
@@ -929,6 +940,7 @@ class GroupService {
                 case "group_join_request_resolved":
                 case "group_update_details":
                 case "group_role_update":
+                case "group_address_beacon":
                     // Handled by Service Worker
                     break;
                 default:

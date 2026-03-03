@@ -3,6 +3,75 @@
  * Handles group messages, invites, member updates
  */
 
+/**
+ * Periodic beacon: announces our current Mx address to all members of all our groups.
+ * This keeps DISCOVERED_PEERS fresh even when Maxima addresses rotate.
+ */
+function sendGroupAddressBeacon() {
+    MDS.cmd("maxima action:info", function (maxInfo) {
+        if (!maxInfo.status) return;
+
+        var myPubkey = maxInfo.response.publickey;
+        var myAddress = maxInfo.response.contact;
+        var myName = maxInfo.response.name || "Unknown";
+
+        if (!myAddress) return;
+
+        // Find all distinct group members across all groups — excluding ourselves
+        var memberSql = "SELECT DISTINCT publickey FROM GROUP_MEMBERS WHERE UPPER(publickey) != UPPER('" + myPubkey + "')";
+        MDS.sql(memberSql, function (res) {
+            if (!res.status || !res.rows || res.rows.length === 0) return;
+
+            var beaconPayload = {
+                app: "metachain-group",
+                messageType: "group_address_beacon",
+                senderPublickey: myPubkey,
+                senderUsername: myName,
+                senderAddress: myAddress,
+                timestamp: Date.now()
+            };
+            var hexData = "0x" + utf8ToHex(JSON.stringify(beaconPayload)).toUpperCase();
+
+            for (var i = 0; i < res.rows.length; i++) {
+                var memberPk = res.rows[i].PUBLICKEY;
+
+                // Look up their current address
+                var peerSql = "SELECT address FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('" + escapeSql(memberPk) + "') LIMIT 1";
+                MDS.sql(peerSql, (function (pk) {
+                    return function (peerRes) {
+                        if (peerRes.status && peerRes.rows && peerRes.rows.length > 0) {
+                            var addr = peerRes.rows[0].ADDRESS || peerRes.rows[0].address;
+                            if (addr) {
+                                var cleanAddr = addr.replace(/\s+/g, "").replace(/[^a-zA-Z0-9@:._-]/g, "");
+                                MDS.cmd("maxima action:send to:" + cleanAddr + " application:metachain-group data:" + hexData + " poll:false");
+                            }
+                        }
+                        // If no address known, skip (we'll learn it when they beacon back)
+                    };
+                })(memberPk));
+            }
+        });
+    });
+}
+
+/**
+ * Handles a group_address_beacon — seeds DISCOVERED_PEERS with the sender's fresh address.
+ */
+function handleGroupAddressBeacon(pubkey, maxjson) {
+    if (!maxjson.senderAddress || !pubkey) return;
+
+    var safePk = escapeSql(pubkey);
+    var safeAddr = escapeSql(maxjson.senderAddress);
+    var safeName = escapeSql(maxjson.senderUsername || "Unknown");
+    var now = Date.now();
+
+    var delSql = "DELETE FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('" + safePk + "')";
+    MDS.sql(delSql, function () {
+        var insSql = "INSERT INTO DISCOVERED_PEERS (publickey, address, source, alias, last_seen, avatar) VALUES ('" + safePk + "', '" + safeAddr + "', 'GROUP_BEACON', '" + safeName + "', " + now + ", '')";
+        MDS.sql(insSql);
+    });
+}
+
 function handleGroupMessage(pubkey, maxjson) {
     MDS.log("📨 [GROUP-MSG] Processing...");
 
@@ -263,7 +332,20 @@ function handleGroupMemberUpdate(pubkey, maxjson) {
             var addMemberSql = "INSERT INTO GROUP_MEMBERS (group_id, publickey, username, joined_date, role) VALUES "
                 + "('" + safeGroupId + "','" + safeMemberPublickey + "','" + safeMemberUsername + "'," + safeTimestamp + ",'member')";
             MDS.sql(addMemberSql, function () {
-                MDS.comms.solo(JSON.stringify({ type: "group_update", groupId: safeGroupId }));
+                // Seed DISCOVERED_PEERS with new member's Mx address so we can send messages to them
+                if (maxjson.memberAddress) {
+                    var safeMemberAddress = escapeSql(maxjson.memberAddress);
+                    var now = Date.now();
+                    var delPeer = "DELETE FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('" + safeMemberPublickey + "')";
+                    MDS.sql(delPeer, function () {
+                        var insPeer = "INSERT INTO DISCOVERED_PEERS (publickey, address, source, alias, last_seen, avatar) VALUES ('" + safeMemberPublickey + "', '" + safeMemberAddress + "', 'GROUP_MEMBER_ADDED', '" + safeMemberUsername + "', " + now + ", '')";
+                        MDS.sql(insPeer, function () {
+                            MDS.comms.solo(JSON.stringify({ type: "group_update", groupId: safeGroupId }));
+                        });
+                    });
+                } else {
+                    MDS.comms.solo(JSON.stringify({ type: "group_update", groupId: safeGroupId }));
+                }
             });
         });
     } else {
