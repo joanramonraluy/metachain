@@ -103,6 +103,12 @@ export default function ChatsAndGroups() {
   });
   const navigate = useNavigate();
 
+  // Join Link Modal State
+  const [showJoinModal, setShowJoinModal] = useState(false);
+  const [joinLink, setJoinLink] = useState("");
+  const [joiningGroup, setJoiningGroup] = useState(false);
+  const [joinError, setJoinError] = useState("");
+
   // Context Menu State
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -905,6 +911,18 @@ export default function ChatsAndGroups() {
           <button
             onClick={() => {
               setFabMenuOpen(false);
+              setShowJoinModal(true);
+            }}
+            className="flex items-center gap-3 px-4 py-2 bg-white dark:bg-gray-800 rounded-full shadow-lg text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all border border-gray-100 dark:border-gray-700"
+          >
+            <span className="font-medium text-sm">Join via Link</span>
+            <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600">
+              <Plus size={20} />
+            </div>
+          </button>
+          <button
+            onClick={() => {
+              setFabMenuOpen(false);
               navigate({ to: "/create-group" });
             }}
             className="flex items-center gap-3 px-4 py-2 bg-white dark:bg-gray-800 rounded-full shadow-lg text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all border border-gray-100 dark:border-gray-700"
@@ -970,6 +988,75 @@ export default function ChatsAndGroups() {
           )}
         </button>
       </div>
-    </div>
+
+      {/* Join Link Modal */}
+      {showJoinModal && (
+        <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl relative overflow-hidden">
+
+            <h3 className="text-xl font-bold mb-4 text-gray-900 dark:text-white flex items-center gap-2">
+              <UserPlus className="text-primary-500" />
+              Join Group
+            </h3>
+
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+              Paste the invite link to join a group.
+            </p>
+
+            <textarea
+              value={joinLink}
+              onChange={(e) => {
+                setJoinLink(e.target.value);
+                setJoinError("");
+              }}
+              className="w-full h-24 p-3 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white resize-none mb-1 focus:outline-none focus:ring-2 focus:ring-primary-500/50"
+              placeholder="mcgrp://..."
+              disabled={joiningGroup}
+            />
+            {joinError && <p className="text-xs text-red-500 mb-3">{joinError}</p>}
+            {!joinError && <div className="mb-3 h-4" />}
+
+            <div className="flex gap-3 justify-end mt-4">
+              <button
+                onClick={() => {
+                  setShowJoinModal(false);
+                  setJoinLink("");
+                  setJoinError("");
+                }}
+                className="px-4 py-2 text-gray-600 dark:text-gray-400 font-medium hover:bg-gray-100 dark:hover:bg-gray-700/50 rounded-lg transition-colors"
+                disabled={joiningGroup}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  if (!joinLink) {
+                    setJoinError("Please enter a link");
+                    return;
+                  }
+                  setJoiningGroup(true);
+                  setJoinError("");
+                  try {
+                    await groupService.sendJoinRequest(joinLink);
+                    setShowJoinModal(false);
+                    setJoinLink("");
+                  } catch (err: any) {
+                    console.error("Join failed:", err);
+                    setJoinError(err || "Failed to process link.");
+                  } finally {
+                    setJoiningGroup(false);
+                  }
+                }}
+                disabled={joiningGroup || !joinLink}
+                className="px-6 py-2 bg-primary-600 text-white font-medium rounded-lg shadow-md shadow-primary-500/30 hover:bg-primary-500 active:scale-95 transition-all disabled:opacity-50"
+              >
+                {joiningGroup ? "Sending..." : "Request to Join"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )
+      }
+    </div >
   );
 }

@@ -238,6 +238,29 @@ function initDatabase() {
     });
   });
 
+  // 3.9 GROUP_JOIN_REQUESTS
+  chain = chain.then(function () {
+    var requestsSql =
+      "CREATE TABLE IF NOT EXISTS GROUP_JOIN_REQUESTS ( " +
+      "  id BIGINT AUTO_INCREMENT, " +
+      "  group_id VARCHAR(256) NOT NULL, " +
+      "  publickey VARCHAR(512) NOT NULL, " +
+      "  username VARCHAR(255) DEFAULT 'Unknown', " +
+      "  address VARCHAR(512) NOT NULL, " +
+      "  status VARCHAR(32) DEFAULT 'pending', " +
+      "  timestamp BIGINT NOT NULL, " +
+      "  PRIMARY KEY (group_id, publickey) " +
+      " )";
+
+    return runSQL(requestsSql).then(function (res) {
+      MDS.log(
+        res.status
+          ? "📂 [DB] GROUP_JOIN_REQUESTS checked/init"
+          : "❌ [DB] GROUP_JOIN_REQUESTS init failed: " + res.error,
+      );
+    });
+  });
+
   // 4. MESSAGE_COUNTERS (for sequence tracking)
   chain = chain.then(function () {
     var sql =

@@ -411,8 +411,8 @@ VALUES('${peer.pubkey}', '${escapedAlias}', '${escapedBio}', '${peer.address}', 
           } else {
             try {
               const parsedMsg = JSON.parse(json.message);
-              if (parsedMsg.type === "group_update") {
-                console.log(`🚀 [SERVICE] Group ${parsedMsg.groupId} updated to ${parsedMsg.name}`);
+              if (parsedMsg.type === "group_update" || parsedMsg.type === "group_join_requests_update") {
+                console.log(`🚀 [SERVICE] Group ${parsedMsg.groupId} updated to ${parsedMsg.name || 'unknown'}`);
                 // Fire an event that GroupDetails or Groups list can listen to
                 window.dispatchEvent(new CustomEvent("GROUP_UPDATE", { detail: parsedMsg }));
               }

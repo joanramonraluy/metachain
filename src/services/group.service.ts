@@ -45,7 +45,12 @@ export interface GroupMaximaMessage {
     | "group_member_unbanned"
     | "group_update_details"
     | "history_request"
-    | "history_response";
+    | "history_response"
+    | "group_join_request"
+    | "group_join_request_propagated"
+    | "group_join_request_resolved"
+    | "group_update_details"
+    | "group_role_update";
     groupId: string;
     groupName: string;
     senderPublickey: string;
@@ -59,7 +64,10 @@ export interface GroupMaximaMessage {
 
     // For group_invite:
     description?: string;
-    members?: Array<{ publickey: string, username: string }>;
+    members?: Array<{ publickey: string, username: string, role: string }>;
+    bannedMembers?: Array<{ publickey: string, username: string, banned_by: string, banned_at: number }>;
+    creatorPublickey?: string;
+    creatorUsername?: string;
 
     // For group_member_added/removed:
     memberPublickey?: string;
@@ -74,6 +82,14 @@ export interface GroupMaximaMessage {
     historyMessages?: GroupMessage[];
     newName?: string;
     newDescription?: string;
+
+    // For group_join_request
+    requesterName?: string;
+    requesterAddress?: string;
+
+    // For group_join_request_resolved
+    requesterPubkey?: string;
+    resolutionStatus?: "approved" | "denied";
 }
 
 type GroupMessageCallback = (msg: GroupMaximaMessage) => void;
@@ -157,7 +173,10 @@ class GroupService {
                         memberPubkey,
                         myPublicKey,
                         myUsername,
-                        members
+                        members,
+                        now,
+                        myPublicKey,
+                        myUsername
                     );
                 } catch (err) {
                     console.error(`❌ [GROUP-INVITE] Failed to send invite to ${memberPubkey}:`, err);
@@ -413,6 +432,10 @@ class GroupService {
             }
 
             // Send invite to the new member
+            const creatorInfo = members.find(m => (m as any).ROLE === 'creator' || (m as any).role === 'creator');
+            const creatorPub = creatorInfo ? ((creatorInfo as any).PUBLICKEY || creatorInfo.publickey) : myPublicKey;
+            const creatorName = creatorInfo ? ((creatorInfo as any).USERNAME || creatorInfo.username) : myUsername;
+
             await this.sendGroupInvite(
                 groupId,
                 (group as any).NAME,
@@ -420,7 +443,10 @@ class GroupService {
                 publickey,
                 myPublicKey,
                 myUsername,
-                members
+                members,
+                Number((group as any).CREATED_DATE || Date.now()),
+                creatorPub,
+                creatorName
             );
 
             this.notifyGroupUpdate();
@@ -538,7 +564,7 @@ class GroupService {
 
     async unbanMember(groupId: string, publickey: string): Promise<void> {
         try {
-            const sql = `DELETE FROM GROUP_BANS WHERE group_id = '${groupId}' AND publickey = '${publickey}'`;
+            const sql = `DELETE FROM GROUP_BANS WHERE group_id = '${groupId}' AND UPPER(publickey) = UPPER('${publickey}')`;
             await this.runSQL(sql);
             console.log(`✅ [GROUP-BAN] Unbanned ${publickey.substring(0, 10)} from group ${groupId}`);
 
@@ -738,7 +764,7 @@ class GroupService {
         try {
             const safeKey = toPublicKey.replace(/'/g, "''");
             const peerRes = await dbRunSQL(
-                `SELECT ADDRESS FROM DISCOVERED_PEERS WHERE PUBLICKEY='${safeKey}' AND ADDRESS IS NOT NULL LIMIT 1`
+                `SELECT ADDRESS FROM DISCOVERED_PEERS WHERE UPPER(PUBLICKEY)=UPPER('${safeKey}') AND ADDRESS IS NOT NULL LIMIT 1`
             );
             if (peerRes && peerRes.rows && peerRes.rows.length > 0) {
                 const rawAddr = peerRes.rows[0].ADDRESS as string;
@@ -772,17 +798,51 @@ class GroupService {
         toPublicKey: string,
         myPublicKey: string,
         myUsername: string,
-        members: GroupMember[]
+        members: GroupMember[],
+        createdDate?: number,
+        creatorPub?: string,
+        creatorName?: string
     ): Promise<void> {
+        const bannedDB = await this.getGroupBans(groupId);
+        const bannedMembers = bannedDB.map(b => ({
+            publickey: b.publickey,
+            username: b.username,
+            banned_by: b.banned_by,
+            banned_at: b.banned_at
+        }));
+
+        // Enrich each member with their known Mx address from DISCOVERED_PEERS
+        const enrichedMembers = await Promise.all(members.map(async (m: any) => {
+            const pk = m.PUBLICKEY || m.publickey;
+            let address = m.ADDRESS || m.address || '';
+            if (!address) {
+                try {
+                    const peerRes = await this.runSQL(`SELECT address FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('${pk}') LIMIT 1`);
+                    if (peerRes.rows && peerRes.rows.length > 0) {
+                        address = peerRes.rows[0].ADDRESS || peerRes.rows[0].address || '';
+                    }
+                } catch (_) { /* ignore */ }
+            }
+            return {
+                publickey: pk,
+                username: m.RESOLVED_NAME || m.USERNAME || m.username,
+                role: m.ROLE || m.role || 'member',
+                address
+            };
+        }));
+
         const message: GroupMaximaMessage = {
             messageType: "group_invite",
             groupId,
             groupName,
             senderPublickey: myPublicKey,
             senderUsername: myUsername,
-            timestamp: Date.now(),
+            timestamp: createdDate || Date.now(),
             description,
-            members: members.map(m => ({ publickey: (m as any).PUBLICKEY, username: (m as any).USERNAME }))
+            creatorPublickey: creatorPub || myPublicKey,
+            creatorUsername: creatorName || myUsername,
+            members: enrichedMembers,
+            bannedMembers
         };
 
         console.log(`📨 [GROUP-INVITE] Inviting member: ${toPublicKey} to group ${groupId}`);
@@ -864,6 +924,13 @@ class GroupService {
                 case "history_response":
                     await this.handleHistoryResponse(message);
                     break;
+                case "group_join_request":
+                case "group_join_request_propagated":
+                case "group_join_request_resolved":
+                case "group_update_details":
+                case "group_role_update":
+                    // Handled by Service Worker
+                    break;
                 default:
                     console.warn("⚠️ [GROUP-MSG] Unknown type:", message.messageType);
             }
@@ -893,23 +960,15 @@ class GroupService {
         // Add all members
         if (message.members) {
             for (const member of message.members) {
+                const memberRole = member.role || (member.publickey === message.creatorPublickey ? 'creator' : 'member');
                 const addMemberSql = `
                     INSERT INTO GROUP_MEMBERS (group_id, publickey, username, joined_date, role)
-                    VALUES ('${message.groupId}', '${member.publickey}', '${(member.username || 'Unknown').replace(/'/g, "''")}', ${message.timestamp}, '${member.publickey === fromPublicKey ? 'creator' : 'member'}')
+                    VALUES ('${message.groupId}', '${member.publickey}', '${(member.username || 'Unknown').replace(/'/g, "''")}', ${message.timestamp}, '${memberRole}')
                 `;
                 await this.runSQL(addMemberSql);
 
             }
         }
-
-
-        // Insert initial creation message
-        const encodedMsg = `${message.senderUsername.replace(/'/g, "''")} created the group`;
-        const initialMsgSql = `
-            INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read)
-            VALUES ('${message.groupId}', '${message.senderPublickey}', '${message.senderUsername.replace(/'/g, "''")}', 'text', '${encodedMsg}', '', ${message.timestamp}, 0)
-        `;
-        await this.runSQL(initialMsgSql);
 
         console.log("✅ [GROUP-INVITE] Accepted:", message.groupId);
         this.notifyGroupUpdate();
@@ -964,7 +1023,7 @@ class GroupService {
             return;
         }
 
-        const removeSql = `DELETE FROM GROUP_MEMBERS WHERE group_id = '${message.groupId}' AND publickey = '${message.memberPublickey}'`;
+        const removeSql = `DELETE FROM GROUP_MEMBERS WHERE group_id = '${message.groupId}' AND UPPER(publickey) = UPPER('${message.memberPublickey}')`;
         await this.runSQL(removeSql);
 
         // If removed by someone else, auto-ban locally as well
@@ -981,7 +1040,7 @@ class GroupService {
 
     private async handleMemberUnbanned(message: GroupMaximaMessage): Promise<void> {
         if (!message.memberPublickey) return;
-        const sql = `DELETE FROM GROUP_BANS WHERE group_id = '${message.groupId}' AND publickey = '${message.memberPublickey}'`;
+        const sql = `DELETE FROM GROUP_BANS WHERE group_id = '${message.groupId}' AND UPPER(publickey) = UPPER('${message.memberPublickey}')`;
         await this.runSQL(sql);
         console.log("✅ [GROUP-BAN] Unbanned via broadcast:", message.memberPublickey);
         this.notifyGroupUpdate();
@@ -1149,6 +1208,134 @@ class GroupService {
             this.notifyGroupUpdate();
             this.notifyGroupMessage(message); // Also notify message listeners to trigger refresh
         }
+    }
+
+    // Join Requests API
+    async getPendingJoinRequests(groupId: string): Promise<any[]> {
+        const sql = `SELECT * FROM GROUP_JOIN_REQUESTS WHERE group_id = '${groupId}' AND status = 'pending' ORDER BY timestamp ASC`;
+        const res = await this.runSQL(sql);
+        return res.rows || [];
+    }
+
+    async resolveJoinRequest(groupId: string, publickey: string, status: 'approved' | 'denied'): Promise<void> {
+        // First delete it locally
+        await this.runSQL(`DELETE FROM GROUP_JOIN_REQUESTS WHERE group_id = '${groupId}' AND publickey = '${publickey}'`);
+
+        // Notify other admins that it was resolved
+        const sql = `SELECT * FROM GROUP_MEMBERS WHERE group_id = '${groupId}' AND (role = 'creator' OR role = 'admin')`;
+        const res = await this.runSQL(sql);
+        if (res.status && res.rows) {
+            const myIdentity = await this.getIdentity();
+            const groupInfo = await this.getGroupInfo(groupId);
+            const payload: any = {
+                messageType: "group_join_request_resolved",
+                groupId: groupId,
+                groupName: groupInfo?.name || "Unknown Group",
+                senderPublickey: myIdentity.myPublicKey,
+                senderUsername: myIdentity.myUsername,
+                timestamp: Date.now(),
+                requesterPubkey: publickey,
+                resolutionStatus: status
+            };
+            for (const row of res.rows) {
+                const adminPk = row.PUBLICKEY || row.publickey;
+                if (adminPk !== myIdentity.myPublicKey) {
+                    await this.sendMaximaMessage(adminPk, payload as GroupMaximaMessage);
+                }
+            }
+        }
+        this.notifyGroupUpdate();
+    }
+
+    async generateInviteCode(groupId: string, groupName: string): Promise<string> {
+        return new Promise((resolve, reject) => {
+            MDS.executeRaw("maxima action:info", (res: any) => {
+                if (!res.status) {
+                    reject("Could not get maxima info");
+                    return;
+                }
+                const adminPubkey = res.response.publickey;
+                const adminAddress = res.response.contact;
+
+                const data = {
+                    g: groupId,
+                    n: groupName,
+                    p: adminPubkey,
+                    a: adminAddress
+                };
+
+                // Convert to Base64
+                const jsonStr = JSON.stringify(data);
+                const base64 = window.btoa(unescape(encodeURIComponent(jsonStr)));
+
+                // Prefix to identify it as a metachain invite
+                resolve(`mcgrp://${base64}`);
+            });
+        });
+    }
+
+    async sendJoinRequest(inviteCode: string): Promise<void> {
+        return new Promise(async (resolve, reject) => {
+            try {
+                if (!inviteCode.startsWith("mcgrp://")) {
+                    throw new Error("Invalid invite code format");
+                }
+
+                const base64 = inviteCode.substring(8);
+                const jsonStr = decodeURIComponent(escape(window.atob(base64)));
+                const data = JSON.parse(jsonStr);
+
+                const groupId = data.g;
+                const adminPubkey = data.p;
+                const adminAddress = data.a;
+
+                // Get our info
+                const myInfo: any = await new Promise((res) => MDS.executeRaw("maxima action:info", res));
+                const myNameData: any = await this.runSQL(`SELECT alias FROM METACHAIN_USERS WHERE UPPER(publickey)=UPPER('${myInfo.response.publickey}')`);
+                const myName = (myNameData.rows && myNameData.rows.length > 0)
+                    ? (myNameData.rows[0].ALIAS || myNameData.rows[0].alias || myInfo.response.name || "Anonymous")
+                    : (myInfo.response.name || "Anonymous");
+
+                const payload: any = {
+                    messageType: "group_join_request",
+                    groupId: groupId,
+                    groupName: data.n || "Group Invite",
+                    senderPublickey: myInfo.response.publickey,
+                    senderUsername: myName,
+                    requesterName: myName,
+                    requesterAddress: myInfo.response.contact,
+                    timestamp: Date.now()
+                };
+
+                // 💡 PERFORMANCE/RELIABILITY: Seed DISCOVERED_PEERS so sendMaximaMessage can use the Mx address
+                // even if we are not yet full Maxima contacts.
+                const now = Date.now();
+                await this.runSQL(`DELETE FROM DISCOVERED_PEERS WHERE publickey='${adminPubkey}'`);
+                await this.runSQL(`
+                    INSERT INTO DISCOVERED_PEERS (publickey, address, source, alias, last_seen, avatar)
+                    VALUES ('${adminPubkey}', '${adminAddress}', 'INVITE', 'Unknown', ${now}, '')
+                `);
+
+                // Send directly via the admin address (Mx...) using poll:true
+                // — same pattern as sendChatRequest. No need to add admin as a permanent Maxima contact.
+                const payloadJsonStr = JSON.stringify({ ...payload, app: "metachain-group" });
+                const hexData = "0x" + Array.from(new TextEncoder().encode(payloadJsonStr))
+                    .map(b => b.toString(16).padStart(2, "0")).join("").toUpperCase();
+
+                MDS.executeRaw(
+                    `maxima action:send application:metachain-group to:${adminAddress} data:${hexData} poll:true`,
+                    (sendRes: any) => {
+                        if (sendRes.status) {
+                            resolve();
+                        } else {
+                            reject("Could not send join request to group admin: " + sendRes.error);
+                        }
+                    }
+                );
+            } catch (e: any) {
+                reject("Failed to process invite link: " + e.message);
+            }
+        });
     }
 
     /* ----------------------------------------------------------------------------

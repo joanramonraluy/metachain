@@ -1006,6 +1006,29 @@ function initDatabase() {
     });
   });
 
+  // 3.9 GROUP_JOIN_REQUESTS
+  chain = chain.then(function () {
+    var requestsSql =
+      "CREATE TABLE IF NOT EXISTS GROUP_JOIN_REQUESTS ( " +
+      "  id BIGINT AUTO_INCREMENT, " +
+      "  group_id VARCHAR(256) NOT NULL, " +
+      "  publickey VARCHAR(512) NOT NULL, " +
+      "  username VARCHAR(255) DEFAULT 'Unknown', " +
+      "  address VARCHAR(512) NOT NULL, " +
+      "  status VARCHAR(32) DEFAULT 'pending', " +
+      "  timestamp BIGINT NOT NULL, " +
+      "  PRIMARY KEY (group_id, publickey) " +
+      " )";
+
+    return runSQL(requestsSql).then(function (res) {
+      MDS.log(
+        res.status
+          ? "📂 [DB] GROUP_JOIN_REQUESTS checked/init"
+          : "❌ [DB] GROUP_JOIN_REQUESTS init failed: " + res.error,
+      );
+    });
+  });
+
   // 4. MESSAGE_COUNTERS (for sequence tracking)
   chain = chain.then(function () {
     var sql =
@@ -1345,14 +1368,14 @@ function handleGroupInvite(pubkey, maxjson) {
     MDS.log("📨 [GROUP-INVITE] Processing...");
     var safeGroupId = escapeSql(maxjson.groupId || "");
     var safeGroupName = escapeSql(maxjson.groupName || "");
-    var safeCreatorPubkey = escapeSql(pubkey || "");
+    var safeCreatorPubkey = escapeSql(maxjson.creatorPublickey || pubkey || "");
     var safeDescription = escapeSql(maxjson.description || "");
     var safeTimestamp = Number(maxjson.timestamp) || Date.now();
 
     // 🚫 Check if WE (this node) are banned from this group
     MDS.cmd("maxima action:info", function (maximaRes) {
         var myPubkey = maximaRes.response.publickey;
-        var checkBanSql = "SELECT * FROM GROUP_BANS WHERE group_id='" + safeGroupId + "' AND publickey='" + myPubkey + "'";
+        var checkBanSql = "SELECT * FROM GROUP_BANS WHERE group_id='" + safeGroupId + "' AND UPPER(publickey)=UPPER('" + myPubkey + "')";
         MDS.sql(checkBanSql, function (banRes) {
             if (banRes.status && banRes.rows && banRes.rows.length > 0) {
                 MDS.log("🚫 [GROUP-INVITE] Ignoring invite: we are banned from group " + safeGroupId);
@@ -1368,7 +1391,7 @@ function handleGroupInvite(pubkey, maxjson) {
                 if (maxjson.members) {
                     var addMember = function (idx) {
                         if (idx >= maxjson.members.length) {
-                            var creatorName = escapeSql(maxjson.senderUsername || "Someone");
+                            var creatorName = escapeSql(maxjson.creatorUsername || maxjson.senderUsername || "Someone");
                             var systemMsg = creatorName + " created the group";
                             var checkMsgSql = "SELECT id FROM GROUP_MESSAGES WHERE group_id='" + safeGroupId + "' AND type='system' AND message='" + systemMsg + "'";
                             MDS.sql(checkMsgSql, function (checkRes) {
@@ -1381,12 +1404,12 @@ function handleGroupInvite(pubkey, maxjson) {
                             return;
                         }
                         var m = maxjson.members[idx];
-                        var role = (m.publickey === pubkey) ? 'creator' : 'member';
+                        var role = m.role ? escapeSql(m.role) : ((m.publickey === safeCreatorPubkey) ? 'creator' : 'member');
                         var safeMemberPubkey = escapeSql(m.publickey || "");
                         var safeMemberUsername = escapeSql(m.username || "Unknown");
 
                         // Check ban before inserting
-                        var checkMemberBanSql = "SELECT * FROM GROUP_BANS WHERE group_id='" + safeGroupId + "' AND publickey='" + safeMemberPubkey + "'";
+                        var checkMemberBanSql = "SELECT * FROM GROUP_BANS WHERE group_id='" + safeGroupId + "' AND UPPER(publickey)=UPPER('" + safeMemberPubkey + "')";
                         MDS.sql(checkMemberBanSql, function (memberBanRes) {
                             if (memberBanRes.status && memberBanRes.rows && memberBanRes.rows.length > 0) {
                                 MDS.log("🚫 [GROUP-INVITE] Skipping banned member: " + safeMemberPubkey.substring(0, 10));
@@ -1402,7 +1425,39 @@ function handleGroupInvite(pubkey, maxjson) {
                             });
                         });
                     };
-                    addMember(0);
+
+                    var processBans = function () {
+                        if (maxjson.bannedMembers && maxjson.bannedMembers.length > 0) {
+                            var addBan = function (bIdx) {
+                                if (bIdx >= maxjson.bannedMembers.length) {
+                                    addMember(0);
+                                    return;
+                                }
+                                var b = maxjson.bannedMembers[bIdx];
+                                var safeBanPubkey = escapeSql(b.publickey || "");
+                                var safeBanUsername = escapeSql(b.username || "Unknown");
+                                var safeBannedBy = escapeSql(b.banned_by || pubkey);
+                                var safeBannedAt = Number(b.banned_at) || safeTimestamp;
+
+                                var checkBanSql = "SELECT * FROM GROUP_BANS WHERE group_id='" + safeGroupId + "' AND UPPER(publickey)=UPPER('" + safeBanPubkey + "')";
+                                MDS.sql(checkBanSql, function (checkBanRes) {
+                                    if (checkBanRes.status && (!checkBanRes.rows || checkBanRes.rows.length === 0)) {
+                                        var insertBanSql = "INSERT INTO GROUP_BANS (group_id, publickey, username, banned_by, banned_at) VALUES "
+                                            + "('" + safeGroupId + "','" + safeBanPubkey + "','" + safeBanUsername + "','" + safeBannedBy + "'," + safeBannedAt + ")";
+                                        MDS.sql(insertBanSql, function () {
+                                            addBan(bIdx + 1);
+                                        });
+                                    } else {
+                                        addBan(bIdx + 1);
+                                    }
+                                });
+                            };
+                            addBan(0);
+                        } else {
+                            addMember(0);
+                        }
+                    };
+                    processBans();
                 }
             });
         });
@@ -1446,11 +1501,11 @@ function handleGroupMemberUpdate(pubkey, maxjson) {
                     });
                 });
             } else {
-                var removeMemberSql = "DELETE FROM GROUP_MEMBERS WHERE group_id='" + safeGroupId + "' AND publickey='" + safeMemberPublickey + "'";
+                var removeMemberSql = "DELETE FROM GROUP_MEMBERS WHERE group_id='" + safeGroupId + "' AND UPPER(publickey)=UPPER('" + safeMemberPublickey + "')";
                 MDS.sql(removeMemberSql, function () {
                     if (maxjson.senderPublickey && maxjson.senderPublickey !== maxjson.memberPublickey) {
                         var safeBannedBy = escapeSql(maxjson.senderPublickey);
-                        var checkBanSql = "SELECT * FROM GROUP_BANS WHERE group_id='" + safeGroupId + "' AND publickey='" + safeMemberPublickey + "'";
+                        var checkBanSql = "SELECT * FROM GROUP_BANS WHERE group_id='" + safeGroupId + "' AND UPPER(publickey)=UPPER('" + safeMemberPublickey + "')";
                         MDS.sql(checkBanSql, function (banRes) {
                             if (!banRes.status || !banRes.rows || banRes.rows.length === 0) {
                                 var banSql = "INSERT INTO GROUP_BANS (group_id, publickey, username, banned_by, banned_at) VALUES ('" + safeGroupId + "', '" + safeMemberPublickey + "', '" + safeMemberUsername + "', '" + safeBannedBy + "', " + safeTimestamp + ")";
@@ -1475,7 +1530,7 @@ function handleGroupMemberUnbanned(pubkey, maxjson) {
     var safeGroupId = escapeSql(maxjson.groupId || "");
     var safeMemberPublickey = escapeSql(maxjson.memberPublickey || "");
 
-    var sql = "DELETE FROM GROUP_BANS WHERE group_id='" + safeGroupId + "' AND publickey='" + safeMemberPublickey + "'";
+    var sql = "DELETE FROM GROUP_BANS WHERE group_id='" + safeGroupId + "' AND UPPER(publickey)=UPPER('" + safeMemberPublickey + "')";
     MDS.sql(sql, function () {
         MDS.comms.solo(JSON.stringify({ type: "group_update", groupId: safeGroupId }));
     });
@@ -1585,6 +1640,288 @@ function handleGroupRoleUpdate(pubkey, maxjson) {
                     MDS.log("❌ [DB] Failed to update role: " + updateRes.error);
                 }
             });
+        });
+    });
+}
+
+function handleGroupJoinRequestEvent(pubkey, maxjson) {
+    try {
+        MDS.log("🔄 [GROUP-JOIN] Processing event: " + maxjson.messageType + " from " + pubkey.substring(0, 10));
+        var safeGroupId = escapeSql(maxjson.groupId || "");
+        var safeTimestamp = Number(maxjson.timestamp) || Date.now();
+
+        // 1. Resolve our public key in case the global didn't load yet
+        if (typeof MY_MAXIMA_PK === 'undefined' || !MY_MAXIMA_PK || MY_MAXIMA_PK === "") {
+            MDS.cmd("maxima", function (maxRes) {
+                if (maxRes.status) {
+                    if (typeof self !== 'undefined') {
+                        self.MY_MAXIMA_PK = maxRes.response.publickey;
+                    } else if (typeof globalThis !== 'undefined') {
+                        globalThis.MY_MAXIMA_PK = maxRes.response.publickey;
+                    }
+                    var resolvedPk = maxRes.response.publickey;
+                    MDS.log("🔑 [GROUP-JOIN] Recovered local Maxima PK.");
+                    executeJoinRequestAuth(pubkey, maxjson, safeGroupId, safeTimestamp, resolvedPk);
+                } else {
+                    MDS.log("❌ [GROUP-JOIN] Failed to get local Maxima info");
+                }
+            });
+        } else {
+            executeJoinRequestAuth(pubkey, maxjson, safeGroupId, safeTimestamp, MY_MAXIMA_PK);
+        }
+    } catch (err) {
+        MDS.log("🔥 [GROUP-JOIN] CRASH in handleGroupJoinRequestEvent: " + err.message);
+    }
+}
+
+function executeJoinRequestAuth(pubkey, maxjson, safeGroupId, safeTimestamp, localPk) {
+    try {
+        // 2. Verify we are an admin/creator of this group. If not, ignore.
+        var checkSenderSql = "SELECT role FROM GROUP_MEMBERS WHERE group_id='" + safeGroupId + "' AND UPPER(publickey)=UPPER('" + localPk + "')";
+        MDS.sql(checkSenderSql, function (resSender) {
+            try {
+                if (!resSender.status) {
+                    MDS.log("❌ [GROUP-JOIN] SQL Error validating group membership: " + resSender.error);
+                    return;
+                }
+                if (!resSender.rows || resSender.rows.length === 0) {
+                    MDS.log("⚠️ [GROUP-JOIN] Ignored. We are not in group " + safeGroupId);
+                    return;
+                }
+                var myRole = resSender.rows[0].ROLE || resSender.rows[0].role;
+                if (myRole !== 'creator' && myRole !== 'admin') {
+                    MDS.log("⚠️ [GROUP-JOIN] Ignored. We are not an admin/creator of group " + safeGroupId);
+                    return;
+                }
+
+                // =========================================================
+                // A) NEW REQUEST: from a regular user wanting to join
+                // =========================================================
+                if (maxjson.messageType === "group_join_request") {
+                    var requesterPubkey = escapeSql(pubkey);
+                    var requesterName = escapeSql(maxjson.requesterName || "Unknown");
+                    var requesterAddress = escapeSql(maxjson.requesterAddress || ""); // Critical for routing back
+
+                    // Check if already a member
+                    var checkMemberSql = "SELECT * FROM GROUP_MEMBERS WHERE group_id='" + safeGroupId + "' AND publickey='" + requesterPubkey + "'";
+                    MDS.sql(checkMemberSql, function (memberRes) {
+                        try {
+                            if (memberRes.status && memberRes.rows && memberRes.rows.length > 0) {
+                                MDS.log("ℹ️ [GROUP-JOIN] User already a member.");
+                                return; // Already a member
+                            }
+
+                            // Check if banned
+                            var checkBanSql = "SELECT * FROM GROUP_BANS WHERE group_id='" + safeGroupId + "' AND UPPER(publickey)=UPPER('" + requesterPubkey + "')";
+                            MDS.sql(checkBanSql, function (banRes) {
+                                try {
+                                    if (banRes.status && banRes.rows && banRes.rows.length > 0) {
+                                        MDS.log("🚫 [GROUP-JOIN] Discarding request from banned user.");
+                                        return; // Banned
+                                    }
+
+                                    // Insert/Replace in GROUP_JOIN_REQUESTS
+                                    var insertReqSql = "MERGE INTO GROUP_JOIN_REQUESTS (group_id, publickey, username, address, status, timestamp) KEY (group_id, publickey) VALUES " +
+                                        "('" + safeGroupId + "', '" + requesterPubkey + "', '" + requesterName + "', '" + requesterAddress + "', 'pending', " + safeTimestamp + ")";
+
+                                    MDS.sql(insertReqSql, function (insertRes) {
+                                        try {
+                                            if (insertRes.status) {
+                                                MDS.log("✅ [GROUP-JOIN] Request saved locally. Broadcasting to other admins.");
+
+                                                // Tell the UI to update the requests badge/list
+                                                var soloMsg = { type: "group_join_requests_update", groupId: safeGroupId };
+                                                MDS.comms.solo(JSON.stringify(soloMsg));
+
+                                                // Broadcast to OTHER admins
+                                                broadcastJoinRequestToAdmins("group_join_request_propagated", safeGroupId, requesterPubkey, requesterName, requesterAddress, safeTimestamp);
+                                            } else {
+                                                // If MERGE fails (older H2 db), try UPDATE then INSERT
+                                                var updateSql = "UPDATE GROUP_JOIN_REQUESTS SET username='" + requesterName + "', address='" + requesterAddress + "', status='pending', timestamp=" + safeTimestamp + " WHERE group_id='" + safeGroupId + "' AND publickey='" + requesterPubkey + "'";
+                                                MDS.sql(updateSql, function (upRes) {
+                                                    try {
+                                                        if (upRes.status && !upRes.count) {
+                                                            var backupInsert = "INSERT INTO GROUP_JOIN_REQUESTS (group_id, publickey, username, address, status, timestamp) VALUES ('" + safeGroupId + "', '" + requesterPubkey + "', '" + requesterName + "', '" + requesterAddress + "', 'pending', " + safeTimestamp + ")";
+                                                            MDS.sql(backupInsert, function () {
+                                                                var soloMsg = { type: "group_join_requests_update", groupId: safeGroupId };
+                                                                MDS.comms.solo(JSON.stringify(soloMsg));
+                                                                broadcastJoinRequestToAdmins("group_join_request_propagated", safeGroupId, requesterPubkey, requesterName, requesterAddress, safeTimestamp);
+                                                            });
+                                                        } else {
+                                                            var soloMsg = { type: "group_join_requests_update", groupId: safeGroupId };
+                                                            MDS.comms.solo(JSON.stringify(soloMsg));
+                                                            broadcastJoinRequestToAdmins("group_join_request_propagated", safeGroupId, requesterPubkey, requesterName, requesterAddress, safeTimestamp);
+                                                        }
+                                                    } catch (e) {
+                                                        MDS.log("🔥 [GROUP-JOIN] Sync crash: " + e.message);
+                                                    }
+                                                });
+                                            }
+                                        } catch (e) {
+                                            MDS.log("🔥 [GROUP-JOIN] Sync crash: " + e.message);
+                                        }
+                                    });
+                                } catch (e) {
+                                    MDS.log("🔥 [GROUP-JOIN] Sync crash: " + e.message);
+                                }
+                            });
+                        } catch (e) {
+                            MDS.log("🔥 [GROUP-JOIN] Sync crash: " + e.message);
+                        }
+                    });
+                }
+
+                // =========================================================
+                // B) PROPAGATED REQUEST: Another admin received a request, syncing it to us
+                // =========================================================
+                else if (maxjson.messageType === "group_join_request_propagated") {
+                    // Validate sender is an admin
+                    var senderCheck = "SELECT role FROM GROUP_MEMBERS WHERE group_id='" + safeGroupId + "' AND UPPER(publickey)=UPPER('" + escapeSql(pubkey) + "')";
+                    MDS.sql(senderCheck, function (sRes) {
+                        try {
+                            if (!sRes.status || !sRes.rows || sRes.rows.length === 0) {
+                                MDS.log("❌ [GROUP-JOIN] Propagated request ignored: sender " + pubkey.substring(0, 10) + " not found in group members.");
+                                return;
+                            }
+                            var senderRole = sRes.rows[0].ROLE || sRes.rows[0].role;
+                            if (senderRole !== 'admin' && senderRole !== 'creator') {
+                                MDS.log("❌ [GROUP-JOIN] Propagated request ignored: sender role is " + senderRole + " (not admin/creator).");
+                                return;
+                            }
+
+                            var requesterPubkey = escapeSql(maxjson.requesterPubkey);
+                            var requesterName = escapeSql(maxjson.requesterName);
+                            var requesterAddress = escapeSql(maxjson.requesterAddress);
+                            var originalTimestamp = Number(maxjson.originalTimestamp) || safeTimestamp;
+
+                            // Save locally
+                            var updateSql = "UPDATE GROUP_JOIN_REQUESTS SET username='" + requesterName + "', address='" + requesterAddress + "', status='pending', timestamp=" + originalTimestamp + " WHERE group_id='" + safeGroupId + "' AND publickey='" + requesterPubkey + "'";
+                            MDS.sql(updateSql, function (upRes) {
+                                try {
+                                    if (upRes.status && !upRes.count) {
+                                        var backupInsert = "INSERT INTO GROUP_JOIN_REQUESTS (group_id, publickey, username, address, status, timestamp) VALUES ('" + safeGroupId + "', '" + requesterPubkey + "', '" + requesterName + "', '" + requesterAddress + "', 'pending', " + originalTimestamp + ")";
+                                        MDS.sql(backupInsert, function () {
+                                            MDS.log("✅ [GROUP-JOIN] Propagated request saved. Notifying UI.");
+                                            MDS.comms.solo(JSON.stringify({ type: "group_join_requests_update", groupId: safeGroupId }));
+                                        });
+                                    } else {
+                                        MDS.log("✅ [GROUP-JOIN] Propagated request updated. Notifying UI.");
+                                        MDS.comms.solo(JSON.stringify({ type: "group_join_requests_update", groupId: safeGroupId }));
+                                    }
+                                } catch (e) {
+                                    MDS.log("🔥 [GROUP-JOIN] Sync crash: " + e.message);
+                                }
+                            });
+                        } catch (e) {
+                            MDS.log("🔥 [GROUP-JOIN] Sync crash: " + e.message);
+                        }
+                    });
+                }
+
+                // =========================================================
+                // C) RESOLVED REQUEST: Another admin Accepted/Denied it
+                // =========================================================
+                else if (maxjson.messageType === "group_join_request_resolved") {
+                    // Validate sender is an admin
+                    var senderCheck = "SELECT role FROM GROUP_MEMBERS WHERE group_id='" + safeGroupId + "' AND UPPER(publickey)=UPPER('" + escapeSql(pubkey) + "')";
+                    MDS.sql(senderCheck, function (sRes) {
+                        try {
+                            if (!sRes.status || !sRes.rows || sRes.rows.length === 0) {
+                                MDS.log("❌ [GROUP-JOIN] Resolved request ignored: sender " + pubkey.substring(0, 10) + " not found in group members.");
+                                return;
+                            }
+                            var senderRole = sRes.rows[0].ROLE || sRes.rows[0].role;
+                            if (senderRole !== 'admin' && senderRole !== 'creator') {
+                                MDS.log("❌ [GROUP-JOIN] Resolved request ignored: sender role is " + senderRole);
+                                return;
+                            }
+
+                            var requesterPubkey = escapeSql(maxjson.requesterPubkey);
+                            var resolutionStatus = escapeSql(maxjson.resolutionStatus); // 'approved' or 'denied'
+
+                            // Delete or update the request locally so it disappears from UI
+                            var resolveSql = "DELETE FROM GROUP_JOIN_REQUESTS WHERE group_id='" + safeGroupId + "' AND publickey='" + requesterPubkey + "'";
+                            MDS.sql(resolveSql, function () {
+                                MDS.comms.solo(JSON.stringify({ type: "group_join_requests_update", groupId: safeGroupId }));
+                            });
+                        } catch (e) {
+                            MDS.log("🔥 [GROUP-JOIN] Sync crash: " + e.message);
+                        }
+                    });
+                }
+            } catch (e) {
+                MDS.log("🔥 [GROUP-JOIN] Sync crash: " + e.message);
+            }
+        });
+    } catch (e) {
+        MDS.log("🔥 [GROUP-JOIN] Sync crash outside SQL: " + e.message);
+    }
+}
+
+function broadcastJoinRequestToAdmins(msgType, groupId, reqPubkey, reqName, reqAddress, timestamp, resolutionStatus) {
+    // Find all other admins/creators
+    var sql = "SELECT * FROM GROUP_MEMBERS WHERE group_id='" + escapeSql(groupId) + "' AND (role='creator' OR role='admin')";
+    MDS.sql(sql, function (res) {
+        if (!res.status || !res.rows) return;
+
+        var msg = {
+            application: "metachain-group",
+            messageType: msgType,
+            groupId: groupId,
+            requesterPubkey: reqPubkey,
+            requesterName: reqName,
+            requesterAddress: reqAddress,
+            originalTimestamp: timestamp
+        };
+
+        if (resolutionStatus) {
+            msg.resolutionStatus = resolutionStatus;
+        }
+
+        // Get maxcontacts to find routing info
+        MDS.cmd("maxcontacts", function (contactRes) {
+            var contacts = contactRes.response.contacts || [];
+            var payloadStr = JSON.stringify(msg);
+            var hexData = "0x" + utf8ToHex(payloadStr).toUpperCase();
+
+            var sendToAdmin = function (index) {
+                if (index >= res.rows.length) return;
+                var adminPk = res.rows[index].PUBLICKEY || res.rows[index].publickey;
+
+                if (adminPk.toUpperCase() === MY_MAXIMA_PK.toUpperCase()) {
+                    sendToAdmin(index + 1);
+                    return;
+                }
+
+                // Check if they are a contact
+                var isContact = false;
+                for (var j = 0; j < contacts.length; j++) {
+                    if (contacts[j].publickey.toUpperCase() === adminPk.toUpperCase()) {
+                        isContact = true;
+                        break;
+                    }
+                }
+
+                if (isContact) {
+                    MDS.cmd("maxima action:send publickey:" + adminPk + " application:metachain-group data:" + hexData + " poll:false");
+                    sendToAdmin(index + 1);
+                } else {
+                    // Look up in DISCOVERED_PEERS
+                    var searchSql = "SELECT address FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('" + escapeSql(adminPk) + "') LIMIT 1";
+                    MDS.sql(searchSql, function (peerRes) {
+                        if (peerRes.status && peerRes.rows && peerRes.rows.length > 0) {
+                            var mxAddress = peerRes.rows[0].ADDRESS || peerRes.rows[0].address;
+                            if (mxAddress) {
+                                // Clean the address
+                                var cleanAddress = mxAddress.replace(/\s+/g, "").replace(/[^a-zA-Z0-9@:._-]/g, "");
+                                MDS.cmd("maxima action:send to:" + cleanAddress + " application:metachain-group data:" + hexData + " poll:false");
+                            }
+                        }
+                        sendToAdmin(index + 1);
+                    });
+                }
+            };
+            sendToAdmin(0);
         });
     });
 }
@@ -3725,6 +4062,16 @@ MDS.init(function (msg) {
           maxjson.messageType === "group_role_update"
         ) {
           handleGroupRoleUpdate(pubkey, maxjson);
+          return;
+        }
+
+        if (
+          app === "metachain-group" &&
+          (maxjson.messageType === "group_join_request" ||
+            maxjson.messageType === "group_join_request_propagated" ||
+            maxjson.messageType === "group_join_request_resolved")
+        ) {
+          handleGroupJoinRequestEvent(pubkey, maxjson);
           return;
         }
 

@@ -222,6 +222,16 @@ MDS.init(function (msg) {
           return;
         }
 
+        if (
+          app === "metachain-group" &&
+          (maxjson.messageType === "group_join_request" ||
+            maxjson.messageType === "group_join_request_propagated" ||
+            maxjson.messageType === "group_join_request_resolved")
+        ) {
+          handleGroupJoinRequestEvent(pubkey, maxjson);
+          return;
+        }
+
         // ================== CHAT MESSAGES ==================
         if (maxjson.type === "read") {
           handleReadReceipt(pubkey);

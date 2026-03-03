@@ -64,6 +64,11 @@ function GroupInfoPage() {
   const [addingMember, setAddingMember] = useState<string | null>(null);
   const [addMemberTab, setAddMemberTab] = useState<'all' | 'contacts' | 'community'>('all');
 
+  // Join Requests state
+  const [joinRequests, setJoinRequests] = useState<any[]>([]);
+  const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [generatingLink, setGeneratingLink] = useState(false);
+
   const fetchGroupDetails = useCallback(async () => {
     try {
       setLoading(true);
@@ -106,6 +111,17 @@ function GroupInfoPage() {
         username: b.RESOLVED_NAME || b.resolved_name || b.USERNAME || b.username || "Unknown",
         banned_by: b.BANNED_BY || b.banned_by,
         banned_at: Number(b.BANNED_AT || b.banned_at)
+      })));
+
+      // Fetch pending join requests if creator or admin
+      const requests = await groupService.getPendingJoinRequests(groupId);
+      setJoinRequests(requests.map((r: any) => ({
+        id: r.ID || r.id,
+        publickey: r.PUBLICKEY || r.publickey,
+        username: r.USERNAME || r.username,
+        address: r.ADDRESS || r.address,
+        status: r.STATUS || r.status,
+        timestamp: Number(r.TIMESTAMP || r.timestamp)
       })));
 
     } catch (err) {
@@ -232,6 +248,38 @@ function GroupInfoPage() {
       fetchGroupDetails();
     } catch (err) {
       console.error("Failed to unban member:", err);
+    }
+  };
+
+  const handleGenerateInvite = async () => {
+    try {
+      setGeneratingLink(true);
+      const link = await groupService.generateInviteCode(groupId, groupName);
+      setInviteLink(link);
+    } catch (err) {
+      console.error("Failed to generate invite:", err);
+      alert("Failed to generate invite link");
+    } finally {
+      setGeneratingLink(false);
+    }
+  };
+
+  const handleResolveJoinRequest = async (request: any, status: 'approved' | 'denied') => {
+    try {
+      const targetPubkey = request.PUBLICKEY || request.publickey;
+      const targetName = request.USERNAME || request.username || "Unknown User";
+
+      if (status === 'approved') {
+        const isCurrentlyMember = members.some((m: any) => m.publickey === targetPubkey);
+        if (!isCurrentlyMember) {
+          await groupService.addMember(groupId, targetPubkey, targetName, myPublicKey || "", userName || "Unknown");
+        }
+      }
+      await groupService.resolveJoinRequest(groupId, targetPubkey, status);
+      fetchGroupDetails();
+    } catch (err) {
+      console.error("Failed to resolve join request:", err);
+      alert("Failed to resolve join request");
     }
   };
 
@@ -580,6 +628,94 @@ function GroupInfoPage() {
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* JOIN REQUESTS */}
+            {joinRequests.length > 0 && (isCreator || myRole === 'admin') && (
+              <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-blue-100 dark:border-blue-900/50">
+                <div className="p-4 border-b border-blue-100 dark:border-blue-900/50 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <UserPlus size={18} className="text-blue-500" />
+                    <span className="font-semibold text-blue-600 dark:text-blue-400">Join Requests</span>
+                  </div>
+                  <span className="text-xs bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 px-2 py-1 rounded-full">
+                    {joinRequests.length}
+                  </span>
+                </div>
+                <div className="divide-y divide-blue-50 dark:divide-blue-900/20">
+                  {joinRequests.map((req) => (
+                    <div key={req.id} className="p-4 flex items-center justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                          {req.username || shortenKey(req.publickey)}
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate font-mono">
+                          {shortenKey(req.publickey)}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <button
+                          onClick={() => handleResolveJoinRequest(req, 'approved')}
+                          className="p-1.5 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 hover:bg-green-200 dark:hover:bg-green-900/50 rounded-lg transition-colors"
+                          title="Approve"
+                        >
+                          <Check size={18} />
+                        </button>
+                        <button
+                          onClick={() => handleResolveJoinRequest(req, 'denied')}
+                          className="p-1.5 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50 rounded-lg transition-colors"
+                          title="Reject"
+                        >
+                          <X size={18} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* GENERATE INVITE LINK */}
+            {(isCreator || myRole === 'admin') && (
+              <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-4">
+                <div className="mb-3 flex items-center gap-2">
+                  <Users size={18} className="text-primary-500" />
+                  <span className="font-semibold text-gray-900 dark:text-white">Invite Link</span>
+                </div>
+
+                {inviteLink ? (
+                  <div className="space-y-3">
+                    <div className="p-3 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-600 break-all text-sm font-mono text-gray-600 dark:text-gray-300 relative group/link">
+                      {inviteLink}
+                      <button
+                        onClick={() => copyToClipboard(inviteLink, 'inviteLink')}
+                        className="absolute right-2 top-2 p-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md text-gray-500 hover:text-primary-500 transition-colors shadow-sm"
+                        title="Copy Invite Link"
+                      >
+                        {copiedField === 'inviteLink' ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      Share this link carefully. Anyone with this link can request to join the group.
+                    </p>
+                  </div>
+                ) : (
+                  <button
+                    onClick={handleGenerateInvite}
+                    disabled={generatingLink}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 font-medium rounded-lg hover:bg-primary-100 dark:hover:bg-primary-900/50 transition-colors disabled:opacity-50"
+                  >
+                    {generatingLink ? (
+                      "Generating..."
+                    ) : (
+                      <>
+                        <Copy size={16} />
+                        Generate Invite Link
+                      </>
+                    )}
+                  </button>
+                )}
               </div>
             )}
 
