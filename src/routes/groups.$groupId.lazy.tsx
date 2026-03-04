@@ -1,5 +1,5 @@
 // src/routes/groups.$groupId.tsx
-import { useEffect, useRef, useState, useContext } from "react";
+import { useEffect, useRef, useState, useContext, useCallback, lazy, Suspense } from "react";
 import { useNavigate, createLazyFileRoute } from "@tanstack/react-router";
 import { MDS } from "@minima-global/mds";
 import { appContext } from "../AppContext";
@@ -7,6 +7,10 @@ import { Trash2, User, BarChart, Settings } from "lucide-react";
 import { groupService } from "../services/group.service";
 import MessageBubble from "../components/chat/MessageBubble";
 import { useTheme } from "../context/ThemeContext";
+import { EmojiClickData } from "emoji-picker-react";
+
+// Lazy load EmojiPicker to reduce initial bundle size (~60KB)
+const EmojiPicker = lazy(() => import("emoji-picker-react"));
 
 export const Route = createLazyFileRoute("/groups/$groupId")({
   component: ChatPage,
@@ -65,13 +69,16 @@ function ChatPage() {
   const [showChatInfo, setShowChatInfo] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [memberCount, setMemberCount] = useState<number>(0);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
+  const cursorPositionRef = useRef<number | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const { userName, myPublicKey } = useContext(appContext);
   const isLoadingMessages = useRef(false); // Flag to prevent simultaneous loads
-  const { chatBackground } = useTheme();
+  const { chatBackground, mode } = useTheme();
 
 
 
@@ -125,6 +132,32 @@ function ChatPage() {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [showMenu]);
+
+  // Handle click outside emoji picker
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        showEmojiPicker &&
+        emojiPickerRef.current &&
+        !emojiPickerRef.current.contains(event.target as Node)
+      ) {
+        setShowEmojiPicker(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showEmojiPicker]);
+
+  const onEmojiClick = useCallback((data: EmojiClickData) => {
+    setInput((prev) => {
+      const currentPos = cursorPositionRef.current ?? prev.length;
+      const safePos = Math.min(Math.max(0, currentPos), prev.length);
+      const textBefore = prev.substring(0, safePos);
+      const textAfter = prev.substring(safePos);
+      cursorPositionRef.current = safePos + data.emoji.length;
+      return textBefore + data.emoji + textAfter;
+    });
+  }, []);
 
 
 
@@ -725,8 +758,63 @@ function ChatPage() {
 
       {/* INPUT BAR - Fixed at bottom */}
       <div className="p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] bg-white dark:bg-gray-800 flex gap-1 items-center flex-shrink-0 z-10 relative border-t border-gray-200 dark:border-gray-700">
-        <div className="flex-1 bg-white dark:bg-gray-700 rounded-2xl flex items-center border border-gray-200 dark:border-gray-600 focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-transparent shadow-sm px-4 py-2 transition-all">
+        <div className="flex-1 min-w-0 bg-white dark:bg-gray-700 rounded-2xl flex items-center border border-gray-200 dark:border-gray-600 focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-transparent shadow-sm px-3 py-2 transition-all cursor-text relative">
+          {/* EMOJI PICKER CONTAINER */}
+          <div
+            ref={emojiPickerRef}
+            className={`absolute bottom-full mb-2 left-0 z-50 transition-all duration-200 shadow-2xl rounded-xl border border-gray-100 dark:border-gray-700 ${!showEmojiPicker ? "opacity-0 scale-95 pointer-events-none invisible" : "opacity-100 scale-100 visible"}`}
+          >
+            <Suspense
+              fallback={
+                <div className="h-[350px] w-[300px] bg-white dark:bg-gray-800 animate-pulse rounded-xl" />
+              }
+            >
+              <EmojiPicker
+                onEmojiClick={onEmojiClick}
+                theme={mode === "dark" ? ("dark" as any) : ("light" as any)}
+                width={320}
+                height={400}
+                searchDisabled={true}
+                skinTonesDisabled
+                previewConfig={{ showPreview: false }}
+              />
+            </Suspense>
+          </div>
+
+          <button
+            className={`p-1 mr-1 rounded-full transition-colors flex-shrink-0 ${showEmojiPicker ? "text-primary-500" : "text-gray-400 hover:text-gray-600"}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowEmojiPicker(!showEmojiPicker);
+            }}
+            title="Emoji"
+          >
+            <svg
+              className="w-6 h-6"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+          </button>
+
           <input
+            onFocus={() => setShowEmojiPicker(false)}
+            onKeyUp={(e) => {
+              cursorPositionRef.current = e.currentTarget.selectionStart;
+            }}
+            onClick={(e) => {
+              cursorPositionRef.current = e.currentTarget.selectionStart;
+            }}
+            onSelect={(e) => {
+              cursorPositionRef.current = e.currentTarget.selectionStart;
+            }}
             className="flex-1 bg-transparent outline-none text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 text-[15px] max-h-32 py-1"
             type="text"
             value={input}
