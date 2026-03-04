@@ -72,6 +72,72 @@ function handleGroupAddressBeacon(pubkey, maxjson) {
     });
 }
 
+/**
+ * SW-side group history request.
+ * Sends a history_request to all known members of a group.
+ * Used for gap detection and startup sync.
+ */
+function requestGroupHistoryFromSW(groupId) {
+    MDS.log("🔄 [GROUP-SYNC] Requesting history for group " + groupId + "...");
+
+    MDS.cmd("maxima action:info", function (maxInfo) {
+        if (!maxInfo.status) return;
+        var myPubkey = maxInfo.response.publickey;
+
+        // Find the last message timestamp we have for this group
+        var lastSql = "SELECT date FROM GROUP_MESSAGES WHERE group_id='" + escapeSql(groupId) + "' ORDER BY date DESC LIMIT 1";
+        MDS.sql(lastSql, function (lastRes) {
+            var lastTimestamp = (lastRes.status && lastRes.rows && lastRes.rows.length > 0)
+                ? Number(lastRes.rows[0].DATE || lastRes.rows[0].date || 0)
+                : 0;
+
+            var requestPayload = {
+                app: "metachain-group",
+                messageType: "history_request",
+                groupId: groupId,
+                groupName: "SYNC",
+                senderPublickey: myPubkey,
+                senderUsername: "",
+                timestamp: Date.now(),
+                historySince: lastTimestamp
+            };
+            var hexData = "0x" + utf8ToHex(JSON.stringify(requestPayload)).toUpperCase();
+
+            // Send to all known members via DISCOVERED_PEERS
+            var memberSql = "SELECT gm.publickey, dp.address FROM GROUP_MEMBERS gm LEFT JOIN DISCOVERED_PEERS dp ON UPPER(gm.publickey)=UPPER(dp.publickey) WHERE gm.group_id='" + escapeSql(groupId) + "'";
+            MDS.sql(memberSql, function (memberRes) {
+                if (!memberRes.status || !memberRes.rows) return;
+                for (var i = 0; i < memberRes.rows.length; i++) {
+                    var row = memberRes.rows[i];
+                    var memberPk = row.PUBLICKEY;
+                    if (memberPk === myPubkey) continue;
+                    var addr = row.ADDRESS;
+                    var cleanAddr = addr ? addr.replace(/\s+/g, "").replace(/[^a-zA-Z0-9@:._-]/g, "") : null;
+                    var cmd = (cleanAddr && (cleanAddr.startsWith("Mx") || cleanAddr.startsWith("MX")))
+                        ? "maxima action:send to:" + cleanAddr + " application:metachain-group data:" + hexData + " poll:false"
+                        : "maxima action:send publickey:" + memberPk + " application:metachain-group data:" + hexData + " poll:false";
+                    MDS.cmd(cmd);
+                }
+            });
+        });
+    });
+}
+
+/**
+ * Requests history for ALL groups this node is a member of.
+ * Called on startup and reconnect.
+ */
+function requestAllGroupsHistory() {
+    MDS.log("🔄 [GROUP-SYNC] Startup sync for all groups...");
+    MDS.sql("SELECT group_id FROM GROUPS", function (res) {
+        if (!res.status || !res.rows || res.rows.length === 0) return;
+        MDS.log("🔄 [GROUP-SYNC] Syncing " + res.rows.length + " group(s)...");
+        for (var i = 0; i < res.rows.length; i++) {
+            requestGroupHistoryFromSW(res.rows[i].GROUP_ID || res.rows[i].group_id);
+        }
+    });
+}
+
 function handleGroupMessage(pubkey, maxjson) {
     MDS.log("📨 [GROUP-MSG] Processing...");
 
@@ -100,6 +166,8 @@ function handleGroupMessage(pubkey, maxjson) {
 
 function processGroupMessage(safeGroupId, encoded, messageTimestamp, originalSender, safeSenderUsername, safeType, safeFileData, pubkey, maxjson) {
 
+    var incomingSeq = maxjson.seq ? parseInt(maxjson.seq) : 0;
+
     // Check for duplicates
     var checkSql = "SELECT id, propagated FROM GROUP_MESSAGES WHERE group_id='" + safeGroupId + "' AND sender_publickey='" + originalSender + "' AND date=" + messageTimestamp;
 
@@ -120,8 +188,8 @@ function processGroupMessage(safeGroupId, encoded, messageTimestamp, originalSen
             }
         } else {
             shouldPropagate = true;
-            var groupMsgSql = "INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read, propagated) VALUES "
-                + "('" + safeGroupId + "','" + originalSender + "','" + safeSenderUsername + "','" + safeType + "','" + encoded + "','" + safeFileData + "'," + messageTimestamp + ", 0, 1)";
+            var groupMsgSql = "INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read, propagated, sender_seq) VALUES "
+                + "('" + safeGroupId + "','" + originalSender + "','" + safeSenderUsername + "','" + safeType + "','" + encoded + "','" + safeFileData + "'," + messageTimestamp + ", 0, 1, " + incomingSeq + ")";
 
             MDS.sql(groupMsgSql, function (res) {
                 if (res.status) {
@@ -137,11 +205,41 @@ function processGroupMessage(safeGroupId, encoded, messageTimestamp, originalSen
             });
         }
 
+        // GAP DETECTION: Check sequence numbers (only if sender includes seq)
+        if (incomingSeq > 0) {
+            var seqCheckSql = "SELECT last_seen_seq FROM GROUP_MSG_COUNTERS WHERE group_id='" + safeGroupId + "' AND sender_publickey='" + originalSender + "'";
+            MDS.sql(seqCheckSql, function (seqRes) {
+                var lastSeq = 0;
+                var hasRow = seqRes.status && seqRes.rows && seqRes.rows.length > 0;
+                if (hasRow) {
+                    lastSeq = parseInt(seqRes.rows[0].LAST_SEEN_SEQ || 0);
+                }
+
+                if (lastSeq > 0 && incomingSeq > lastSeq + 1) {
+                    var gapSize = incomingSeq - lastSeq - 1;
+                    MDS.log("⚠️ [GAP-DETECT] Missing " + gapSize + " message(s) from " + originalSender.substring(0, 10) + " in group " + safeGroupId);
+                    // Trigger history sync to fill the gap
+                    requestGroupHistoryFromSW(safeGroupId);
+                }
+
+                // Update or insert last_seen_seq
+                if (incomingSeq > lastSeq) {
+                    if (hasRow) {
+                        MDS.sql("UPDATE GROUP_MSG_COUNTERS SET last_seen_seq=" + incomingSeq + " WHERE group_id='" + safeGroupId + "' AND sender_publickey='" + originalSender + "'");
+                    } else {
+                        MDS.sql("INSERT INTO GROUP_MSG_COUNTERS (group_id, sender_publickey, last_seen_seq, my_next_seq) VALUES ('" + safeGroupId + "','" + originalSender + "'," + incomingSeq + ",1)");
+                    }
+                }
+            });
+        }
+
         if (shouldPropagate) {
             propagateGroupMessage(pubkey, maxjson);
         }
     });
 }
+
+
 
 function propagateGroupMessage(pubkey, maxjson) {
     MDS.log("🔄 [GROUP-MSG] Starting propagation...");

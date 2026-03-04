@@ -16,6 +16,7 @@
 var DB_INIT_DONE = false;
 var DB_READY = false;
 var INITIAL_CLEANUP_DONE = false;
+var GROUP_STARTUP_SYNC_DONE = false;
 
 // Flag to trigger coin discovery on first NEWBLOCK (when node is synced)
 var COIN_DISCOVERY_PENDING = false;
@@ -45,6 +46,13 @@ MDS.init(function (msg) {
     if (!INITIAL_CLEANUP_DONE) {
       INITIAL_CLEANUP_DONE = true;
       cleanupOrphanedChatMessages();
+      // Delay group sync slightly to let DB settle
+      setTimeout(function () {
+        if (typeof requestAllGroupsHistory === "function") {
+          requestAllGroupsHistory();
+          GROUP_STARTUP_SYNC_DONE = true;
+        }
+      }, 3000);
     }
 
     // Run coin discovery at block 5 (gives time for coins to sync)
@@ -131,6 +139,10 @@ MDS.init(function (msg) {
       if (typeof requestHistoryFromRecentContacts === "function") {
         requestHistoryFromRecentContacts();
       }
+      // Also sync all group histories
+      if (typeof requestAllGroupsHistory === "function") {
+        requestAllGroupsHistory();
+      }
     }
 
     LAST_MAXIMA_EVENT_TIME = now;
@@ -164,14 +176,9 @@ MDS.init(function (msg) {
         MDS.log("🔍 [MAXIMA] Type: " + (maxjson.type || maxjson.messageType));
 
         // ================== GROUP MESSAGES ==================
-        if (
-          app === "metachain-group" &&
-          (maxjson.messageType === "history_request" ||
-            maxjson.messageType === "history_response")
-        ) {
-          MDS.log("ℹ️ [GROUP-SYNC] Ignoring: " + maxjson.messageType);
-          return;
-        }
+        // history_request and history_response are handled by the frontend (group.service.ts)
+        // They flow through the MAXIMA event to minima.service.ts → groupService.handleIncomingGroupMessage()
+        // Do NOT handle or ignore them here in the SW.
 
         if (
           (app === "metachain-group" &&

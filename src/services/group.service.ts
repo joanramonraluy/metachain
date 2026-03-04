@@ -62,6 +62,7 @@ export interface GroupMaximaMessage {
     message?: string;
     type?: "text" | "image" | "file";
     filedata?: string;
+    seq?: number;  // Per-sender sequence number for gap detection
 
     // For group_invite:
     description?: string;
@@ -679,11 +680,23 @@ class GroupService {
 
             const members = await this.getGroupMembers(groupId);
 
+            // Get/increment per-sender sequence number for gap detection
+            const seqRes = await this.runSQL(
+                `SELECT my_next_seq FROM GROUP_MSG_COUNTERS WHERE group_id='${groupId}' AND sender_publickey='${myPublicKey}'`
+            );
+            let mySeq = 1;
+            if (seqRes.rows && seqRes.rows.length > 0) {
+                mySeq = Number(seqRes.rows[0].MY_NEXT_SEQ || seqRes.rows[0].my_next_seq || 1);
+                await this.runSQL(`UPDATE GROUP_MSG_COUNTERS SET my_next_seq=${mySeq + 1} WHERE group_id='${groupId}' AND sender_publickey='${myPublicKey}'`);
+            } else {
+                await this.runSQL(`INSERT INTO GROUP_MSG_COUNTERS (group_id, sender_publickey, last_seen_seq, my_next_seq) VALUES ('${groupId}', '${myPublicKey}', 0, ${mySeq + 1})`);
+            }
+
             // Save message locally - only escape SQL quotes
             const escapedMsg = message.replace(/'/g, "''");
             const insertSql = `
-                INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read)
-                VALUES ('${groupId}', '${myPublicKey}', '${myUsername.replace(/'/g, "''")}', '${type}', '${escapedMsg}', '${filedata}', ${now}, 1)
+                INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read, sender_seq)
+                VALUES ('${groupId}', '${myPublicKey}', '${myUsername.replace(/'/g, "''")}', '${type}', '${escapedMsg}', '${filedata}', ${now}, 1, ${mySeq})
             `;
             await this.runSQL(insertSql);
 
@@ -697,7 +710,8 @@ class GroupService {
                 timestamp: now,
                 message,
                 type: type as any,
-                filedata
+                filedata,
+                seq: mySeq
             };
 
             // Send to ALL group members (no Maxima contact required — uses Mx address routing)
@@ -768,37 +782,44 @@ class GroupService {
         const jsonStr = JSON.stringify(message);
         const hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
 
-        // Resolve Mx address from DISCOVERED_PEERS (bypass Maxima contact requirement)
-        let sendCmd: string;
+        const safeKey = toPublicKey.replace(/'/g, "''");
+
+        // Try direct Mx address first (bypasses Maxima routing, works even if relays are offline)
+        let directSent = false;
         try {
-            const safeKey = toPublicKey.replace(/'/g, "''");
             const peerRes = await dbRunSQL(
                 `SELECT ADDRESS FROM DISCOVERED_PEERS WHERE UPPER(PUBLICKEY)=UPPER('${safeKey}') AND ADDRESS IS NOT NULL LIMIT 1`
             );
             if (peerRes && peerRes.rows && peerRes.rows.length > 0) {
                 const rawAddr = peerRes.rows[0].ADDRESS as string;
-                // Clean address (remove whitespace and invalid chars)
                 const mxAddr = rawAddr.replace(/\s+/g, "").replace(/[^a-zA-Z0-9@:._-]/g, "");
-                sendCmd = `maxima action:send to:${mxAddr} application:metachain-group data:${hexData} poll:true`;
+                const sendCmd = `maxima action:send to:${mxAddr} application:metachain-group data:${hexData} poll:true`;
                 console.log(`🔍 [MAXIMA] Using Mx address for group send`);
-            } else {
-                // Fallback: publickey routing (works for established Maxima contacts)
-                sendCmd = `maxima action:send publickey:${toPublicKey} application:metachain-group data:${hexData} poll:true`;
-                console.log(`⚠️ [MAXIMA] No Mx address found, falling back to publickey routing`);
+                const res = await new Promise<any>((resolve) => {
+                    MDS.executeRaw(sendCmd, (r: any) => resolve(r));
+                });
+                if (res && res.status !== false) {
+                    directSent = true;
+                } else {
+                    console.warn(`⚠️ [MAXIMA] Direct Mx send failed: ${res?.error}. Falling back to publickey routing...`);
+                }
             }
-        } catch (resolveErr) {
-            console.warn(`⚠️ [MAXIMA] Address resolve failed, using publickey:`, resolveErr);
-            sendCmd = `maxima action:send publickey:${toPublicKey} application:metachain-group data:${hexData} poll:true`;
+        } catch (err) {
+            console.warn(`⚠️ [MAXIMA] Mx address resolve/send failed:`, err);
         }
 
-        const response = await new Promise<any>((resolve) => {
-            MDS.executeRaw(sendCmd, (res: any) => resolve(res));
+        // Always also send via publickey: routing (redundant but ensures reachability via Maxima network)
+        // This uses poll:true so it queues if the peer is temporarily offline
+        const fallbackCmd = `maxima action:send publickey:${toPublicKey} application:metachain-group data:${hexData} poll:true`;
+        const fallbackRes = await new Promise<any>((resolve) => {
+            MDS.executeRaw(fallbackCmd, (r: any) => resolve(r));
         });
 
-        if (!response || (response as any).status === false) {
-            throw new Error((response as any)?.error || "MAXIMA send failed");
+        if (!directSent && (!fallbackRes || fallbackRes.status === false)) {
+            throw new Error(fallbackRes?.error || "MAXIMA send failed");
         }
     }
+
 
     private async sendGroupInvite(
         groupId: string,

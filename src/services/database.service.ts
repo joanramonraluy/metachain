@@ -406,6 +406,28 @@ export async function initDB(): Promise<void> {
                           "📂 [DB] propagated column added/verified in GROUP_MESSAGES",
                         );
                     });
+
+                    // Migration: Add sender_seq column for gap detection
+                    const alterSeqSql =
+                      "ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS sender_seq INTEGER DEFAULT 0";
+                    MDS.sql(alterSeqSql, (seqRes: any) => {
+                      if (seqRes.status)
+                        console.log("📂 [DB] sender_seq column added/verified in GROUP_MESSAGES");
+                    });
+
+                    // Create GROUP_MSG_COUNTERS table for per-sender sequence tracking
+                    const createCountersTable = `
+                      CREATE TABLE IF NOT EXISTS GROUP_MSG_COUNTERS (
+                        group_id VARCHAR(256) NOT NULL,
+                        sender_publickey VARCHAR(512) NOT NULL,
+                        last_seen_seq INTEGER DEFAULT 0,
+                        my_next_seq INTEGER DEFAULT 1,
+                        PRIMARY KEY (group_id, sender_publickey)
+                      )`;
+                    MDS.sql(createCountersTable, (cRes: any) => {
+                      if (cRes.status)
+                        console.log("📂 [DB] GROUP_MSG_COUNTERS table initialized");
+                    });
                   }
 
                   // Create GROUP_BANS table
