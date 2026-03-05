@@ -16,6 +16,7 @@ files=(
   "$SOURCE_DIR/utils/coin-discovery.js"
   "$SOURCE_DIR/db-init.js"
   "$SOURCE_DIR/handlers/group.handler.js"
+  "$SOURCE_DIR/handlers/channel.handler.js"
   "$SOURCE_DIR/handlers/chat.handler.js"
   "$SOURCE_DIR/handlers/contact.handler.js"
   "$SOURCE_DIR/handlers/profile.handler.js"

@@ -5,6 +5,7 @@ import { useNavigate, Link } from "@tanstack/react-router";
 import { appContext } from "../../AppContext";
 import { minimaService } from "../../services/minima.service";
 import { groupService } from "../../services/group.service";
+import { channelService } from "../../services/channel.service";
 import { MDS } from "@minima-global/mds";
 import {
   Plus,
@@ -58,10 +59,28 @@ interface GroupWithUnread {
   lastMessageUser?: string;
 }
 
+interface ChannelWithUnread {
+  channel_id: string;
+  name: string;
+  description?: string;
+  admin_publickey: string;
+  created_date: number;
+  unreadCount?: number;
+  lastMessageDate?: number;
+  lastMessage?: string;
+  isAdmin?: boolean;
+}
+
 export default function ChatsAndGroups() {
   const { loaded, dbReady, myPublicKey } = useContext(appContext);
   const [activeTab, setActiveTab] = useState<
-    "all" | "individuals" | "groups" | "requests" | "favorites" | "archived"
+    | "all"
+    | "individuals"
+    | "groups"
+    | "channels"
+    | "requests"
+    | "favorites"
+    | "archived"
   >("all");
   // State to hold discovered peer names map
   const [peerNames, setPeerNames] = useState<Map<string, string>>(() => {
@@ -80,6 +99,10 @@ export default function ChatsAndGroups() {
     const cached = localStorage.getItem("cached_groups");
     return cached ? JSON.parse(cached) : [];
   });
+  const [channels, setChannels] = useState<ChannelWithUnread[]>(() => {
+    const cached = localStorage.getItem("cached_channels");
+    return cached ? JSON.parse(cached) : [];
+  });
   const [contacts, setContacts] = useState<Map<string, Contact>>(() => {
     try {
       const cached = localStorage.getItem("cached_contacts");
@@ -91,7 +114,7 @@ export default function ChatsAndGroups() {
         });
         return map;
       }
-    } catch (e) { }
+    } catch (e) {}
     return new Map();
   });
 
@@ -213,9 +236,7 @@ export default function ChatsAndGroups() {
           const messages = await groupService.getGroupMessages(group.GROUP_ID);
           const unreadCount = messages.filter((m: any) => m.READ === 0).length;
           const lastMsg =
-            messages.length > 0
-              ? (messages[messages.length - 1] as any)
-              : null;
+            messages.length > 0 ? (messages[messages.length - 1] as any) : null;
           const lastMessageDate = lastMsg ? lastMsg.DATE : group.CREATED_DATE;
           const lastMessage = lastMsg ? lastMsg.MESSAGE : "";
           const lastMessageType = lastMsg ? lastMsg.TYPE : "text";
@@ -256,7 +277,58 @@ export default function ChatsAndGroups() {
       if (cached) {
         try {
           setGroups(JSON.parse(cached));
-        } catch (e) { }
+        } catch (e) {}
+      }
+    }
+  };
+
+  const fetchChannels = async () => {
+    if (!myPublicKey) return;
+    try {
+      const list = await channelService.getMyChannels(myPublicKey);
+      const withUnread = await Promise.all(
+        list.map(async (ch: any) => {
+          const msgs = await channelService.getChannelMessages(
+            ch.CHANNEL_ID || ch.channel_id,
+          );
+          const unreadCount = msgs.filter(
+            (m: any) => m.READ === 0 || m.read === 0,
+          ).length;
+          const lastMsg =
+            msgs.length > 0 ? (msgs[msgs.length - 1] as any) : null;
+          const isAdm = await channelService.isAdmin(
+            ch.CHANNEL_ID || ch.channel_id,
+            myPublicKey,
+          );
+          return {
+            channel_id: ch.CHANNEL_ID || ch.channel_id,
+            name: ch.NAME || ch.name,
+            description: ch.DESCRIPTION || ch.description,
+            admin_publickey: ch.ADMIN_PUBLICKEY || ch.admin_publickey,
+            created_date: Number(ch.CREATED_DATE || ch.created_date || 0),
+            unreadCount,
+            lastMessageDate: lastMsg
+              ? Number(lastMsg.DATE || lastMsg.date || 0)
+              : Number(ch.CREATED_DATE || ch.created_date || 0),
+            lastMessage: lastMsg
+              ? lastMsg.MESSAGE || lastMsg.message || ""
+              : "",
+            isAdmin: isAdm,
+          };
+        }),
+      );
+      withUnread.sort(
+        (a, b) => (b.lastMessageDate || 0) - (a.lastMessageDate || 0),
+      );
+      setChannels(withUnread);
+      localStorage.setItem("cached_channels", JSON.stringify(withUnread));
+    } catch (err) {
+      console.error("❌ [ChatsAndGroups] Error fetching channels:", err);
+      const cached = localStorage.getItem("cached_channels");
+      if (cached) {
+        try {
+          setChannels(JSON.parse(cached));
+        } catch (e) {}
       }
     }
   };
@@ -359,13 +431,26 @@ export default function ChatsAndGroups() {
         }
       };
 
+      const p5_channels = async () => {
+        try {
+          await withTimeout(fetchChannels(), 5000).catch(() =>
+            console.warn("Channels timeout"),
+          );
+        } catch (err) {
+          console.warn(
+            "⚠️ [ChatsAndGroups] Failed to fetch channels (timeout):",
+            err,
+          );
+        }
+      };
+
       // Fire all requests - do NOT await them together
       // Use 'void' to fire-and-forget but we know they update state internally
       void p1_contacts();
       void p2_peers();
 
       // Critical content (chats/groups) -> once these settle (or fail), allow UI to show empty state if needed
-      Promise.allSettled([p3_chats(), p4_groups()]).then(() => {
+      Promise.allSettled([p3_chats(), p4_groups(), p5_channels()]).then(() => {
         setLoading(false);
       });
     };
@@ -393,6 +478,7 @@ export default function ChatsAndGroups() {
     minimaService.onFavoriteStatusChange(fetchChats);
     groupService.onGroupMessage(handleGroupMessage);
     groupService.onGroupUpdate(fetchGroups);
+    const unsubChannels = channelService.onChannelUpdate(fetchChannels);
 
     return () => {
       minimaService.removeChatListUpdateCallback(handleChatListUpdate);
@@ -401,11 +487,21 @@ export default function ChatsAndGroups() {
       minimaService.removeFavoriteStatusCallback(fetchChats);
       groupService.removeGroupMessageCallback(handleGroupMessage);
       groupService.removeGroupUpdateCallback(fetchGroups);
+      unsubChannels();
     };
   }, [loaded, dbReady, myPublicKey]);
 
-  // Show spinner only if purely loading (no cache) or system not ready
-  if (!loaded || !dbReady || (loading && chats.length === 0)) {
+  // Show spinner only when we truly have nothing to render yet.
+  // If we have cached chats, render immediately while AppContext keeps initializing.
+  if ((!loaded || !dbReady) && chats.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-white dark:bg-gray-900">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
+      </div>
+    );
+  }
+
+  if (loading && chats.length === 0) {
     return (
       <div className="flex items-center justify-center h-screen bg-white dark:bg-gray-900">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
@@ -445,31 +541,43 @@ export default function ChatsAndGroups() {
 
   let displayedChats: ChatItem[] = [];
   let displayedGroups: GroupWithUnread[] = [];
+  let displayedChannels: ChannelWithUnread[] = [];
 
   switch (activeTab) {
     case "all":
-      displayedChats = activeChats; // All chats (contacts + non-contacts)
+      displayedChats = activeChats;
       displayedGroups = groups;
+      displayedChannels = channels;
       break;
     case "individuals":
-      displayedChats = individualChats; // Only contacts
+      displayedChats = individualChats;
       displayedGroups = [];
+      displayedChannels = [];
       break;
     case "groups":
       displayedChats = [];
       displayedGroups = groups;
+      displayedChannels = [];
+      break;
+    case "channels":
+      displayedChats = [];
+      displayedGroups = [];
+      displayedChannels = channels;
       break;
     case "requests":
-      displayedChats = requestChats; // Only non-contacts
+      displayedChats = requestChats;
       displayedGroups = [];
+      displayedChannels = [];
       break;
     case "favorites":
       displayedChats = favoriteChats;
       displayedGroups = favoriteGroups;
+      displayedChannels = [];
       break;
     case "archived":
       displayedChats = archivedChats;
       displayedGroups = archivedGroups;
+      displayedChannels = [];
       break;
   }
 
@@ -531,9 +639,10 @@ export default function ChatsAndGroups() {
     return date.toLocaleDateString([], { month: "short", day: "numeric" });
   };
 
-  const totalCount = activeChats.length + groups.length;
+  const totalCount = activeChats.length + groups.length + channels.length;
   const individualsCount = individualChats.length;
   const groupsCount = groups.length;
+  const channelsCount = channels.length;
   const requestsCount = requestChats.length;
   const favoritesCount = favoriteChats.length + favoriteGroups.length;
   const archivedCount = archivedChats.length + archivedGroups.length;
@@ -589,10 +698,11 @@ export default function ChatsAndGroups() {
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
           <button
             onClick={() => setActiveTab("all")}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === "all"
-              ? "bg-primary-600 text-white shadow-md"
-              : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
-              }`}
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${
+              activeTab === "all"
+                ? "bg-primary-600 text-white shadow-md"
+                : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
+            }`}
           >
             <LayoutGrid size={16} className="flex-shrink-0" />
             <span className="hidden md:inline">All</span>{" "}
@@ -600,10 +710,11 @@ export default function ChatsAndGroups() {
           </button>
           <button
             onClick={() => setActiveTab("individuals")}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === "individuals"
-              ? "bg-primary-600 text-white shadow-md"
-              : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
-              }`}
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${
+              activeTab === "individuals"
+                ? "bg-primary-600 text-white shadow-md"
+                : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
+            }`}
           >
             <MessageCircle size={16} className="flex-shrink-0" />
             <span className="hidden md:inline">Individuals</span>{" "}
@@ -611,21 +722,35 @@ export default function ChatsAndGroups() {
           </button>
           <button
             onClick={() => setActiveTab("groups")}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === "groups"
-              ? "bg-primary-600 text-white shadow-md"
-              : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
-              }`}
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${
+              activeTab === "groups"
+                ? "bg-primary-600 text-white shadow-md"
+                : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
+            }`}
           >
             <Users size={16} className="flex-shrink-0" />
             <span className="hidden md:inline">Groups</span>{" "}
             {groupsCount > 0 && `(${groupsCount})`}
           </button>
           <button
+            onClick={() => setActiveTab("channels")}
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${
+              activeTab === "channels"
+                ? "bg-sky-600 text-white shadow-md"
+                : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
+            }`}
+          >
+            <Radio size={16} className="flex-shrink-0" />
+            <span className="hidden md:inline">Channels</span>{" "}
+            {channelsCount > 0 && `(${channelsCount})`}
+          </button>
+          <button
             onClick={() => setActiveTab("requests")}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === "requests"
-              ? "bg-primary-600 text-white shadow-md"
-              : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
-              }`}
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${
+              activeTab === "requests"
+                ? "bg-primary-600 text-white shadow-md"
+                : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
+            }`}
           >
             <Inbox size={16} className="flex-shrink-0" />
             <span className="hidden md:inline">Non-Contacts</span>{" "}
@@ -633,10 +758,11 @@ export default function ChatsAndGroups() {
           </button>
           <button
             onClick={() => setActiveTab("favorites")}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === "favorites"
-              ? "bg-primary-600 text-white shadow-md"
-              : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
-              }`}
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${
+              activeTab === "favorites"
+                ? "bg-primary-600 text-white shadow-md"
+                : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
+            }`}
           >
             <Star size={16} className="flex-shrink-0" />
             <span className="hidden md:inline">Favorites</span>{" "}
@@ -644,10 +770,11 @@ export default function ChatsAndGroups() {
           </button>
           <button
             onClick={() => setActiveTab("archived")}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === "archived"
-              ? "bg-primary-600 text-white shadow-md"
-              : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
-              }`}
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${
+              activeTab === "archived"
+                ? "bg-primary-600 text-white shadow-md"
+                : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
+            }`}
           >
             <Archive size={16} className="flex-shrink-0" />
             <span className="hidden md:inline">Archived</span>{" "}
@@ -725,10 +852,11 @@ export default function ChatsAndGroups() {
                 key={group.group_id}
                 to="/groups/$groupId"
                 params={{ groupId: group.group_id }}
-                className={`block rounded-xl p-4 cursor-pointer transition-all duration-200 ${(group.unreadCount || 0) > 0
-                  ? "bg-primary-50 dark:bg-primary-900/10 shadow-md hover:shadow-lg border-2 border-primary-200 dark:border-primary-800"
-                  : "bg-white dark:bg-gray-800 shadow-sm hover:shadow-md border border-gray-100 dark:border-gray-700"
-                  }`}
+                className={`block rounded-xl p-4 cursor-pointer transition-all duration-200 ${
+                  (group.unreadCount || 0) > 0
+                    ? "bg-primary-50 dark:bg-primary-900/10 shadow-md hover:shadow-lg border-2 border-primary-200 dark:border-primary-800"
+                    : "bg-white dark:bg-gray-800 shadow-sm hover:shadow-md border border-gray-100 dark:border-gray-700"
+                }`}
               >
                 <div className="flex items-center gap-3">
                   <div className="relative flex-shrink-0">
@@ -766,7 +894,57 @@ export default function ChatsAndGroups() {
                             ? "🖼️ Image"
                             : group.lastMessageType === "file"
                               ? "📁 File"
-                              : group.lastMessage || group.description || "No messages yet"}
+                              : group.lastMessage ||
+                                group.description ||
+                                "No messages yet"}
+                    </p>
+                  </div>
+                </div>
+              </Link>
+            ))}
+
+            {displayedChannels.map((channel) => (
+              <Link
+                key={channel.channel_id}
+                to="/channels/$channelId"
+                params={{ channelId: channel.channel_id }}
+                className={`block rounded-xl p-4 cursor-pointer transition-all duration-200 ${
+                  (channel.unreadCount || 0) > 0
+                    ? "bg-sky-50 dark:bg-sky-900/10 shadow-md hover:shadow-lg border-2 border-sky-200 dark:border-sky-800"
+                    : "bg-white dark:bg-gray-800 shadow-sm hover:shadow-md border border-gray-100 dark:border-gray-700"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="relative flex-shrink-0">
+                    <div className="w-14 h-14 rounded-full bg-gradient-to-br from-sky-400 to-sky-600 flex items-center justify-center text-white shadow-md">
+                      <Radio size={24} />
+                    </div>
+                    {(channel.unreadCount || 0) > 0 && (
+                      <div className="absolute -top-1 -right-1 bg-sky-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center shadow-md">
+                        {channel.unreadCount}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline justify-between gap-2 mb-1">
+                      <h3 className="font-semibold text-gray-900 dark:text-white truncate text-base flex items-center gap-1.5">
+                        {channel.name}
+                        {channel.isAdmin && (
+                          <span className="text-[10px] bg-sky-100 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400 px-1.5 py-0.5 rounded font-medium">
+                            admin
+                          </span>
+                        )}
+                      </h3>
+                      <span className="text-xs text-gray-500 flex-shrink-0 font-medium">
+                        {formatTime(
+                          channel.lastMessageDate || channel.created_date,
+                        )}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-600 dark:text-gray-300 truncate">
+                      {channel.lastMessage ||
+                        channel.description ||
+                        "No messages yet"}
                     </p>
                   </div>
                 </div>
@@ -807,8 +985,8 @@ export default function ChatsAndGroups() {
                   longPressTimerRef.current = setTimeout(() => {
                     longPressTriggeredRef.current = true;
                     const syntheticEvent = {
-                      preventDefault: () => { },
-                      stopPropagation: () => { },
+                      preventDefault: () => {},
+                      stopPropagation: () => {},
                       clientX: clientX,
                       clientY: clientY,
                     } as React.MouseEvent;
@@ -833,10 +1011,11 @@ export default function ChatsAndGroups() {
                   }
                 }}
                 style={{ WebkitTouchCallout: "none" } as any}
-                className={`block rounded-xl p-4 cursor-pointer transition-all duration-200 select-none ${(chat.unreadCount || 0) > 0
-                  ? "bg-primary-50 dark:bg-primary-900/10 shadow-md hover:shadow-lg border-2 border-primary-200 dark:border-primary-800"
-                  : "bg-white dark:bg-gray-800 shadow-sm hover:shadow-md border border-gray-100 dark:border-gray-700"
-                  }`}
+                className={`block rounded-xl p-4 cursor-pointer transition-all duration-200 select-none ${
+                  (chat.unreadCount || 0) > 0
+                    ? "bg-primary-50 dark:bg-primary-900/10 shadow-md hover:shadow-lg border-2 border-primary-200 dark:border-primary-800"
+                    : "bg-white dark:bg-gray-800 shadow-sm hover:shadow-md border border-gray-100 dark:border-gray-700"
+                }`}
               >
                 <div className="flex items-center gap-3">
                   <div className="relative flex-shrink-0">
@@ -935,14 +1114,12 @@ export default function ChatsAndGroups() {
           <button
             onClick={() => {
               setFabMenuOpen(false);
-              console.log(
-                "Create Channel",
-              ); /* TODO: Implement create channel */
+              navigate({ to: "/create-channel" });
             }}
             className="flex items-center gap-3 px-4 py-2 bg-white dark:bg-gray-800 rounded-full shadow-lg text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all border border-gray-100 dark:border-gray-700"
           >
             <span className="font-medium text-sm">New Channel</span>
-            <div className="w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-600">
+            <div className="w-10 h-10 rounded-full bg-sky-100 dark:bg-sky-900/30 flex items-center justify-center text-sky-600">
               <Radio size={20} />
             </div>
           </button>
@@ -970,10 +1147,11 @@ export default function ChatsAndGroups() {
               setFabMenuOpen(!fabMenuOpen);
             else navigate({ to: "/contacts" });
           }}
-          className={`w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 ${fabMenuOpen
-            ? "bg-gray-700 text-white rotate-45"
-            : "bg-primary-600 text-white"
-            }`}
+          className={`w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 ${
+            fabMenuOpen
+              ? "bg-gray-700 text-white rotate-45"
+              : "bg-primary-600 text-white"
+          }`}
         >
           {activeTab === "groups" ? (
             <Users size={24} />
@@ -993,7 +1171,6 @@ export default function ChatsAndGroups() {
       {showJoinModal && (
         <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
           <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl relative overflow-hidden">
-
             <h3 className="text-xl font-bold mb-4 text-gray-900 dark:text-white flex items-center gap-2">
               <UserPlus className="text-primary-500" />
               Join Group
@@ -1013,7 +1190,9 @@ export default function ChatsAndGroups() {
               placeholder="mcgrp://..."
               disabled={joiningGroup}
             />
-            {joinError && <p className="text-xs text-red-500 mb-3">{joinError}</p>}
+            {joinError && (
+              <p className="text-xs text-red-500 mb-3">{joinError}</p>
+            )}
             {!joinError && <div className="mb-3 h-4" />}
 
             <div className="flex gap-3 justify-end mt-4">
@@ -1055,8 +1234,7 @@ export default function ChatsAndGroups() {
             </div>
           </div>
         </div>
-      )
-      }
-    </div >
+      )}
+    </div>
   );
 }

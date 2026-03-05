@@ -62,6 +62,10 @@ export type { ExtendedProfile } from './profile.service';
 // Groups
 export { groupService } from './group.service';
 
+// Channels
+export { channelService } from './channel.service';
+
+
 // Personal contacts
 export { personalContactsService } from './personal-contacts.service';
 

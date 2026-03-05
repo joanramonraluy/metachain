@@ -191,9 +191,8 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
             "MDS initialised! 🚀 Starting serialized initialization sequence...",
           );
 
-          // BREATHING ROOM: Verification shows immediate requests can overload the node
-          // just after the handshake. We give it 1 second to settle.
-          await new Promise((r) => setTimeout(r, 1000));
+          // Avoid fixed startup delay; waitForNode() below already handles
+          // backoff/retries only when the node is not ready yet.
 
           try {
             // STEP 1: Check Write Mode (with RETRY for node startup)

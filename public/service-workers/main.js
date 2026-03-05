@@ -47,12 +47,12 @@ MDS.init(function (msg) {
       INITIAL_CLEANUP_DONE = true;
       cleanupOrphanedChatMessages();
       // Delay group sync slightly to let DB settle
-      setTimeout(function () {
+      MDS.cmd("timer 3000", function () {
         if (typeof requestAllGroupsHistory === "function") {
           requestAllGroupsHistory();
           GROUP_STARTUP_SYNC_DONE = true;
         }
-      }, 3000);
+      });
     }
 
     // Run coin discovery at block 5 (gives time for coins to sync)
@@ -151,7 +151,8 @@ MDS.init(function (msg) {
     if (
       msg.data.application &&
       (msg.data.application.toLowerCase() == "metachain" ||
-        msg.data.application.toLowerCase() == "metachain-group")
+        msg.data.application.toLowerCase() == "metachain-group" ||
+        msg.data.application.toLowerCase() == "metachain-channel")
     ) {
       var app = msg.data.application.toLowerCase();
       var pubkey = msg.data.from;
@@ -245,6 +246,27 @@ MDS.init(function (msg) {
           maxjson.messageType === "group_address_beacon"
         ) {
           handleGroupAddressBeacon(pubkey, maxjson);
+          return;
+        }
+
+        // ================== CHANNEL MESSAGES ==================
+        if (app === "metachain-channel" && maxjson.messageType === "channel_invite") {
+          handleChannelInvite(pubkey, maxjson);
+          return;
+        }
+
+        if (app === "metachain-channel" && maxjson.messageType === "channel_message") {
+          handleChannelMessage(pubkey, maxjson);
+          return;
+        }
+
+        if (app === "metachain-channel" && maxjson.messageType === "channel_subscriber_added") {
+          handleChannelSubscriberAdded(pubkey, maxjson);
+          return;
+        }
+
+        if (app === "metachain-channel" && maxjson.messageType === "channel_subscriber_removed") {
+          handleChannelSubscriberRemoved(pubkey, maxjson);
           return;
         }
 

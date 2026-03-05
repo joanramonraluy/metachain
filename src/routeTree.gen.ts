@@ -15,6 +15,7 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as HelpRouteImport } from './routes/help'
 import { Route as DiscoveryRouteImport } from './routes/discovery'
 import { Route as CreateGroupRouteImport } from './routes/create-group'
+import { Route as CreateChannelRouteImport } from './routes/create-channel'
 import { Route as ContactsRouteImport } from './routes/contacts'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
@@ -28,6 +29,8 @@ import { Route as SettingsAppearanceRouteImport } from './routes/settings/appear
 import { Route as GroupsGroupIdRouteImport } from './routes/groups.$groupId'
 import { Route as ContactInfoAddressRouteImport } from './routes/contact-info.$address'
 import { Route as ChatAddressRouteImport } from './routes/chat/$address'
+import { Route as ChannelsChannelIdRouteImport } from './routes/channels.$channelId'
+import { Route as ChannelInfoChannelIdRouteImport } from './routes/channel-info.$channelId'
 
 const GroupInfoGroupIdLazyRouteImport = createFileRoute(
   '/group-info/$groupId',
@@ -51,6 +54,11 @@ const DiscoveryRoute = DiscoveryRouteImport.update({
 const CreateGroupRoute = CreateGroupRouteImport.update({
   id: '/create-group',
   path: '/create-group',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CreateChannelRoute = CreateChannelRouteImport.update({
+  id: '/create-channel',
+  path: '/create-channel',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ContactsRoute = ContactsRouteImport.update({
@@ -129,15 +137,32 @@ const ChatAddressRoute = ChatAddressRouteImport.update({
   path: '/chat/$address',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ChannelsChannelIdRoute = ChannelsChannelIdRouteImport.update({
+  id: '/channels/$channelId',
+  path: '/channels/$channelId',
+  getParentRoute: () => rootRouteImport,
+} as any).lazy(() =>
+  import('./routes/channels.$channelId.lazy').then((d) => d.Route),
+)
+const ChannelInfoChannelIdRoute = ChannelInfoChannelIdRouteImport.update({
+  id: '/channel-info/$channelId',
+  path: '/channel-info/$channelId',
+  getParentRoute: () => rootRouteImport,
+} as any).lazy(() =>
+  import('./routes/channel-info.$channelId.lazy').then((d) => d.Route),
+)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/contacts': typeof ContactsRoute
+  '/create-channel': typeof CreateChannelRoute
   '/create-group': typeof CreateGroupRoute
   '/discovery': typeof DiscoveryRoute
   '/help': typeof HelpRoute
   '/settings': typeof SettingsRouteWithChildren
+  '/channel-info/$channelId': typeof ChannelInfoChannelIdRoute
+  '/channels/$channelId': typeof ChannelsChannelIdRoute
   '/chat/$address': typeof ChatAddressRoute
   '/contact-info/$address': typeof ContactInfoAddressRoute
   '/groups/$groupId': typeof GroupsGroupIdRoute
@@ -154,9 +179,12 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/contacts': typeof ContactsRoute
+  '/create-channel': typeof CreateChannelRoute
   '/create-group': typeof CreateGroupRoute
   '/discovery': typeof DiscoveryRoute
   '/help': typeof HelpRoute
+  '/channel-info/$channelId': typeof ChannelInfoChannelIdRoute
+  '/channels/$channelId': typeof ChannelsChannelIdRoute
   '/chat/$address': typeof ChatAddressRoute
   '/contact-info/$address': typeof ContactInfoAddressRoute
   '/groups/$groupId': typeof GroupsGroupIdRoute
@@ -174,10 +202,13 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/contacts': typeof ContactsRoute
+  '/create-channel': typeof CreateChannelRoute
   '/create-group': typeof CreateGroupRoute
   '/discovery': typeof DiscoveryRoute
   '/help': typeof HelpRoute
   '/settings': typeof SettingsRouteWithChildren
+  '/channel-info/$channelId': typeof ChannelInfoChannelIdRoute
+  '/channels/$channelId': typeof ChannelsChannelIdRoute
   '/chat/$address': typeof ChatAddressRoute
   '/contact-info/$address': typeof ContactInfoAddressRoute
   '/groups/$groupId': typeof GroupsGroupIdRoute
@@ -196,10 +227,13 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/contacts'
+    | '/create-channel'
     | '/create-group'
     | '/discovery'
     | '/help'
     | '/settings'
+    | '/channel-info/$channelId'
+    | '/channels/$channelId'
     | '/chat/$address'
     | '/contact-info/$address'
     | '/groups/$groupId'
@@ -216,9 +250,12 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/contacts'
+    | '/create-channel'
     | '/create-group'
     | '/discovery'
     | '/help'
+    | '/channel-info/$channelId'
+    | '/channels/$channelId'
     | '/chat/$address'
     | '/contact-info/$address'
     | '/groups/$groupId'
@@ -235,10 +272,13 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/contacts'
+    | '/create-channel'
     | '/create-group'
     | '/discovery'
     | '/help'
     | '/settings'
+    | '/channel-info/$channelId'
+    | '/channels/$channelId'
     | '/chat/$address'
     | '/contact-info/$address'
     | '/groups/$groupId'
@@ -256,10 +296,13 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
   ContactsRoute: typeof ContactsRoute
+  CreateChannelRoute: typeof CreateChannelRoute
   CreateGroupRoute: typeof CreateGroupRoute
   DiscoveryRoute: typeof DiscoveryRoute
   HelpRoute: typeof HelpRoute
   SettingsRoute: typeof SettingsRouteWithChildren
+  ChannelInfoChannelIdRoute: typeof ChannelInfoChannelIdRoute
+  ChannelsChannelIdRoute: typeof ChannelsChannelIdRoute
   ChatAddressRoute: typeof ChatAddressRoute
   ContactInfoAddressRoute: typeof ContactInfoAddressRoute
   GroupsGroupIdRoute: typeof GroupsGroupIdRoute
@@ -294,6 +337,13 @@ declare module '@tanstack/react-router' {
       path: '/create-group'
       fullPath: '/create-group'
       preLoaderRoute: typeof CreateGroupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/create-channel': {
+      id: '/create-channel'
+      path: '/create-channel'
+      fullPath: '/create-channel'
+      preLoaderRoute: typeof CreateChannelRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/contacts': {
@@ -394,6 +444,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChatAddressRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/channels/$channelId': {
+      id: '/channels/$channelId'
+      path: '/channels/$channelId'
+      fullPath: '/channels/$channelId'
+      preLoaderRoute: typeof ChannelsChannelIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/channel-info/$channelId': {
+      id: '/channel-info/$channelId'
+      path: '/channel-info/$channelId'
+      fullPath: '/channel-info/$channelId'
+      preLoaderRoute: typeof ChannelInfoChannelIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -425,10 +489,13 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
   ContactsRoute: ContactsRoute,
+  CreateChannelRoute: CreateChannelRoute,
   CreateGroupRoute: CreateGroupRoute,
   DiscoveryRoute: DiscoveryRoute,
   HelpRoute: HelpRoute,
   SettingsRoute: SettingsRouteWithChildren,
+  ChannelInfoChannelIdRoute: ChannelInfoChannelIdRoute,
+  ChannelsChannelIdRoute: ChannelsChannelIdRoute,
   ChatAddressRoute: ChatAddressRoute,
   ContactInfoAddressRoute: ContactInfoAddressRoute,
   GroupsGroupIdRoute: GroupsGroupIdRoute,

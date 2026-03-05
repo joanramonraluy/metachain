@@ -14,6 +14,7 @@ import { messagingService } from "./messaging.service";
 import { contactRequestsService } from "./contact-requests.service";
 // import { DiscoveryService as discoveryService } from './discovery.service';
 import { groupService } from "./group.service";
+import { channelService } from "./channel.service";
 
 import * as profileService from "./profile.service";
 import { offlineQueueService } from "./offline-queue.service";
@@ -289,7 +290,7 @@ SELECT * FROM TRANSACTIONS
 
     // Check if the message is for our application (case-insensitive)
     const app = maximaData.application.toLowerCase();
-    if (app === "metachain" || app === "metachain-group") {
+    if (app === "metachain" || app === "metachain-group" || app === "metachain-channel") {
       const from = maximaData.from; // This is the Public Key
       let datastr = maximaData.data;
 
@@ -318,6 +319,11 @@ SELECT * FROM TRANSACTIONS
           // Static call now that circular dependency is resolved via utils/hex.ts
           groupService.handleIncomingGroupMessage(json, from);
 
+          return;
+        }
+        if (app === "metachain-channel" || (json.messageType && json.channelId)) {
+          console.log("📢 [CHANNELS] Message detected:", json.messageType);
+          channelService.handleIncomingChannelMessage(json, from);
           return;
         }
 
@@ -398,30 +404,7 @@ VALUES('${peer.pubkey}', '${escapedAlias}', '${escapedBio}', '${peer.address}', 
           return;
         }
 
-        // Handle Internal Solo Messages from Service Worker
-        if (json.type === "MDS_SOLO") {
-          console.log(
-            "🚀 [SERVICE] Solo message received from SW:",
-            json.message,
-          );
 
-          if (json.message === "CHAT_LIST_UPDATE") {
-            // New unified listener approach vs global window attached listener
-            this.notifyChatListUpdate();
-          } else {
-            try {
-              const parsedMsg = JSON.parse(json.message);
-              if (parsedMsg.type === "group_update" || parsedMsg.type === "group_join_requests_update") {
-                console.log(`🚀 [SERVICE] Group ${parsedMsg.groupId} updated to ${parsedMsg.name || 'unknown'}`);
-                // Fire an event that GroupDetails or Groups list can listen to
-                window.dispatchEvent(new CustomEvent("GROUP_UPDATE", { detail: parsedMsg }));
-              }
-            } catch (e) {
-              // Not JSON, ignore
-            }
-          }
-          return;
-        }
 
         // Handle Internal Sync - Peer Discovered from Beacon
         if (json.type === "peer_discovered") {
@@ -1839,13 +1822,26 @@ WHERE(${addressClause}) AND status = 'pending'`;
       this.handlePendingEvent(event.data);
     }
 
-    // Handle CHAT_LIST_UPDATE from service worker
-    if (event.event === "CHAT_LIST_UPDATE") {
-      console.log(
-        "🔄 [MDS] CHAT_LIST_UPDATE event detected from service worker",
-      );
-      // Notify chat list to refresh - pass empty object as we just need to trigger refresh
-      chatService.notifyNewMessage({});
+    // Handle MDS_SOLO from service worker
+    if (event.event === "MDS_SOLO") {
+      console.log("🚀 [SERVICE] Solo message received from SW:", event.data);
+      try {
+        const msg = event.data;
+        if (msg === "CHAT_LIST_UPDATE") {
+          this.notifyChatListUpdate();
+        } else {
+          const parsedMsg = JSON.parse(msg);
+          if (parsedMsg.type === "group_update" || parsedMsg.type === "group_join_requests_update") {
+            console.log(`🚀 [SERVICE] Group ${parsedMsg.groupId} updated`);
+            window.dispatchEvent(new CustomEvent("GROUP_UPDATE", { detail: parsedMsg }));
+          } else if (parsedMsg.type && typeof parsedMsg.type === 'string' && parsedMsg.type.startsWith("CHANNEL_")) {
+            console.log(`🚀 [SERVICE] Channel event received: ${parsedMsg.type}`);
+            window.dispatchEvent(new CustomEvent("CHANNEL_UPDATE", { detail: parsedMsg }));
+          }
+        }
+      } catch (e) {
+        // Not JSON or error, ignore
+      }
     }
   }
 

@@ -431,6 +431,69 @@ function initDatabase() {
     });
   });
 
+  // 10. CHANNELS
+  chain = chain.then(function () {
+    var channelsSql =
+      "CREATE TABLE IF NOT EXISTS CHANNELS ( " +
+      "  channel_id VARCHAR(256) PRIMARY KEY, " +
+      "  name VARCHAR(255) NOT NULL, " +
+      "  description TEXT, " +
+      "  admin_publickey VARCHAR(512) NOT NULL, " +
+      "  created_date BIGINT NOT NULL, " +
+      "  avatar TEXT " +
+      " )";
+    return runSQL(channelsSql).then(function (res) {
+      MDS.log(
+        res.status
+          ? "📢 [DB] CHANNELS checked/init"
+          : "❌ [DB] CHANNELS init failed: " + res.error,
+      );
+    });
+  });
+
+  // 10.1 CHANNEL_SUBSCRIBERS
+  chain = chain.then(function () {
+    var subsSql =
+      "CREATE TABLE IF NOT EXISTS CHANNEL_SUBSCRIBERS ( " +
+      "  channel_id VARCHAR(256) NOT NULL, " +
+      "  publickey VARCHAR(512) NOT NULL, " +
+      "  username VARCHAR(255) NOT NULL, " +
+      "  joined_date BIGINT NOT NULL, " +
+      "  role VARCHAR(32) DEFAULT 'subscriber', " +
+      "  PRIMARY KEY (channel_id, publickey) " +
+      " )";
+    return runSQL(subsSql).then(function (res) {
+      MDS.log(
+        res.status
+          ? "📢 [DB] CHANNEL_SUBSCRIBERS checked/init"
+          : "❌ [DB] CHANNEL_SUBSCRIBERS init failed: " + res.error,
+      );
+    });
+  });
+
+  // 10.2 CHANNEL_MESSAGES
+  chain = chain.then(function () {
+    var cMsgSql =
+      "CREATE TABLE IF NOT EXISTS CHANNEL_MESSAGES ( " +
+      "  id BIGINT AUTO_INCREMENT PRIMARY KEY, " +
+      "  channel_id VARCHAR(256) NOT NULL, " +
+      "  sender_publickey VARCHAR(512) NOT NULL, " +
+      "  sender_username VARCHAR(255) NOT NULL, " +
+      "  type VARCHAR(32) NOT NULL, " +
+      "  message TEXT, " +
+      "  filedata TEXT, " +
+      "  date BIGINT NOT NULL, " +
+      "  read INTEGER DEFAULT 0 " +
+      " )";
+    return runSQL(cMsgSql).then(function (res) {
+      MDS.log(
+        res.status
+          ? "📢 [DB] CHANNEL_MESSAGES checked/init"
+          : "❌ [DB] CHANNEL_MESSAGES init failed: " + res.error,
+      );
+    });
+  });
+
   // FINAL: Start Services
   chain.then(function () {
     MDS.log("✅ [INIT] Database sequence complete. Starting Services...");
