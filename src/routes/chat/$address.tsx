@@ -14,7 +14,7 @@ import { Capacitor } from "@capacitor/core";
 import { MDS } from "@minima-global/mds";
 import { appContext } from "../../AppContext";
 import TransferSelector from "../../components/chat/TransferSelector";
-import { Trash2, User, BarChart, Archive, Star, Wallet } from "lucide-react";
+import { Trash2, Wallet, Info, Archive, Settings, Users } from "lucide-react";
 import MessageBubble from "../../components/chat/MessageBubble";
 
 import { minimaService } from "../../services/minima.service";
@@ -212,8 +212,7 @@ function ChatPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showChatInfo, setShowChatInfo] = useState(false);
   const [isArchived, setIsArchived] = useState(false);
-  const [isFavorite, setIsFavorite] = useState(false);
-  // Add blocked state
+  // Favorite state removed as it is no longer in the menu  // Add blocked state
   const [isBlocked, setIsBlocked] = useState(false);
   const [blockedByThem, setBlockedByThem] = useState(false);
 
@@ -304,7 +303,8 @@ function ChatPage() {
     });
   }, []);
 
-  const { writeMode, userName, myPublicKey } = useContext(appContext);
+  const { writeMode, userName, userAvatar, myPublicKey } =
+    useContext(appContext);
   const isLoadingMessages = useRef(false); // Flag to prevent simultaneous loads
   const pendingReload = useRef(false); // Flag to queue a reload if one is requested while loading
 
@@ -680,10 +680,7 @@ function ChatPage() {
     if (!contact?.publickey) return;
     try {
       const status = await minimaService.getChatStatus(contact.publickey);
-      // console.log("🔍 [UI DEBUG] Full Status Object:", status);
-      // console.log("🔍 [UI DEBUG] blockedByThem Value:", status.blockedByThem, "Type:", typeof status.blockedByThem);
       setIsArchived(status.archived);
-      setIsFavorite(status.favorite);
       setIsBlocked(status.blocked);
       setBlockedByThem(status.blockedByThem);
     } catch (err) {
@@ -1022,8 +1019,14 @@ function ChatPage() {
       if (cached) {
         try {
           const cachedMsgs = JSON.parse(cached);
-          // If we have cached messages, process them immediately
-          if (Array.isArray(cachedMsgs) && cachedMsgs.length > 0) {
+          // Apply cache only on cold load.
+          // During active chat use (send/reload), applying cache can override
+          // optimistic state and cause appear/disappear flicker.
+          if (
+            Array.isArray(cachedMsgs) &&
+            cachedMsgs.length > 0 &&
+            messages.length === 0
+          ) {
             // We need to pass them through the parser logic or store parsed?
             // Storing parsed is risky due to types.
             // Let's assume we store PARSED messages in cache to save processing.
@@ -1034,7 +1037,7 @@ function ChatPage() {
             console.log("⚠️ [CHAT-DB] Loaded messages from cache");
             // Don't return, allow fetch to proceed and update
           }
-        } catch (e) {}
+        } catch (e) { }
       }
 
       // 2. Fetch fresh with timeout
@@ -2183,47 +2186,21 @@ function ChatPage() {
     }
   };
 
-  /* ----------------------------------------------------------------------------
-      TOGGLE ARCHIVE
-  ---------------------------------------------------------------------------- */
   const handleToggleArchive = async () => {
     if (!contact?.publickey) return;
-
     try {
       if (isArchived) {
         await minimaService.unarchiveChat(contact.publickey);
-        setIsArchived(false);
-        console.log("✅ Chat unarchived successfully");
       } else {
         await minimaService.archiveChat(contact.publickey);
-        setIsArchived(true);
-        console.log("✅ Chat archived successfully");
       }
+      setIsArchived(!isArchived);
     } catch (err) {
-      console.error("❌ Failed to toggle archive:", err);
+      console.error("❌ [CHAT] Toggle archive error:", err);
     }
   };
 
-  /* ----------------------------------------------------------------------------
-      TOGGLE FAVORITE
-  ---------------------------------------------------------------------------- */
-  const handleToggleFavorite = async () => {
-    if (!contact?.publickey) return;
-
-    try {
-      if (isFavorite) {
-        await minimaService.unmarkChatAsFavorite(contact.publickey);
-        setIsFavorite(false);
-        console.log("✅ Chat unmarked as favorite");
-      } else {
-        await minimaService.markChatAsFavorite(contact.publickey);
-        setIsFavorite(true);
-        console.log("✅ Chat marked as favorite");
-      }
-    } catch (err) {
-      console.error("❌ Failed to toggle favorite:", err);
-    }
-  };
+  // Chat deletion function removed as it uses handleDeleteChat directly
 
   /* ----------------------------------------------------------------------------
       SEND INVITATION
@@ -2286,11 +2263,10 @@ function ChatPage() {
         </button>
 
         <div
-          className={`flex items-center gap-3 flex-1 min-w-0 transition-opacity ${
-            appStatus !== "checking" && appStatus !== "not_found"
-              ? "cursor-pointer hover:opacity-90"
-              : ""
-          }`}
+          className={`flex items-center gap-3 flex-1 min-w-0 transition-opacity ${appStatus !== "checking" && appStatus !== "not_found"
+            ? "cursor-pointer hover:opacity-90"
+            : ""
+            }`}
           onClick={() => {
             if (appStatus !== "checking" && appStatus !== "not_found") {
               navigate({
@@ -2409,39 +2385,12 @@ function ChatPage() {
                   setShowMenu(false);
                   navigate({
                     to: `/contact-info/${address}`,
-                    search: { returnTo: `/chat/${address}` },
-                  });
-                }}
-              >
-                <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
-                  <User size={16} />
-                </div>
-                <span className="font-medium">Profile</span>
-              </button>
-              <button
-                className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
-                onClick={() => {
-                  setShowMenu(false);
-                  navigate({
-                    to: `/contact-info/${address}`,
                     search: { returnTo: `/chat/${address}`, tab: "settings" },
                   });
                 }}
               >
                 <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
-                  <svg
-                    className="w-4 h-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
-                    />
-                  </svg>
+                  <Settings size={16} />
                 </div>
                 <span className="font-medium">Actions</span>
               </button>
@@ -2449,27 +2398,16 @@ function ChatPage() {
                 className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
                 onClick={() => {
                   setShowMenu(false);
-                  setShowChatInfo(true);
+                  navigate({
+                    to: `/contact-info/${address}`,
+                    search: { returnTo: `/chat/${address}` },
+                  });
                 }}
               >
-                <div className="w-8 h-8 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-600 dark:text-purple-400">
-                  <BarChart size={16} />
+                <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
+                  <Users size={16} />
                 </div>
-                <span className="font-medium">Chat Info</span>
-              </button>
-              <button
-                className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
-                onClick={() => {
-                  setShowMenu(false);
-                  handleToggleFavorite();
-                }}
-              >
-                <div className="w-8 h-8 rounded-full bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center text-yellow-600 dark:text-yellow-400">
-                  <Star size={16} fill={isFavorite ? "currentColor" : "none"} />
-                </div>
-                <span className="font-medium">
-                  {isFavorite ? "Unfavorite Chat" : "Favorite Chat"}
-                </span>
+                <span className="font-medium">Profile</span>
               </button>
               <button
                 className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
@@ -2484,6 +2422,18 @@ function ChatPage() {
                 <span className="font-medium">
                   {isArchived ? "Unarchive Chat" : "Archive Chat"}
                 </span>
+              </button>
+              <button
+                className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
+                onClick={() => {
+                  setShowMenu(false);
+                  setShowChatInfo(true);
+                }}
+              >
+                <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
+                  <Info size={16} />
+                </div>
+                <span className="font-medium">Chat Info</span>
               </button>
               <button
                 className="flex items-center gap-3 w-full p-3 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 rounded-b-lg transition-colors text-left border-t border-gray-100 dark:border-gray-700"
@@ -2691,12 +2641,11 @@ function ChatPage() {
       <div
         ref={scrollContainerRef}
         className={`flex-1 overflow-y-auto overflow-x-hidden flex flex-col p-2 sm:p-4 pb-20
-          ${
-            chatBackground === "diagonal"
+          ${chatBackground === "diagonal"
+            ? "bg-gray-50 dark:bg-gray-900"
+            : chatBackground === "default"
               ? "bg-gray-50 dark:bg-gray-900"
-              : chatBackground === "default"
-                ? "bg-gray-50 dark:bg-gray-900"
-                : "bg-gray-50 dark:bg-gray-900" /* Base for patterns */
+              : "bg-gray-50 dark:bg-gray-900" /* Base for patterns */
           }`}
       >
         {/* Pattern Overlays - Fixed positioning ensures they cover full screen even with scroll */}
@@ -2961,52 +2910,52 @@ function ChatPage() {
         {messages.filter(
           (m) => m.status === "pending" && (m.isCharm || m.isToken),
         ).length > 0 && (
-          <div className="sticky top-0 z-20 mb-4 mx-2 mt-2">
-            {messages
-              .filter((m) => m.status === "pending" && (m.isCharm || m.isToken))
-              .map((msg) => (
-                <div
-                  key={msg.timestamp}
-                  className="bg-primary-50/95 backdrop-blur-sm border border-primary-200 rounded-lg shadow-sm p-4 mb-2 animate-in fade-in slide-in-from-top-2 duration-300"
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="flex-shrink-0 w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center">
-                      <svg
-                        className="w-5 h-5 text-primary-600 animate-spin"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                        />
-                      </svg>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-900 leading-tight">
-                        Sending{" "}
-                        {msg.tokenAmount ? (
-                          <span className="font-semibold">
-                            {msg.tokenAmount.amount} {msg.tokenAmount.tokenName}
-                          </span>
-                        ) : (
-                          <span className="font-semibold">
-                            {msg.amount} MINIMA
-                          </span>
-                        )}
-                      </p>
-                      <p className="text-xs text-primary-600 font-medium mt-0.5">
-                        Waiting for confirmation...
-                      </p>
+            <div className="sticky top-0 z-20 mb-4 mx-2 mt-2">
+              {messages
+                .filter((m) => m.status === "pending" && (m.isCharm || m.isToken))
+                .map((msg) => (
+                  <div
+                    key={msg.timestamp}
+                    className="bg-primary-50/95 backdrop-blur-sm border border-primary-200 rounded-lg shadow-sm p-4 mb-2 animate-in fade-in slide-in-from-top-2 duration-300"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="flex-shrink-0 w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center">
+                        <svg
+                          className="w-5 h-5 text-primary-600 animate-spin"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                          />
+                        </svg>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-gray-900 leading-tight">
+                          Sending{" "}
+                          {msg.tokenAmount ? (
+                            <span className="font-semibold">
+                              {msg.tokenAmount.amount} {msg.tokenAmount.tokenName}
+                            </span>
+                          ) : (
+                            <span className="font-semibold">
+                              {msg.amount} MINIMA
+                            </span>
+                          )}
+                        </p>
+                        <p className="text-xs text-primary-600 font-medium mt-0.5">
+                          Waiting for confirmation...
+                        </p>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-          </div>
-        )}
+                ))}
+            </div>
+          )}
 
         {messages.length === 0 && (
           <div className="flex-1 flex items-center justify-center z-0">
@@ -3045,16 +2994,15 @@ function ChatPage() {
                   // System message (centered)
                   <div className="flex justify-center my-2">
                     <span
-                      className={`text-xs px-3 py-1.5 rounded-full ${
-                        msg.text?.toLowerCase().includes("accepted")
-                          ? "text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/40" // Accepted = Green
-                          : msg.text?.toLowerCase().includes("declined") ||
-                              msg.text?.toLowerCase().includes("blocked")
-                            ? "text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-900/40" // Declined or Blocked = Red
-                            : msg.text?.toLowerCase().includes("unblocked")
-                              ? "text-gray-600 dark:text-gray-300 bg-gray-200 dark:bg-gray-700" // Unblocked = Neutral/Gray
-                              : "text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800" // Default
-                      }`}
+                      className={`text-xs px-3 py-1.5 rounded-full ${msg.text?.toLowerCase().includes("accepted")
+                        ? "text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/40" // Accepted = Green
+                        : msg.text?.toLowerCase().includes("declined") ||
+                          msg.text?.toLowerCase().includes("blocked")
+                          ? "text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-900/40" // Declined or Blocked = Red
+                          : msg.text?.toLowerCase().includes("unblocked")
+                            ? "text-gray-600 dark:text-gray-300 bg-gray-200 dark:bg-gray-700" // Unblocked = Neutral/Gray
+                            : "text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800" // Default
+                        }`}
                     >
                       {msg.text}
                     </span>
@@ -3068,6 +3016,14 @@ function ChatPage() {
                     timestamp={msg.timestamp}
                     status={msg.status}
                     tokenAmount={msg.tokenAmount}
+                    senderName={
+                      msg.fromMe
+                        ? userName || "You"
+                        : contact?.extradata?.name || "Unknown User"
+                    }
+                    senderImage={
+                      msg.fromMe ? userAvatar : contact?.extradata?.icon
+                    }
                   />
                 )}
               </div>
@@ -3079,11 +3035,10 @@ function ChatPage() {
       {/* INPUT BAR - Fixed at bottom */}
       <div className="w-full max-w-full px-1.5 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] bg-white dark:bg-gray-800 flex gap-0.5 items-center flex-shrink-0 z-10 relative border-t border-gray-200 dark:border-gray-700 transition-colors box-border">
         <button
-          className={`p-2 rounded-full transition-colors ${
-            !contact?.extradata?.minimaaddress
-              ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
-              : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-          }`}
+          className={`p-2 rounded-full transition-colors ${!contact?.extradata?.minimaaddress
+            ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
+            : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+            }`}
           onClick={(e) => {
             e.stopPropagation();
             if (!contact?.extradata?.minimaaddress) {
@@ -3137,7 +3092,7 @@ function ChatPage() {
             onClick={(e) => {
               e.stopPropagation();
               if (!showEmojiPicker) {
-                Keyboard.hide().catch(() => {});
+                Keyboard.hide().catch(() => { });
               }
               setShowEmojiPicker(!showEmojiPicker);
             }}
@@ -3193,10 +3148,9 @@ function ChatPage() {
 
         <button
           className={`p-2 rounded-full transition-all duration-200 shadow-sm
-            ${
-              input.trim() && blockReason === "none" && !isBlocked
-                ? "bg-primary-600 text-white hover:bg-primary-700 transform hover:scale-105"
-                : "bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-default"
+            ${input.trim() && blockReason === "none" && !isBlocked
+              ? "bg-primary-600 text-white hover:bg-primary-700 transform hover:scale-105"
+              : "bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-default"
             }`}
           onClick={handleSendMessage}
           disabled={

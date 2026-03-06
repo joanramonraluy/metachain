@@ -270,6 +270,12 @@ MDS.init(function (msg) {
           return;
         }
 
+        if (app === "metachain-channel" && maxjson.messageType === "channel_role_update") {
+          handleChannelRoleUpdate(pubkey, maxjson);
+          return;
+        }
+
+
         // ================== CHAT MESSAGES ==================
         if (maxjson.type === "read") {
           handleReadReceipt(pubkey);

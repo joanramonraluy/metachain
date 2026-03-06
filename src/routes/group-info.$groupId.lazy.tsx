@@ -1,12 +1,11 @@
 import { createLazyFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, useContext, useCallback } from "react";
-import { ArrowLeft, Trash2, Users, Edit2, Check, X, ShieldOff, UserPlus, Search, Copy } from "lucide-react";
+import { ArrowLeft, Trash2, Users, Edit2, Check, X, ShieldOff, UserPlus, Search, Copy, ShieldCheck, ShieldAlert, UserX, Database, Info, MessageSquare, History } from "lucide-react";
 import { groupService } from "../services/group.service";
 import { chatService } from "../services/chat.service";
 import { appContext } from "../AppContext";
 import { MDS } from "@minima-global/mds";
 import { GroupTabs, GroupTab } from "../components/group/GroupTabs";
-import { MoreVertical } from "lucide-react";
 
 export const Route = createLazyFileRoute("/group-info/$groupId")({
   component: GroupInfoPage,
@@ -69,6 +68,12 @@ function GroupInfoPage() {
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [generatingLink, setGeneratingLink] = useState(false);
 
+  const [stats, setStats] = useState({
+    total: 0,
+    mine: 0,
+    firstDate: 0
+  });
+
   const fetchGroupDetails = useCallback(async () => {
     try {
       setLoading(true);
@@ -98,8 +103,14 @@ function GroupInfoPage() {
           publickey: pubkey,
           name: username,
           isMe: isMe,
-          role: role
+          role: role as 'creator' | 'admin' | 'member'
         };
+      });
+
+      // Sort: Creator > Admin > Member
+      mappedMembers.sort((a, b) => {
+        const rolePriority = { 'creator': 0, 'admin': 1, 'member': 2 };
+        return (rolePriority[a.role] ?? 2) - (rolePriority[b.role] ?? 2);
       });
 
       setMembers(mappedMembers);
@@ -123,6 +134,21 @@ function GroupInfoPage() {
         status: r.STATUS || r.status,
         timestamp: Number(r.TIMESTAMP || r.timestamp)
       })));
+
+      // Fetch messages for statistics
+      const allMsgs = await groupService.getGroupMessages(groupId);
+
+      // Calculate stats
+      const mine = allMsgs.filter((m: any) => {
+        const sender = (m.SENDER_PUBLICKEY || m.sender_publickey || "").toLowerCase();
+        const me = (myPublicKey || "").toLowerCase();
+        return sender === me;
+      }).length;
+      setStats({
+        total: allMsgs.length,
+        mine,
+        firstDate: allMsgs.length > 0 ? Number(allMsgs[0].date) : 0
+      });
 
     } catch (err) {
       console.error("Failed to load group info:", err);
@@ -470,7 +496,68 @@ function GroupInfoPage() {
                   )}
                 </div>
               )}
+            </div>
 
+            {/* CHAT STATISTICS */}
+            <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 space-y-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Info size={18} className="text-primary-500" />
+                <h3 className="font-semibold text-gray-900 dark:text-white">Chat Statistics</h3>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl">
+                  <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center text-blue-600 dark:text-blue-400">
+                    <MessageSquare size={20} />
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">Messages</p>
+                    <p className="text-sm font-bold text-gray-900 dark:text-white">{stats.total} total ({stats.mine} mine)</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl">
+                  <div className="w-10 h-10 bg-orange-100 dark:bg-orange-900/30 rounded-full flex items-center justify-center text-orange-600 dark:text-orange-400" >
+                    <History size={20} />
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">History</p>
+                    <p className="text-sm font-bold text-gray-900 dark:text-white">
+                      Since {stats.firstDate ? new Date(stats.firstDate).toLocaleDateString() : 'N/A'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* TECHNICAL DATA */}
+            <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 space-y-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Database size={18} className="text-primary-500" />
+                <h3 className="font-semibold text-gray-900 dark:text-white">Technical Data</h3>
+              </div>
+
+              <div className="space-y-3">
+                <div className="group relative">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 font-medium mb-1">Group ID (Public Key)</p>
+                  <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-transparent hover:border-primary-200 dark:hover:border-primary-900/50 transition-all">
+                    <p className="text-xs font-mono text-gray-800 dark:text-gray-200 break-all pr-8">{groupId}</p>
+                    <button
+                      onClick={() => copyToClipboard(groupId || "", 'groupid')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-2 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg text-gray-400 hover:text-primary-500 opacity-0 group-hover:opacity-100 transition-all shadow-sm"
+                    >
+                      {copiedField === 'groupid' ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 font-medium mb-1">My Role</p>
+                  <div className="inline-flex items-center px-3 py-1 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 rounded-full text-xs font-mono font-bold uppercase tracking-wider">
+                    {myRole}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -505,7 +592,7 @@ function GroupInfoPage() {
                   <div className="p-8 text-center text-gray-500">Loading members...</div>
                 ) : (
                   members.map((member, i) => (
-                    <div key={member.publickey || i} className={`relative ${activeMenuPubkey === member.publickey ? 'z-30' : 'z-0'}`}>
+                    <div key={member.publickey || i} className={`relative flex items-center ${activeMenuPubkey === member.publickey ? 'z-30' : 'z-0'} ${member.isMe ? 'bg-primary-50/50 dark:bg-primary-900/10' : 'hover:bg-gray-100 dark:hover:bg-gray-700/50'}`}>
                       <button
                         onClick={() => {
                           if (!member.isMe) {
@@ -515,16 +602,16 @@ function GroupInfoPage() {
                             });
                           }
                         }}
-                        className={`w-full p-4 flex items-center gap-3 transition-all text-left group
+                        className={`flex-1 p-4 flex items-center gap-3 transition-all text-left group min-w-0
                                   ${member.isMe
-                            ? 'bg-primary-50/50 dark:bg-primary-900/10 cursor-default'
-                            : 'hover:bg-gray-100 dark:hover:bg-gray-700/50 cursor-pointer active:scale-[0.99]'
+                            ? 'cursor-default'
+                            : 'cursor-pointer active:scale-[0.99]'
                           }`}
                       >
                         <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 flex-shrink-0 flex items-center justify-center text-gray-600 dark:text-gray-300 font-medium text-sm group-hover:bg-gray-300 dark:group-hover:bg-gray-600 transition-colors">
                           {member.isMe ? 'You' : (member.name && member.name !== "Unknown Member" && member.name !== "Unknown" ? member.name.charAt(0).toUpperCase() : '?')}
                         </div>
-                        <div className="flex-1 min-w-0 pr-10">
+                        <div className="flex-1 min-w-0">
                           <div>
                             <p className="text-sm font-medium text-gray-900 dark:text-white truncate flex items-center gap-2">
                               {member.isMe ? 'You' : (member.name && member.name !== "Unknown Member" && member.name !== "Unknown" ? member.name : shortenKey(member.publickey))}
@@ -542,48 +629,38 @@ function GroupInfoPage() {
                         </div>
                       </button>
 
-                      {/* Context Menu for Admins/Creators to manage roles */}
+                      {/* Inline Actions for Admins/Creators */}
                       {!member.isMe && member.role !== 'creator' && (myRole === 'creator' || myRole === 'admin') && (
-                        <div className="absolute right-4 top-1/2 -translate-y-1/2">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setActiveMenuPubkey(activeMenuPubkey === member.publickey ? null : member.publickey);
-                            }}
-                            className="p-2 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-full transition-colors"
-                          >
-                            <MoreVertical size={18} />
-                          </button>
-                          {activeMenuPubkey === member.publickey && (
-                            <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-20 py-1"
-                              onClick={(e) => e.stopPropagation()}
+                        <div className="flex items-center gap-1 pr-3 flex-shrink-0">
+                          {/* Role Management */}
+                          {member.role === 'member' && (isCreator || myRole === 'admin') && (
+                            <button
+                              onClick={() => handleRoleChange(member.publickey, 'admin')}
+                              className="p-1.5 text-sky-600 hover:text-sky-700 dark:hover:text-sky-400 transition-colors rounded-full hover:bg-sky-50 dark:hover:bg-sky-900/20"
+                              title="Promote to Admin"
                             >
-                              {member.role === 'member' && (isCreator || myRole === 'admin') && (
-                                <button
-                                  onClick={() => handleRoleChange(member.publickey, 'admin')}
-                                  className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
-                                >
-                                  Promote to Admin
-                                </button>
-                              )}
-                              {member.role === 'admin' && isCreator && (
-                                <button
-                                  onClick={() => handleRoleChange(member.publickey, 'member')}
-                                  className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
-                                >
-                                  Demote to Member
-                                </button>
-                              )}
-                              {/* Remove option: admins can remove members, creator can remove anyone */}
-                              {(isCreator || (myRole === 'admin' && member.role === 'member')) && (
-                                <button
-                                  onClick={() => handleRemoveMember(member.publickey)}
-                                  className="w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 border-t border-gray-100 dark:border-gray-700 mt-1"
-                                >
-                                  Remove from Group
-                                </button>
-                              )}
-                            </div>
+                              <ShieldCheck size={18} />
+                            </button>
+                          )}
+                          {member.role === 'admin' && isCreator && (
+                            <button
+                              onClick={() => handleRoleChange(member.publickey, 'member')}
+                              className="p-1.5 text-amber-600 hover:text-amber-700 dark:hover:text-amber-400 transition-colors rounded-full hover:bg-amber-50 dark:hover:bg-amber-900/20"
+                              title="Demote to Member"
+                            >
+                              <ShieldAlert size={18} />
+                            </button>
+                          )}
+
+                          {/* Remove Button */}
+                          {(isCreator || (myRole === 'admin' && member.role === 'member')) && (
+                            <button
+                              onClick={() => handleRemoveMember(member.publickey)}
+                              className="p-1.5 text-red-500 hover:text-red-700 dark:hover:text-red-400 transition-colors rounded-full hover:bg-red-50 dark:hover:bg-red-900/20"
+                              title="Remove from Group"
+                            >
+                              <UserX size={18} />
+                            </button>
                           )}
                         </div>
                       )}
@@ -734,92 +811,60 @@ function GroupInfoPage() {
           </div>
         )}
 
-        {activeTab === 'tech' && (
-          <div className="space-y-6">
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden transition-colors">
-              {/* Group ID */}
-              <div className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors group border-b border-gray-100 dark:border-gray-700">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Group ID (Public Key)</span>
-                  <button
-                    onClick={() => copyToClipboard(groupId || "", 'groupid')}
-                    className="text-primary-600 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-primary-50 rounded"
-                    title="Copy"
-                  >
-                    {copiedField === 'groupid' ? <Check size={16} /> : <Copy size={16} />}
-                  </button>
-                </div>
-                <p className="text-sm font-mono text-gray-800 dark:text-gray-200 break-all">{groupId}</p>
-              </div>
-              {/* Role */}
-              <div className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors group">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-sm font-medium text-gray-500 dark:text-gray-400">My Role</span>
-                </div>
-                <p className="text-sm font-mono text-gray-800 dark:text-gray-200 break-all">{myRole.toUpperCase()}</p>
+
+
+        {/* EXIT CONFIRMATION DIALOG */}
+        {showDeleteConfirm && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-sm w-full p-6 animate-in zoom-in-95 fade-in duration-200 border border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Exit Group?</h3>
+              <p className="text-gray-600 dark:text-gray-300 mb-6">
+                Are you sure you want to exit this group? You will no longer receive new messages.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    setShowDeleteConfirm(false);
+                    handleExitGroup();
+                  }}
+                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
+                >
+                  Exit
+                </button>
               </div>
             </div>
           </div>
         )}
 
-      </div>
-
-      {/* EXIT CONFIRMATION DIALOG */}
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-sm w-full p-6 animate-in zoom-in-95 fade-in duration-200 border border-gray-200 dark:border-gray-700">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Exit Group?</h3>
-            <p className="text-gray-600 dark:text-gray-300 mb-6">
-              Are you sure you want to exit this group? You will no longer receive new messages.
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowDeleteConfirm(false)}
-                className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  setShowDeleteConfirm(false);
-                  handleExitGroup();
-                }}
-                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
-              >
-                Exit
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ADD MEMBER MODAL */}
-      {showAddMember && (
-        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-md max-h-[85vh] flex flex-col border border-gray-200 dark:border-gray-700">
-            {/* Header */}
-            <div className="p-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between flex-shrink-0">
-              <div className="flex items-center gap-2">
-                <UserPlus size={18} className="text-primary-500" />
-                <span className="font-semibold text-gray-900 dark:text-white">Add Member</span>
+        {/* ADD MEMBER MODAL */}
+        {showAddMember && (
+          <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md max-h-[80vh] flex flex-col animate-in slide-in-from-bottom-4 sm:zoom-in-95 fade-in duration-200">
+              {/* Modal header */}
+              <div className="p-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
+                <h3 className="font-bold text-gray-900 dark:text-white text-lg">Add member</h3>
+                <button
+                  onClick={() => setShowAddMember(false)}
+                  className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                >
+                  <X size={20} />
+                </button>
               </div>
-              <button
-                onClick={() => setShowAddMember(false)}
-                className="p-1.5 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
-              >
-                <X size={18} />
-              </button>
-            </div>
 
-            {/* Tabs */}
-            <div className="px-3">
-              <div className="flex gap-2 mb-2 border-b border-gray-200 dark:border-gray-700">
+              {/* Tabs */}
+              <div className="flex gap-2 px-4 pt-3 border-b border-gray-100 dark:border-gray-700">
                 {(['all', 'contacts', 'community'] as const).map((tab) => (
                   <button
                     key={tab}
                     onClick={() => setAddMemberTab(tab)}
-                    className={`pb-2 px-3 text-sm font-medium capitalize transition-colors relative ${addMemberTab === tab
-                      ? "text-primary-600 border-b-2 border-primary-600 -mb-px"
+                    className={`pb-2 px-2 text-sm font-medium capitalize transition-colors relative ${addMemberTab === tab
+                      ? "text-sky-600 dark:text-sky-400 border-b-2 border-sky-600 dark:border-sky-400 -mb-px"
                       : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
                       }`}
                   >
@@ -827,61 +872,61 @@ function GroupInfoPage() {
                   </button>
                 ))}
               </div>
-            </div>
 
-            {/* Search */}
-            <div className="p-3 flex-shrink-0 pt-1">
-              <div className="relative">
-                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
-                  type="text"
-                  value={addMemberSearch}
-                  onChange={(e) => setAddMemberSearch(e.target.value)}
-                  placeholder="Search contacts..."
-                  className="w-full pl-9 pr-4 py-2 text-sm bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  autoFocus
-                />
+              {/* Search */}
+              <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700">
+                <div className="relative">
+                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="text"
+                    value={addMemberSearch}
+                    onChange={(e) => setAddMemberSearch(e.target.value)}
+                    placeholder="Search..."
+                    className="w-full pl-9 pr-4 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400"
+                    autoFocus
+                  />
+                </div>
+              </div>
+
+              {/* People list */}
+              <div className="overflow-y-auto flex-1 divide-y divide-gray-100 dark:divide-gray-700">
+                {addableContacts.length === 0 ? (
+                  <div className="p-10 text-center">
+                    <p className="text-gray-500 dark:text-gray-400 text-sm">No contacts available to add</p>
+                  </div>
+                ) : (
+                  addableContacts
+                    .filter(c => {
+                      const matchesSearch = c.name.toLowerCase().includes(addMemberSearch.toLowerCase());
+                      if (!matchesSearch) return false;
+                      if (addMemberTab === 'contacts') return c.type === 'contact';
+                      if (addMemberTab === 'community') return c.type === 'community';
+                      return true;
+                    })
+                    .map(contact => (
+                      <div key={contact.publickey} className="flex items-center gap-3 px-4 py-3">
+                        <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-gray-600 dark:text-gray-300 font-bold flex-shrink-0">
+                          {contact.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-gray-900 dark:text-white truncate">{contact.name}</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 capitalize">{contact.type}</p>
+                        </div>
+                        <button
+                          onClick={() => handleAddMember(contact)}
+                          disabled={addingMember === contact.publickey}
+                          className="px-3 py-1.5 bg-primary-600 text-white text-sm rounded-lg hover:bg-primary-700 active:bg-primary-800 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed font-medium flex-shrink-0"
+                        >
+                          {addingMember === contact.publickey ? "Adding..." : "Add"}
+                        </button>
+                      </div>
+                    ))
+                )}
               </div>
             </div>
-
-            {/* Contact list */}
-            <div className="overflow-y-auto flex-1 px-2 pb-4">
-              {addableContacts.length === 0 ? (
-                <p className="text-center text-gray-400 py-12 text-sm">No contacts available to add</p>
-              ) : (
-                addableContacts
-                  .filter(c => {
-                    const matchesSearch = c.name.toLowerCase().includes(addMemberSearch.toLowerCase());
-                    if (!matchesSearch) return false;
-                    if (addMemberTab === 'contacts') return c.type === 'contact';
-                    if (addMemberTab === 'community') return c.type === 'community';
-                    return true;
-                  })
-                  .map(contact => (
-                    <button
-                      key={contact.publickey}
-                      onClick={() => handleAddMember(contact)}
-                      disabled={addingMember === contact.publickey}
-                      className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-left disabled:opacity-50"
-                    >
-                      <div className="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900/30 flex-shrink-0 flex items-center justify-center text-primary-600 dark:text-primary-400 font-semibold text-sm">
-                        {contact.name.charAt(0).toUpperCase()}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{contact.name}</p>
-                        <p className="text-xs text-gray-400 font-mono truncate">{shortenKey(contact.publickey)}</p>
-                      </div>
-                      {addingMember === contact.publickey && (
-                        <span className="text-xs text-primary-500">Adding...</span>
-                      )}
-                    </button>
-                  ))
-              )}
-            </div>
           </div>
-        </div>
-      )}
-
+        )}
+      </div>
     </div>
   );
 }

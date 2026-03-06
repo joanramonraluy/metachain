@@ -1,9 +1,8 @@
 // src/routes/groups.$groupId.tsx
 import { useEffect, useRef, useState, useContext, useCallback, lazy, Suspense } from "react";
 import { useNavigate, createLazyFileRoute } from "@tanstack/react-router";
-import { MDS } from "@minima-global/mds";
 import { appContext } from "../AppContext";
-import { Trash2, User, BarChart, Settings } from "lucide-react";
+import { Settings, Trash2, Users } from 'lucide-react';
 import { groupService } from "../services/group.service";
 import MessageBubble from "../components/chat/MessageBubble";
 import { useTheme } from "../context/ThemeContext";
@@ -76,7 +75,7 @@ function ChatPage() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const { userName, myPublicKey } = useContext(appContext);
+  const { userName, userAvatar, myPublicKey } = useContext(appContext);
   const isLoadingMessages = useRef(false); // Flag to prevent simultaneous loads
   const { chatBackground, mode } = useTheme();
 
@@ -185,7 +184,7 @@ function ChatPage() {
 
           const parsed: ParsedMessage = {
             text: displayText,
-            fromMe: row.SENDER_PUBLICKEY === myPublicKey,
+            fromMe: (row.SENDER_PUBLICKEY || "").toLowerCase() === (myPublicKey || "").toLowerCase(),
             charm: null,
             amount: null,
             timestamp: Number(row.DATE || 0),
@@ -414,9 +413,9 @@ function ChatPage() {
       RENDER
   ---------------------------------------------------------------------------- */
   return (
-    <div className="h-full flex flex-col bg-[#E5DDD5] dark:bg-gray-900 transition-colors">
+    <div className="flex-1 w-full flex flex-col bg-[#E5DDD5] dark:bg-gray-900 min-h-0">
       {/* HEADER - Fixed at top */}
-      <div className="bg-primary-600 dark:bg-gray-900 text-white p-4 pt-[calc(1rem+env(safe-area-inset-top))] px-4 flex items-center gap-3 flex-shrink-0 shadow-sm z-10 dark:border-b dark:border-gray-800 transition-colors">
+      <div className="bg-primary-600 dark:bg-gray-800 text-white p-4 pt-[calc(1rem+env(safe-area-inset-top))] px-4 flex items-center gap-3 flex-shrink-0 shadow-sm z-30 transition-colors border-b border-primary-700 dark:border-gray-700">
         {/* Back button */}
         <button
           onClick={() => navigate({ to: '/' })}
@@ -463,22 +462,6 @@ function ChatPage() {
                   navigate({
                     to: '/group-info/$groupId',
                     params: { groupId: address },
-                    search: { returnTo: `/groups/${address}` },
-                  });
-                }}
-              >
-                <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
-                  <User size={16} />
-                </div>
-                <span className="font-medium">Info</span>
-              </button>
-              <button
-                className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
-                onClick={() => {
-                  setShowMenu(false);
-                  navigate({
-                    to: '/group-info/$groupId',
-                    params: { groupId: address },
                     search: { returnTo: `/groups/${address}`, tab: "settings" },
                   });
                 }}
@@ -492,13 +475,17 @@ function ChatPage() {
                 className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
                 onClick={() => {
                   setShowMenu(false);
-                  setShowChatInfo(true);
+                  navigate({
+                    to: '/group-info/$groupId',
+                    params: { groupId: address },
+                    search: { returnTo: `/groups/${address}` },
+                  });
                 }}
               >
-                <div className="w-8 h-8 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-600 dark:text-purple-400">
-                  <BarChart size={16} />
+                <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
+                  <Users size={16} />
                 </div>
-                <span className="font-medium">Chat Info</span>
+                <span className="font-medium">Group Info</span>
               </button>
               <button
                 className="flex items-center gap-3 w-full p-3 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 rounded-b-lg transition-colors text-left border-t border-gray-100 dark:border-gray-700"
@@ -644,8 +631,8 @@ function ChatPage() {
         className={`flex-1 overflow-y-auto flex flex-col p-2 sm:p-4 relative transition-colors
           ${chatBackground === 'diagonal' ? 'bg-gray-50 dark:bg-gray-900' :
             chatBackground === 'default' ? 'bg-gray-50 dark:bg-gray-900' :
-              'bg-gray-50 dark:bg-gray-900' /* Base for patterns */
-          }`}
+              'bg-gray-50 dark:bg-gray-900' /* Base for patterns */}
+        `}
       >
         {/* Pattern Overlays - Fixed positioning ensures they cover full screen even with scroll */}
         {chatBackground === 'dots' && (
@@ -692,7 +679,7 @@ function ChatPage() {
                     </p>
                     <p className="text-sm text-gray-600 dark:text-gray-300">
                       {msg.tokenAmount
-                        ? `${msg.tokenAmount.amount} ${msg.tokenAmount.tokenName}`
+                        ? `${msg.tokenAmount.amount} ${msg.tokenAmount.tokenName} `
                         : `${msg.amount} MINIMA`}
                       {' · '}
                       <span className="text-primary-600 dark:text-primary-400 font-medium">Waiting for confirmation...</span>
@@ -719,7 +706,7 @@ function ChatPage() {
           const showDate = currentDate !== prevDate;
 
           return (
-            <div key={`${msg.timestamp} -${msg.text || 'no-text'} -${i} `} className="flex flex-col w-full z-0 relative">
+            <div key={`${msg.timestamp}-${msg.text || 'no-text'}-${i}`} className="flex flex-col w-full z-0 relative">
               {showDate && msg.timestamp && (
                 <div className="flex justify-center my-3 sticky top-2 z-10">
                   <span className="text-xs text-gray-600 dark:text-gray-300 font-medium bg-[#E1F3FB] dark:bg-gray-800 border border-white/50 dark:border-gray-700 px-3 py-1.5 rounded-lg shadow-sm uppercase tracking-wide backdrop-blur-sm">
@@ -734,20 +721,18 @@ function ChatPage() {
                   </span>
                 </div>
               ) : (
-                <div className={`flex ${msg.fromMe ? 'justify-end' : 'justify-start'} mb-2`}>
-                  <MessageBubble
-                    fromMe={msg.fromMe}
-                    text={msg.text}
-                    charm={msg.charm}
-                    amount={msg.amount}
-                    timestamp={msg.timestamp}
-                    status={msg.status}
-                    tokenAmount={msg.tokenAmount}
-                    senderName={!msg.fromMe && msg.senderPublicKey ? (contactsMap[msg.senderPublicKey]?.name || msg.senderUsername || msg.senderPublicKey.substring(0, 6)) : undefined}
-                    senderImage={!msg.fromMe && msg.senderPublicKey ? contactsMap[msg.senderPublicKey]?.icon : undefined}
-                    onAvatarClick={!msg.fromMe && msg.senderPublicKey ? () => navigate({ to: `/contact-info/${msg.senderPublicKey}`, search: { returnTo: `/groups/${address}` } }) : undefined}
-                  />
-                </div>
+                <MessageBubble
+                  fromMe={msg.fromMe}
+                  text={msg.text}
+                  charm={msg.charm}
+                  amount={msg.amount}
+                  timestamp={msg.timestamp}
+                  status={msg.status}
+                  tokenAmount={msg.tokenAmount}
+                  senderName={msg.fromMe ? (userName || "You") : (msg.senderPublicKey ? (contactsMap[msg.senderPublicKey]?.name || msg.senderUsername || msg.senderPublicKey.substring(0, 6)) : (msg.senderUsername || "Unknown"))}
+                  senderImage={msg.fromMe ? userAvatar : (msg.senderPublicKey ? contactsMap[msg.senderPublicKey]?.icon : undefined)}
+                  onAvatarClick={!msg.fromMe && msg.senderPublicKey ? () => navigate({ to: `/contact-info/${msg.senderPublicKey}`, search: { returnTo: `/groups/${address}` } }) : undefined}
+                />
               )}
             </div>
           );
@@ -826,10 +811,7 @@ function ChatPage() {
 
         <button
           className={`p-2 rounded-full transition-all duration-200 shadow-sm
-            ${input.trim()
-              ? 'bg-primary-600 text-white hover:bg-primary-700 transform hover:scale-105'
-              : 'bg-gray-200 text-gray-400 cursor-default'
-            }`}
+            ${input.trim() ? 'bg-primary-600 text-white hover:bg-primary-700 transform hover:scale-105' : 'bg-gray-200 text-gray-400 cursor-default'}`}
           onClick={handleSendMessage}
           disabled={!input.trim()}
         >

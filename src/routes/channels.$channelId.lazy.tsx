@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, useContext, useCallback, lazy, Suspense } from "react";
 import { useNavigate, createLazyFileRoute } from "@tanstack/react-router";
 import { appContext } from "../AppContext";
-import { Radio, Info, Trash2 } from "lucide-react";
+import { Radio, Settings, Info, Trash2 } from "lucide-react";
 import { channelService } from "../services/channel.service";
 import { useTheme } from "../context/ThemeContext";
 import { EmojiClickData } from "emoji-picker-react";
@@ -54,7 +54,7 @@ function ChannelPage() {
         const parsed: ParsedMessage[] = msgs.map((m: any) => ({
             id: m.ID || m.id,
             text: m.MESSAGE || m.message || "",
-            fromMe: (m.SENDER_PUBLICKEY || m.sender_publickey) === myPublicKey,
+            fromMe: (m.SENDER_PUBLICKEY || m.sender_publickey || "").toLowerCase() === (myPublicKey || "").toLowerCase(),
             timestamp: Number(m.DATE || m.date || 0),
             senderPublicKey: m.SENDER_PUBLICKEY || m.sender_publickey,
             senderUsername: m.SENDER_USERNAME || m.sender_username,
@@ -63,30 +63,30 @@ function ChannelPage() {
         setMessages(parsed);
     }, [channelId, myPublicKey]);
 
+    const init = useCallback(async () => {
+        const info = await channelService.getChannelInfo(channelId);
+        if (info) {
+            setChannelName((info as any).NAME || (info as any).name || "Channel");
+        }
+        const admin = await channelService.isAdmin(channelId, myPublicKey);
+        setIsAdmin(admin);
+        const subs = await channelService.getChannelSubscribers(channelId);
+        setSubscriberCount(subs.length);
+        await loadMessages();
+        await channelService.markChannelMessagesAsRead(channelId);
+    }, [channelId, myPublicKey, loadMessages]);
+
     useEffect(() => {
         if (!channelId || !myPublicKey) return;
-
-        const init = async () => {
-            const info = await channelService.getChannelInfo(channelId);
-            if (info) {
-                setChannelName((info as any).NAME || (info as any).name || "Channel");
-            }
-            const admin = await channelService.isAdmin(channelId, myPublicKey);
-            setIsAdmin(admin);
-            const subs = await channelService.getChannelSubscribers(channelId);
-            setSubscriberCount(subs.length);
-            await loadMessages();
-            await channelService.markChannelMessagesAsRead(channelId);
-        };
 
         init();
         isInitialLoad.current = true;
 
         const interval = setInterval(loadMessages, 10000);
         return () => clearInterval(interval);
-    }, [channelId, myPublicKey, loadMessages]);
+    }, [channelId, myPublicKey, init, loadMessages]);
 
-    // Listen for real-time SW events
+    // Listen for real-time SW events & Role Updates
     useEffect(() => {
         const handleSwEvent = (event: MessageEvent) => {
             try {
@@ -99,9 +99,20 @@ function ChannelPage() {
                 }
             } catch { }
         };
+
+        const handleUpdate = () => {
+            console.log("📢 [CHANNEL-CHAT] refreshing info...");
+            init();
+        };
+
         navigator.serviceWorker?.addEventListener("message", handleSwEvent);
-        return () => navigator.serviceWorker?.removeEventListener("message", handleSwEvent);
-    }, [channelId, loadMessages]);
+        window.addEventListener("CHANNEL_UPDATE", handleUpdate);
+
+        return () => {
+            navigator.serviceWorker?.removeEventListener("message", handleSwEvent);
+            window.removeEventListener("CHANNEL_UPDATE", handleUpdate);
+        };
+    }, [channelId, loadMessages, init]);
 
     // -------------------------------------------------------------------------
     // Scroll
@@ -194,9 +205,9 @@ function ChannelPage() {
     const isReadOnly = !isAdmin;
 
     return (
-        <div className="h-full flex flex-col bg-[#E5DDD5] dark:bg-gray-900 transition-colors">
+        <div className="flex-1 w-full flex flex-col bg-[#E5DDD5] dark:bg-gray-900 min-h-0">
             {/* HEADER */}
-            <div className="bg-primary-600 dark:bg-gray-900 text-white p-4 pt-[calc(1rem+env(safe-area-inset-top))] px-4 flex items-center gap-3 flex-shrink-0 shadow-sm z-10 dark:border-b dark:border-gray-800">
+            <div className="bg-primary-600 dark:bg-gray-800 text-white p-4 pt-[calc(1rem+env(safe-area-inset-top))] px-4 flex items-center gap-3 flex-shrink-0 shadow-sm z-30 transition-colors border-b border-primary-700 dark:border-gray-700">
                 <button
                     onClick={() => navigate({ to: "/" })}
                     className="p-2 hover:bg-white/10 rounded-full transition-colors"
@@ -236,6 +247,18 @@ function ChannelPage() {
                                     navigate({ to: "/channel-info/$channelId", params: { channelId } });
                                 }}
                             >
+                                <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+                                    <Settings size={16} />
+                                </div>
+                                <span className="font-medium">Actions</span>
+                            </button>
+                            <button
+                                className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
+                                onClick={() => {
+                                    setShowMenu(false);
+                                    navigate({ to: "/channel-info/$channelId", params: { channelId } });
+                                }}
+                            >
                                 <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
                                     <Info size={16} />
                                 </div>
@@ -248,7 +271,7 @@ function ChannelPage() {
                                 <div className="w-8 h-8 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center text-red-600 dark:text-red-400">
                                     <Trash2 size={16} />
                                 </div>
-                                <span className="font-medium">{isAdmin ? "Delete Channel" : "Leave Channel"}</span>
+                                <span className="font-medium">Exit Channel</span>
                             </button>
                         </div>
                     )}
@@ -268,7 +291,7 @@ function ChannelPage() {
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
                     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-sm w-full p-6 animate-in zoom-in-95 fade-in duration-200">
                         <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">
-                            {isAdmin ? "Delete Channel?" : "Leave Channel?"}
+                            Exit Channel?
                         </h3>
                         <p className="text-gray-600 dark:text-gray-300 mb-6">
                             {isAdmin
@@ -286,7 +309,7 @@ function ChannelPage() {
                                 onClick={() => { setShowDeleteConfirm(false); handleDelete(); }}
                                 className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
                             >
-                                {isAdmin ? "Delete" : "Leave"}
+                                Exit
                             </button>
                         </div>
                     </div>
@@ -328,7 +351,7 @@ function ChannelPage() {
                     const showDate = currentDate !== prevDate;
 
                     return (
-                        <div key={`${msg.timestamp}-${i}`} className="flex flex-col w-full z-0 relative">
+                        <div key={`${msg.timestamp} -${i} `} className="flex flex-col w-full z-0 relative">
                             {showDate && msg.timestamp > 0 && (
                                 <div className="flex justify-center my-3 sticky top-2 z-10">
                                     <span className="text-xs text-gray-600 dark:text-gray-300 font-medium bg-[#E1F3FB] dark:bg-gray-800 border border-white/50 dark:border-gray-700 px-3 py-1.5 rounded-lg shadow-sm uppercase tracking-wide backdrop-blur-sm">

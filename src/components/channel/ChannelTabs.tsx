@@ -1,16 +1,16 @@
 import { Users, SlidersHorizontal } from 'lucide-react';
 
-export type GroupTab = 'profile' | 'settings';
+export type ChannelTab = 'profile' | 'settings';
 
-interface GroupTabsProps {
-    activeTab: GroupTab;
-    onTabChange: (tab: GroupTab) => void;
+interface ChannelTabsProps {
+    activeTab: ChannelTab;
+    onTabChange: (tab: ChannelTab) => void;
 }
 
-export function GroupTabs({ activeTab, onTabChange }: GroupTabsProps) {
+export function ChannelTabs({ activeTab, onTabChange }: ChannelTabsProps) {
     const tabs = [
-        { id: 'profile' as GroupTab, label: 'Info', icon: Users },
-        { id: 'settings' as GroupTab, label: 'Actions', icon: SlidersHorizontal },
+        { id: 'profile' as ChannelTab, label: 'Info', icon: Users },
+        { id: 'settings' as ChannelTab, label: 'Actions', icon: SlidersHorizontal },
     ];
 
     return (

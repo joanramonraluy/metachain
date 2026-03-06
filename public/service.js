@@ -2394,6 +2394,55 @@ function handleChannelSubscriberRemoved(pubkey, maxjson) {
     });
 }
 
+// ---------------------------------------------------------------------------
+// channel_role_update
+// ---------------------------------------------------------------------------
+
+function handleChannelRoleUpdate(pubkey, maxjson) {
+    MDS.log("📢 [CHANNEL] handleChannelRoleUpdate from " + pubkey.substring(0, 10));
+
+    var channelId = maxjson.channelId;
+    var targetPubkey = (maxjson.targetPubkey || "").replace(/'/g, "''");
+    var newRole = (maxjson.newRole || "subscriber").replace(/'/g, "''");
+
+    if (!channelId || !targetPubkey) {
+        MDS.log("❌ [CHANNEL-ROLE] Missing required fields (channelId or targetPubkey)");
+        return;
+    }
+
+    // 1. Check if sender is admin of this channel
+    var checkSenderSql = "SELECT role FROM CHANNEL_SUBSCRIBERS WHERE channel_id='" + channelId + "' AND publickey='" + pubkey + "'";
+    MDS.sql(checkSenderSql, function (resSender) {
+        if (!resSender.status || !resSender.rows || resSender.rows.length === 0) {
+            MDS.log("❌ [CHANNEL-ROLE] Unauthorized. Sender not in channel.");
+            return;
+        }
+
+        var senderRole = (resSender.rows[0].ROLE || resSender.rows[0].role || "").toLowerCase();
+        if (senderRole !== 'admin') {
+            MDS.log("❌ [CHANNEL-ROLE] Unauthorized. Sender role is: " + senderRole);
+            return;
+        }
+
+        // 2. Perform the update
+        var updateSql = "UPDATE CHANNEL_SUBSCRIBERS SET role='" + newRole + "' WHERE channel_id='" + channelId + "' AND publickey='" + targetPubkey + "'";
+        channelRunSQL(updateSql, function (updateRes) {
+            if (updateRes.status) {
+                MDS.log("✅ [DB] Channel Role for " + targetPubkey.substring(0, 10) + " updated to " + newRole);
+
+                // Notify frontend
+                MDS.comms.solo(JSON.stringify({
+                    type: "CHANNEL_UPDATE",
+                    channelId: channelId
+                }));
+            } else {
+                MDS.log("❌ [DB] Role update error: " + updateRes.error);
+            }
+        });
+    });
+}
+
+
 /**
  * MetaChain Service Worker - Chat Message Handler
  * Handles chat messages, read receipts, pings, pongs
@@ -4580,6 +4629,12 @@ MDS.init(function (msg) {
           handleChannelSubscriberRemoved(pubkey, maxjson);
           return;
         }
+
+        if (app === "metachain-channel" && maxjson.messageType === "channel_role_update") {
+          handleChannelRoleUpdate(pubkey, maxjson);
+          return;
+        }
+
 
         // ================== CHAT MESSAGES ==================
         if (maxjson.type === "read") {

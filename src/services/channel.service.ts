@@ -40,7 +40,9 @@ export interface ChannelMaximaMessage {
     | "channel_invite"
     | "channel_message"
     | "channel_subscriber_added"
-    | "channel_subscriber_removed";
+    | "channel_subscriber_removed"
+    | "channel_role_update"
+    | "channel_info_updated";
     channelId: string;
     channelName: string;
     adminPublickey: string;
@@ -64,6 +66,14 @@ export interface ChannelMaximaMessage {
     // channel_subscriber_added / removed
     subscriberPublickey?: string;
     subscriberUsername?: string;
+
+    // channel_role_update
+    targetPubkey?: string;
+    newRole?: "admin" | "subscriber";
+
+    // channel_info_updated
+    newName?: string;
+    newDescription?: string;
 }
 
 type ChannelUpdateCallback = () => void;
@@ -104,6 +114,9 @@ class ChannelService {
 
     private notifyChannelUpdate() {
         this.channelUpdateCallbacks.forEach(cb => cb());
+        if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("CHANNEL_UPDATE", { detail: { type: "channel_update" } }));
+        }
     }
 
     onChannelUpdate(cb: ChannelUpdateCallback): () => void {
@@ -198,7 +211,7 @@ class ChannelService {
 
     async getChannelInfo(channelId: string): Promise<Channel | null> {
         try {
-            const res = await this.runSQL(`SELECT * FROM CHANNELS WHERE channel_id = '${channelId}'`);
+            const res = await this.runSQL(`SELECT * FROM CHANNELS WHERE UPPER(channel_id) = UPPER('${channelId}')`);
             return res.rows?.length > 0 ? res.rows[0] : null;
         } catch {
             return null;
@@ -235,7 +248,7 @@ class ChannelService {
                 SELECT cs.*, COALESCE(d.alias, cs.username) as resolved_name
                 FROM CHANNEL_SUBSCRIBERS cs
                 LEFT JOIN DISCOVERED_PEERS d ON UPPER(cs.publickey) = UPPER(d.publickey)
-                WHERE cs.channel_id = '${channelId}'
+                WHERE UPPER(cs.channel_id) = UPPER('${channelId}')
                 ORDER BY cs.joined_date ASC
             `);
             return res.rows || [];
@@ -443,6 +456,12 @@ class ChannelService {
                 case "channel_message":
                     await this.handleChannelChatMessage(message, fromPublicKey);
                     break;
+                case "channel_role_update":
+                    await this.handleChannelRoleUpdate(message);
+                    break;
+                case "channel_info_updated":
+                    await this.handleChannelInfoUpdate(message);
+                    break;
                 default:
                     console.warn("⚠️ [CHANNEL-MSG] Unknown type:", message.messageType);
             }
@@ -492,6 +511,93 @@ class ChannelService {
         `;
         await this.runSQL(insertSql);
         console.log("✅ [CHANNEL-MSG] Saved message for channel:", message.channelId);
+    }
+
+    async updateSubscriberRole(channelId: string, subscriberPubkey: string, newRole: "admin" | "subscriber", myPublicKey: string): Promise<void> {
+        try {
+            // Optimistic update locally
+            const sql = `UPDATE CHANNEL_SUBSCRIBERS SET role = '${newRole}' WHERE channel_id = '${channelId}' AND publickey = '${subscriberPubkey}'`;
+            await this.runSQL(sql);
+
+            // Construct payload
+            const payload: ChannelMaximaMessage = {
+                messageType: "channel_role_update",
+                channelId: channelId,
+                channelName: "",
+                adminPublickey: myPublicKey,
+                adminUsername: "",
+                targetPubkey: subscriberPubkey,
+                newRole: newRole,
+                timestamp: Date.now()
+            } as any;
+
+            // Broadcast to all subscribers
+            const subs = await this.getChannelSubscribers(channelId);
+            for (const sub of subs) {
+                const pk = (sub as any).PUBLICKEY || sub.publickey;
+                if (!pk || pk === myPublicKey) continue;
+                await this.sendMaximaMessage(pk, payload).catch(e => console.error("❌ [CHANNEL-ROLE] Broadcast failed to", pk, e));
+            }
+
+            console.log(`✅ [CHANNEL-ROLE] Roles updated for ${subscriberPubkey} to ${newRole}`);
+            this.notifyChannelUpdate();
+        } catch (err) {
+            console.error("❌ [CHANNEL-ROLE] Update failed:", err);
+            throw err;
+        }
+    }
+
+    private async handleChannelRoleUpdate(message: ChannelMaximaMessage): Promise<void> {
+        const sql = `UPDATE CHANNEL_SUBSCRIBERS SET role = '${message.newRole}' WHERE channel_id = '${message.channelId}' AND publickey = '${message.targetPubkey}'`;
+        await this.runSQL(sql);
+        console.log(`✅ [CHANNEL-ROLE] Real-time role update for ${message.targetPubkey} to ${message.newRole}`);
+    }
+
+    async updateChannelDetails(channelId: string, newName: string | null, newDescription: string | null, myPublicKey: string): Promise<void> {
+        try {
+            // Update local DB
+            if (newName) {
+                await this.runSQL(`UPDATE CHANNELS SET name = '${newName.replace(/'/g, "''")}' WHERE channel_id = '${channelId}'`);
+            }
+            if (newDescription !== null) {
+                await this.runSQL(`UPDATE CHANNELS SET description = '${newDescription.replace(/'/g, "''")}' WHERE channel_id = '${channelId}'`);
+            }
+
+            // Broadcast change
+            const payload: ChannelMaximaMessage = {
+                messageType: "channel_info_updated",
+                channelId,
+                channelName: newName || "",
+                adminPublickey: myPublicKey,
+                adminUsername: "",
+                timestamp: Date.now(),
+                newName: newName || undefined,
+                newDescription: newDescription !== null ? newDescription : undefined
+            };
+
+            const subs = await this.getChannelSubscribers(channelId);
+            for (const sub of subs) {
+                const pk = (sub as any).PUBLICKEY || sub.publickey;
+                if (pk && pk !== myPublicKey) {
+                    await this.sendMaximaMessage(pk, payload).catch(() => { });
+                }
+            }
+
+            this.notifyChannelUpdate();
+        } catch (err) {
+            console.error("❌ [CHANNEL] updateDetails failed:", err);
+            throw err;
+        }
+    }
+
+    private async handleChannelInfoUpdate(message: ChannelMaximaMessage): Promise<void> {
+        if (message.newName) {
+            await this.runSQL(`UPDATE CHANNELS SET name = '${message.newName.replace(/'/g, "''")}' WHERE channel_id = '${message.channelId}'`);
+        }
+        if (message.newDescription !== undefined) {
+            await this.runSQL(`UPDATE CHANNELS SET description = '${message.newDescription.replace(/'/g, "''")}' WHERE channel_id = '${message.channelId}'`);
+        }
+        console.log(`✅ [CHANNEL-UPDATE] Real-time info update for ${message.channelId}`);
     }
 }
 

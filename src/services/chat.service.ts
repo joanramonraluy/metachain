@@ -348,9 +348,7 @@ class ChatService {
     });
   }
 
-  getChatStatus(
-    publickey: string,
-  ): Promise<{
+  getChatStatus(publickey: string): Promise<{
     archived: boolean;
     lastOpened: number | null;
     favorite: boolean;
@@ -560,7 +558,8 @@ class ChatService {
                     COALESCE(d.alias, u.alias) AS discovery_alias,
                     d.avatar AS discovery_avatar,
                     d.address AS discovery_address,
-                    COALESCE(unread.unread_count, 0) AS unread_count
+                    COALESCE(unread.unread_count, 0) AS unread_count,
+                    COALESCE(last_incoming.last_received_date, 0) AS last_received_date
                 FROM (
                     SELECT m.*
                     FROM CHAT_MESSAGES m
@@ -588,6 +587,14 @@ class ChatService {
                     LEFT JOIN CHAT_STATUS s2 ON UPPER(cm.publickey) = UPPER(s2.publickey)
                     GROUP BY cm.publickey
                 ) unread ON UPPER(latest.publickey) = UPPER(unread.publickey)
+                LEFT JOIN (
+                    SELECT
+                        publickey,
+                        MAX(COALESCE(original_timestamp, date)) AS last_received_date
+                    FROM CHAT_MESSAGES
+                    WHERE username <> 'Me'
+                    GROUP BY publickey
+                ) last_incoming ON UPPER(latest.publickey) = UPPER(last_incoming.publickey)
                 ORDER BY COALESCE(latest.original_timestamp, latest.date) DESC, latest.sender_seq DESC, latest.id DESC
             `;
 
@@ -641,6 +648,7 @@ class ChatService {
               lastOpened: row.LAST_OPENED ? Number(row.LAST_OPENED) : null,
               favorite,
               unreadCount: Number(row.UNREAD_COUNT || 0),
+              lastReceivedDate: Number(row.LAST_RECEIVED_DATE || 0),
             };
           })
           .sort((a, b) => {
@@ -650,7 +658,9 @@ class ChatService {
             if (!a.archived && !b.archived && a.favorite !== b.favorite) {
               return a.favorite ? -1 : 1;
             }
-            return b.lastMessageDate - a.lastMessageDate;
+            const aSortDate = a.lastReceivedDate || a.lastMessageDate;
+            const bSortDate = b.lastReceivedDate || b.lastMessageDate;
+            return bSortDate - aSortDate;
           });
 
         resolve(chats);
@@ -746,11 +756,22 @@ class ChatService {
 
       if (chat) {
         const messageDate = Number(row.DATE);
+        const messageSortDate =
+          row.ORIGINAL_TIMESTAMP && Number(row.ORIGINAL_TIMESTAMP) > 0
+            ? Number(row.ORIGINAL_TIMESTAMP)
+            : messageDate;
         const lastOpened = chat.lastOpened;
         const isFromMe = row.USERNAME === "Me";
 
         if (!isFromMe && (!lastOpened || messageDate > lastOpened)) {
           chat.unreadCount++;
+        }
+
+        if (!isFromMe) {
+          const currentLastReceived = chat.lastReceivedDate || 0;
+          if (messageSortDate > currentLastReceived) {
+            chat.lastReceivedDate = messageSortDate;
+          }
         }
       }
     });
@@ -763,7 +784,9 @@ class ChatService {
       if (!a.archived && !b.archived && a.favorite !== b.favorite) {
         return a.favorite ? -1 : 1;
       }
-      return b.lastMessageDate - a.lastMessageDate;
+      const aSortDate = a.lastReceivedDate || a.lastMessageDate;
+      const bSortDate = b.lastReceivedDate || b.lastMessageDate;
+      return bSortDate - aSortDate;
     });
 
     resolve(chats);
