@@ -1,6 +1,6 @@
 import { createLazyFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState, useContext, useCallback } from "react";
-import { ArrowLeft, Trash2, Users, Edit2, Check, X, ShieldOff, UserPlus, Search, Copy, ShieldCheck, ShieldAlert, UserX, Database, Info, MessageSquare, History } from "lucide-react";
+import { useEffect, useState, useContext, useCallback, useRef } from "react";
+import { ArrowLeft, Trash2, Users, Edit2, Check, X, ShieldOff, UserPlus, Search, Copy, ShieldCheck, ShieldAlert, UserX, Database, Info, MessageSquare, History, Camera } from "lucide-react";
 import { groupService } from "../services/group.service";
 import { chatService } from "../services/chat.service";
 import { appContext } from "../AppContext";
@@ -51,6 +51,9 @@ function GroupInfoPage() {
   const [isEditingDesc, setIsEditingDesc] = useState(false);
   const [newDesc, setNewDesc] = useState("");
   const [savingDesc, setSavingDesc] = useState(false);
+  const [avatar, setAvatar] = useState<string | null>(null);
+  const [savingAvatar, setSavingAvatar] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // New state for contextual menu Actions on a member
   const [activeMenuPubkey, setActiveMenuPubkey] = useState<string | null>(null);
@@ -81,6 +84,7 @@ function GroupInfoPage() {
       if (info) {
         setGroupName((info as any).NAME || (info as any).name || "Group");
         setDescription((info as any).DESCRIPTION || (info as any).description || "");
+        setAvatar((info as any).AVATAR || (info as any).avatar || null);
         const creator = (info as any).CREATOR_PUBLICKEY || (info as any).creator_publickey;
         setIsCreator((creator || "").toLowerCase() === (myPublicKey || "").toLowerCase());
       }
@@ -192,7 +196,7 @@ function GroupInfoPage() {
 
     setSavingName(true);
     try {
-      await groupService.updateGroupDetails(groupId, newName.trim(), null, myPublicKey || "");
+      await groupService.updateGroupDetails(groupId, newName.trim(), null, null, myPublicKey || "");
       setGroupName(newName.trim());
       setIsEditingName(false);
     } catch (err) {
@@ -212,7 +216,7 @@ function GroupInfoPage() {
 
     setSavingDesc(true);
     try {
-      await groupService.updateGroupDetails(groupId, null, newDesc.trim(), myPublicKey || "");
+      await groupService.updateGroupDetails(groupId, null, newDesc.trim(), null, myPublicKey || "");
       setDescription(newDesc.trim());
       setIsEditingDesc(false);
     } catch (err) {
@@ -220,6 +224,33 @@ function GroupInfoPage() {
       setNewDesc(description); // revert on fail
     } finally {
       setSavingDesc(false);
+    }
+  };
+
+  const handleAvatarFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const base64 = event.target?.result as string;
+      if (base64) {
+        handleSaveAvatar(base64);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSaveAvatar = async (base64: string) => {
+    setSavingAvatar(true);
+    try {
+      await groupService.updateGroupDetails(groupId, null, null, base64, myPublicKey || "");
+      setAvatar(base64);
+    } catch (err) {
+      console.error("Failed to update avatar:", err);
+      alert("Failed to update avatar");
+    } finally {
+      setSavingAvatar(false);
     }
   };
 
@@ -232,6 +263,9 @@ function GroupInfoPage() {
         }
         if (e.detail.description !== undefined) {
           setDescription(e.detail.description);
+        }
+        if (e.detail.avatar !== undefined) {
+          setAvatar(e.detail.avatar);
         }
         // If it's a role update or general refresh, re-fetch group details
         // to get the latest members list!
@@ -404,8 +438,36 @@ function GroupInfoPage() {
           <div className="space-y-6">
             {/* GROUP HEADER CARD */}
             <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col items-center relative">
-              <div className="w-24 h-24 bg-primary-500 rounded-full flex items-center justify-center text-white text-4xl font-bold mb-4 shadow-lg shadow-primary-500/30">
-                {groupName.charAt(0).toUpperCase()}
+              <input
+                type="file"
+                ref={fileInputRef}
+                className="hidden"
+                accept="image/*"
+                onChange={handleAvatarFileSelect}
+              />
+
+              <div className="relative group/avatar mb-4">
+                <div className={`w-24 h-24 rounded-full flex items-center justify-center text-white text-4xl font-bold shadow-lg overflow-hidden ${!avatar ? 'bg-primary-500 shadow-primary-500/30' : 'bg-gray-200 dark:bg-gray-700'}`}>
+                  {avatar ? (
+                    <img src={avatar} alt={groupName} className="w-full h-full object-cover" />
+                  ) : (
+                    groupName.charAt(0).toUpperCase()
+                  )}
+                </div>
+
+                {(isCreator || myRole === 'admin') && (
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={savingAvatar}
+                    className="absolute inset-0 flex items-center justify-center bg-black/40 text-white rounded-full opacity-0 group-hover/avatar:opacity-100 transition-opacity"
+                  >
+                    {savingAvatar ? (
+                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
+                    ) : (
+                      <Camera size={24} />
+                    )}
+                  </button>
+                )}
               </div>
 
               {isEditingName ? (

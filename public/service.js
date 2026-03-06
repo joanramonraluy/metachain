@@ -919,7 +919,9 @@ function initDatabase() {
       "  creator_publickey VARCHAR(512) NOT NULL, " +
       "  created_date BIGINT NOT NULL, " +
       "  avatar TEXT, " +
-      "  description TEXT " +
+      "  description TEXT, " +
+      "  archived BOOLEAN DEFAULT FALSE, " +
+      "  archived_date BIGINT " +
       " )";
 
     return runSQL(groupsSql).then(function (res) {
@@ -928,6 +930,10 @@ function initDatabase() {
           ? "📂 [DB] GROUPS checked/init"
           : "❌ [DB] GROUPS init failed: " + res.error,
       );
+      return Promise.all([
+        runSQL("ALTER TABLE GROUPS ADD COLUMN archived BOOLEAN DEFAULT FALSE"),
+        runSQL("ALTER TABLE GROUPS ADD COLUMN archived_date BIGINT")
+      ]);
     });
   });
 
@@ -976,7 +982,7 @@ function initDatabase() {
       );
 
       return runSQL(
-        "ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS propagated INTEGER DEFAULT 0",
+        "ALTER TABLE GROUP_MESSAGES ADD COLUMN propagated INTEGER DEFAULT 0",
       );
     });
   });
@@ -1001,7 +1007,7 @@ function initDatabase() {
       );
 
       return runSQL(
-        "ALTER TABLE GROUP_BANS ADD COLUMN IF NOT EXISTS username VARCHAR(255) DEFAULT 'Unknown'",
+        "ALTER TABLE GROUP_BANS ADD COLUMN username VARCHAR(255) DEFAULT 'Unknown'",
       );
     });
   });
@@ -1060,24 +1066,24 @@ function initDatabase() {
     return runSQL(sql).then(function () {
       runSQL("INSERT IGNORE INTO MY_PROFILE (id) VALUES (1)");
       return Promise.all([
-        runSQL("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS phone TEXT"),
-        runSQL("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS email TEXT"),
-        runSQL("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS website TEXT"),
-        runSQL("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS country TEXT"),
+        runSQL("ALTER TABLE MY_PROFILE ADD COLUMN phone TEXT"),
+        runSQL("ALTER TABLE MY_PROFILE ADD COLUMN email TEXT"),
+        runSQL("ALTER TABLE MY_PROFILE ADD COLUMN website TEXT"),
+        runSQL("ALTER TABLE MY_PROFILE ADD COLUMN country TEXT"),
         runSQL(
-          "ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS languages TEXT",
+          "ALTER TABLE MY_PROFILE ADD COLUMN languages TEXT",
         ),
         runSQL(
-          "ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS allow_non_contact_chats BOOLEAN DEFAULT TRUE",
+          "ALTER TABLE MY_PROFILE ADD COLUMN allow_non_contact_chats BOOLEAN DEFAULT TRUE",
         ),
         runSQL(
-          "ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS privacy_l2 VARCHAR(20) DEFAULT 'public'",
+          "ALTER TABLE MY_PROFILE ADD COLUMN privacy_l2 VARCHAR(20) DEFAULT 'public'",
         ),
         runSQL(
-          "ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS privacy_l3 VARCHAR(20) DEFAULT 'contacts'",
+          "ALTER TABLE MY_PROFILE ADD COLUMN privacy_l3 VARCHAR(20) DEFAULT 'contacts'",
         ),
         runSQL(
-          "ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS minimaaddress TEXT",
+          "ALTER TABLE MY_PROFILE ADD COLUMN minimaaddress TEXT",
         ),
       ]);
     });
@@ -1103,7 +1109,7 @@ function initDatabase() {
           : "❌ [DB] CONTACT_REQUESTS init failed",
       );
       return runSQL(
-        "ALTER TABLE CONTACT_REQUESTS ADD COLUMN IF NOT EXISTS from_address VARCHAR(1024)",
+        "ALTER TABLE CONTACT_REQUESTS ADD COLUMN from_address VARCHAR(1024)",
       );
     });
   });
@@ -1127,22 +1133,22 @@ function initDatabase() {
       );
       return Promise.all([
         runSQL(
-          "ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS bio VARCHAR(512)",
+          "ALTER TABLE DISCOVERED_PEERS ADD COLUMN bio VARCHAR(512)",
         ),
         runSQL(
-          "ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS allow_non_contact_chats BOOLEAN DEFAULT TRUE",
+          "ALTER TABLE DISCOVERED_PEERS ADD COLUMN allow_non_contact_chats BOOLEAN DEFAULT TRUE",
         ),
         runSQL(
-          "ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS extra_data CLOB",
+          "ALTER TABLE DISCOVERED_PEERS ADD COLUMN extra_data CLOB",
         ),
         runSQL(
-          "ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS avatar TEXT",
+          "ALTER TABLE DISCOVERED_PEERS ADD COLUMN avatar TEXT",
         ),
         runSQL(
-          "ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS minimaaddress VARCHAR(512)",
+          "ALTER TABLE DISCOVERED_PEERS ADD COLUMN minimaaddress VARCHAR(512)",
         ),
         runSQL(
-          "ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS source VARCHAR(20) DEFAULT 'P2P'",
+          "ALTER TABLE DISCOVERED_PEERS ADD COLUMN source VARCHAR(20) DEFAULT 'P2P'",
         ),
       ]);
     });
@@ -1190,10 +1196,10 @@ function initDatabase() {
       return Promise.all([
         // Schema parity with Frontend variant
         runSQL(
-          "ALTER TABLE METACHAIN_USERS ADD COLUMN IF NOT EXISTS avatar TEXT",
+          "ALTER TABLE METACHAIN_USERS ADD COLUMN avatar TEXT",
         ),
         runSQL(
-          "ALTER TABLE METACHAIN_USERS ADD COLUMN IF NOT EXISTS last_seen BIGINT",
+          "ALTER TABLE METACHAIN_USERS ADD COLUMN last_seen BIGINT",
         ),
       ]);
     });
@@ -1208,7 +1214,9 @@ function initDatabase() {
       "  description TEXT, " +
       "  admin_publickey VARCHAR(512) NOT NULL, " +
       "  created_date BIGINT NOT NULL, " +
-      "  avatar TEXT " +
+      "  avatar TEXT, " +
+      "  archived BOOLEAN DEFAULT FALSE, " +
+      "  archived_date BIGINT " +
       " )";
     return runSQL(channelsSql).then(function (res) {
       MDS.log(
@@ -1216,6 +1224,10 @@ function initDatabase() {
           ? "📢 [DB] CHANNELS checked/init"
           : "❌ [DB] CHANNELS init failed: " + res.error,
       );
+      return Promise.all([
+        runSQL("ALTER TABLE CHANNELS ADD COLUMN archived BOOLEAN DEFAULT FALSE"),
+        runSQL("ALTER TABLE CHANNELS ADD COLUMN archived_date BIGINT")
+      ]);
     });
   });
 
@@ -1801,6 +1813,7 @@ function handleGroupUpdateDetails(pubkey, maxjson) {
     var safeGroupId = escapeSql(maxjson.groupId || "");
     var safeNewName = maxjson.newName ? escapeSql(maxjson.newName) : null;
     var safeNewDescription = maxjson.newDescription !== undefined && maxjson.newDescription !== null ? escapeSql(maxjson.newDescription) : null;
+    var safeAvatar = maxjson.avatar ? escapeSql(maxjson.avatar) : null;
 
     // Security Check: Sender must be creator OR admin
     var checkSql = "SELECT role FROM GROUP_MEMBERS WHERE group_id='" + safeGroupId + "' AND publickey='" + pubkey + "'";
@@ -1821,6 +1834,7 @@ function handleGroupUpdateDetails(pubkey, maxjson) {
         var updates = [];
         if (safeNewName !== null) updates.push("name='" + safeNewName + "'");
         if (safeNewDescription !== null) updates.push("description='" + safeNewDescription + "'");
+        if (safeAvatar !== null) updates.push("avatar='" + safeAvatar + "'");
 
         if (updates.length === 0) return;
 
@@ -1837,6 +1851,7 @@ function handleGroupUpdateDetails(pubkey, maxjson) {
                 };
                 if (maxjson.newName !== undefined) soloMsg.name = maxjson.newName;
                 if (maxjson.newDescription !== undefined) soloMsg.description = maxjson.newDescription;
+                if (maxjson.avatar !== undefined) soloMsg.avatar = maxjson.avatar;
 
                 var msgStr = typeof soloMsg === "string" ? soloMsg : JSON.stringify(soloMsg);
                 MDS.comms.solo(msgStr);

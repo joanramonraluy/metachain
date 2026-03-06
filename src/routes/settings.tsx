@@ -1,18 +1,23 @@
-import { createFileRoute, Outlet, useLocation, Link } from '@tanstack/react-router'
-import { SettingsTabs } from '../components/SettingsTabs'
-import { ArrowLeft } from 'lucide-react'
+import {
+  createFileRoute,
+  Outlet,
+  useLocation,
+  Link,
+} from "@tanstack/react-router";
+import { SettingsTabs } from "../components/SettingsTabs";
+import { ArrowLeft } from "lucide-react";
 
-export const Route = createFileRoute('/settings')({
+export const Route = createFileRoute("/settings")({
   component: RouteComponent,
-})
+});
 
 function RouteComponent() {
-  const location = useLocation()
-  const isSettingsRoot = location.pathname === '/settings' || location.pathname === '/settings/'
+  const location = useLocation();
+  const isSettingsRoot =
+    location.pathname === "/settings" || location.pathname === "/settings/";
 
   return (
-    <div className="flex flex-col h-full bg-gray-50 dark:bg-gray-900 transition-colors">
-
+    <div className="flex flex-col h-full bg-gray-50 dark:bg-gray-900 transition-colors overflow-x-hidden">
       {/* Mobile Back Button - Only show when NOT on root settings page */}
       {!isSettingsRoot && (
         <div className="md:hidden p-4 pb-0">
@@ -27,12 +32,14 @@ function RouteComponent() {
       )}
 
       <div className="flex-none p-4 md:p-8 pb-0 hidden md:block">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">Settings</h1>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
+          Settings
+        </h1>
         <SettingsTabs />
       </div>
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden min-w-0">
         <Outlet />
       </div>
     </div>
-  )
+  );
 }

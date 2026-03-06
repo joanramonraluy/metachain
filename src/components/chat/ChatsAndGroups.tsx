@@ -59,6 +59,7 @@ interface GroupWithUnread {
   lastMessage?: string;
   lastMessageType?: string;
   lastMessageUser?: string;
+  archived?: boolean;
 }
 
 interface ChannelWithUnread {
@@ -71,6 +72,8 @@ interface ChannelWithUnread {
   lastMessageDate?: number;
   lastMessage?: string;
   isAdmin?: boolean;
+  avatar?: string;
+  archived?: boolean;
 }
 
 export default function ChatsAndGroups() {
@@ -116,7 +119,7 @@ export default function ChatsAndGroups() {
         });
         return map;
       }
-    } catch (e) {}
+    } catch (e) { }
     return new Map();
   });
 
@@ -169,21 +172,33 @@ export default function ChatsAndGroups() {
     });
   };
 
-  const handleArchive = async (publickey: string, e: React.MouseEvent) => {
+  const handleArchive = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
     try {
-      await minimaService.archiveChat(publickey);
+      if (groups.some((g) => g.group_id === id)) {
+        await groupService.archiveGroup(id);
+      } else if (channels.some((c) => c.channel_id === id)) {
+        await channelService.archiveChannel(id);
+      } else {
+        await minimaService.archiveChat(id);
+      }
     } catch (err) {
       console.error("❌ Archive error:", err);
     }
   };
 
-  const handleUnarchive = async (publickey: string, e: React.MouseEvent) => {
+  const handleUnarchive = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
     try {
-      await minimaService.unarchiveChat(publickey);
+      if (groups.some((g) => g.group_id === id)) {
+        await groupService.unarchiveGroup(id);
+      } else if (channels.some((c) => c.channel_id === id)) {
+        await channelService.unarchiveChannel(id);
+      } else {
+        await minimaService.unarchiveChat(id);
+      }
     } catch (err) {
       console.error("❌ Unarchive error:", err);
     }
@@ -235,14 +250,22 @@ export default function ChatsAndGroups() {
       const groupsList = await groupService.getMyGroups(myPublicKey);
       const groupsWithUnread = await Promise.all(
         groupsList.map(async (group: any) => {
-          const messages = await groupService.getGroupMessages(group.GROUP_ID);
-          const unreadCount = messages.filter((m: any) => m.READ === 0).length;
+          const messages = await groupService.getGroupMessages(group.group_id);
+          const unreadCount = messages.filter(
+            (m: any) => m.READ === 0 || m.read === 0,
+          ).length;
           const lastMsg =
             messages.length > 0 ? (messages[messages.length - 1] as any) : null;
-          const lastMessageDate = lastMsg ? lastMsg.DATE : group.CREATED_DATE;
-          const lastMessage = lastMsg ? lastMsg.MESSAGE : "";
-          const lastMessageType = lastMsg ? lastMsg.TYPE : "text";
-          let lastMessageUser = lastMsg ? lastMsg.SENDER_USERNAME : "";
+          const lastMessageDate = lastMsg
+            ? Number(lastMsg.DATE || lastMsg.date || 0)
+            : group.created_date;
+          const lastMessage = lastMsg ? lastMsg.MESSAGE || lastMsg.message : "";
+          const lastMessageType = lastMsg
+            ? lastMsg.TYPE || lastMsg.type
+            : "text";
+          let lastMessageUser = lastMsg
+            ? lastMsg.SENDER_USERNAME || lastMsg.sender_username
+            : "";
 
           if (lastMsg && lastMsg.SENDER_PUBLICKEY === myPublicKey) {
             lastMessageUser = "You";
@@ -252,13 +275,7 @@ export default function ChatsAndGroups() {
           }
 
           return {
-            group_id: group.GROUP_ID,
-            name: group.NAME,
-            creator_publickey: group.CREATOR_PUBLICKEY,
-            my_role: group.MY_ROLE || group.my_role,
-            created_date: group.CREATED_DATE,
-            avatar: group.AVATAR,
-            description: group.DESCRIPTION,
+            ...group,
             unreadCount,
             lastMessageDate,
             lastMessage,
@@ -280,7 +297,7 @@ export default function ChatsAndGroups() {
       if (cached) {
         try {
           setGroups(JSON.parse(cached));
-        } catch (e) {}
+        } catch (e) { }
       }
     }
   };
@@ -291,28 +308,22 @@ export default function ChatsAndGroups() {
       const list = await channelService.getMyChannels(myPublicKey);
       const withUnread = await Promise.all(
         list.map(async (ch: any) => {
-          const msgs = await channelService.getChannelMessages(
-            ch.CHANNEL_ID || ch.channel_id,
-          );
+          const msgs = await channelService.getChannelMessages(ch.channel_id);
           const unreadCount = msgs.filter(
             (m: any) => m.READ === 0 || m.read === 0,
           ).length;
           const lastMsg =
             msgs.length > 0 ? (msgs[msgs.length - 1] as any) : null;
           const isAdm = await channelService.isAdmin(
-            ch.CHANNEL_ID || ch.channel_id,
+            ch.channel_id,
             myPublicKey,
           );
           return {
-            channel_id: ch.CHANNEL_ID || ch.channel_id,
-            name: ch.NAME || ch.name,
-            description: ch.DESCRIPTION || ch.description,
-            admin_publickey: ch.ADMIN_PUBLICKEY || ch.admin_publickey,
-            created_date: Number(ch.CREATED_DATE || ch.created_date || 0),
+            ...ch,
             unreadCount,
             lastMessageDate: lastMsg
               ? Number(lastMsg.DATE || lastMsg.date || 0)
-              : Number(ch.CREATED_DATE || ch.created_date || 0),
+              : Number(ch.created_date || 0),
             lastMessage: lastMsg
               ? lastMsg.MESSAGE || lastMsg.message || ""
               : "",
@@ -331,7 +342,7 @@ export default function ChatsAndGroups() {
       if (cached) {
         try {
           setChannels(JSON.parse(cached));
-        } catch (e) {}
+        } catch (e) { }
       }
     }
   };
@@ -512,8 +523,9 @@ export default function ChatsAndGroups() {
     );
   }
 
-  // Revert hide logic - User wants "Notes to Self"
   const activeChats = chats.filter((c) => !c.archived);
+  const activeGroups = groups.filter((g) => !g.archived);
+  const activeChannels = channels.filter((c) => !c.archived);
 
   // Helper function to check if a chat is from a contact
   const isContact = (publickey: string) => {
@@ -540,7 +552,10 @@ export default function ChatsAndGroups() {
   const favoriteChats = chats.filter((c) => c.favorite && !c.archived);
   const archivedChats = chats.filter((c) => c.archived);
   const favoriteGroups = groups.filter(() => false);
-  const archivedGroups: GroupWithUnread[] = [];
+  const archivedGroups: GroupWithUnread[] = groups.filter((g) => g.archived);
+  const archivedChannels: ChannelWithUnread[] = channels.filter(
+    (c) => c.archived,
+  );
 
   let displayedChats: ChatItem[] = [];
   let displayedGroups: GroupWithUnread[] = [];
@@ -549,8 +564,8 @@ export default function ChatsAndGroups() {
   switch (activeTab) {
     case "all":
       displayedChats = activeChats;
-      displayedGroups = groups;
-      displayedChannels = channels;
+      displayedGroups = activeGroups;
+      displayedChannels = activeChannels;
       break;
     case "individuals":
       displayedChats = individualChats;
@@ -559,13 +574,13 @@ export default function ChatsAndGroups() {
       break;
     case "groups":
       displayedChats = [];
-      displayedGroups = groups;
+      displayedGroups = activeGroups;
       displayedChannels = [];
       break;
     case "channels":
       displayedChats = [];
       displayedGroups = [];
-      displayedChannels = channels;
+      displayedChannels = activeChannels;
       break;
     case "requests":
       displayedChats = requestChats;
@@ -580,34 +595,34 @@ export default function ChatsAndGroups() {
     case "archived":
       displayedChats = archivedChats;
       displayedGroups = archivedGroups;
-      displayedChannels = [];
+      displayedChannels = archivedChannels;
       break;
   }
 
   const allTimelineItems =
     activeTab === "all"
       ? [
-          ...displayedChats.map((chat) => ({
-            kind: "chat" as const,
-            sortDate: Math.max(
-              Number(chat.lastReceivedDate || 0),
-              Number(chat.lastMessageDate || 0),
-            ),
-            chat,
-          })),
-          ...displayedGroups.map((group) => ({
-            kind: "group" as const,
-            sortDate: Number(group.lastMessageDate || group.created_date || 0),
-            group,
-          })),
-          ...displayedChannels.map((channel) => ({
-            kind: "channel" as const,
-            sortDate: Number(
-              channel.lastMessageDate || channel.created_date || 0,
-            ),
-            channel,
-          })),
-        ].sort((a, b) => b.sortDate - a.sortDate)
+        ...displayedChats.map((chat) => ({
+          kind: "chat" as const,
+          sortDate: Math.max(
+            Number(chat.lastReceivedDate || 0),
+            Number(chat.lastMessageDate || 0),
+          ),
+          chat,
+        })),
+        ...displayedGroups.map((group) => ({
+          kind: "group" as const,
+          sortDate: Number(group.lastMessageDate || group.created_date || 0),
+          group,
+        })),
+        ...displayedChannels.map((channel) => ({
+          kind: "channel" as const,
+          sortDate: Number(
+            channel.lastMessageDate || channel.created_date || 0,
+          ),
+          channel,
+        })),
+      ].sort((a, b) => b.sortDate - a.sortDate)
       : [];
 
   const defaultAvatar =
@@ -674,7 +689,8 @@ export default function ChatsAndGroups() {
   const channelsCount = channels.length;
   const requestsCount = requestChats.length;
   const favoritesCount = favoriteChats.length + favoriteGroups.length;
-  const archivedCount = archivedChats.length + archivedGroups.length;
+  const archivedCount =
+    archivedChats.length + archivedGroups.length + archivedChannels.length;
 
   return (
     <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-900 transition-colors">
@@ -687,18 +703,33 @@ export default function ChatsAndGroups() {
           <button
             className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 flex items-center gap-3 transition-colors touch-manipulation"
             onClick={(e) => {
-              handleToggleFavorite(contextMenu.publickey, e);
+              const isG = groups.some(
+                (g) => g.group_id === contextMenu.publickey,
+              );
+              const isC = channels.some(
+                (c) => c.channel_id === contextMenu.publickey,
+              );
+              if (!isG && !isC) {
+                handleToggleFavorite(contextMenu.publickey, e);
+              }
               setContextMenu(null);
             }}
           >
-            <div className="w-8 h-8 rounded-full bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center text-yellow-600 dark:text-yellow-400">
+            <div
+              className={`w-8 h-8 rounded-full bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center text-yellow-600 dark:text-yellow-400 ${groups.some((g) => g.group_id === contextMenu.publickey) || channels.some((c) => c.channel_id === contextMenu.publickey) ? "opacity-30" : ""}`}
+            >
               <Star
                 size={16}
                 fill={contextMenu.favorite ? "currentColor" : "none"}
               />
             </div>
             <span className="font-medium">
-              {contextMenu.favorite ? "Unfavorite Chat" : "Favorite Chat"}
+              {groups.some((g) => g.group_id === contextMenu.publickey) ||
+                channels.some((c) => c.channel_id === contextMenu.publickey)
+                ? "Favorites only for Chats"
+                : contextMenu.favorite
+                  ? "Unfavorite Chat"
+                  : "Favorite Chat"}
             </span>
           </button>
           <button
@@ -716,7 +747,7 @@ export default function ChatsAndGroups() {
               <Archive size={16} />
             </div>
             <span className="font-medium">
-              {contextMenu.archived ? "Unarchive Chat" : "Archive Chat"}
+              {contextMenu.archived ? "Unarchive" : "Archive"}
             </span>
           </button>
         </div>
@@ -727,35 +758,54 @@ export default function ChatsAndGroups() {
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
           <button
             onClick={() => setActiveTab("all")}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${
-              activeTab === "all"
-                ? "bg-primary-600 text-white shadow-md"
-                : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
-            }`}
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === "all"
+              ? "bg-primary-600 text-white shadow-md"
+              : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
+              }`}
           >
             <LayoutGrid size={16} className="flex-shrink-0" />
             <span className="hidden md:inline">All</span>{" "}
             {totalCount > 0 && `(${totalCount})`}
           </button>
           <button
+            onClick={() => setActiveTab("favorites")}
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === "favorites"
+              ? "bg-primary-600 text-white shadow-md"
+              : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
+              }`}
+          >
+            <Star size={16} className="flex-shrink-0" />
+            <span className="hidden md:inline">Favorites</span>{" "}
+            {favoritesCount > 0 && `(${favoritesCount})`}
+          </button>
+          <button
             onClick={() => setActiveTab("individuals")}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${
-              activeTab === "individuals"
-                ? "bg-primary-600 text-white shadow-md"
-                : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
-            }`}
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === "individuals"
+              ? "bg-primary-600 text-white shadow-md"
+              : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
+              }`}
           >
             <MessageCircle size={16} className="flex-shrink-0" />
-            <span className="hidden md:inline">Individuals</span>{" "}
+            <span className="hidden md:inline">Max-Contacts</span>{" "}
             {individualsCount > 0 && `(${individualsCount})`}
           </button>
           <button
+            onClick={() => setActiveTab("requests")}
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === "requests"
+              ? "bg-primary-600 text-white shadow-md"
+              : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
+              }`}
+          >
+            <Inbox size={16} className="flex-shrink-0" />
+            <span className="hidden md:inline">Other-Users</span>{" "}
+            {requestsCount > 0 && `(${requestsCount})`}
+          </button>
+          <button
             onClick={() => setActiveTab("groups")}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${
-              activeTab === "groups"
-                ? "bg-primary-600 text-white shadow-md"
-                : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
-            }`}
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === "groups"
+              ? "bg-primary-600 text-white shadow-md"
+              : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
+              }`}
           >
             <Users size={16} className="flex-shrink-0" />
             <span className="hidden md:inline">Groups</span>{" "}
@@ -763,47 +813,21 @@ export default function ChatsAndGroups() {
           </button>
           <button
             onClick={() => setActiveTab("channels")}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${
-              activeTab === "channels"
-                ? "bg-sky-600 text-white shadow-md"
-                : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
-            }`}
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === "channels"
+              ? "bg-sky-600 text-white shadow-md"
+              : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
+              }`}
           >
             <Radio size={16} className="flex-shrink-0" />
             <span className="hidden md:inline">Channels</span>{" "}
             {channelsCount > 0 && `(${channelsCount})`}
           </button>
           <button
-            onClick={() => setActiveTab("requests")}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${
-              activeTab === "requests"
-                ? "bg-primary-600 text-white shadow-md"
-                : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
-            }`}
-          >
-            <Inbox size={16} className="flex-shrink-0" />
-            <span className="hidden md:inline">Non-Contacts</span>{" "}
-            {requestsCount > 0 && `(${requestsCount})`}
-          </button>
-          <button
-            onClick={() => setActiveTab("favorites")}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${
-              activeTab === "favorites"
-                ? "bg-primary-600 text-white shadow-md"
-                : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
-            }`}
-          >
-            <Star size={16} className="flex-shrink-0" />
-            <span className="hidden md:inline">Favorites</span>{" "}
-            {favoritesCount > 0 && `(${favoritesCount})`}
-          </button>
-          <button
             onClick={() => setActiveTab("archived")}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${
-              activeTab === "archived"
-                ? "bg-primary-600 text-white shadow-md"
-                : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
-            }`}
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === "archived"
+              ? "bg-primary-600 text-white shadow-md"
+              : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
+              }`}
           >
             <Archive size={16} className="flex-shrink-0" />
             <span className="hidden md:inline">Archived</span>{" "}
@@ -813,7 +837,9 @@ export default function ChatsAndGroups() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-3">
-        {displayedChats.length === 0 && displayedGroups.length === 0 ? (
+        {displayedChats.length === 0 &&
+          displayedGroups.length === 0 &&
+          displayedChannels.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-gray-500 dark:text-gray-400 p-8 text-center">
             <div className="bg-primary-50 dark:bg-primary-900/20 p-4 rounded-full mb-4">
               {activeTab === "groups" ? (
@@ -830,14 +856,14 @@ export default function ChatsAndGroups() {
               {activeTab === "groups"
                 ? "No groups yet"
                 : activeTab === "requests"
-                  ? "No message requests"
+                  ? "No other users yet"
                   : "No chats yet"}
             </h3>
             <p className="text-sm mb-6">
               {activeTab === "groups"
                 ? "Create a group to start chatting with multiple people."
                 : activeTab === "requests"
-                  ? "Messages from non-contacts will appear here."
+                  ? "Users outside your Max-Contacts will appear here."
                   : "Start a new conversation to see it here."}
             </p>
             {activeTab === "groups" ? (
@@ -878,134 +904,13 @@ export default function ChatsAndGroups() {
           <div className="space-y-3">
             {activeTab === "all"
               ? allTimelineItems.map((item, i) => {
-                  if (item.kind === "group") {
-                    const group = item.group;
-                    return (
-                      <Link
-                        key={`group-${group.group_id}`}
-                        to="/groups/$groupId"
-                        params={{ groupId: group.group_id }}
-                        className={`block rounded-xl p-4 cursor-pointer transition-all duration-200 ${
-                          (group.unreadCount || 0) > 0
-                            ? "bg-primary-50 dark:bg-primary-900/10 shadow-md hover:shadow-lg border-2 border-primary-200 dark:border-primary-800"
-                            : "bg-white dark:bg-gray-800 shadow-sm hover:shadow-md border border-gray-100 dark:border-gray-700"
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="relative flex-shrink-0">
-                            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white font-bold text-xl shadow-md">
-                              {group.name.charAt(0).toUpperCase()}
-                            </div>
-                            {(group.unreadCount || 0) > 0 && (
-                              <div className="absolute -top-1 -right-1 bg-primary-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center shadow-md">
-                                {group.unreadCount}
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-baseline justify-between gap-2 mb-1">
-                              <h3 className="font-semibold text-gray-900 dark:text-white truncate text-base flex items-center gap-1.5">
-                                {group.name}
-                                {group.my_role === "creator" ? (
-                                  <span className="text-[10px] bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded font-medium">
-                                    creator
-                                  </span>
-                                ) : group.my_role === "admin" ? (
-                                  <span className="text-[10px] bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 px-1.5 py-0.5 rounded font-medium">
-                                    admin
-                                  </span>
-                                ) : null}
-                              </h3>
-                              <span className="text-xs text-gray-500 flex-shrink-0 font-medium">
-                                {formatTime(
-                                  group.lastMessageDate || group.created_date,
-                                )}
-                              </span>
-                            </div>
-                            <p className="text-sm text-gray-600 dark:text-gray-300 truncate">
-                              {group.lastMessageUser && (
-                                <span className="text-primary-600 dark:text-primary-400 font-medium mr-1">
-                                  {group.lastMessageUser}:
-                                </span>
-                              )}
-                              {group.lastMessageType === "charm"
-                                ? "✨ Charm sent"
-                                : group.lastMessageType === "token"
-                                  ? "💰 Token sent"
-                                  : group.lastMessageType === "image"
-                                    ? "🖼️ Image"
-                                    : group.lastMessageType === "file"
-                                      ? "📁 File"
-                                      : group.lastMessage ||
-                                        group.description ||
-                                        "No messages yet"}
-                            </p>
-                          </div>
-                        </div>
-                      </Link>
-                    );
-                  }
-
-                  if (item.kind === "channel") {
-                    const channel = item.channel;
-                    return (
-                      <Link
-                        key={`channel-${channel.channel_id}`}
-                        to="/channels/$channelId"
-                        params={{ channelId: channel.channel_id }}
-                        className={`block rounded-xl p-4 cursor-pointer transition-all duration-200 ${
-                          (channel.unreadCount || 0) > 0
-                            ? "bg-sky-50 dark:bg-sky-900/10 shadow-md hover:shadow-lg border-2 border-sky-200 dark:border-sky-800"
-                            : "bg-white dark:bg-gray-800 shadow-sm hover:shadow-md border border-gray-100 dark:border-gray-700"
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="relative flex-shrink-0">
-                            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-sky-400 to-sky-600 flex items-center justify-center text-white shadow-md">
-                              <Radio size={24} />
-                            </div>
-                            {(channel.unreadCount || 0) > 0 && (
-                              <div className="absolute -top-1 -right-1 bg-sky-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center shadow-md">
-                                {channel.unreadCount}
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-baseline justify-between gap-2 mb-1">
-                              <h3 className="font-semibold text-gray-900 dark:text-white truncate text-base flex items-center gap-1.5">
-                                {channel.name}
-                                {channel.admin_publickey === myPublicKey ? (
-                                  <span className="text-[10px] bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded font-medium">
-                                    creator
-                                  </span>
-                                ) : channel.isAdmin ? (
-                                  <span className="text-[10px] bg-sky-100 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400 px-1.5 py-0.5 rounded font-medium">
-                                    admin
-                                  </span>
-                                ) : null}
-                              </h3>
-                              <span className="text-xs text-gray-500 flex-shrink-0 font-medium">
-                                {formatTime(
-                                  channel.lastMessageDate ||
-                                    channel.created_date,
-                                )}
-                              </span>
-                            </div>
-                            <p className="text-sm text-gray-600 dark:text-gray-300 truncate">
-                              {channel.lastMessage ||
-                                channel.description ||
-                                "No messages yet"}
-                            </p>
-                          </div>
-                        </div>
-                      </Link>
-                    );
-                  }
-
-                  const chat = item.chat;
+                if (item.kind === "group") {
+                  const group = item.group;
                   return (
-                    <div
-                      key={`chat-${chat.publickey}-${chat.lastMessageDate}-${i}`}
+                    <Link
+                      key={`group-${group.group_id}`}
+                      to="/groups/$groupId"
+                      params={{ groupId: group.group_id }}
                       onClick={(e) => {
                         if (longPressTriggeredRef.current) {
                           longPressTriggeredRef.current = false;
@@ -1013,18 +918,14 @@ export default function ChatsAndGroups() {
                           e.stopPropagation();
                           return;
                         }
-                        navigate({
-                          to: "/chat/$address",
-                          params: { address: chat.publickey },
-                        });
                       }}
                       onContextMenu={(e) => {
                         e.preventDefault();
                         handleContextMenu(
                           e,
-                          chat.publickey,
-                          chat.archived,
-                          chat.favorite,
+                          group.group_id,
+                          group.archived,
+                          false,
                         );
                       }}
                       onTouchStart={(e) => {
@@ -1037,16 +938,16 @@ export default function ChatsAndGroups() {
                         longPressTimerRef.current = setTimeout(() => {
                           longPressTriggeredRef.current = true;
                           const syntheticEvent = {
-                            preventDefault: () => {},
-                            stopPropagation: () => {},
+                            preventDefault: () => { },
+                            stopPropagation: () => { },
                             clientX: clientX,
                             clientY: clientY,
                           } as React.MouseEvent;
                           handleContextMenu(
                             syntheticEvent,
-                            chat.publickey,
-                            chat.archived,
-                            chat.favorite,
+                            group.group_id,
+                            group.archived,
+                            false,
                           );
                         }, 500);
                       }}
@@ -1062,141 +963,440 @@ export default function ChatsAndGroups() {
                           longPressTimerRef.current = null;
                         }
                       }}
-                      style={{ WebkitTouchCallout: "none" } as any}
-                      className={`block rounded-xl p-4 cursor-pointer transition-all duration-200 select-none ${
-                        (chat.unreadCount || 0) > 0
-                          ? "bg-primary-50 dark:bg-primary-900/10 shadow-md hover:shadow-lg border-2 border-primary-200 dark:border-primary-800"
-                          : "bg-white dark:bg-gray-800 shadow-sm hover:shadow-md border border-gray-100 dark:border-gray-700"
-                      }`}
+                      className={`block rounded-xl p-4 cursor-pointer transition-all duration-200 ${(group.unreadCount || 0) > 0
+                        ? "bg-primary-50 dark:bg-primary-900/10 shadow-md hover:shadow-lg border-2 border-primary-200 dark:border-primary-800"
+                        : "bg-white dark:bg-gray-800 shadow-sm hover:shadow-md border border-gray-100 dark:border-gray-700"
+                        }`}
                     >
                       <div className="flex items-center gap-3">
                         <div className="relative flex-shrink-0">
-                          {chat.publickey === myPublicKey ? (
-                            <div className="w-14 h-14 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center shadow-sm">
-                              <Inbox
-                                size={24}
-                                className="text-primary-600 dark:text-primary-400"
-                              />
-                            </div>
-                          ) : (
+                          {group.avatar ? (
                             <img
-                              src={getAvatar(chat.publickey)}
-                              alt={getName(chat)}
+                              src={group.avatar}
+                              alt={group.name}
                               className="w-14 h-14 rounded-full object-cover bg-gray-200 dark:bg-gray-700 shadow-md pointer-events-none"
                               onError={(e: any) => {
                                 e.target.src = defaultAvatar;
                               }}
                             />
-                          )}
-                          {chat.archived && (
-                            <div className="absolute -top-1 -right-1 bg-gray-500 rounded-full p-1 shadow-md">
-                              <Archive size={10} className="text-white" />
+                          ) : (
+                            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white font-bold text-xl shadow-md">
+                              {((group.name as string) || "?").charAt(0).toUpperCase()}
                             </div>
                           )}
-                          {(chat.unreadCount || 0) > 0 && (
+                          {(group.unreadCount || 0) > 0 && (
                             <div className="absolute -top-1 -right-1 bg-primary-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center shadow-md">
-                              {chat.unreadCount}
+                              {group.unreadCount}
                             </div>
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-baseline justify-between gap-2 mb-1">
-                            <h3 className="font-semibold text-gray-900 dark:text-white truncate flex items-center gap-1.5 text-base">
-                              {getName(chat)}
-                              {chat.favorite && (
-                                <Star
-                                  size={16}
-                                  fill="#fbbf24"
-                                  stroke="#f59e0b"
-                                  className="flex-shrink-0"
-                                />
-                              )}
+                            <h3 className="font-semibold text-gray-900 dark:text-white truncate text-base flex items-center gap-1.5">
+                              {group.name}
+                              {group.my_role === "creator" ? (
+                                <span className="text-[10px] bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded font-medium">
+                                  creator
+                                </span>
+                              ) : group.my_role === "admin" ? (
+                                <span className="text-[10px] bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 px-1.5 py-0.5 rounded font-medium">
+                                  admin
+                                </span>
+                              ) : null}
                             </h3>
                             <span className="text-xs text-gray-500 flex-shrink-0 font-medium">
-                              {formatTime(chat.lastMessageDate)}
+                              {formatTime(
+                                group.lastMessageDate || group.created_date,
+                              )}
                             </span>
                           </div>
                           <p className="text-sm text-gray-600 dark:text-gray-300 truncate">
-                            {chat.username === "Me" && (
+                            {group.lastMessageUser && (
                               <span className="text-primary-600 dark:text-primary-400 font-medium mr-1">
-                                You:
+                                {group.lastMessageUser}:
                               </span>
                             )}
-                            {chat.lastMessageType === "charm"
+                            {group.lastMessageType === "charm"
                               ? "✨ Charm sent"
-                              : chat.lastMessageType === "token"
+                              : group.lastMessageType === "token"
                                 ? "💰 Token sent"
-                                : chat.lastMessage || ""}
+                                : group.lastMessageType === "image"
+                                  ? "🖼️ Image"
+                                  : group.lastMessageType === "file"
+                                    ? "📁 File"
+                                    : group.lastMessage ||
+                                    group.description ||
+                                    "No messages yet"}
                           </p>
                         </div>
                       </div>
-                    </div>
+                    </Link>
                   );
-                })
-              : displayedGroups.map((group) => (
-                  <Link
-                    key={group.group_id}
-                    to="/groups/$groupId"
-                    params={{ groupId: group.group_id }}
-                    className={`block rounded-xl p-4 cursor-pointer transition-all duration-200 ${
-                      (group.unreadCount || 0) > 0
-                        ? "bg-primary-50 dark:bg-primary-900/10 shadow-md hover:shadow-lg border-2 border-primary-200 dark:border-primary-800"
+                }
+
+                if (item.kind === "channel") {
+                  const channel = item.channel;
+                  return (
+                    <Link
+                      key={`channel-${channel.channel_id}`}
+                      to="/channels/$channelId"
+                      params={{ channelId: channel.channel_id }}
+                      onClick={(e) => {
+                        if (longPressTriggeredRef.current) {
+                          longPressTriggeredRef.current = false;
+                          e.preventDefault();
+                          e.stopPropagation();
+                          return;
+                        }
+                      }}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        handleContextMenu(
+                          e,
+                          channel.channel_id,
+                          channel.archived,
+                          false,
+                        );
+                      }}
+                      onTouchStart={(e) => {
+                        if (longPressTimerRef.current)
+                          clearTimeout(longPressTimerRef.current);
+                        longPressTriggeredRef.current = false;
+                        const touch = e.touches[0];
+                        const clientX = touch.clientX;
+                        const clientY = touch.clientY;
+                        longPressTimerRef.current = setTimeout(() => {
+                          longPressTriggeredRef.current = true;
+                          const syntheticEvent = {
+                            preventDefault: () => { },
+                            stopPropagation: () => { },
+                            clientX: clientX,
+                            clientY: clientY,
+                          } as React.MouseEvent;
+                          handleContextMenu(
+                            syntheticEvent,
+                            channel.channel_id,
+                            channel.archived,
+                            false,
+                          );
+                        }, 500);
+                      }}
+                      onTouchMove={() => {
+                        if (longPressTimerRef.current) {
+                          clearTimeout(longPressTimerRef.current);
+                          longPressTimerRef.current = null;
+                        }
+                      }}
+                      onTouchEnd={() => {
+                        if (longPressTimerRef.current) {
+                          clearTimeout(longPressTimerRef.current);
+                          longPressTimerRef.current = null;
+                        }
+                      }}
+                      className={`block rounded-xl p-4 cursor-pointer transition-all duration-200 ${(channel.unreadCount || 0) > 0
+                        ? "bg-sky-50 dark:bg-sky-900/10 shadow-md hover:shadow-lg border-2 border-sky-200 dark:border-sky-800"
                         : "bg-white dark:bg-gray-800 shadow-sm hover:shadow-md border border-gray-100 dark:border-gray-700"
-                    }`}
+                        }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="relative flex-shrink-0">
+                          {channel.avatar ? (
+                            <img
+                              src={channel.avatar}
+                              alt={channel.name}
+                              className="w-14 h-14 rounded-full object-cover bg-gray-200 dark:bg-gray-700 shadow-md pointer-events-none"
+                              onError={(e: any) => {
+                                e.target.src = defaultAvatar;
+                              }}
+                            />
+                          ) : (
+                            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-sky-400 to-sky-600 flex items-center justify-center text-white shadow-md">
+                              <Radio size={24} />
+                            </div>
+                          )}
+                          {(channel.unreadCount || 0) > 0 && (
+                            <div className="absolute -top-1 -right-1 bg-sky-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center shadow-md">
+                              {channel.unreadCount}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-baseline justify-between gap-2 mb-1">
+                            <h3 className="font-semibold text-gray-900 dark:text-white truncate text-base flex items-center gap-1.5">
+                              {channel.name}
+                              {channel.admin_publickey === myPublicKey ? (
+                                <span className="text-[10px] bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded font-medium">
+                                  creator
+                                </span>
+                              ) : channel.isAdmin ? (
+                                <span className="text-[10px] bg-sky-100 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400 px-1.5 py-0.5 rounded font-medium">
+                                  admin
+                                </span>
+                              ) : null}
+                            </h3>
+                            <span className="text-xs text-gray-500 flex-shrink-0 font-medium">
+                              {formatTime(
+                                channel.lastMessageDate ||
+                                channel.created_date,
+                              )}
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-600 dark:text-gray-300 truncate">
+                            {channel.lastMessage ||
+                              channel.description ||
+                              "No messages yet"}
+                          </p>
+                        </div>
+                      </div>
+                    </Link>
+                  );
+                }
+
+                const chat = item.chat;
+                return (
+                  <div
+                    key={`chat-${chat.publickey}-${chat.lastMessageDate}-${i}`}
+                    onClick={(e) => {
+                      if (longPressTriggeredRef.current) {
+                        longPressTriggeredRef.current = false;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        return;
+                      }
+                      navigate({
+                        to: "/chat/$address",
+                        params: { address: chat.publickey },
+                      });
+                    }}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      handleContextMenu(
+                        e,
+                        chat.publickey,
+                        chat.archived,
+                        chat.favorite,
+                      );
+                    }}
+                    onTouchStart={(e) => {
+                      if (longPressTimerRef.current)
+                        clearTimeout(longPressTimerRef.current);
+                      longPressTriggeredRef.current = false;
+                      const touch = e.touches[0];
+                      const clientX = touch.clientX;
+                      const clientY = touch.clientY;
+                      longPressTimerRef.current = setTimeout(() => {
+                        longPressTriggeredRef.current = true;
+                        const syntheticEvent = {
+                          preventDefault: () => { },
+                          stopPropagation: () => { },
+                          clientX: clientX,
+                          clientY: clientY,
+                        } as React.MouseEvent;
+                        handleContextMenu(
+                          syntheticEvent,
+                          chat.publickey,
+                          chat.archived,
+                          chat.favorite,
+                        );
+                      }, 500);
+                    }}
+                    onTouchMove={() => {
+                      if (longPressTimerRef.current) {
+                        clearTimeout(longPressTimerRef.current);
+                        longPressTimerRef.current = null;
+                      }
+                    }}
+                    onTouchEnd={() => {
+                      if (longPressTimerRef.current) {
+                        clearTimeout(longPressTimerRef.current);
+                        longPressTimerRef.current = null;
+                      }
+                    }}
+                    style={{ WebkitTouchCallout: "none" } as any}
+                    className={`block rounded-xl p-4 cursor-pointer transition-all duration-200 select-none ${(chat.unreadCount || 0) > 0
+                      ? "bg-primary-50 dark:bg-primary-900/10 shadow-md hover:shadow-lg border-2 border-primary-200 dark:border-primary-800"
+                      : "bg-white dark:bg-gray-800 shadow-sm hover:shadow-md border border-gray-100 dark:border-gray-700"
+                      }`}
                   >
                     <div className="flex items-center gap-3">
                       <div className="relative flex-shrink-0">
-                        <div className="w-14 h-14 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white font-bold text-xl shadow-md">
-                          {group.name.charAt(0).toUpperCase()}
-                        </div>
-                        {(group.unreadCount || 0) > 0 && (
+                        {chat.publickey === myPublicKey ? (
+                          <div className="w-14 h-14 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center shadow-sm">
+                            <Inbox
+                              size={24}
+                              className="text-primary-600 dark:text-primary-400"
+                            />
+                          </div>
+                        ) : (
+                          <img
+                            src={getAvatar(chat.publickey)}
+                            alt={getName(chat)}
+                            className="w-14 h-14 rounded-full object-cover bg-gray-200 dark:bg-gray-700 shadow-md pointer-events-none"
+                            onError={(e: any) => {
+                              e.target.src = defaultAvatar;
+                            }}
+                          />
+                        )}
+                        {chat.archived && (
+                          <div className="absolute -top-1 -right-1 bg-gray-500 rounded-full p-1 shadow-md">
+                            <Archive size={10} className="text-white" />
+                          </div>
+                        )}
+                        {(chat.unreadCount || 0) > 0 && (
                           <div className="absolute -top-1 -right-1 bg-primary-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center shadow-md">
-                            {group.unreadCount}
+                            {chat.unreadCount}
                           </div>
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-baseline justify-between gap-2 mb-1">
-                          <h3 className="font-semibold text-gray-900 dark:text-white truncate text-base flex items-center gap-1.5">
-                            {group.name}
-                            {group.my_role === "creator" ? (
-                              <span className="text-[10px] bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded font-medium">
-                                creator
-                              </span>
-                            ) : group.my_role === "admin" ? (
-                              <span className="text-[10px] bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 px-1.5 py-0.5 rounded font-medium">
-                                admin
-                              </span>
-                            ) : null}
+                          <h3 className="font-semibold text-gray-900 dark:text-white truncate flex items-center gap-1.5 text-base">
+                            {getName(chat)}
+                            {chat.favorite && (
+                              <Star
+                                size={16}
+                                fill="#fbbf24"
+                                stroke="#f59e0b"
+                                className="flex-shrink-0"
+                              />
+                            )}
                           </h3>
                           <span className="text-xs text-gray-500 flex-shrink-0 font-medium">
-                            {formatTime(
-                              group.lastMessageDate || group.created_date,
-                            )}
+                            {formatTime(chat.lastMessageDate)}
                           </span>
                         </div>
                         <p className="text-sm text-gray-600 dark:text-gray-300 truncate">
-                          {group.lastMessageUser && (
+                          {chat.username === "Me" && (
                             <span className="text-primary-600 dark:text-primary-400 font-medium mr-1">
-                              {group.lastMessageUser}:
+                              You:
                             </span>
                           )}
-                          {group.lastMessageType === "charm"
+                          {chat.lastMessageType === "charm"
                             ? "✨ Charm sent"
-                            : group.lastMessageType === "token"
+                            : chat.lastMessageType === "token"
                               ? "💰 Token sent"
-                              : group.lastMessageType === "image"
-                                ? "🖼️ Image"
-                                : group.lastMessageType === "file"
-                                  ? "📁 File"
-                                  : group.lastMessage ||
-                                    group.description ||
-                                    "No messages yet"}
+                              : chat.lastMessage || ""}
                         </p>
                       </div>
                     </div>
-                  </Link>
-                ))}
+                  </div>
+                );
+              })
+              : displayedGroups.map((group) => (
+                <Link
+                  key={group.group_id}
+                  to="/groups/$groupId"
+                  params={{ groupId: group.group_id }}
+                  onClick={(e) => {
+                    if (longPressTriggeredRef.current) {
+                      longPressTriggeredRef.current = false;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      return;
+                    }
+                  }}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    handleContextMenu(
+                      e,
+                      group.group_id,
+                      group.archived,
+                      false,
+                    );
+                  }}
+                  onTouchStart={(e) => {
+                    if (longPressTimerRef.current)
+                      clearTimeout(longPressTimerRef.current);
+                    longPressTriggeredRef.current = false;
+                    const touch = e.touches[0];
+                    const clientX = touch.clientX;
+                    const clientY = touch.clientY;
+                    longPressTimerRef.current = setTimeout(() => {
+                      longPressTriggeredRef.current = true;
+                      const syntheticEvent = {
+                        preventDefault: () => { },
+                        stopPropagation: () => { },
+                        clientX: clientX,
+                        clientY: clientY,
+                      } as React.MouseEvent;
+                      handleContextMenu(
+                        syntheticEvent,
+                        group.group_id,
+                        group.archived,
+                        false,
+                      );
+                    }, 500);
+                  }}
+                  onTouchMove={() => {
+                    if (longPressTimerRef.current) {
+                      clearTimeout(longPressTimerRef.current);
+                      longPressTimerRef.current = null;
+                    }
+                  }}
+                  onTouchEnd={() => {
+                    if (longPressTimerRef.current) {
+                      clearTimeout(longPressTimerRef.current);
+                      longPressTimerRef.current = null;
+                    }
+                  }}
+                  className={`block rounded-xl p-4 cursor-pointer transition-all duration-200 ${(group.unreadCount || 0) > 0
+                    ? "bg-primary-50 dark:bg-primary-900/10 shadow-md hover:shadow-lg border-2 border-primary-200 dark:border-primary-800"
+                    : "bg-white dark:bg-gray-800 shadow-sm hover:shadow-md border border-gray-100 dark:border-gray-700"
+                    }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="relative flex-shrink-0">
+                      <div className="w-14 h-14 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white font-bold text-xl shadow-md">
+                        {((group.name as string) || "?").charAt(0).toUpperCase()}
+                      </div>
+                      {(group.unreadCount || 0) > 0 && (
+                        <div className="absolute -top-1 -right-1 bg-primary-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center shadow-md">
+                          {group.unreadCount}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-baseline justify-between gap-2 mb-1">
+                        <h3 className="font-semibold text-gray-900 dark:text-white truncate text-base flex items-center gap-1.5">
+                          {group.name}
+                          {group.my_role === "creator" ? (
+                            <span className="text-[10px] bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded font-medium">
+                              creator
+                            </span>
+                          ) : group.my_role === "admin" ? (
+                            <span className="text-[10px] bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 px-1.5 py-0.5 rounded font-medium">
+                              admin
+                            </span>
+                          ) : null}
+                        </h3>
+                        <span className="text-xs text-gray-500 flex-shrink-0 font-medium">
+                          {formatTime(
+                            group.lastMessageDate || group.created_date,
+                          )}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-600 dark:text-gray-300 truncate">
+                        {group.lastMessageUser && (
+                          <span className="text-primary-600 dark:text-primary-400 font-medium mr-1">
+                            {group.lastMessageUser}:
+                          </span>
+                        )}
+                        {group.lastMessageType === "charm"
+                          ? "✨ Charm sent"
+                          : group.lastMessageType === "token"
+                            ? "💰 Token sent"
+                            : group.lastMessageType === "image"
+                              ? "🖼️ Image"
+                              : group.lastMessageType === "file"
+                                ? "📁 File"
+                                : group.lastMessage ||
+                                group.description ||
+                                "No messages yet"}
+                      </p>
+                    </div>
+                  </div>
+                </Link>
+              ))}
 
             {activeTab !== "all" &&
               displayedChannels.map((channel) => (
@@ -1204,11 +1404,62 @@ export default function ChatsAndGroups() {
                   key={channel.channel_id}
                   to="/channels/$channelId"
                   params={{ channelId: channel.channel_id }}
-                  className={`block rounded-xl p-4 cursor-pointer transition-all duration-200 ${
-                    (channel.unreadCount || 0) > 0
-                      ? "bg-sky-50 dark:bg-sky-900/10 shadow-md hover:shadow-lg border-2 border-sky-200 dark:border-sky-800"
-                      : "bg-white dark:bg-gray-800 shadow-sm hover:shadow-md border border-gray-100 dark:border-gray-700"
-                  }`}
+                  onClick={(e) => {
+                    if (longPressTriggeredRef.current) {
+                      longPressTriggeredRef.current = false;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      return;
+                    }
+                  }}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    handleContextMenu(
+                      e,
+                      channel.channel_id,
+                      channel.archived,
+                      false,
+                    );
+                  }}
+                  onTouchStart={(e) => {
+                    if (longPressTimerRef.current)
+                      clearTimeout(longPressTimerRef.current);
+                    longPressTriggeredRef.current = false;
+                    const touch = e.touches[0];
+                    const clientX = touch.clientX;
+                    const clientY = touch.clientY;
+                    longPressTimerRef.current = setTimeout(() => {
+                      longPressTriggeredRef.current = true;
+                      const syntheticEvent = {
+                        preventDefault: () => { },
+                        stopPropagation: () => { },
+                        clientX: clientX,
+                        clientY: clientY,
+                      } as React.MouseEvent;
+                      handleContextMenu(
+                        syntheticEvent,
+                        channel.channel_id,
+                        channel.archived,
+                        false,
+                      );
+                    }, 500);
+                  }}
+                  onTouchMove={() => {
+                    if (longPressTimerRef.current) {
+                      clearTimeout(longPressTimerRef.current);
+                      longPressTimerRef.current = null;
+                    }
+                  }}
+                  onTouchEnd={() => {
+                    if (longPressTimerRef.current) {
+                      clearTimeout(longPressTimerRef.current);
+                      longPressTimerRef.current = null;
+                    }
+                  }}
+                  className={`block rounded-xl p-4 cursor-pointer transition-all duration-200 ${(channel.unreadCount || 0) > 0
+                    ? "bg-sky-50 dark:bg-sky-900/10 shadow-md hover:shadow-lg border-2 border-sky-200 dark:border-sky-800"
+                    : "bg-white dark:bg-gray-800 shadow-sm hover:shadow-md border border-gray-100 dark:border-gray-700"
+                    }`}
                 >
                   <div className="flex items-center gap-3">
                     <div className="relative flex-shrink-0">
@@ -1286,8 +1537,8 @@ export default function ChatsAndGroups() {
                     longPressTimerRef.current = setTimeout(() => {
                       longPressTriggeredRef.current = true;
                       const syntheticEvent = {
-                        preventDefault: () => {},
-                        stopPropagation: () => {},
+                        preventDefault: () => { },
+                        stopPropagation: () => { },
                         clientX: clientX,
                         clientY: clientY,
                       } as React.MouseEvent;
@@ -1312,11 +1563,10 @@ export default function ChatsAndGroups() {
                     }
                   }}
                   style={{ WebkitTouchCallout: "none" } as any}
-                  className={`block rounded-xl p-4 cursor-pointer transition-all duration-200 select-none ${
-                    (chat.unreadCount || 0) > 0
-                      ? "bg-primary-50 dark:bg-primary-900/10 shadow-md hover:shadow-lg border-2 border-primary-200 dark:border-primary-800"
-                      : "bg-white dark:bg-gray-800 shadow-sm hover:shadow-md border border-gray-100 dark:border-gray-700"
-                  }`}
+                  className={`block rounded-xl p-4 cursor-pointer transition-all duration-200 select-none ${(chat.unreadCount || 0) > 0
+                    ? "bg-primary-50 dark:bg-primary-900/10 shadow-md hover:shadow-lg border-2 border-primary-200 dark:border-primary-800"
+                    : "bg-white dark:bg-gray-800 shadow-sm hover:shadow-md border border-gray-100 dark:border-gray-700"
+                    }`}
                 >
                   <div className="flex items-center gap-3">
                     <div className="relative flex-shrink-0">
@@ -1448,11 +1698,10 @@ export default function ChatsAndGroups() {
               setFabMenuOpen(!fabMenuOpen);
             else navigate({ to: "/contacts" });
           }}
-          className={`w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 ${
-            fabMenuOpen
-              ? "bg-gray-700 text-white rotate-45"
-              : "bg-primary-600 text-white"
-          }`}
+          className={`w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 ${fabMenuOpen
+            ? "bg-gray-700 text-white rotate-45"
+            : "bg-primary-600 text-white"
+            }`}
         >
           {activeTab === "groups" ? (
             <Users size={24} />

@@ -502,6 +502,7 @@ function handleGroupUpdateDetails(pubkey, maxjson) {
     var safeGroupId = escapeSql(maxjson.groupId || "");
     var safeNewName = maxjson.newName ? escapeSql(maxjson.newName) : null;
     var safeNewDescription = maxjson.newDescription !== undefined && maxjson.newDescription !== null ? escapeSql(maxjson.newDescription) : null;
+    var safeAvatar = maxjson.avatar ? escapeSql(maxjson.avatar) : null;
 
     // Security Check: Sender must be creator OR admin
     var checkSql = "SELECT role FROM GROUP_MEMBERS WHERE group_id='" + safeGroupId + "' AND publickey='" + pubkey + "'";
@@ -522,6 +523,7 @@ function handleGroupUpdateDetails(pubkey, maxjson) {
         var updates = [];
         if (safeNewName !== null) updates.push("name='" + safeNewName + "'");
         if (safeNewDescription !== null) updates.push("description='" + safeNewDescription + "'");
+        if (safeAvatar !== null) updates.push("avatar='" + safeAvatar + "'");
 
         if (updates.length === 0) return;
 
@@ -538,6 +540,7 @@ function handleGroupUpdateDetails(pubkey, maxjson) {
                 };
                 if (maxjson.newName !== undefined) soloMsg.name = maxjson.newName;
                 if (maxjson.newDescription !== undefined) soloMsg.description = maxjson.newDescription;
+                if (maxjson.avatar !== undefined) soloMsg.avatar = maxjson.avatar;
 
                 var msgStr = typeof soloMsg === "string" ? soloMsg : JSON.stringify(soloMsg);
                 MDS.comms.solo(msgStr);

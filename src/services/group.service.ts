@@ -10,6 +10,8 @@ export interface Group {
   created_date: number;
   avatar?: string;
   description?: string;
+  archived?: boolean;
+  archived_date?: number;
   my_role?: "creator" | "admin" | "member";
 }
 
@@ -36,21 +38,21 @@ export interface GroupMessage {
 // MAXIMA message types for group communication
 export interface GroupMaximaMessage {
   messageType:
-    | "group_message"
-    | "group_invite"
-    | "group_member_added"
-    | "group_member_removed"
-    | "group_info_updated"
-    | "group_member_unbanned"
-    | "group_update_details"
-    | "history_request"
-    | "history_response"
-    | "group_join_request"
-    | "group_join_request_propagated"
-    | "group_join_request_resolved"
-    | "group_update_details"
-    | "group_role_update"
-    | "group_address_beacon";
+  | "group_message"
+  | "group_invite"
+  | "group_member_added"
+  | "group_member_removed"
+  | "group_info_updated"
+  | "group_member_unbanned"
+  | "group_update_details"
+  | "history_request"
+  | "history_response"
+  | "group_join_request"
+  | "group_join_request_propagated"
+  | "group_join_request_resolved"
+  | "group_update_details"
+  | "group_role_update"
+  | "group_address_beacon";
   groupId: string;
   groupName: string;
   senderPublickey: string;
@@ -63,6 +65,11 @@ export interface GroupMaximaMessage {
   filedata?: string;
   seq?: number; // Per-sender sequence number for gap detection
 
+  // For group_update_details and history_response:
+  newName?: string;
+  newDescription?: string;
+  avatar?: string;
+
   // For group_invite:
   description?: string;
   members?: Array<{
@@ -74,6 +81,7 @@ export interface GroupMaximaMessage {
   bannedMembers?: Array<{
     publickey: string;
     username: string;
+    role?: string;
     banned_by: string;
     banned_at: number;
   }>;
@@ -92,8 +100,6 @@ export interface GroupMaximaMessage {
 
   // For history_response:
   historyMessages?: GroupMessage[];
-  newName?: string;
-  newDescription?: string;
 
   // For group_join_request
   requesterName?: string;
@@ -111,7 +117,7 @@ class GroupService {
   private groupMessageCallbacks: GroupMessageCallback[] = [];
   private groupUpdateCallbacks: GroupUpdateCallback[] = [];
 
-  constructor() {}
+  constructor() { }
 
   /* ----------------------------------------------------------------------------
       UTILITY FUNCTIONS
@@ -224,7 +230,19 @@ class GroupService {
                 ORDER BY g.created_date DESC
             `;
       const res = await this.runSQL(sql);
-      return res.rows || [];
+      if (!res.rows) return [];
+
+      return res.rows.map((row: any) => ({
+        group_id: row.GROUP_ID || row.group_id,
+        name: row.NAME || row.name,
+        creator_publickey: row.CREATOR_PUBLICKEY || row.creator_publickey,
+        created_date: Number(row.CREATED_DATE || row.created_date || 0),
+        avatar: row.AVATAR || row.avatar,
+        description: row.DESCRIPTION || row.description,
+        archived: row.ARCHIVED === 1 || row.ARCHIVED === true || row.ARCHIVED === "1" || row.ARCHIVED === "TRUE",
+        archived_date: Number(row.ARCHIVED_DATE || row.archived_date || 0),
+        my_role: row.MY_ROLE || row.my_role,
+      }));
     } catch (err) {
       console.error("❌ [GROUP-MGMT] Failed to get groups:", err);
       return [];
@@ -235,7 +253,20 @@ class GroupService {
     try {
       const sql = `SELECT * FROM GROUPS WHERE group_id = '${groupId}'`;
       const res = await this.runSQL(sql);
-      return res.rows && res.rows.length > 0 ? res.rows[0] : null;
+      if (res.rows && res.rows.length > 0) {
+        const row = res.rows[0];
+        return {
+          group_id: row.GROUP_ID || row.group_id,
+          name: row.NAME || row.name,
+          creator_publickey: row.CREATOR_PUBLICKEY || row.creator_publickey,
+          created_date: Number(row.CREATED_DATE || row.created_date || 0),
+          avatar: row.AVATAR || row.avatar,
+          description: row.DESCRIPTION || row.description,
+          archived: row.ARCHIVED === 1 || row.ARCHIVED === true || row.ARCHIVED === "1" || row.ARCHIVED === "TRUE",
+          archived_date: Number(row.ARCHIVED_DATE || row.archived_date || 0),
+        };
+      }
+      return null;
     } catch (err) {
       console.error("❌ [GROUP-MGMT] Failed to get group info:", err);
       return null;
@@ -244,12 +275,6 @@ class GroupService {
 
   async deleteGroup(groupId: string): Promise<void> {
     try {
-      // Verify group exists
-      const group = await this.getGroupInfo(groupId);
-      if (!group) {
-        console.warn("Group not found, but proceeding with cleanup");
-      }
-
       // Delete messages
       await this.runSQL(
         `DELETE FROM GROUP_MESSAGES WHERE group_id = '${groupId}'`,
@@ -264,9 +289,31 @@ class GroupService {
       await this.runSQL(`DELETE FROM GROUPS WHERE group_id = '${groupId}'`);
 
       console.log("✅ [GROUP-MGMT] Deleted:", groupId);
-      this.notifyGroupUpdate(groupId);
+      this.notifyGroupUpdate();
     } catch (err) {
       console.error("❌ [GROUP-MGMT] Failed to delete group:", err);
+      throw err;
+    }
+  }
+
+  async archiveGroup(groupId: string): Promise<void> {
+    try {
+      const sql = `UPDATE GROUPS SET archived = TRUE, archived_date = ${Date.now()} WHERE group_id = '${groupId}'`;
+      await this.runSQL(sql);
+      this.notifyGroupUpdate();
+    } catch (err) {
+      console.error("❌ [GROUP-MGMT] Failed to archive group:", err);
+      throw err;
+    }
+  }
+
+  async unarchiveGroup(groupId: string): Promise<void> {
+    try {
+      const sql = `UPDATE GROUPS SET archived = FALSE WHERE group_id = '${groupId}'`;
+      await this.runSQL(sql);
+      this.notifyGroupUpdate();
+    } catch (err) {
+      console.error("❌ [GROUP-MGMT] Failed to unarchive group:", err);
       throw err;
     }
   }
@@ -275,6 +322,7 @@ class GroupService {
     groupId: string,
     newName: string | null,
     newDescription: string | null,
+    avatar: string | null,
     myPublicKey: string,
   ): Promise<void> {
     try {
@@ -283,6 +331,8 @@ class GroupService {
         updates.push(`name = '${newName.replace(/'/g, "''")}'`);
       if (newDescription !== null)
         updates.push(`description = '${newDescription.replace(/'/g, "''")}'`);
+      if (avatar !== null)
+        updates.push(`avatar = '${avatar.replace(/'/g, "''")}'`);
 
       if (updates.length > 0) {
         const sql = `UPDATE GROUPS SET ${updates.join(", ")} WHERE group_id = '${groupId}'`;
@@ -302,6 +352,7 @@ class GroupService {
       };
       if (newName !== null) payload.newName = newName;
       if (newDescription !== null) payload.newDescription = newDescription;
+      if (avatar !== null) payload.avatar = avatar;
 
       const members = await this.getGroupMembers(groupId);
       let propagatedCount = 0;
@@ -569,7 +620,6 @@ class GroupService {
 
       // 🚫 Auto-ban the removed member to prevent re-entry
       await this.banMember(groupId, publickey, myPublicKey, memberUsername);
-
       // Notify ALL members including the removed one (so they clean up their local state)
       for (const m of allMembers) {
         try {
@@ -1521,9 +1571,9 @@ class GroupService {
         const myName =
           myNameData.rows && myNameData.rows.length > 0
             ? myNameData.rows[0].ALIAS ||
-              myNameData.rows[0].alias ||
-              myInfo.response.name ||
-              "Anonymous"
+            myNameData.rows[0].alias ||
+            myInfo.response.name ||
+            "Anonymous"
             : myInfo.response.name || "Anonymous";
 
         const payload: any = {

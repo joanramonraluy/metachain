@@ -339,7 +339,9 @@ export async function initDB(): Promise<void> {
                                 creator_publickey VARCHAR(512) NOT NULL,
                                 created_date BIGINT NOT NULL,
                                 avatar TEXT,
-                                description TEXT
+                                description TEXT,
+                                archived BOOLEAN DEFAULT FALSE,
+                                archived_date BIGINT
                             )`;
 
             MDS.sql(createGroupsTable, (res: any) => {
@@ -350,6 +352,8 @@ export async function initDB(): Promise<void> {
                 );
               } else {
                 console.log("📂 [DB] GROUPS table initialized");
+                MDS.sql("ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT FALSE", () => { });
+                MDS.sql("ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS archived_date BIGINT", () => { });
               }
 
               // Create GROUP_MEMBERS table
@@ -637,6 +641,14 @@ export async function initDB(): Promise<void> {
                     } else {
                     }
                   });
+
+                  // GROUPS MIGRATION (Ensuring consistency with SW)
+                  MDS.sql("ALTER TABLE GROUPS ADD COLUMN archived BOOLEAN DEFAULT FALSE", () => { });
+                  MDS.sql("ALTER TABLE GROUPS ADD COLUMN archived_date BIGINT", () => { });
+
+                  // CHANNELS MIGRATION (Ensuring consistency with SW)
+                  MDS.sql("ALTER TABLE CHANNELS ADD COLUMN archived BOOLEAN DEFAULT FALSE", () => { });
+                  MDS.sql("ALTER TABLE CHANNELS ADD COLUMN archived_date BIGINT", () => { });
                 });
               });
             });

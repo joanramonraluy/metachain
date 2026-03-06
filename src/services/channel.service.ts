@@ -13,6 +13,8 @@ export interface Channel {
     admin_publickey: string;
     created_date: number;
     avatar?: string;
+    archived?: boolean;
+    archived_date?: number;
 }
 
 export interface ChannelSubscriber {
@@ -202,7 +204,18 @@ class ChannelService {
                 WHERE cs.publickey = '${myPublicKey}'
                 ORDER BY c.created_date DESC
             `);
-            return res.rows || [];
+            if (!res.rows) return [];
+
+            return res.rows.map((row: any) => ({
+                channel_id: row.CHANNEL_ID || row.channel_id,
+                name: row.NAME || row.name,
+                description: row.DESCRIPTION || row.description,
+                admin_publickey: row.ADMIN_PUBLICKEY || row.admin_publickey,
+                created_date: Number(row.CREATED_DATE || row.created_date || 0),
+                avatar: row.AVATAR || row.avatar,
+                archived: row.ARCHIVED === 1 || row.ARCHIVED === true || row.ARCHIVED === "1" || row.ARCHIVED === "TRUE",
+                archived_date: Number(row.ARCHIVED_DATE || row.archived_date || 0),
+            }));
         } catch (err) {
             console.error("❌ [CHANNEL] getMyChannels failed:", err);
             return [];
@@ -553,7 +566,7 @@ class ChannelService {
         console.log(`✅ [CHANNEL-ROLE] Real-time role update for ${message.targetPubkey} to ${message.newRole}`);
     }
 
-    async updateChannelDetails(channelId: string, newName: string | null, newDescription: string | null, myPublicKey: string): Promise<void> {
+    async updateChannelDetails(channelId: string, newName: string | null, newDescription: string | null, avatar: string | null, myPublicKey: string): Promise<void> {
         try {
             // Update local DB
             if (newName) {
@@ -561,6 +574,9 @@ class ChannelService {
             }
             if (newDescription !== null) {
                 await this.runSQL(`UPDATE CHANNELS SET description = '${newDescription.replace(/'/g, "''")}' WHERE channel_id = '${channelId}'`);
+            }
+            if (avatar !== null) {
+                await this.runSQL(`UPDATE CHANNELS SET avatar = '${avatar.replace(/'/g, "''")}' WHERE channel_id = '${channelId}'`);
             }
 
             // Broadcast change
@@ -572,7 +588,8 @@ class ChannelService {
                 adminUsername: "",
                 timestamp: Date.now(),
                 newName: newName || undefined,
-                newDescription: newDescription !== null ? newDescription : undefined
+                newDescription: newDescription !== null ? newDescription : undefined,
+                avatar: avatar !== null ? avatar : undefined
             };
 
             const subs = await this.getChannelSubscribers(channelId);
@@ -597,7 +614,32 @@ class ChannelService {
         if (message.newDescription !== undefined) {
             await this.runSQL(`UPDATE CHANNELS SET description = '${message.newDescription.replace(/'/g, "''")}' WHERE channel_id = '${message.channelId}'`);
         }
+        if (message.avatar !== undefined) {
+            await this.runSQL(`UPDATE CHANNELS SET avatar = '${message.avatar.replace(/'/g, "''")}' WHERE channel_id = '${message.channelId}'`);
+        }
         console.log(`✅ [CHANNEL-UPDATE] Real-time info update for ${message.channelId}`);
+    }
+
+    async archiveChannel(channelId: string): Promise<void> {
+        try {
+            const sql = `UPDATE CHANNELS SET archived = TRUE, archived_date = ${Date.now()} WHERE channel_id = '${channelId}'`;
+            await this.runSQL(sql);
+            this.notifyChannelUpdate();
+        } catch (err) {
+            console.error("❌ [CHANNEL] Failed to archive channel:", err);
+            throw err;
+        }
+    }
+
+    async unarchiveChannel(channelId: string): Promise<void> {
+        try {
+            const sql = `UPDATE CHANNELS SET archived = FALSE WHERE channel_id = '${channelId}'`;
+            await this.runSQL(sql);
+            this.notifyChannelUpdate();
+        } catch (err) {
+            console.error("❌ [CHANNEL] Failed to unarchive channel:", err);
+            throw err;
+        }
     }
 }
 

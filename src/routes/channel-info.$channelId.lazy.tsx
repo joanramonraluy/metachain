@@ -1,10 +1,10 @@
 // src/routes/channel-info.$channelId.lazy.tsx
-import { useEffect, useState, useContext } from "react";
+import { useEffect, useState, useContext, useRef } from "react";
 import { useNavigate, createLazyFileRoute } from "@tanstack/react-router";
 import { appContext } from "../AppContext";
 import { channelService, ChannelSubscriber } from "../services/channel.service";
 import { chatService } from "../services/chat.service";
-import { ArrowLeft, Radio, UserPlus, UserX, Search, ShieldCheck, ShieldAlert, MessageSquare, Info, Users, X, Edit2, Check } from "lucide-react";
+import { ArrowLeft, Radio, UserPlus, UserX, Search, ShieldCheck, ShieldAlert, MessageSquare, Info, Users, X, Edit2, Check, Camera } from "lucide-react";
 import { MDS } from "@minima-global/mds";
 import { ChannelTabs, ChannelTab } from "../components/channel/ChannelTabs";
 
@@ -41,6 +41,9 @@ function ChannelInfoPage() {
     const [isEditingDesc, setIsEditingDesc] = useState(false);
     const [newDesc, setNewDesc] = useState("");
     const [savingDesc, setSavingDesc] = useState(false);
+    const [avatar, setAvatar] = useState<string | null>(null);
+    const [savingAvatar, setSavingAvatar] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Invite modal state
     const [showInvite, setShowInvite] = useState(false);
@@ -60,6 +63,7 @@ function ChannelInfoPage() {
         if (info) {
             setChannelName((info as any).NAME || (info as any).name || "Channel");
             setDescription((info as any).DESCRIPTION || (info as any).description || "");
+            setAvatar((info as any).AVATAR || (info as any).avatar || null);
         }
         const admin = await channelService.isAdmin(channelId, myPublicKey);
         setIsAdmin(admin);
@@ -207,7 +211,7 @@ function ChannelInfoPage() {
 
         setSavingName(true);
         try {
-            await channelService.updateChannelDetails(channelId, newName.trim(), null, myPublicKey || "");
+            await channelService.updateChannelDetails(channelId, newName.trim(), null, null, myPublicKey || "");
             setChannelName(newName.trim());
             setIsEditingName(false);
         } catch (err) {
@@ -226,7 +230,7 @@ function ChannelInfoPage() {
 
         setSavingDesc(true);
         try {
-            await channelService.updateChannelDetails(channelId, null, newDesc.trim(), myPublicKey || "");
+            await channelService.updateChannelDetails(channelId, null, newDesc.trim(), null, myPublicKey || "");
             setDescription(newDesc.trim());
             setIsEditingDesc(false);
         } catch (err) {
@@ -234,6 +238,33 @@ function ChannelInfoPage() {
             setNewDesc(description);
         } finally {
             setSavingDesc(false);
+        }
+    };
+
+    const handleAvatarFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+            const base64 = event.target?.result as string;
+            if (base64) {
+                handleSaveAvatar(base64);
+            }
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const handleSaveAvatar = async (base64: string) => {
+        setSavingAvatar(true);
+        try {
+            await channelService.updateChannelDetails(channelId, null, null, base64, myPublicKey || "");
+            setAvatar(base64);
+        } catch (err) {
+            console.error("Failed to update avatar:", err);
+            alert("Failed to update avatar");
+        } finally {
+            setSavingAvatar(false);
         }
     };
 
@@ -267,8 +298,35 @@ function ChannelInfoPage() {
                         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
                             {/* Channel identity */}
                             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-6 flex flex-col items-center gap-3 border border-gray-100 dark:border-gray-700">
-                                <div className="w-20 h-20 rounded-full bg-sky-500 flex items-center justify-center shadow-lg shadow-sky-500/20">
-                                    <Radio size={36} className="text-white" />
+                                <input
+                                    type="file"
+                                    ref={fileInputRef}
+                                    className="hidden"
+                                    accept="image/*"
+                                    onChange={handleAvatarFileSelect}
+                                />
+                                <div className="relative group/avatar">
+                                    <div className={`w-20 h-20 rounded-full flex items-center justify-center shadow-lg overflow-hidden ${!avatar ? 'bg-sky-500 shadow-sky-500/20' : 'bg-gray-200 dark:bg-gray-700'}`}>
+                                        {avatar ? (
+                                            <img src={avatar} alt={channelName} className="w-full h-full object-cover" />
+                                        ) : (
+                                            <Radio size={36} className="text-white" />
+                                        )}
+                                    </div>
+
+                                    {isAdmin && (
+                                        <button
+                                            onClick={() => fileInputRef.current?.click()}
+                                            disabled={savingAvatar}
+                                            className="absolute inset-0 flex items-center justify-center bg-black/40 text-white rounded-full opacity-0 group-hover/avatar:opacity-100 transition-opacity"
+                                        >
+                                            {savingAvatar ? (
+                                                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
+                                            ) : (
+                                                <Camera size={20} />
+                                            )}
+                                        </button>
+                                    )}
                                 </div>
                                 {isEditingName ? (
                                     <div className="flex items-center gap-2 mb-2 w-full max-w-xs">
