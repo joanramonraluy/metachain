@@ -507,6 +507,28 @@ function initDatabase() {
           ? "📢 [DB] CHANNEL_MESSAGES checked/init"
           : "❌ [DB] CHANNEL_MESSAGES init failed: " + res.error,
       );
+      return runSQL(
+        "ALTER TABLE CHANNEL_MESSAGES ADD COLUMN IF NOT EXISTS sender_seq INT DEFAULT 0",
+      );
+    });
+  });
+
+  // 10.3 CHANNEL_MSG_COUNTERS (sequence tracking per channel)
+  chain = chain.then(function () {
+    var sql =
+      "CREATE TABLE IF NOT EXISTS CHANNEL_MSG_COUNTERS ( " +
+      "  channel_id VARCHAR(256) NOT NULL, " +
+      "  sender_publickey VARCHAR(512) NOT NULL, " +
+      "  last_seen_seq INT NOT NULL DEFAULT 0, " +
+      "  my_next_seq INT NOT NULL DEFAULT 1, " +
+      "  PRIMARY KEY (channel_id, sender_publickey) " +
+      " )";
+    return runSQL(sql).then(function (res) {
+      MDS.log(
+        res.status
+          ? "📊 [DB] CHANNEL_MSG_COUNTERS checked/init"
+          : "❌ [DB] CHANNEL_MSG_COUNTERS init failed",
+      );
     });
   });
 

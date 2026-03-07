@@ -14,7 +14,6 @@ import { messagingService } from "./messaging.service";
 import { contactRequestsService } from "./contact-requests.service";
 // import { DiscoveryService as discoveryService } from './discovery.service';
 import { groupService } from "./group.service";
-import { channelService } from "./channel.service";
 
 import * as profileService from "./profile.service";
 import { offlineQueueService } from "./offline-queue.service";
@@ -322,8 +321,9 @@ SELECT * FROM TRANSACTIONS
           return;
         }
         if (app === "metachain-channel" || (json.messageType && json.channelId)) {
-          console.log("📢 [CHANNELS] Message detected:", json.messageType);
-          channelService.handleIncomingChannelMessage(json, from);
+          console.log("📢 [CHANNELS] Message detected (handled by Service Worker):", json.messageType);
+          // Redundant: handleIncomingChannelMessage will be removed from channel.service.ts
+          // The Service Worker already handles persistence and notifies the UI via MDS_SOLO.
           return;
         }
 

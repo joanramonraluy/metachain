@@ -50,6 +50,7 @@ MDS.init(function (msg) {
       MDS.cmd("timer 3000", function () {
         if (typeof requestAllGroupsHistory === "function") {
           requestAllGroupsHistory();
+          requestAllChannelsHistory();
           GROUP_STARTUP_SYNC_DONE = true;
         }
       });
@@ -142,6 +143,9 @@ MDS.init(function (msg) {
       // Also sync all group histories
       if (typeof requestAllGroupsHistory === "function") {
         requestAllGroupsHistory();
+      }
+      if (typeof requestAllChannelsHistory === "function") {
+        requestAllChannelsHistory();
       }
     }
 
@@ -272,6 +276,26 @@ MDS.init(function (msg) {
 
         if (app === "metachain-channel" && maxjson.messageType === "channel_role_update") {
           handleChannelRoleUpdate(pubkey, maxjson);
+          return;
+        }
+
+        if (app === "metachain-channel" && maxjson.messageType === "channel_join_request") {
+          handleChannelJoinRequest(pubkey, maxjson);
+          return;
+        }
+
+        if (app === "metachain-channel" && maxjson.messageType === "channel_info_updated") {
+          handleChannelInfoUpdate(pubkey, maxjson);
+          return;
+        }
+
+        if (app === "metachain-channel" && maxjson.messageType === "channel_history_request") {
+          handleChannelHistoryRequest(pubkey, maxjson);
+          return;
+        }
+
+        if (app === "metachain-channel" && maxjson.messageType === "channel_history_response") {
+          handleChannelHistoryResponse(pubkey, maxjson);
           return;
         }
 

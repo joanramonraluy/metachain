@@ -4,7 +4,7 @@ import { useNavigate, createLazyFileRoute } from "@tanstack/react-router";
 import { appContext } from "../AppContext";
 import { channelService, ChannelSubscriber } from "../services/channel.service";
 import { chatService } from "../services/chat.service";
-import { ArrowLeft, Radio, UserPlus, UserX, Search, ShieldCheck, ShieldAlert, MessageSquare, Info, Users, X, Edit2, Check, Camera } from "lucide-react";
+import { ArrowLeft, Radio, UserPlus, UserX, Search, ShieldCheck, ShieldAlert, MessageSquare, Info, Users, X, Edit2, Check, Camera, Link, Copy, CheckCheck } from "lucide-react";
 import { MDS } from "@minima-global/mds";
 import { ChannelTabs, ChannelTab } from "../components/channel/ChannelTabs";
 
@@ -44,6 +44,10 @@ function ChannelInfoPage() {
     const [avatar, setAvatar] = useState<string | null>(null);
     const [savingAvatar, setSavingAvatar] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const [inviteLink, setInviteLink] = useState<string | null>(null);
+    const [inviteLinkCopied, setInviteLinkCopied] = useState(false);
+    const [generatingLink, setGeneratingLink] = useState(false);
 
     // Invite modal state
     const [showInvite, setShowInvite] = useState(false);
@@ -268,6 +272,30 @@ function ChannelInfoPage() {
         }
     };
 
+    const handleGenerateInvite = async () => {
+        setGeneratingLink(true);
+        try {
+            const link = await channelService.generateInviteCode(channelId, channelName);
+            setInviteLink(link);
+        } catch (err) {
+            console.error("Failed to generate invite link:", err);
+            alert("Failed to generate invite link.");
+        } finally {
+            setGeneratingLink(false);
+        }
+    };
+
+    const handleCopyLink = async () => {
+        if (!inviteLink) return;
+        try {
+            await navigator.clipboard.writeText(inviteLink);
+            setInviteLinkCopied(true);
+            setTimeout(() => setInviteLinkCopied(false), 2000);
+        } catch {
+            alert(inviteLink);
+        }
+    };
+
     if (loading) {
         return (
             <div className="h-full flex items-center justify-center bg-gray-50 dark:bg-gray-900">
@@ -418,6 +446,55 @@ function ChannelInfoPage() {
                                 <span className="text-xs font-bold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-900/30 px-3 py-1 rounded-full border border-sky-100 dark:border-sky-800 uppercase tracking-wide">
                                     {isAdmin ? "📢 Admin" : "👁️ Subscriber"}
                                 </span>
+
+                                {/* INVITE LINK — admin only */}
+                                {isAdmin && (
+                                    <div className="w-full mt-4 border-t border-gray-100 dark:border-gray-700 pt-4">
+                                        <p className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                                            <Link size={12} />
+                                            Invite Link
+                                        </p>
+                                        {inviteLink ? (
+                                            <div className="space-y-2">
+                                                <div className="flex items-center gap-2">
+                                                    <input
+                                                        type="text"
+                                                        readOnly
+                                                        value={inviteLink}
+                                                        className="flex-1 text-xs bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-gray-500 dark:text-gray-400 truncate focus:outline-none"
+                                                    />
+                                                    <button
+                                                        onClick={handleCopyLink}
+                                                        className="p-2 rounded-lg bg-sky-50 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400 hover:bg-sky-100 dark:hover:bg-sky-900/50 transition-colors flex-shrink-0"
+                                                        title="Copy link"
+                                                    >
+                                                        {inviteLinkCopied ? <CheckCheck size={16} /> : <Copy size={16} />}
+                                                    </button>
+                                                </div>
+                                                <button
+                                                    onClick={handleGenerateInvite}
+                                                    disabled={generatingLink}
+                                                    className="w-full text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors py-1"
+                                                >
+                                                    🔄 Regenerate link
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <button
+                                                onClick={handleGenerateInvite}
+                                                disabled={generatingLink}
+                                                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-sky-50 dark:bg-sky-900/20 text-sky-600 dark:text-sky-400 rounded-xl border border-sky-100 dark:border-sky-800 hover:bg-sky-100 dark:hover:bg-sky-900/40 transition-colors text-sm font-semibold disabled:opacity-50"
+                                            >
+                                                {generatingLink ? (
+                                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-sky-600" />
+                                                ) : (
+                                                    <Link size={15} />
+                                                )}
+                                                {generatingLink ? "Generating..." : "Generate Invite Link"}
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
 
                                 {/* STATISTICS */}
                                 <div className="w-full grid grid-cols-2 gap-3 mt-4">

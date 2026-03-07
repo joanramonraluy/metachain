@@ -552,9 +552,46 @@ export async function initDB(): Promise<void> {
                           console.error("❌ [DB] Failed to create CHANNELS table:", cRes.error);
                         } else {
                           console.log("📂 [DB] CHANNELS table initialized");
+
+                          // Migration: Add columns
                           MDS.sql("ALTER TABLE CHANNELS ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT FALSE", () => { });
                           MDS.sql("ALTER TABLE CHANNELS ADD COLUMN IF NOT EXISTS archived_date BIGINT", () => { });
                           MDS.sql("ALTER TABLE CHANNELS ADD COLUMN IF NOT EXISTS favorite BOOLEAN DEFAULT FALSE", () => { });
+
+                          // Create CHANNEL_MESSAGES if not exists (redundant but safe)
+                          const createChannelMessagesTable = `
+                            CREATE TABLE IF NOT EXISTS CHANNEL_MESSAGES (
+                              id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                              channel_id VARCHAR(256) NOT NULL,
+                              sender_publickey VARCHAR(512) NOT NULL,
+                              sender_username VARCHAR(255) NOT NULL,
+                              type VARCHAR(32) NOT NULL,
+                              message TEXT,
+                              filedata TEXT,
+                              date BIGINT NOT NULL,
+                              read INTEGER DEFAULT 0,
+                              sender_seq INT DEFAULT 0
+                            )`;
+                          MDS.sql(createChannelMessagesTable, (cmRes: any) => {
+                            if (cmRes.status) {
+                              MDS.sql("ALTER TABLE CHANNEL_MESSAGES ADD COLUMN IF NOT EXISTS sender_seq INT DEFAULT 0", () => { });
+                            }
+                          });
+
+                          // Create CHANNEL_MSG_COUNTERS
+                          const createChannelCountersTable = `
+                            CREATE TABLE IF NOT EXISTS CHANNEL_MSG_COUNTERS (
+                              channel_id VARCHAR(256) NOT NULL,
+                              sender_publickey VARCHAR(512) NOT NULL,
+                              last_seen_seq INT NOT NULL DEFAULT 0,
+                              my_next_seq INT NOT NULL DEFAULT 1,
+                              PRIMARY KEY (channel_id, sender_publickey)
+                            )`;
+                          MDS.sql(createChannelCountersTable, (ccRes: any) => {
+                            if (ccRes.status) {
+                              console.log("📂 [DB] CHANNEL_MSG_COUNTERS table initialized");
+                            }
+                          });
                         }
                         resolve();
                       });
@@ -775,6 +812,53 @@ export function getAndIncrementSequenceNumber(
     });
 
   // 4. Return our result
+  return myTask;
+}
+
+/**
+ * ATOMIC: Get the next sequence number for a CHANNEL AND increment it
+ */
+export function getAndIncrementChannelSequenceNumber(
+  channelId: string,
+  publicKey: string,
+): Promise<number> {
+  const queueKey = `CHANNEL_${channelId}_${publicKey}`;
+  const previousTask = seqQueues[queueKey] || Promise.resolve();
+
+  const myTask = previousTask.then(() => {
+    return new Promise<number>((resolve, reject) => {
+      const safeChannelId = escapeSql(channelId);
+      const safePubkey = escapeSql(publicKey);
+
+      const checkSql = `SELECT my_next_seq FROM CHANNEL_MSG_COUNTERS WHERE channel_id='${safeChannelId}' AND sender_publickey='${safePubkey}'`;
+
+      MDS.sql(checkSql, (res: any) => {
+        if (res.status && res.rows && res.rows.length > 0) {
+          const currentSeq = parseInt(res.rows[0].MY_NEXT_SEQ);
+          const updateSql = `UPDATE CHANNEL_MSG_COUNTERS SET my_next_seq = my_next_seq + 1 WHERE channel_id='${safeChannelId}' AND sender_publickey='${safePubkey}'`;
+
+          MDS.sql(updateSql, (updateRes: any) => {
+            if (updateRes.status) {
+              resolve(currentSeq);
+            } else {
+              reject(updateRes.error);
+            }
+          });
+        } else {
+          const insertSql = `INSERT INTO CHANNEL_MSG_COUNTERS (channel_id, sender_publickey, my_next_seq) VALUES ('${safeChannelId}', '${safePubkey}', 2)`;
+          MDS.sql(insertSql, (insertRes: any) => {
+            if (insertRes.status) {
+              resolve(1);
+            } else {
+              reject(insertRes.error);
+            }
+          });
+        }
+      });
+    });
+  });
+
+  seqQueues[queueKey] = myTask.then(() => { }).catch(() => { });
   return myTask;
 }
 

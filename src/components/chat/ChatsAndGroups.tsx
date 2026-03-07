@@ -1786,11 +1786,11 @@ export default function ChatsAndGroups() {
           <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl relative overflow-hidden">
             <h3 className="text-xl font-bold mb-4 text-gray-900 dark:text-white flex items-center gap-2">
               <UserPlus className="text-primary-500" />
-              Join Group
+              Join via Link
             </h3>
 
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-              Paste the invite link to join a group.
+              Paste an invite link to join a group or channel.
             </p>
 
             <textarea
@@ -1800,7 +1800,7 @@ export default function ChatsAndGroups() {
                 setJoinError("");
               }}
               className="w-full h-24 p-3 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white resize-none mb-1 focus:outline-none focus:ring-2 focus:ring-primary-500/50"
-              placeholder="mcgrp://..."
+              placeholder="mcgrp://... or mcch://..."
               disabled={joiningGroup}
             />
             {joinError && (
@@ -1826,15 +1826,22 @@ export default function ChatsAndGroups() {
                     setJoinError("Please enter a link");
                     return;
                   }
+                  const trimmed = joinLink.trim();
                   setJoiningGroup(true);
                   setJoinError("");
                   try {
-                    await groupService.sendJoinRequest(joinLink);
+                    if (trimmed.startsWith("mcch://")) {
+                      await channelService.joinViaInviteLink(trimmed);
+                    } else if (trimmed.startsWith("mcgrp://")) {
+                      await groupService.sendJoinRequest(trimmed);
+                    } else {
+                      throw new Error("Unrecognised link format. Must start with mcgrp:// or mcch://");
+                    }
                     setShowJoinModal(false);
                     setJoinLink("");
                   } catch (err: any) {
                     console.error("Join failed:", err);
-                    setJoinError(err || "Failed to process link.");
+                    setJoinError(typeof err === "string" ? err : err?.message || "Failed to process link.");
                   } finally {
                     setJoiningGroup(false);
                   }
@@ -1842,7 +1849,7 @@ export default function ChatsAndGroups() {
                 disabled={joiningGroup || !joinLink}
                 className="px-6 py-2 bg-primary-600 text-white font-medium rounded-lg shadow-md shadow-primary-500/30 hover:bg-primary-500 active:scale-95 transition-all disabled:opacity-50"
               >
-                {joiningGroup ? "Sending..." : "Request to Join"}
+                {joiningGroup ? "Sending..." : "Join"}
               </button>
             </div>
           </div>

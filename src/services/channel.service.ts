@@ -1,6 +1,9 @@
 import { MDS } from "@minima-global/mds";
 import { utf8ToHex } from "../utils/hex";
-import { runSQL as dbRunSQL } from "./database.service";
+import {
+    runSQL as dbRunSQL,
+    getAndIncrementChannelSequenceNumber
+} from "./database.service";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -45,13 +48,17 @@ export interface ChannelMaximaMessage {
     | "channel_subscriber_added"
     | "channel_subscriber_removed"
     | "channel_role_update"
-    | "channel_info_updated";
+    | "channel_info_updated"
+    | "channel_join_request"
+    | "channel_history_request"
+    | "channel_history_response";
     channelId: string;
     channelName: string;
     adminPublickey: string;
     adminUsername: string;
     senderPublickey?: string;
     senderUsername?: string;
+    sender_seq?: number;
     timestamp: number;
 
     // channel_invite
@@ -77,6 +84,14 @@ export interface ChannelMaximaMessage {
     // channel_info_updated
     newName?: string;
     newDescription?: string;
+
+    // channel_join_request
+    requesterName?: string;
+    requesterAddress?: string;
+
+    // channel_history
+    historySince?: number;
+    historyMessages?: ChannelMaximaMessage[];
 }
 
 type ChannelUpdateCallback = () => void;
@@ -420,13 +435,17 @@ class ChannelService {
 
         const now = Date.now();
 
-        // Save locally
+        // 1. Get sequence number
+        const seq = await getAndIncrementChannelSequenceNumber(channelId, myPublicKey);
+
+        // 2. Save locally
         const escapedMsg = message.replace(/'/g, "''");
         await this.runSQL(`
-            INSERT INTO CHANNEL_MESSAGES (channel_id, sender_publickey, sender_username, type, message, filedata, date, read)
-            VALUES ('${channelId}', '${myPublicKey}', '${myUsername.replace(/'/g, "''")}', '${type}', '${escapedMsg}', '${filedata}', ${now}, 1)
+            INSERT INTO CHANNEL_MESSAGES (channel_id, sender_publickey, sender_username, type, message, filedata, date, read, sender_seq)
+            VALUES ('${channelId}', '${myPublicKey}', '${myUsername.replace(/'/g, "''")}', '${type}', '${escapedMsg}', '${filedata}', ${now}, 1, ${seq})
         `);
 
+        // 3. Construct payload
         const maximaMsg: ChannelMaximaMessage = {
             messageType: "channel_message",
             channelId,
@@ -435,6 +454,7 @@ class ChannelService {
             adminUsername: myUsername,
             senderPublickey: myPublicKey,
             senderUsername: myUsername,
+            sender_seq: seq,
             message,
             messageContentType: type as any,
             filedata,
@@ -490,73 +510,6 @@ class ChannelService {
     /* ----------------------------------------------------------------------------
       INCOMING MESSAGE HANDLING
     ---------------------------------------------------------------------------- */
-    async handleIncomingChannelMessage(message: ChannelMaximaMessage, fromPublicKey: string): Promise<void> {
-        try {
-            console.log("📨 [CHANNEL-MSG] Incoming:", message);
-
-            switch (message.messageType) {
-                case "channel_invite":
-                    await this.handleChannelInvite(message, fromPublicKey);
-                    break;
-                case "channel_message":
-                    await this.handleChannelChatMessage(message, fromPublicKey);
-                    break;
-                case "channel_role_update":
-                    await this.handleChannelRoleUpdate(message);
-                    break;
-                case "channel_info_updated":
-                    await this.handleChannelInfoUpdate(message);
-                    break;
-                default:
-                    console.warn("⚠️ [CHANNEL-MSG] Unknown type:", message.messageType);
-            }
-
-            // Notify UI
-            this.notifyChannelUpdate();
-        } catch (err) {
-            console.error("❌ [CHANNEL-MSG] Handler failed:", err);
-        }
-    }
-
-    private async handleChannelInvite(message: ChannelMaximaMessage, fromPublicKey: string): Promise<void> {
-        // Check if channel already exists
-        const existing = await this.getChannelInfo(message.channelId);
-        if (existing) {
-            console.log("ℹ️ [CHANNEL-INVITE] Channel exists, skipping");
-            return;
-        }
-
-        // Create channel locally
-        const createSql = `
-            INSERT INTO CHANNELS (channel_id, name, admin_publickey, created_date, description, avatar)
-            VALUES ('${message.channelId}', '${message.channelName.replace(/'/g, "''")}', '${fromPublicKey}', ${message.timestamp}, '${(message.description || "").replace(/'/g, "''")}', '${message.avatar || ""}')
-        `;
-        await this.runSQL(createSql);
-
-        // Add admin as first subscriber
-        const addAdminSql = `
-            INSERT INTO CHANNEL_SUBSCRIBERS (channel_id, publickey, username, joined_date, role)
-            VALUES ('${message.channelId}', '${fromPublicKey}', '${(message.adminUsername || "Admin").replace(/'/g, "''")}', ${message.timestamp}, 'admin')
-        `;
-        await this.runSQL(addAdminSql);
-
-        console.log("✅ [CHANNEL-INVITE] Accepted:", message.channelId);
-        this.notifyChannelUpdate();
-    }
-
-    private async handleChannelChatMessage(message: ChannelMaximaMessage, fromPublicKey: string): Promise<void> {
-        const msgTimestamp = message.timestamp || Date.now();
-        const safeMsg = (message.message || "").replace(/'/g, "''");
-        const safeUser = (message.adminUsername || "Admin").replace(/'/g, "''");
-        const safeType = message.messageContentType || "text";
-
-        const insertSql = `
-            INSERT INTO CHANNEL_MESSAGES (channel_id, sender_publickey, sender_username, type, message, filedata, date, read)
-            VALUES ('${message.channelId}', '${fromPublicKey}', '${safeUser}', '${safeType}', '${safeMsg}', '${message.filedata || ""}', ${msgTimestamp}, 0)
-        `;
-        await this.runSQL(insertSql);
-        console.log("✅ [CHANNEL-MSG] Saved message for channel:", message.channelId);
-    }
 
     async updateSubscriberRole(channelId: string, subscriberPubkey: string, newRole: "admin" | "subscriber", myPublicKey: string): Promise<void> {
         try {
@@ -592,11 +545,6 @@ class ChannelService {
         }
     }
 
-    private async handleChannelRoleUpdate(message: ChannelMaximaMessage): Promise<void> {
-        const sql = `UPDATE CHANNEL_SUBSCRIBERS SET role = '${message.newRole}' WHERE channel_id = '${message.channelId}' AND publickey = '${message.targetPubkey}'`;
-        await this.runSQL(sql);
-        console.log(`✅ [CHANNEL-ROLE] Real-time role update for ${message.targetPubkey} to ${message.newRole}`);
-    }
 
     async updateChannelDetails(channelId: string, newName: string | null, newDescription: string | null, avatar: string | null, myPublicKey: string): Promise<void> {
         try {
@@ -639,18 +587,6 @@ class ChannelService {
         }
     }
 
-    private async handleChannelInfoUpdate(message: ChannelMaximaMessage): Promise<void> {
-        if (message.newName) {
-            await this.runSQL(`UPDATE CHANNELS SET name = '${message.newName.replace(/'/g, "''")}' WHERE channel_id = '${message.channelId}'`);
-        }
-        if (message.newDescription !== undefined) {
-            await this.runSQL(`UPDATE CHANNELS SET description = '${message.newDescription.replace(/'/g, "''")}' WHERE channel_id = '${message.channelId}'`);
-        }
-        if (message.avatar !== undefined) {
-            await this.runSQL(`UPDATE CHANNELS SET avatar = '${message.avatar.replace(/'/g, "''")}' WHERE channel_id = '${message.channelId}'`);
-        }
-        console.log(`✅ [CHANNEL-UPDATE] Real-time info update for ${message.channelId}`);
-    }
 
     async archiveChannel(channelId: string): Promise<void> {
         try {
@@ -690,6 +626,105 @@ class ChannelService {
             console.error("❌ [CHANNEL] Failed to unfavorite channel:", err);
             throw err;
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Invite link (mcch://)
+    // -----------------------------------------------------------------------
+
+    async generateInviteCode(channelId: string, channelName: string): Promise<string> {
+        return new Promise((resolve, reject) => {
+            MDS.executeRaw("maxima action:info", (res: any) => {
+                if (!res.status) {
+                    reject("Could not get maxima info");
+                    return;
+                }
+                const adminPubkey = res.response.publickey;
+                const adminAddress = res.response.contact;
+
+                const data = {
+                    c: channelId,
+                    n: channelName,
+                    p: adminPubkey,
+                    a: adminAddress,
+                };
+
+                const jsonStr = JSON.stringify(data);
+                const base64 = window.btoa(unescape(encodeURIComponent(jsonStr)));
+                resolve(`mcch://${base64}`);
+            });
+        });
+    }
+
+    async joinViaInviteLink(inviteCode: string): Promise<void> {
+        return new Promise(async (resolve, reject) => {
+            try {
+                if (!inviteCode.startsWith("mcch://")) {
+                    throw new Error("Invalid channel invite link format");
+                }
+
+                const base64 = inviteCode.substring(7);
+                const jsonStr = decodeURIComponent(escape(window.atob(base64)));
+                const data = JSON.parse(jsonStr);
+
+                const channelId = data.c;
+                const adminAddress = data.a;
+
+                // Get our identity
+                const myInfo: any = await new Promise((res) =>
+                    MDS.executeRaw("maxima action:info", res)
+                );
+                const myNameData: any = await this.runSQL(
+                    `SELECT alias FROM METACHAIN_USERS WHERE UPPER(publickey)=UPPER('${myInfo.response.publickey}')`
+                );
+                const myName =
+                    myNameData.rows && myNameData.rows.length > 0
+                        ? myNameData.rows[0].ALIAS || myNameData.rows[0].alias || myInfo.response.name || "Anonymous"
+                        : myInfo.response.name || "Anonymous";
+
+                const payload: any = {
+                    messageType: "channel_join_request",
+                    channelId,
+                    channelName: data.n || "Channel",
+                    adminPublickey: data.p,
+                    adminUsername: "Admin",
+                    senderPublickey: myInfo.response.publickey,
+                    senderUsername: myName,
+                    requesterName: myName,
+                    requesterAddress: myInfo.response.contact,
+                    timestamp: Date.now(),
+                };
+
+                // Seed DISCOVERED_PEERS so we can reach the admin via Mx address
+                const now = Date.now();
+                await this.runSQL(`DELETE FROM DISCOVERED_PEERS WHERE publickey='${data.p}'`);
+                await this.runSQL(`
+                    INSERT INTO DISCOVERED_PEERS (publickey, address, source, alias, last_seen, avatar)
+                    VALUES ('${data.p}', '${adminAddress}', 'CHANNEL_INVITE', 'Unknown', ${now}, '')
+                `);
+
+                const payloadJsonStr = JSON.stringify(payload);
+                const hexData =
+                    "0x" +
+                    Array.from(new TextEncoder().encode(payloadJsonStr))
+                        .map((b) => b.toString(16).padStart(2, "0"))
+                        .join("")
+                        .toUpperCase();
+
+                MDS.executeRaw(
+                    `maxima action:send application:metachain-channel to:${adminAddress} data:${hexData} poll:true`,
+                    (sendRes: any) => {
+                        if (sendRes.status) {
+                            resolve();
+                        } else {
+                            reject("Could not send join request to channel admin: " + sendRes.error);
+                        }
+                    }
+                );
+            } catch (e: any) {
+                reject("Failed to process invite link: " + e.message);
+            }
+        });
     }
 }
 

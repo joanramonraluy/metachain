@@ -430,7 +430,7 @@ function ChannelPage() {
                     const showDate = currentDate !== prevDate;
 
                     return (
-                        <div key={`${msg.timestamp} -${i} `} className="flex flex-col w-full z-0 relative">
+                        <div key={msg.id || `${msg.timestamp}-${msg.senderPublicKey}-${i}`} className="flex flex-col w-full z-0 relative">
                             {showDate && msg.timestamp > 0 && (
                                 <div className="flex justify-center my-3 sticky top-2 z-10">
                                     <span className="text-xs text-gray-600 dark:text-gray-300 font-medium bg-[#E1F3FB] dark:bg-gray-800 border border-white/50 dark:border-gray-700 px-3 py-1.5 rounded-lg shadow-sm uppercase tracking-wide backdrop-blur-sm">
