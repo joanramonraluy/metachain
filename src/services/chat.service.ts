@@ -23,6 +23,9 @@ export interface ChatMessage {
   date?: number;
   sender_seq?: number;
   originalTimestamp?: number;
+  archived?: boolean;
+  archived_date?: number;
+  favorite?: boolean;
 }
 
 export type MessageCallback = (msg: any) => void;

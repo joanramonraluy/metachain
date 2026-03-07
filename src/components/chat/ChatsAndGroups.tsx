@@ -44,6 +44,7 @@ interface ChatItem {
   unreadCount?: number;
   favorite?: boolean;
   lastReceivedDate?: number;
+  archived_date?: number;
 }
 
 interface GroupWithUnread {
@@ -60,6 +61,8 @@ interface GroupWithUnread {
   lastMessageType?: string;
   lastMessageUser?: string;
   archived?: boolean;
+  archived_date?: number;
+  favorite?: boolean;
 }
 
 interface ChannelWithUnread {
@@ -74,6 +77,8 @@ interface ChannelWithUnread {
   isAdmin?: boolean;
   avatar?: string;
   archived?: boolean;
+  archived_date?: number;
+  favorite?: boolean;
 }
 
 export default function ChatsAndGroups() {
@@ -212,10 +217,27 @@ export default function ChatsAndGroups() {
     e.preventDefault();
     try {
       const chat = chats.find((c) => c.publickey === publickey);
-      if (chat?.favorite) {
-        await minimaService.unmarkChatAsFavorite(publickey);
-      } else {
-        await minimaService.markChatAsFavorite(publickey);
+      const group = groups.find((g) => g.group_id === publickey);
+      const channel = channels.find((c) => c.channel_id === publickey);
+
+      if (chat) {
+        if (chat.favorite) {
+          await minimaService.unmarkChatAsFavorite(publickey);
+        } else {
+          await minimaService.markChatAsFavorite(publickey);
+        }
+      } else if (group) {
+        if (group.favorite) {
+          await groupService.unfavoriteGroup(publickey);
+        } else {
+          await groupService.favoriteGroup(publickey);
+        }
+      } else if (channel) {
+        if (channel.favorite) {
+          await channelService.unfavoriteChannel(publickey);
+        } else {
+          await channelService.favoriteChannel(publickey);
+        }
       }
     } catch (err) {
       console.error("❌ Favorite toggle error:", err);
@@ -288,6 +310,12 @@ export default function ChatsAndGroups() {
       groupsWithUnread.sort(
         (a, b) => (b.lastMessageDate || 0) - (a.lastMessageDate || 0),
       );
+      if (groupsWithUnread.length === 0 && groupsList.length > 0) {
+        console.warn("⚠️ [DEBUG] Groups disappeared after mapping! Original list:", groupsList);
+      } else {
+        console.log("ℹ️ [DEBUG] Groups fetched successfully:", groupsList.length, "groups, active:", groupsWithUnread.filter(g => !g.archived).length);
+        if (groupsWithUnread.length > 0) console.log("Sample group:", groupsWithUnread[0]);
+      }
       setGroups(groupsWithUnread);
       localStorage.setItem("cached_groups", JSON.stringify(groupsWithUnread));
     } catch (err) {
@@ -551,8 +579,9 @@ export default function ChatsAndGroups() {
   const individualChats = contactChats; // Only contacts in Individuals tab
   const favoriteChats = chats.filter((c) => c.favorite && !c.archived);
   const archivedChats = chats.filter((c) => c.archived);
-  const favoriteGroups = groups.filter(() => false);
+  const favoriteGroups = groups.filter((g) => g.favorite && !g.archived);
   const archivedGroups: GroupWithUnread[] = groups.filter((g) => g.archived);
+  const favoriteChannels = channels.filter((c) => c.favorite && !c.archived);
   const archivedChannels: ChannelWithUnread[] = channels.filter(
     (c) => c.archived,
   );
@@ -590,7 +619,7 @@ export default function ChatsAndGroups() {
     case "favorites":
       displayedChats = favoriteChats;
       displayedGroups = favoriteGroups;
-      displayedChannels = [];
+      displayedChannels = favoriteChannels;
       break;
     case "archived":
       displayedChats = archivedChats;
@@ -600,7 +629,7 @@ export default function ChatsAndGroups() {
   }
 
   const allTimelineItems =
-    activeTab === "all"
+    activeTab === "all" || activeTab === "archived" || activeTab === "favorites"
       ? [
         ...displayedChats.map((chat) => ({
           kind: "chat" as const,
@@ -622,7 +651,20 @@ export default function ChatsAndGroups() {
           ),
           channel,
         })),
-      ].sort((a, b) => b.sortDate - a.sortDate)
+      ].sort((a, b) => {
+        const aItem = a.kind === "group" ? a.group : a.kind === "channel" ? a.channel : a.chat;
+        const bItem = b.kind === "group" ? b.group : b.kind === "channel" ? b.channel : b.chat;
+
+        if (activeTab === "archived") {
+          return (Number(bItem.archived_date || 0)) - (Number(aItem.archived_date || 0));
+        }
+
+        // Favorites always on top
+        if (aItem.favorite && !bItem.favorite) return -1;
+        if (!aItem.favorite && bItem.favorite) return 1;
+
+        return b.sortDate - a.sortDate;
+      })
       : [];
 
   const defaultAvatar =
@@ -688,7 +730,7 @@ export default function ChatsAndGroups() {
   const groupsCount = groups.length;
   const channelsCount = channels.length;
   const requestsCount = requestChats.length;
-  const favoritesCount = favoriteChats.length + favoriteGroups.length;
+  const favoritesCount = favoriteChats.length + favoriteGroups.length + favoriteChannels.length;
   const archivedCount =
     archivedChats.length + archivedGroups.length + archivedChannels.length;
 
@@ -703,15 +745,7 @@ export default function ChatsAndGroups() {
           <button
             className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 flex items-center gap-3 transition-colors touch-manipulation"
             onClick={(e) => {
-              const isG = groups.some(
-                (g) => g.group_id === contextMenu.publickey,
-              );
-              const isC = channels.some(
-                (c) => c.channel_id === contextMenu.publickey,
-              );
-              if (!isG && !isC) {
-                handleToggleFavorite(contextMenu.publickey, e);
-              }
+              handleToggleFavorite(contextMenu.publickey, e);
               setContextMenu(null);
             }}
           >
@@ -724,12 +758,9 @@ export default function ChatsAndGroups() {
               />
             </div>
             <span className="font-medium">
-              {groups.some((g) => g.group_id === contextMenu.publickey) ||
-                channels.some((c) => c.channel_id === contextMenu.publickey)
-                ? "Favorites only for Chats"
-                : contextMenu.favorite
-                  ? "Unfavorite Chat"
-                  : "Favorite Chat"}
+              {contextMenu.favorite
+                ? "Unfavorite"
+                : "Favorite"}
             </span>
           </button>
           <button
@@ -947,7 +978,7 @@ export default function ChatsAndGroups() {
                             syntheticEvent,
                             group.group_id,
                             group.archived,
-                            false,
+                            group.favorite,
                           );
                         }, 500);
                       }}
@@ -994,6 +1025,14 @@ export default function ChatsAndGroups() {
                           <div className="flex items-baseline justify-between gap-2 mb-1">
                             <h3 className="font-semibold text-gray-900 dark:text-white truncate text-base flex items-center gap-1.5">
                               {group.name}
+                              {group.favorite && (
+                                <Star
+                                  size={16}
+                                  fill="#fbbf24"
+                                  stroke="#f59e0b"
+                                  className="flex-shrink-0"
+                                />
+                              )}
                               {group.my_role === "creator" ? (
                                 <span className="text-[10px] bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded font-medium">
                                   creator
@@ -1055,7 +1094,7 @@ export default function ChatsAndGroups() {
                           e,
                           channel.channel_id,
                           channel.archived,
-                          false,
+                          channel.favorite,
                         );
                       }}
                       onTouchStart={(e) => {
@@ -1077,7 +1116,7 @@ export default function ChatsAndGroups() {
                             syntheticEvent,
                             channel.channel_id,
                             channel.archived,
-                            false,
+                            channel.favorite,
                           );
                         }, 500);
                       }}
@@ -1124,6 +1163,14 @@ export default function ChatsAndGroups() {
                           <div className="flex items-baseline justify-between gap-2 mb-1">
                             <h3 className="font-semibold text-gray-900 dark:text-white truncate text-base flex items-center gap-1.5">
                               {channel.name}
+                              {channel.favorite && (
+                                <Star
+                                  size={16}
+                                  fill="#fbbf24"
+                                  stroke="#f59e0b"
+                                  className="flex-shrink-0"
+                                />
+                              )}
                               {channel.admin_publickey === myPublicKey ? (
                                 <span className="text-[10px] bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded font-medium">
                                   creator
@@ -1301,7 +1348,7 @@ export default function ChatsAndGroups() {
                       e,
                       group.group_id,
                       group.archived,
-                      false,
+                      group.favorite,
                     );
                   }}
                   onTouchStart={(e) => {
@@ -1323,7 +1370,7 @@ export default function ChatsAndGroups() {
                         syntheticEvent,
                         group.group_id,
                         group.archived,
-                        false,
+                        group.favorite,
                       );
                     }, 500);
                   }}
@@ -1359,6 +1406,14 @@ export default function ChatsAndGroups() {
                       <div className="flex items-baseline justify-between gap-2 mb-1">
                         <h3 className="font-semibold text-gray-900 dark:text-white truncate text-base flex items-center gap-1.5">
                           {group.name}
+                          {group.favorite && (
+                            <Star
+                              size={16}
+                              fill="#fbbf24"
+                              stroke="#f59e0b"
+                              className="flex-shrink-0"
+                            />
+                          )}
                           {group.my_role === "creator" ? (
                             <span className="text-[10px] bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded font-medium">
                               creator
@@ -1418,7 +1473,7 @@ export default function ChatsAndGroups() {
                       e,
                       channel.channel_id,
                       channel.archived,
-                      false,
+                      channel.favorite,
                     );
                   }}
                   onTouchStart={(e) => {
@@ -1440,7 +1495,7 @@ export default function ChatsAndGroups() {
                         syntheticEvent,
                         channel.channel_id,
                         channel.archived,
-                        false,
+                        channel.favorite,
                       );
                     }, 500);
                   }}
@@ -1476,6 +1531,14 @@ export default function ChatsAndGroups() {
                       <div className="flex items-baseline justify-between gap-2 mb-1">
                         <h3 className="font-semibold text-gray-900 dark:text-white truncate text-base flex items-center gap-1.5">
                           {channel.name}
+                          {channel.favorite && (
+                            <Star
+                              size={16}
+                              fill="#fbbf24"
+                              stroke="#f59e0b"
+                              className="flex-shrink-0"
+                            />
+                          )}
                           {channel.admin_publickey === myPublicKey ? (
                             <span className="text-[10px] bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded font-medium">
                               creator

@@ -921,7 +921,8 @@ function initDatabase() {
       "  avatar TEXT, " +
       "  description TEXT, " +
       "  archived BOOLEAN DEFAULT FALSE, " +
-      "  archived_date BIGINT " +
+      "  archived_date BIGINT, " +
+      "  favorite BOOLEAN DEFAULT FALSE " +
       " )";
 
     return runSQL(groupsSql).then(function (res) {
@@ -931,8 +932,9 @@ function initDatabase() {
           : "❌ [DB] GROUPS init failed: " + res.error,
       );
       return Promise.all([
-        runSQL("ALTER TABLE GROUPS ADD COLUMN archived BOOLEAN DEFAULT FALSE"),
-        runSQL("ALTER TABLE GROUPS ADD COLUMN archived_date BIGINT")
+        runSQL("ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT FALSE"),
+        runSQL("ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS archived_date BIGINT"),
+        runSQL("ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS favorite BOOLEAN DEFAULT FALSE")
       ]);
     });
   });
@@ -1216,7 +1218,8 @@ function initDatabase() {
       "  created_date BIGINT NOT NULL, " +
       "  avatar TEXT, " +
       "  archived BOOLEAN DEFAULT FALSE, " +
-      "  archived_date BIGINT " +
+      "  archived_date BIGINT, " +
+      "  favorite BOOLEAN DEFAULT FALSE " +
       " )";
     return runSQL(channelsSql).then(function (res) {
       MDS.log(
@@ -1225,8 +1228,9 @@ function initDatabase() {
           : "❌ [DB] CHANNELS init failed: " + res.error,
       );
       return Promise.all([
-        runSQL("ALTER TABLE CHANNELS ADD COLUMN archived BOOLEAN DEFAULT FALSE"),
-        runSQL("ALTER TABLE CHANNELS ADD COLUMN archived_date BIGINT")
+        runSQL("ALTER TABLE CHANNELS ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT FALSE"),
+        runSQL("ALTER TABLE CHANNELS ADD COLUMN IF NOT EXISTS archived_date BIGINT"),
+        runSQL("ALTER TABLE CHANNELS ADD COLUMN IF NOT EXISTS favorite BOOLEAN DEFAULT FALSE")
       ]);
     });
   });

@@ -14,7 +14,7 @@ import { Capacitor } from "@capacitor/core";
 import { MDS } from "@minima-global/mds";
 import { appContext } from "../../AppContext";
 import TransferSelector from "../../components/chat/TransferSelector";
-import { Trash2, Wallet, Info, Archive, Settings, Users } from "lucide-react";
+import { Trash2, Wallet, Info, Archive, Settings, Users, Star } from "lucide-react";
 import MessageBubble from "../../components/chat/MessageBubble";
 
 import { minimaService } from "../../services/minima.service";
@@ -212,7 +212,7 @@ function ChatPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showChatInfo, setShowChatInfo] = useState(false);
   const [isArchived, setIsArchived] = useState(false);
-  // Favorite state removed as it is no longer in the menu  // Add blocked state
+  const [isFavorite, setIsFavorite] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
   const [blockedByThem, setBlockedByThem] = useState(false);
 
@@ -681,6 +681,7 @@ function ChatPage() {
     try {
       const status = await minimaService.getChatStatus(contact.publickey);
       setIsArchived(status.archived);
+      setIsFavorite(status.favorite);
       setIsBlocked(status.blocked);
       setBlockedByThem(status.blockedByThem);
     } catch (err) {
@@ -2200,6 +2201,20 @@ function ChatPage() {
     }
   };
 
+  const handleToggleFavorite = async () => {
+    if (!contact?.publickey) return;
+    try {
+      if (isFavorite) {
+        await minimaService.unmarkChatAsFavorite(contact.publickey);
+      } else {
+        await minimaService.markChatAsFavorite(contact.publickey);
+      }
+      setIsFavorite(!isFavorite);
+    } catch (err) {
+      console.error("❌ [CHAT] Toggle favorite error:", err);
+    }
+  };
+
   // Chat deletion function removed as it uses handleDeleteChat directly
 
   /* ----------------------------------------------------------------------------
@@ -2282,8 +2297,16 @@ function ChatPage() {
             className="w-12 h-12 rounded-full object-cover bg-gray-200 dark:bg-gray-700"
           />
           <div className="flex flex-col leading-tight flex-1 min-w-0">
-            <strong className="text-[16px] truncate font-semibold">
+            <strong className="text-[16px] truncate font-semibold flex items-center gap-1.5">
               {contact?.extradata?.name || "Unknown"}
+              {isFavorite && (
+                <Star
+                  size={14}
+                  fill="#fbbf24"
+                  stroke="#f59e0b"
+                  className="flex-shrink-0"
+                />
+              )}
             </strong>
             <div className="flex items-center gap-1">
               {appStatus === "installed" ? (
@@ -2427,6 +2450,23 @@ function ChatPage() {
                 className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
                 onClick={() => {
                   setShowMenu(false);
+                  handleToggleFavorite();
+                }}
+              >
+                <div className="w-8 h-8 rounded-full bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center text-yellow-600 dark:text-yellow-400">
+                  <Star
+                    size={16}
+                    fill={isFavorite ? "currentColor" : "none"}
+                  />
+                </div>
+                <span className="font-medium">
+                  {isFavorite ? "Unfavorite Chat" : "Favorite Chat"}
+                </span>
+              </button>
+              <button
+                className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
+                onClick={() => {
+                  setShowMenu(false);
                   setShowChatInfo(true);
                 }}
               >
@@ -2452,36 +2492,38 @@ function ChatPage() {
         </div>
       </div>
       {/* Delete Confirmation Dialog */}
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 md:bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-sm w-full p-6 animate-in zoom-in-95 fade-in duration-200 border border-gray-700 md:border-gray-200 dark:border-gray-700">
-            <h3 className="text-lg font-bold text-white md:text-gray-900 dark:text-white mb-2">
-              Delete Chat?
-            </h3>
-            <p className="text-gray-300 md:text-gray-600 dark:text-gray-300 mb-6">
-              This will permanently delete all messages in this conversation.
-              This action cannot be undone.
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowDeleteConfirm(false)}
-                className="flex-1 px-4 py-2 border border-gray-600 md:border-gray-300 text-gray-300 md:text-gray-700 rounded-lg hover:bg-gray-700 md:hover:bg-gray-50 transition-colors font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  setShowDeleteConfirm(false);
-                  handleDeleteChat();
-                }}
-                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
-              >
-                Delete
-              </button>
+      {
+        showDeleteConfirm && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-gray-800 md:bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-sm w-full p-6 animate-in zoom-in-95 fade-in duration-200 border border-gray-700 md:border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-bold text-white md:text-gray-900 dark:text-white mb-2">
+                Delete Chat?
+              </h3>
+              <p className="text-gray-300 md:text-gray-600 dark:text-gray-300 mb-6">
+                This will permanently delete all messages in this conversation.
+                This action cannot be undone.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="flex-1 px-4 py-2 border border-gray-600 md:border-gray-300 text-gray-300 md:text-gray-700 rounded-lg hover:bg-gray-700 md:hover:bg-gray-50 transition-colors font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    setShowDeleteConfirm(false);
+                    handleDeleteChat();
+                  }}
+                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
+                >
+                  Delete
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
       {/* Invite Dialog */}
       <InviteDialog
         isOpen={showInviteDialog}
@@ -2492,119 +2534,41 @@ function ChatPage() {
       />
       {/* Chat Info Dialog */}
       {/* Chat Info Dialog */}
-      {showChatInfo && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 md:bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full p-6 animate-in zoom-in-95 fade-in duration-200 border border-gray-700 md:border-gray-200 dark:border-gray-700">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-white md:text-gray-900 dark:text-white">
-                Chat Statistics
-              </h3>
-              <button
-                onClick={() => setShowChatInfo(false)}
-                className="text-gray-400 md:text-gray-500 hover:text-gray-300 md:hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
-              >
-                <svg
-                  className="w-5 h-5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
+      {
+        showChatInfo && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-gray-800 md:bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full p-6 animate-in zoom-in-95 fade-in duration-200 border border-gray-700 md:border-gray-200 dark:border-gray-700">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-bold text-white md:text-gray-900 dark:text-white">
+                  Chat Statistics
+                </h3>
+                <button
+                  onClick={() => setShowChatInfo(false)}
+                  className="text-gray-400 md:text-gray-500 hover:text-gray-300 md:hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              {/* Total Messages */}
-              <div className="flex items-center justify-between p-3 bg-gray-700/50 md:bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-primary-500/20 rounded-full flex items-center justify-center">
-                    <svg
-                      className="w-5 h-5 text-primary-400 md:text-primary-600 dark:text-primary-400"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-                      />
-                    </svg>
-                  </div>
-                  <span className="font-medium text-gray-300 md:text-gray-700 dark:text-gray-300">
-                    Total Messages
-                  </span>
-                </div>
-                <span className="text-lg font-bold text-white md:text-gray-900 dark:text-white">
-                  {messages.length}
-                </span>
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M6 18L18 6M6 6l12 12"
+                    />
+                  </svg>
+                </button>
               </div>
 
-              {/* Charms Sent/Received */}
-              <div className="flex items-center justify-between p-3 bg-gray-700/50 md:bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-purple-500/20 rounded-full flex items-center justify-center">
-                    <span className="text-xl">✨</span>
-                  </div>
-                  <span className="font-medium text-gray-300 md:text-gray-700 dark:text-gray-300">
-                    Charms
-                  </span>
-                </div>
-                <div className="text-right">
-                  <div className="text-sm text-gray-400 md:text-gray-500 dark:text-gray-400">
-                    Sent: {messages.filter((m) => m.charm && m.fromMe).length} |
-                    Received:{" "}
-                    {messages.filter((m) => m.charm && !m.fromMe).length}
-                  </div>
-                </div>
-              </div>
-
-              {/* Tokens Transferred */}
-              <div className="flex items-center justify-between p-3 bg-gray-700/50 md:bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-green-500/20 rounded-full flex items-center justify-center">
-                    <svg
-                      className="w-5 h-5 text-green-400 md:text-green-600 dark:text-green-400"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                      />
-                    </svg>
-                  </div>
-                  <span className="font-medium text-gray-300 md:text-gray-700 dark:text-gray-300">
-                    Token Transfers
-                  </span>
-                </div>
-                <div className="text-right">
-                  <div className="text-sm text-gray-400 md:text-gray-500 dark:text-gray-400">
-                    Sent:{" "}
-                    {messages.filter((m) => m.tokenAmount && m.fromMe).length} |
-                    Received:{" "}
-                    {messages.filter((m) => m.tokenAmount && !m.fromMe).length}
-                  </div>
-                </div>
-              </div>
-
-              {/* First Message Date */}
-              {messages.length > 0 && messages[0].timestamp && (
+              <div className="space-y-4">
+                {/* Total Messages */}
                 <div className="flex items-center justify-between p-3 bg-gray-700/50 md:bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-orange-500/20 rounded-full flex items-center justify-center">
+                    <div className="w-10 h-10 bg-primary-500/20 rounded-full flex items-center justify-center">
                       <svg
-                        className="w-5 h-5 text-orange-400 md:text-orange-600 dark:text-orange-400"
+                        className="w-5 h-5 text-primary-400 md:text-primary-600 dark:text-primary-400"
                         fill="none"
                         stroke="currentColor"
                         viewBox="0 0 24 24"
@@ -2613,30 +2577,110 @@ function ChatPage() {
                           strokeLinecap="round"
                           strokeLinejoin="round"
                           strokeWidth={2}
-                          d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                          d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
                         />
                       </svg>
                     </div>
                     <span className="font-medium text-gray-300 md:text-gray-700 dark:text-gray-300">
-                      First Message
+                      Total Messages
                     </span>
                   </div>
-                  <span className="text-sm text-gray-400 md:text-gray-600 dark:text-gray-400">
-                    {new Date(messages[0].timestamp).toLocaleDateString()}
+                  <span className="text-lg font-bold text-white md:text-gray-900 dark:text-white">
+                    {messages.length}
                   </span>
                 </div>
-              )}
-            </div>
 
-            <button
-              onClick={() => setShowChatInfo(false)}
-              className="w-full mt-6 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors font-medium"
-            >
-              Close
-            </button>
+                {/* Charms Sent/Received */}
+                <div className="flex items-center justify-between p-3 bg-gray-700/50 md:bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-purple-500/20 rounded-full flex items-center justify-center">
+                      <span className="text-xl">✨</span>
+                    </div>
+                    <span className="font-medium text-gray-300 md:text-gray-700 dark:text-gray-300">
+                      Charms
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-sm text-gray-400 md:text-gray-500 dark:text-gray-400">
+                      Sent: {messages.filter((m) => m.charm && m.fromMe).length} |
+                      Received:{" "}
+                      {messages.filter((m) => m.charm && !m.fromMe).length}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tokens Transferred */}
+                <div className="flex items-center justify-between p-3 bg-gray-700/50 md:bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-green-500/20 rounded-full flex items-center justify-center">
+                      <svg
+                        className="w-5 h-5 text-green-400 md:text-green-600 dark:text-green-400"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                        />
+                      </svg>
+                    </div>
+                    <span className="font-medium text-gray-300 md:text-gray-700 dark:text-gray-300">
+                      Token Transfers
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-sm text-gray-400 md:text-gray-500 dark:text-gray-400">
+                      Sent:{" "}
+                      {messages.filter((m) => m.tokenAmount && m.fromMe).length} |
+                      Received:{" "}
+                      {messages.filter((m) => m.tokenAmount && !m.fromMe).length}
+                    </div>
+                  </div>
+                </div>
+
+                {/* First Message Date */}
+                {messages.length > 0 && messages[0].timestamp && (
+                  <div className="flex items-center justify-between p-3 bg-gray-700/50 md:bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-orange-500/20 rounded-full flex items-center justify-center">
+                        <svg
+                          className="w-5 h-5 text-orange-400 md:text-orange-600 dark:text-orange-400"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                          />
+                        </svg>
+                      </div>
+                      <span className="font-medium text-gray-300 md:text-gray-700 dark:text-gray-300">
+                        First Message
+                      </span>
+                    </div>
+                    <span className="text-sm text-gray-400 md:text-gray-600 dark:text-gray-400">
+                      {new Date(messages[0].timestamp).toLocaleDateString()}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              <button
+                onClick={() => setShowChatInfo(false)}
+                className="w-full mt-6 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors font-medium"
+              >
+                Close
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        )
+      }
       {/* CHAT BODY - Scrollable */}
       <div
         ref={scrollContainerRef}
@@ -3233,6 +3277,6 @@ function ChatPage() {
           </div>
         )}
       </div>
-    </div>
+    </div >
   );
 }

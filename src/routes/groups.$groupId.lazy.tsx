@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, useContext, useCallback, lazy, Suspense } from "react";
 import { useNavigate, createLazyFileRoute } from "@tanstack/react-router";
 import { appContext } from "../AppContext";
-import { Settings, Trash2, Users } from 'lucide-react';
+import { Settings, Trash2, Star, Archive, Info } from 'lucide-react';
 import { groupService } from "../services/group.service";
 import MessageBubble from "../components/chat/MessageBubble";
 import { useTheme } from "../context/ThemeContext";
@@ -69,6 +69,8 @@ function ChatPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [memberCount, setMemberCount] = useState<number>(0);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [isFavorite, setIsFavorite] = useState(false);
+  const [isArchived, setIsArchived] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const cursorPositionRef = useRef<number | null>(null);
@@ -98,6 +100,8 @@ function ChatPage() {
               minimaaddress: address,
             }
           } as any);
+          setIsFavorite(!!info.favorite);
+          setIsArchived(!!info.archived);
         }
 
         const members = await groupService.getGroupMembers(address);
@@ -274,7 +278,7 @@ function ChatPage() {
         return;
       }
 
-      // Group still exists — update name if provided
+      // Group still exists — update name and status
       if (e.detail.name) {
         setContact(prev => {
           if (!prev) return prev;
@@ -286,6 +290,12 @@ function ChatPage() {
             }
           };
         });
+      }
+      if (e.detail.favorite !== undefined) {
+        setIsFavorite(!!e.detail.favorite);
+      }
+      if (e.detail.archived !== undefined) {
+        setIsArchived(!!e.detail.archived);
       }
     };
     window.addEventListener("GROUP_UPDATE", handleGroupUpdate);
@@ -347,6 +357,34 @@ function ChatPage() {
   /* ----------------------------------------------------------------------------
       DELETE GROUP
   ---------------------------------------------------------------------------- */
+  const handleToggleArchive = async () => {
+    if (!address) return;
+    try {
+      if (isArchived) {
+        await groupService.unarchiveGroup(address);
+      } else {
+        await groupService.archiveGroup(address);
+      }
+      setIsArchived(!isArchived);
+    } catch (err) {
+      console.error("❌ [GROUP] Toggle archive error:", err);
+    }
+  };
+
+  const handleToggleFavorite = async () => {
+    if (!address) return;
+    try {
+      if (isFavorite) {
+        await groupService.unfavoriteGroup(address);
+      } else {
+        await groupService.favoriteGroup(address);
+      }
+      setIsFavorite(!isFavorite);
+    } catch (err) {
+      console.error("❌ [GROUP] Toggle favorite error:", err);
+    }
+  };
+
   const handleDeleteChat = async () => {
     if (!address) return;
 
@@ -432,8 +470,16 @@ function ChatPage() {
             {contact?.extradata?.name?.charAt(0).toUpperCase() || "G"}
           </div>
           <div className="flex flex-col leading-tight flex-1 min-w-0">
-            <strong className="text-[16px] truncate font-semibold">
+            <strong className="text-[16px] truncate font-semibold flex items-center gap-1.5">
               {contact?.extradata?.name || "Group"}
+              {isFavorite && (
+                <Star
+                  size={14}
+                  fill="#fbbf24"
+                  stroke="#f59e0b"
+                  className="flex-shrink-0"
+                />
+              )}
             </strong>
             <span className="text-xs opacity-80 truncate block">
               {memberCount} Group members
@@ -483,9 +529,40 @@ function ChatPage() {
                 }}
               >
                 <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
-                  <Users size={16} />
+                  <Info size={16} />
                 </div>
                 <span className="font-medium">Group Info</span>
+              </button>
+              <button
+                className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
+                onClick={() => {
+                  setShowMenu(false);
+                  handleToggleArchive();
+                }}
+              >
+                <div className="w-8 h-8 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center text-orange-600 dark:text-orange-400">
+                  <Archive size={16} />
+                </div>
+                <span className="font-medium">
+                  {isArchived ? "Unarchive Group" : "Archive Group"}
+                </span>
+              </button>
+              <button
+                className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
+                onClick={() => {
+                  setShowMenu(false);
+                  handleToggleFavorite();
+                }}
+              >
+                <div className="w-8 h-8 rounded-full bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center text-yellow-600 dark:text-yellow-400">
+                  <Star
+                    size={16}
+                    fill={isFavorite ? "currentColor" : "none"}
+                  />
+                </div>
+                <span className="font-medium">
+                  {isFavorite ? "Unfavorite Group" : "Favorite Group"}
+                </span>
               </button>
               <button
                 className="flex items-center gap-3 w-full p-3 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 rounded-b-lg transition-colors text-left border-t border-gray-100 dark:border-gray-700"

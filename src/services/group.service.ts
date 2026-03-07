@@ -13,6 +13,7 @@ export interface Group {
   archived?: boolean;
   archived_date?: number;
   my_role?: "creator" | "admin" | "member";
+  favorite?: boolean;
 }
 
 export interface GroupMember {
@@ -230,6 +231,7 @@ class GroupService {
                 ORDER BY g.created_date DESC
             `;
       const res = await this.runSQL(sql);
+      console.log(`[GROUP-SERVICE] getMyGroups for ${myPublicKey}:`, res.rows ? res.rows.length : 0, "rows found");
       if (!res.rows) return [];
 
       return res.rows.map((row: any) => ({
@@ -239,9 +241,10 @@ class GroupService {
         created_date: Number(row.CREATED_DATE || row.created_date || 0),
         avatar: row.AVATAR || row.avatar,
         description: row.DESCRIPTION || row.description,
-        archived: row.ARCHIVED === 1 || row.ARCHIVED === true || row.ARCHIVED === "1" || row.ARCHIVED === "TRUE",
+        archived: String(row.ARCHIVED).toUpperCase() === "TRUE" || String(row.ARCHIVED) === "1" || String(row.archived).toUpperCase() === "TRUE" || String(row.archived) === "1",
         archived_date: Number(row.ARCHIVED_DATE || row.archived_date || 0),
         my_role: row.MY_ROLE || row.my_role,
+        favorite: String(row.FAVORITE).toUpperCase() === "TRUE" || String(row.FAVORITE) === "1" || String(row.favorite).toUpperCase() === "TRUE" || String(row.favorite) === "1",
       }));
     } catch (err) {
       console.error("❌ [GROUP-MGMT] Failed to get groups:", err);
@@ -262,8 +265,9 @@ class GroupService {
           created_date: Number(row.CREATED_DATE || row.created_date || 0),
           avatar: row.AVATAR || row.avatar,
           description: row.DESCRIPTION || row.description,
-          archived: row.ARCHIVED === 1 || row.ARCHIVED === true || row.ARCHIVED === "1" || row.ARCHIVED === "TRUE",
+          archived: String(row.ARCHIVED).toUpperCase() === "TRUE" || String(row.ARCHIVED) === "1" || String(row.archived).toUpperCase() === "TRUE" || String(row.archived) === "1",
           archived_date: Number(row.ARCHIVED_DATE || row.archived_date || 0),
+          favorite: String(row.FAVORITE).toUpperCase() === "TRUE" || String(row.FAVORITE) === "1" || String(row.favorite).toUpperCase() === "TRUE" || String(row.favorite) === "1",
         };
       }
       return null;
@@ -277,16 +281,16 @@ class GroupService {
     try {
       // Delete messages
       await this.runSQL(
-        `DELETE FROM GROUP_MESSAGES WHERE group_id = '${groupId}'`,
+        `DELETE FROM GROUP_MESSAGES WHERE UPPER(group_id) = UPPER('${groupId}')`,
       );
       // Delete members
       await this.runSQL(
-        `DELETE FROM GROUP_MEMBERS WHERE group_id = '${groupId}'`,
+        `DELETE FROM GROUP_MEMBERS WHERE UPPER(group_id) = UPPER('${groupId}')`,
       );
       // Delete bans
-      await this.runSQL(`DELETE FROM GROUP_BANS WHERE group_id = '${groupId}'`);
+      await this.runSQL(`DELETE FROM GROUP_BANS WHERE UPPER(group_id) = UPPER('${groupId}')`);
       // Delete group
-      await this.runSQL(`DELETE FROM GROUPS WHERE group_id = '${groupId}'`);
+      await this.runSQL(`DELETE FROM GROUPS WHERE UPPER(group_id) = UPPER('${groupId}')`);
 
       console.log("✅ [GROUP-MGMT] Deleted:", groupId);
       this.notifyGroupUpdate();
@@ -300,7 +304,7 @@ class GroupService {
     try {
       const sql = `UPDATE GROUPS SET archived = TRUE, archived_date = ${Date.now()} WHERE group_id = '${groupId}'`;
       await this.runSQL(sql);
-      this.notifyGroupUpdate();
+      this.notifyGroupUpdate(groupId, { archived: true });
     } catch (err) {
       console.error("❌ [GROUP-MGMT] Failed to archive group:", err);
       throw err;
@@ -309,11 +313,33 @@ class GroupService {
 
   async unarchiveGroup(groupId: string): Promise<void> {
     try {
-      const sql = `UPDATE GROUPS SET archived = FALSE WHERE group_id = '${groupId}'`;
+      const sql = `UPDATE GROUPS SET archived = FALSE, archived_date = 0 WHERE group_id = '${groupId}'`;
       await this.runSQL(sql);
-      this.notifyGroupUpdate();
+      this.notifyGroupUpdate(groupId, { archived: false });
     } catch (err) {
       console.error("❌ [GROUP-MGMT] Failed to unarchive group:", err);
+      throw err;
+    }
+  }
+
+  async favoriteGroup(groupId: string): Promise<void> {
+    try {
+      const sql = `UPDATE GROUPS SET favorite = TRUE WHERE group_id = '${groupId}'`;
+      await this.runSQL(sql);
+      this.notifyGroupUpdate(groupId, { favorite: true });
+    } catch (err) {
+      console.error("❌ [GROUP-MGMT] Failed to favorite group:", err);
+      throw err;
+    }
+  }
+
+  async unfavoriteGroup(groupId: string): Promise<void> {
+    try {
+      const sql = `UPDATE GROUPS SET favorite = FALSE WHERE group_id = '${groupId}'`;
+      await this.runSQL(sql);
+      this.notifyGroupUpdate(groupId, { favorite: false });
+    } catch (err) {
+      console.error("❌ [GROUP-MGMT] Failed to unfavorite group:", err);
       throw err;
     }
   }
@@ -1699,14 +1725,20 @@ class GroupService {
     this.groupMessageCallbacks.forEach((cb) => cb(message));
   }
 
-  private notifyGroupUpdate(groupId?: string) {
+  private notifyGroupUpdate(groupId?: string, extraDetail?: any, skipDispatch = false) {
     this.groupUpdateCallbacks.forEach((cb) => cb());
-    // Also fire a window event so routes subscribed via window.addEventListener are notified
-    window.dispatchEvent(
-      new CustomEvent("GROUP_UPDATE", {
-        detail: { type: "group_update", groupId: groupId || "" },
-      }),
-    );
+    if (!skipDispatch && typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("GROUP_UPDATE", {
+          detail: {
+            type: "group_update",
+            groupId: groupId || "",
+            _fromService: "GroupService",
+            ...(extraDetail || {}),
+          },
+        }),
+      );
+    }
   }
 }
 

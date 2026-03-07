@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, useContext, useCallback, lazy, Suspense } from "react";
 import { useNavigate, createLazyFileRoute } from "@tanstack/react-router";
 import { appContext } from "../AppContext";
-import { Radio, Settings, Info, Trash2 } from "lucide-react";
+import { Radio, Settings, Info, Trash2, Star, Archive } from "lucide-react";
 import { channelService } from "../services/channel.service";
 import { useTheme } from "../context/ThemeContext";
 import { EmojiClickData } from "emoji-picker-react";
@@ -38,6 +38,8 @@ function ChannelPage() {
     const [showMenu, setShowMenu] = useState(false);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+    const [isFavorite, setIsFavorite] = useState(false);
+    const [isArchived, setIsArchived] = useState(false);
 
     const menuRef = useRef<HTMLDivElement>(null);
     const emojiPickerRef = useRef<HTMLDivElement>(null);
@@ -67,6 +69,8 @@ function ChannelPage() {
         const info = await channelService.getChannelInfo(channelId);
         if (info) {
             setChannelName((info as any).NAME || (info as any).name || "Channel");
+            setIsFavorite(!!(info as any).favorite || !!(info as any).FAVORITE);
+            setIsArchived(!!(info as any).archived || !!(info as any).ARCHIVED);
         }
         const admin = await channelService.isAdmin(channelId, myPublicKey);
         setIsAdmin(admin);
@@ -100,8 +104,16 @@ function ChannelPage() {
             } catch { }
         };
 
-        const handleUpdate = () => {
+        const handleUpdate = (e: any) => {
+            if (e.detail && e.detail.channelId !== channelId) return;
+
             console.log("📢 [CHANNEL-CHAT] refreshing info...");
+            if (e.detail && e.detail.favorite !== undefined) {
+                setIsFavorite(!!e.detail.favorite);
+            }
+            if (e.detail && e.detail.archived !== undefined) {
+                setIsArchived(!!e.detail.archived);
+            }
             init();
         };
 
@@ -199,6 +211,32 @@ function ChannelPage() {
         }
     };
 
+    const handleToggleFavorite = async () => {
+        try {
+            if (isFavorite) {
+                await channelService.unfavoriteChannel(channelId);
+            } else {
+                await channelService.favoriteChannel(channelId);
+            }
+            setIsFavorite(!isFavorite);
+        } catch (err) {
+            console.error("❌ [CHANNEL] Toggle favorite failed:", err);
+        }
+    };
+
+    const handleToggleArchive = async () => {
+        try {
+            if (isArchived) {
+                await channelService.unarchiveChannel(channelId);
+            } else {
+                await channelService.archiveChannel(channelId);
+            }
+            setIsArchived(!isArchived);
+        } catch (err) {
+            console.error("❌ [CHANNEL] Toggle archive failed:", err);
+        }
+    };
+
     // -------------------------------------------------------------------------
     // Render
     // -------------------------------------------------------------------------
@@ -222,7 +260,17 @@ function ChannelPage() {
                         <Radio size={22} />
                     </div>
                     <div className="flex flex-col leading-tight flex-1 min-w-0">
-                        <strong className="text-[16px] truncate font-semibold">{channelName}</strong>
+                        <strong className="text-[16px] truncate font-semibold flex items-center gap-1.5">
+                            {channelName}
+                            {isFavorite && (
+                                <Star
+                                    size={14}
+                                    fill="#fbbf24"
+                                    stroke="#f59e0b"
+                                    className="flex-shrink-0"
+                                />
+                            )}
+                        </strong>
                         <span className="text-xs opacity-80">
                             {subscriberCount} subscriber{subscriberCount !== 1 ? "s" : ""}
                             {isAdmin ? " · admin" : " · read-only"}
@@ -263,6 +311,37 @@ function ChannelPage() {
                                     <Info size={16} />
                                 </div>
                                 <span className="font-medium">Channel Info</span>
+                            </button>
+                            <button
+                                className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
+                                onClick={() => {
+                                    setShowMenu(false);
+                                    handleToggleArchive();
+                                }}
+                            >
+                                <div className="w-8 h-8 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center text-orange-600 dark:text-orange-400">
+                                    <Archive size={16} />
+                                </div>
+                                <span className="font-medium">
+                                    {isArchived ? "Unarchive Channel" : "Archive Channel"}
+                                </span>
+                            </button>
+                            <button
+                                className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
+                                onClick={() => {
+                                    setShowMenu(false);
+                                    handleToggleFavorite();
+                                }}
+                            >
+                                <div className="w-8 h-8 rounded-full bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center text-yellow-600 dark:text-yellow-400">
+                                    <Star
+                                        size={16}
+                                        fill={isFavorite ? "currentColor" : "none"}
+                                    />
+                                </div>
+                                <span className="font-medium">
+                                    {isFavorite ? "Unfavorite Channel" : "Favorite Channel"}
+                                </span>
                             </button>
                             <button
                                 className="flex items-center gap-3 w-full p-3 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 rounded-b-lg transition-colors text-left border-t border-gray-100 dark:border-gray-700"

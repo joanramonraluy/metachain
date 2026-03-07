@@ -15,6 +15,7 @@ export interface Channel {
     avatar?: string;
     archived?: boolean;
     archived_date?: number;
+    favorite?: boolean;
 }
 
 export interface ChannelSubscriber {
@@ -91,8 +92,12 @@ class ChannelService {
         if (typeof window !== "undefined") {
             window.addEventListener("CHANNEL_UPDATE", (e: Event) => {
                 const ce = e as CustomEvent;
+                // Avoid infinite loop: ignore events sent by this service
+                if (ce.detail && ce.detail._fromService === "ChannelService") {
+                    return;
+                }
                 console.log("🔄 [ChannelService] Global CHANNEL_UPDATE received:", ce.detail);
-                this.notifyChannelUpdate();
+                this.notifyChannelUpdate(ce.detail?.channelId, ce.detail, true);
             });
         }
     }
@@ -114,10 +119,17 @@ class ChannelService {
         return `channel_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
     }
 
-    private notifyChannelUpdate() {
+    private notifyChannelUpdate(channelId?: string, extraDetail?: any, skipDispatch = false) {
         this.channelUpdateCallbacks.forEach(cb => cb());
-        if (typeof window !== "undefined") {
-            window.dispatchEvent(new CustomEvent("CHANNEL_UPDATE", { detail: { type: "channel_update" } }));
+        if (!skipDispatch && typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("CHANNEL_UPDATE", {
+                detail: {
+                    type: "channel_update",
+                    channelId: channelId || "",
+                    _fromService: "ChannelService",
+                    ...(extraDetail || {})
+                }
+            }));
         }
     }
 
@@ -213,8 +225,9 @@ class ChannelService {
                 admin_publickey: row.ADMIN_PUBLICKEY || row.admin_publickey,
                 created_date: Number(row.CREATED_DATE || row.created_date || 0),
                 avatar: row.AVATAR || row.avatar,
-                archived: row.ARCHIVED === 1 || row.ARCHIVED === true || row.ARCHIVED === "1" || row.ARCHIVED === "TRUE",
+                archived: String(row.ARCHIVED).toUpperCase() === "TRUE" || String(row.ARCHIVED) === "1" || String(row.archived).toUpperCase() === "TRUE" || String(row.archived) === "1",
                 archived_date: Number(row.ARCHIVED_DATE || row.archived_date || 0),
+                favorite: String(row.FAVORITE).toUpperCase() === "TRUE" || String(row.FAVORITE) === "1" || String(row.favorite).toUpperCase() === "TRUE" || String(row.favorite) === "1",
             }));
         } catch (err) {
             console.error("❌ [CHANNEL] getMyChannels failed:", err);
@@ -225,17 +238,36 @@ class ChannelService {
     async getChannelInfo(channelId: string): Promise<Channel | null> {
         try {
             const res = await this.runSQL(`SELECT * FROM CHANNELS WHERE UPPER(channel_id) = UPPER('${channelId}')`);
-            return res.rows?.length > 0 ? res.rows[0] : null;
+            if (res.rows && res.rows.length > 0) {
+                const row = res.rows[0];
+                return {
+                    channel_id: row.CHANNEL_ID || row.channel_id,
+                    name: row.NAME || row.name,
+                    description: row.DESCRIPTION || row.description,
+                    admin_publickey: row.ADMIN_PUBLICKEY || row.admin_publickey,
+                    created_date: Number(row.CREATED_DATE || row.created_date || 0),
+                    avatar: row.AVATAR || row.avatar,
+                    archived: String(row.ARCHIVED).toUpperCase() === "TRUE" || String(row.ARCHIVED) === "1" || String(row.archived).toUpperCase() === "TRUE" || String(row.archived) === "1",
+                    archived_date: Number(row.ARCHIVED_DATE || row.archived_date || 0),
+                    favorite: String(row.FAVORITE).toUpperCase() === "TRUE" || String(row.FAVORITE) === "1" || String(row.favorite).toUpperCase() === "TRUE" || String(row.favorite) === "1",
+                };
+            }
+            return null;
         } catch {
             return null;
         }
     }
 
     async deleteChannel(channelId: string): Promise<void> {
-        await this.runSQL(`DELETE FROM CHANNEL_MESSAGES WHERE channel_id = '${channelId}'`);
-        await this.runSQL(`DELETE FROM CHANNEL_SUBSCRIBERS WHERE channel_id = '${channelId}'`);
-        await this.runSQL(`DELETE FROM CHANNELS WHERE channel_id = '${channelId}'`);
-        this.notifyChannelUpdate();
+        try {
+            await this.runSQL(`DELETE FROM CHANNELS WHERE UPPER(channel_id) = UPPER('${channelId}')`);
+            await this.runSQL(`DELETE FROM CHANNEL_SUBSCRIBERS WHERE UPPER(channel_id) = UPPER('${channelId}')`);
+            await this.runSQL(`DELETE FROM CHANNEL_MESSAGES WHERE UPPER(channel_id) = UPPER('${channelId}')`);
+            this.notifyChannelUpdate();
+        } catch (err) {
+            console.error("❌ [CHANNEL] Failed to delete channel:", err);
+            throw err;
+        }
     }
 
     async isAdmin(channelId: string, myPublicKey: string): Promise<boolean> {
@@ -622,9 +654,8 @@ class ChannelService {
 
     async archiveChannel(channelId: string): Promise<void> {
         try {
-            const sql = `UPDATE CHANNELS SET archived = TRUE, archived_date = ${Date.now()} WHERE channel_id = '${channelId}'`;
-            await this.runSQL(sql);
-            this.notifyChannelUpdate();
+            await this.runSQL(`UPDATE CHANNELS SET archived = TRUE, archived_date = ${Date.now()} WHERE channel_id = '${channelId}'`);
+            this.notifyChannelUpdate(channelId, { archived: true });
         } catch (err) {
             console.error("❌ [CHANNEL] Failed to archive channel:", err);
             throw err;
@@ -633,11 +664,30 @@ class ChannelService {
 
     async unarchiveChannel(channelId: string): Promise<void> {
         try {
-            const sql = `UPDATE CHANNELS SET archived = FALSE WHERE channel_id = '${channelId}'`;
-            await this.runSQL(sql);
-            this.notifyChannelUpdate();
+            await this.runSQL(`UPDATE CHANNELS SET archived = FALSE, archived_date = 0 WHERE channel_id = '${channelId}'`);
+            this.notifyChannelUpdate(channelId, { archived: false });
         } catch (err) {
             console.error("❌ [CHANNEL] Failed to unarchive channel:", err);
+            throw err;
+        }
+    }
+
+    async favoriteChannel(channelId: string): Promise<void> {
+        try {
+            await this.runSQL(`UPDATE CHANNELS SET favorite = TRUE WHERE channel_id = '${channelId}'`);
+            this.notifyChannelUpdate(channelId, { favorite: true });
+        } catch (err) {
+            console.error("❌ [CHANNEL] Failed to favorite channel:", err);
+            throw err;
+        }
+    }
+
+    async unfavoriteChannel(channelId: string): Promise<void> {
+        try {
+            await this.runSQL(`UPDATE CHANNELS SET favorite = FALSE WHERE channel_id = '${channelId}'`);
+            this.notifyChannelUpdate(channelId, { favorite: false });
+        } catch (err) {
+            console.error("❌ [CHANNEL] Failed to unfavorite channel:", err);
             throw err;
         }
     }

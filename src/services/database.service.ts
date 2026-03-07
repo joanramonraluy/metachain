@@ -341,7 +341,8 @@ export async function initDB(): Promise<void> {
                                 avatar TEXT,
                                 description TEXT,
                                 archived BOOLEAN DEFAULT FALSE,
-                                archived_date BIGINT
+                                archived_date BIGINT,
+                                favorite BOOLEAN DEFAULT FALSE
                             )`;
 
             MDS.sql(createGroupsTable, (res: any) => {
@@ -354,6 +355,7 @@ export async function initDB(): Promise<void> {
                 console.log("📂 [DB] GROUPS table initialized");
                 MDS.sql("ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT FALSE", () => { });
                 MDS.sql("ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS archived_date BIGINT", () => { });
+                MDS.sql("ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS favorite BOOLEAN DEFAULT FALSE", () => { });
               }
 
               // Create GROUP_MEMBERS table
@@ -531,7 +533,31 @@ export async function initDB(): Promise<void> {
                             );
                         });
                       }
-                      resolve();
+                      // Create CHANNELS table
+                      const createChannelsTable = `
+                        CREATE TABLE IF NOT EXISTS CHANNELS (
+                          channel_id VARCHAR(256) PRIMARY KEY,
+                          name VARCHAR(255) NOT NULL,
+                          description TEXT,
+                          admin_publickey VARCHAR(512) NOT NULL,
+                          created_date BIGINT NOT NULL,
+                          avatar TEXT,
+                          archived BOOLEAN DEFAULT FALSE,
+                          archived_date BIGINT,
+                          favorite BOOLEAN DEFAULT FALSE
+                        )`;
+
+                      MDS.sql(createChannelsTable, (cRes: any) => {
+                        if (!cRes.status) {
+                          console.error("❌ [DB] Failed to create CHANNELS table:", cRes.error);
+                        } else {
+                          console.log("📂 [DB] CHANNELS table initialized");
+                          MDS.sql("ALTER TABLE CHANNELS ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT FALSE", () => { });
+                          MDS.sql("ALTER TABLE CHANNELS ADD COLUMN IF NOT EXISTS archived_date BIGINT", () => { });
+                          MDS.sql("ALTER TABLE CHANNELS ADD COLUMN IF NOT EXISTS favorite BOOLEAN DEFAULT FALSE", () => { });
+                        }
+                        resolve();
+                      });
                     });
                   });
                 });
@@ -638,17 +664,8 @@ export async function initDB(): Promise<void> {
                         "❌ [DB] Failed to create SESSION_UID table:",
                         res.error,
                       );
-                    } else {
                     }
                   });
-
-                  // GROUPS MIGRATION (Ensuring consistency with SW)
-                  MDS.sql("ALTER TABLE GROUPS ADD COLUMN archived BOOLEAN DEFAULT FALSE", () => { });
-                  MDS.sql("ALTER TABLE GROUPS ADD COLUMN archived_date BIGINT", () => { });
-
-                  // CHANNELS MIGRATION (Ensuring consistency with SW)
-                  MDS.sql("ALTER TABLE CHANNELS ADD COLUMN archived BOOLEAN DEFAULT FALSE", () => { });
-                  MDS.sql("ALTER TABLE CHANNELS ADD COLUMN archived_date BIGINT", () => { });
                 });
               });
             });

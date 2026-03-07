@@ -168,14 +168,14 @@ function CreateChannelPage() {
                     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
                         <button
                             onClick={handleCreate}
-                            disabled={!channelName.trim() || creating}
-                            className="w-full py-3 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 transition-colors disabled:bg-gray-300 disabled:text-gray-100 disabled:cursor-not-allowed shadow-md"
+                            disabled={!channelName.trim() || selected.size === 0 || creating}
+                            className="w-full py-3 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 transition-colors disabled:bg-gray-300 disabled:text-gray-100 disabled:cursor-not-allowed dark:disabled:bg-gray-700 dark:disabled:text-gray-400 shadow-md"
                         >
                             {creating
-                                ? "Creating channel..."
+                                ? "Creating..."
                                 : selected.size > 0
-                                    ? `Create Channel & invite ${selected.size} subscriber${selected.size !== 1 ? "s" : ""}`
-                                    : "Create Channel"}
+                                    ? `Create Channel with ${selected.size} subscriber${selected.size !== 1 ? "s" : ""}`
+                                    : "Select subscribers to continue"}
                         </button>
                     </div>
 

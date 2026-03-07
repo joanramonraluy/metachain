@@ -136,6 +136,12 @@ function CreateGroupPage() {
 
       <div className="flex-1 overflow-y-auto p-4 pb-20">
         <div className="max-w-2xl mx-auto space-y-6">
+          {/* Info banner */}
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 text-sm text-blue-700 dark:text-blue-300">
+            <p className="font-semibold mb-1">📢 What is a Group?</p>
+            <p>Groups are shared spaces. Unlike channels, all members can read and publish messages.</p>
+          </div>
+
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
