@@ -1841,7 +1841,9 @@ WHERE(${addressClause}) AND status = 'pending'`;
           this.notifyChatListUpdate();
         } else {
           const parsedMsg = JSON.parse(msg);
-          if (
+          if (parsedMsg.type === "SW_LOG") {
+            console.log(`📡 [SW-LOG] ${parsedMsg.message}`);
+          } else if (
             parsedMsg.type === "group_update" ||
             parsedMsg.type === "group_join_requests_update" ||
             parsedMsg.type === "GROUP_SYNC_START" ||

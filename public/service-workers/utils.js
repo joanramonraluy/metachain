@@ -146,3 +146,18 @@ function safeDecode(str) {
 function escapeSql(str) {
     return (str || '').replace(/'/g, "''");
 }
+/**
+ * Log to both SW and Frontend (via solo comms)
+ */
+function logToUI(msg) {
+    MDS.log(msg);
+    try {
+        if (typeof MDS !== 'undefined' && MDS.comms && MDS.comms.solo) {
+            MDS.comms.solo(JSON.stringify({
+                type: "SW_LOG",
+                message: msg,
+                timestamp: Date.now()
+            }));
+        }
+    } catch (e) { }
+}

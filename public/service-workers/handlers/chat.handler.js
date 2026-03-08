@@ -567,45 +567,7 @@ function requestChatHistory(toPublicKey, toAddress) {
     }
 }
 
-// Helper to clean Maxima Address specifically for the port issue
-function cleanMaximaAddress(addr) {
-    if (!addr) return "";
-
-    // 1. Basic trim
-    var s = String(addr).trim();
-
-    // 2. CRITICAL: Remove ALL whitespace characters first (spaces, tabs, newlines, etc.)
-    // This prevents Java NumberFormatException when parsing port numbers
-    s = s.replace(/\s+/g, "");
-
-    // 3. Split by Last Colon (Host:Port)
-    var idx = s.lastIndexOf(":");
-
-    if (idx !== -1) {
-        var base = s.substring(0, idx);
-        var port = s.substring(idx + 1);
-
-        // 4. AGGRESSIVE CLEANING
-        // Remove all whitespace and invalid chars from base
-        // Allow: a-z A-Z 0-9 @ . - _ 
-        var cleanBase = base.replace(/[^a-zA-Z0-9@._-]/g, "");
-
-        // Remove everything except numbers from port
-        var cleanPort = port.replace(/[^0-9]/g, "");
-
-        // Log deep debug if it looked suspicious
-        if (cleanBase !== base || cleanPort !== port) {
-            MDS.log("🔍 [ADDR-FIX-V3] Cleaned: '" + addr + "' -> '" + cleanBase + ":" + cleanPort + "'");
-        }
-
-        if (cleanBase && cleanPort) {
-            return cleanBase + ":" + cleanPort;
-        }
-    }
-
-    // Fallback: Just remove all whitespace and invalid chars
-    return s.replace(/\s/g, "").replace(/[^a-zA-Z0-9@:._-]/g, "");
-}
+// (cleanMaximaAddress is provided by utils/maxima-sender.js)
 
 // Helper for Robust Sending (Resolves Address)
 function resolveAndSend(pubkey, hexData, logTag, usePoll) {

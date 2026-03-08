@@ -342,7 +342,8 @@ export async function initDB(): Promise<void> {
                                 description TEXT,
                                 archived BOOLEAN DEFAULT FALSE,
                                 archived_date BIGINT,
-                                favorite BOOLEAN DEFAULT FALSE
+                                favorite BOOLEAN DEFAULT FALSE,
+                                auto_approve BOOLEAN DEFAULT FALSE
                             )`;
 
             MDS.sql(createGroupsTable, (res: any) => {
@@ -356,6 +357,7 @@ export async function initDB(): Promise<void> {
                 MDS.sql("ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT FALSE", () => { });
                 MDS.sql("ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS archived_date BIGINT", () => { });
                 MDS.sql("ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS favorite BOOLEAN DEFAULT FALSE", () => { });
+                MDS.sql("ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS auto_approve BOOLEAN DEFAULT FALSE", () => { });
               }
 
               // Create GROUP_MEMBERS table

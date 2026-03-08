@@ -1,6 +1,6 @@
 # AGENTS.md - MetaChain Engineering Guide
 
-Last reviewed against codebase: 2026-03-07 (commit `45380b7e`)
+Last reviewed against codebase: 2026-03-08 (commit `7916d803`)
 Scope: `/home/joanramon/Minima/metachain`
 
 ## 1) Project Intent
@@ -203,6 +203,11 @@ Current required contract examples:
 
 Do not swap to `(fromKey, msg)` in dispatcher calls. This breaks sequence SQL checks and sync-gap reporting.
 
+### 6.7 Group Auto-Approve Sync Contract
+- Canonical network message for group settings sync (including `auto_approve`) is `group_update_details`.
+- SW still accepts legacy `group_info_updated` for backward compatibility, but new sends should use `group_update_details`.
+- When a member is promoted to `admin`, the promoter's SW sends a settings snapshot (`group_update_details` with current `auto_approve`) directly to the promoted admin.
+
 ## 7) Ordering, Dedup and Transaction Safety
 
 ### 7.1 Message ordering invariants
@@ -275,6 +280,8 @@ When changing protocol code, log:
 5. SW sync handler dispatch must match function signatures (`msg, fromKey`). Mismatched order silently corrupts sync logic.
 6. FE currently has mixed comms listeners (`MDS.init` event handling + `window.MDS_SOLO_LISTENER` + `window.message` for reconnect). Treat bridge changes as high-risk.
 7. Chat-permission state uses DB first with legacy keypair fallbacks. Adding new key names increases false allow/deny risk.
+8. Group invite payload member fields can arrive with uppercase DB-style keys (`PUBLICKEY`/`USERNAME`/`ROLE`) or protocol lowercase keys; invite send/receive paths must normalize both.
+9. Legacy/corrupt `GROUP_MEMBERS` rows with blank `publickey` can break Maxima sends (`BLANK param not allowed : publickey`); sender/sync loops must skip and cleanup blank keys.
 
 ## 12) Pre-merge Checklist (Mandatory for protocol/state changes)
 

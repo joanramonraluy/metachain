@@ -27,6 +27,11 @@ function initDatabase() {
     }
   });
 
+  // Register Maxima applications
+  MDS.cmd("maxima action:register application:metachain", function () { });
+  MDS.cmd("maxima action:register application:metachain-group", function () { });
+  MDS.cmd("maxima action:register application:metachain-channel", function () { });
+
   // START SEQUENTIAL INIT
   var chain = Promise.resolve();
 
@@ -166,7 +171,8 @@ function initDatabase() {
       return Promise.all([
         runSQL("ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT FALSE"),
         runSQL("ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS archived_date BIGINT"),
-        runSQL("ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS favorite BOOLEAN DEFAULT FALSE")
+        runSQL("ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS favorite BOOLEAN DEFAULT FALSE"),
+        runSQL("ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS auto_approve BOOLEAN DEFAULT FALSE")
       ]);
     });
   });

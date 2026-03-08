@@ -13,19 +13,7 @@ function channelRunSQL(query, callback) {
   });
 }
 
-function escapeSql(str) {
-  if (!str) return "";
-  return str.replace(/'/g, "''");
-}
-
-function utf8ToHex(s) {
-  var hex = "";
-  for (var i = 0; i < s.length; i++) {
-    var code = s.charCodeAt(i);
-    hex += ("00" + code.toString(16)).slice(-2);
-  }
-  return hex;
-}
+// (Using shared helpers from utils.js)
 
 // ---------------------------------------------------------------------------
 // channel_invite

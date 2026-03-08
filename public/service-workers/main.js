@@ -31,6 +31,7 @@ MDS.init(function (msg) {
   // Initialization
   if (msg.event == "inited") {
     MDS.log("🚀 [SW] Inited event received. Version v3.0");
+    MDS.notify("MetaChain Service Worker Started");
     MDS.log("⏰ [SW] Starting Database Initialization...");
     initDatabase();
   }
@@ -70,8 +71,8 @@ MDS.init(function (msg) {
               if (count > 0) {
                 MDS.log(
                   "📦 [COIN-DISCOVERY] Recovered " +
-                  count +
-                  " offline token(s)",
+                    count +
+                    " offline token(s)",
                 );
               }
             })
@@ -150,7 +151,20 @@ MDS.init(function (msg) {
     }
 
     LAST_MAXIMA_EVENT_TIME = now;
-    MDS.log("📨 [MAXIMA] Event received. App: " + msg.data.application);
+    MDS.log(
+      "📨 [MAXIMA] RAW DATA: App=" +
+        msg.data.application +
+        " From=" +
+        msg.data.from.substring(0, 10) +
+        " DataLen=" +
+        (msg.data.data ? msg.data.data.length : 0),
+    );
+    logToUI(
+      "📨 [MAXIMA] Event received. App: " +
+        msg.data.application +
+        " From: " +
+        msg.data.from.substring(0, 10),
+    );
 
     if (
       msg.data.application &&
@@ -162,7 +176,7 @@ MDS.init(function (msg) {
       var pubkey = msg.data.from;
       var jsonstr = "";
       if (msg.data.data.startsWith("0x")) {
-        datastr = msg.data.data.substring(2);
+        var datastr = msg.data.data.substring(2);
         jsonstr = hexToUtf8(datastr);
       } else {
         jsonstr = msg.data.data;
@@ -172,13 +186,20 @@ MDS.init(function (msg) {
         var maxjson = JSON.parse(jsonstr);
         MDS.log(
           "🔍 [MAXIMA-DEBUG-ALL] App: " +
-          app +
-          " Type: " +
-          (maxjson.type || maxjson.messageType) +
-          " From: " +
-          pubkey.substring(0, 10),
+            app +
+            " Type: " +
+            (maxjson.type || maxjson.messageType) +
+            " From: " +
+            pubkey.substring(0, 10),
         );
-        MDS.log("🔍 [MAXIMA] Type: " + (maxjson.type || maxjson.messageType));
+        if (app === "metachain-group") {
+          logToUI(
+            "🔍 [MAXIMA-GROUP] Type: " +
+              (maxjson.messageType || maxjson.type) +
+              " From: " +
+              pubkey.substring(0, 10),
+          );
+        }
 
         // ================== GROUP MESSAGES ==================
         if (
@@ -233,7 +254,9 @@ MDS.init(function (msg) {
 
         if (
           app === "metachain-group" &&
-          (maxjson.messageType === "group_rename" || maxjson.messageType === "group_update_details")
+          (maxjson.messageType === "group_rename" ||
+            maxjson.messageType === "group_update_details" ||
+            maxjson.messageType === "group_info_updated")
         ) {
           handleGroupUpdateDetails(pubkey, maxjson);
           return;
@@ -251,7 +274,8 @@ MDS.init(function (msg) {
           app === "metachain-group" &&
           (maxjson.messageType === "group_join_request" ||
             maxjson.messageType === "group_join_request_propagated" ||
-            maxjson.messageType === "group_join_request_resolved")
+            maxjson.messageType === "group_join_request_resolved" ||
+            maxjson.type === "group_join_request")
         ) {
           handleGroupJoinRequestEvent(pubkey, maxjson);
           return;
@@ -265,52 +289,85 @@ MDS.init(function (msg) {
           return;
         }
 
+        if (app === "metachain-group") {
+          MDS.log(
+            "⚠️ [SW] Unhandled metachain-group message type: " +
+              (maxjson.messageType || maxjson.type),
+          );
+        }
+
         // ================== CHANNEL MESSAGES ==================
-        if (app === "metachain-channel" && maxjson.messageType === "channel_invite") {
+        if (
+          app === "metachain-channel" &&
+          maxjson.messageType === "channel_invite"
+        ) {
           handleChannelInvite(pubkey, maxjson);
           return;
         }
 
-        if (app === "metachain-channel" && maxjson.messageType === "channel_message") {
+        if (
+          app === "metachain-channel" &&
+          maxjson.messageType === "channel_message"
+        ) {
           handleChannelMessage(pubkey, maxjson);
           return;
         }
 
-        if (app === "metachain-channel" && maxjson.messageType === "channel_subscriber_added") {
+        if (
+          app === "metachain-channel" &&
+          maxjson.messageType === "channel_subscriber_added"
+        ) {
           handleChannelSubscriberAdded(pubkey, maxjson);
           return;
         }
 
-        if (app === "metachain-channel" && maxjson.messageType === "channel_subscriber_removed") {
+        if (
+          app === "metachain-channel" &&
+          maxjson.messageType === "channel_subscriber_removed"
+        ) {
           handleChannelSubscriberRemoved(pubkey, maxjson);
           return;
         }
 
-        if (app === "metachain-channel" && maxjson.messageType === "channel_role_update") {
+        if (
+          app === "metachain-channel" &&
+          maxjson.messageType === "channel_role_update"
+        ) {
           handleChannelRoleUpdate(pubkey, maxjson);
           return;
         }
 
-        if (app === "metachain-channel" && maxjson.messageType === "channel_join_request") {
+        if (
+          app === "metachain-channel" &&
+          maxjson.messageType === "channel_join_request"
+        ) {
           handleChannelJoinRequest(pubkey, maxjson);
           return;
         }
 
-        if (app === "metachain-channel" && maxjson.messageType === "channel_info_updated") {
+        if (
+          app === "metachain-channel" &&
+          maxjson.messageType === "channel_info_updated"
+        ) {
           handleChannelInfoUpdate(pubkey, maxjson);
           return;
         }
 
-        if (app === "metachain-channel" && maxjson.messageType === "channel_history_request") {
+        if (
+          app === "metachain-channel" &&
+          maxjson.messageType === "channel_history_request"
+        ) {
           handleChannelHistoryRequest(pubkey, maxjson);
           return;
         }
 
-        if (app === "metachain-channel" && maxjson.messageType === "channel_history_response") {
+        if (
+          app === "metachain-channel" &&
+          maxjson.messageType === "channel_history_response"
+        ) {
           handleChannelHistoryResponse(pubkey, maxjson);
           return;
         }
-
 
         // ================== CHAT MESSAGES ==================
         if (maxjson.type === "read") {
@@ -354,7 +411,7 @@ MDS.init(function (msg) {
         if (maxjson.type === "get_peers") {
           MDS.log(
             "📨 [MAXIMA-GOSSIP] get_peers request from " +
-            pubkey.substring(0, 10),
+              pubkey.substring(0, 10),
           );
           handleGetPeers(pubkey, maxjson);
           return;
@@ -471,7 +528,7 @@ MDS.init(function (msg) {
 
         MDS.log(
           "⚠️ [MAXIMA] Unhandled type: " +
-          (maxjson.type || maxjson.messageType || "unknown"),
+            (maxjson.type || maxjson.messageType || "unknown"),
         );
       } catch (e) {
         MDS.log("❌ [MAXIMA] Parse error: " + e.message);

@@ -14,6 +14,7 @@ export interface Group {
   archived_date?: number;
   my_role?: "creator" | "admin" | "member";
   favorite?: boolean;
+  auto_approve?: boolean;
 }
 
 export interface GroupMember {
@@ -39,26 +40,27 @@ export interface GroupMessage {
 // MAXIMA message types for group communication
 export interface GroupMaximaMessage {
   messageType:
-  | "group_message"
-  | "group_invite"
-  | "group_member_added"
-  | "group_member_removed"
-  | "group_info_updated"
-  | "group_member_unbanned"
-  | "group_update_details"
-  | "history_request"
-  | "history_response"
-  | "group_join_request"
-  | "group_join_request_propagated"
-  | "group_join_request_resolved"
-  | "group_update_details"
-  | "group_role_update"
-  | "group_address_beacon";
+    | "group_message"
+    | "group_invite"
+    | "group_member_added"
+    | "group_member_removed"
+    | "group_info_updated"
+    | "group_member_unbanned"
+    | "group_update_details"
+    | "history_request"
+    | "history_response"
+    | "group_join_request"
+    | "group_join_request_propagated"
+    | "group_join_request_resolved"
+    | "group_update_details"
+    | "group_role_update"
+    | "group_address_beacon";
   groupId: string;
   groupName: string;
   senderPublickey: string;
   senderUsername: string;
   timestamp: number;
+  auto_approve?: boolean;
 
   // For group_message:
   message?: string;
@@ -119,7 +121,7 @@ class GroupService {
   private groupMessageCallbacks: GroupMessageCallback[] = [];
   private groupUpdateCallbacks: GroupUpdateCallback[] = [];
 
-  constructor() { }
+  constructor() {}
 
   /* ----------------------------------------------------------------------------
       UTILITY FUNCTIONS
@@ -232,7 +234,11 @@ class GroupService {
                 ORDER BY g.created_date DESC
             `;
       const res = await this.runSQL(sql);
-      console.log(`[GROUP-SERVICE] getMyGroups for ${myPublicKey}:`, res.rows ? res.rows.length : 0, "rows found");
+      console.log(
+        `[GROUP-SERVICE] getMyGroups for ${myPublicKey}:`,
+        res.rows ? res.rows.length : 0,
+        "rows found",
+      );
       if (!res.rows) return [];
 
       return res.rows.map((row: any) => ({
@@ -242,10 +248,23 @@ class GroupService {
         created_date: Number(row.CREATED_DATE || row.created_date || 0),
         avatar: row.AVATAR || row.avatar,
         description: row.DESCRIPTION || row.description,
-        archived: String(row.ARCHIVED).toUpperCase() === "TRUE" || String(row.ARCHIVED) === "1" || String(row.archived).toUpperCase() === "TRUE" || String(row.archived) === "1",
+        archived:
+          String(row.ARCHIVED).toUpperCase() === "TRUE" ||
+          String(row.ARCHIVED) === "1" ||
+          String(row.archived).toUpperCase() === "TRUE" ||
+          String(row.archived) === "1",
         archived_date: Number(row.ARCHIVED_DATE || row.archived_date || 0),
         my_role: row.MY_ROLE || row.my_role,
-        favorite: String(row.FAVORITE).toUpperCase() === "TRUE" || String(row.FAVORITE) === "1" || String(row.favorite).toUpperCase() === "TRUE" || String(row.favorite) === "1",
+        favorite:
+          String(row.FAVORITE).toUpperCase() === "TRUE" ||
+          String(row.FAVORITE) === "1" ||
+          String(row.favorite).toUpperCase() === "TRUE" ||
+          String(row.favorite) === "1",
+        auto_approve:
+          String(row.AUTO_APPROVE).toUpperCase() === "TRUE" ||
+          String(row.AUTO_APPROVE) === "1" ||
+          String(row.auto_approve).toUpperCase() === "TRUE" ||
+          String(row.auto_approve) === "1",
       }));
     } catch (err) {
       console.error("❌ [GROUP-MGMT] Failed to get groups:", err);
@@ -266,9 +285,22 @@ class GroupService {
           created_date: Number(row.CREATED_DATE || row.created_date || 0),
           avatar: row.AVATAR || row.avatar,
           description: row.DESCRIPTION || row.description,
-          archived: String(row.ARCHIVED).toUpperCase() === "TRUE" || String(row.ARCHIVED) === "1" || String(row.archived).toUpperCase() === "TRUE" || String(row.archived) === "1",
+          archived:
+            String(row.ARCHIVED).toUpperCase() === "TRUE" ||
+            String(row.ARCHIVED) === "1" ||
+            String(row.archived).toUpperCase() === "TRUE" ||
+            String(row.archived) === "1",
           archived_date: Number(row.ARCHIVED_DATE || row.archived_date || 0),
-          favorite: String(row.FAVORITE).toUpperCase() === "TRUE" || String(row.FAVORITE) === "1" || String(row.favorite).toUpperCase() === "TRUE" || String(row.favorite) === "1",
+          favorite:
+            String(row.FAVORITE).toUpperCase() === "TRUE" ||
+            String(row.FAVORITE) === "1" ||
+            String(row.favorite).toUpperCase() === "TRUE" ||
+            String(row.favorite) === "1",
+          auto_approve:
+            String(row.AUTO_APPROVE).toUpperCase() === "TRUE" ||
+            String(row.AUTO_APPROVE) === "1" ||
+            String(row.auto_approve).toUpperCase() === "TRUE" ||
+            String(row.auto_approve) === "1",
         };
       }
       return null;
@@ -289,12 +321,16 @@ class GroupService {
         `DELETE FROM GROUP_MEMBERS WHERE UPPER(group_id) = UPPER('${groupId}')`,
       );
       // Delete bans
-      await this.runSQL(`DELETE FROM GROUP_BANS WHERE UPPER(group_id) = UPPER('${groupId}')`);
+      await this.runSQL(
+        `DELETE FROM GROUP_BANS WHERE UPPER(group_id) = UPPER('${groupId}')`,
+      );
       // Delete group
-      await this.runSQL(`DELETE FROM GROUPS WHERE UPPER(group_id) = UPPER('${groupId}')`);
+      await this.runSQL(
+        `DELETE FROM GROUPS WHERE UPPER(group_id) = UPPER('${groupId}')`,
+      );
 
       console.log("✅ [GROUP-MGMT] Deleted:", groupId);
-      this.notifyGroupUpdate();
+      this.notifyGroupUpdate(groupId);
     } catch (err) {
       console.error("❌ [GROUP-MGMT] Failed to delete group:", err);
       throw err;
@@ -427,10 +463,88 @@ class GroupService {
       console.log(
         `✅ [GROUP-RENAME] Broadcasted name change to ${propagatedCount} members.`,
       );
-      this.notifyGroupUpdate();
+      this.notifyGroupUpdate(groupId, {
+        name: newName || undefined,
+        description: newDescription || undefined,
+        avatar: avatar || undefined,
+      });
     } catch (err) {
       console.error("❌ [GROUP-MGMT] Failed to rename group:", err);
       throw err;
+    }
+  }
+
+  async updateGroupAutoApprove(
+    groupId: string,
+    autoApprove: boolean,
+    myPublicKey: string,
+  ): Promise<void> {
+    try {
+      const sql = `UPDATE GROUPS SET auto_approve = ${autoApprove ? 1 : 0} WHERE group_id = '${groupId}'`;
+      await this.runSQL(sql);
+      console.log(
+        `✅ [GROUP-MGMT] Updated group ${groupId} auto_approve to ${autoApprove} locally.`,
+      );
+
+      // Construct maxjson payload for broadcast — so other admins are aware of the setting change
+      const payload: any = {
+        app: "metachain-group",
+        type: "group_update_details",
+        messageType: "group_update_details",
+        groupId: groupId,
+        timestamp: Date.now(),
+        auto_approve: autoApprove,
+      };
+
+      const members = await this.getGroupMembers(groupId);
+      let propagatedCount = 0;
+
+      for (const member of members) {
+        const pubkey = (member as any).PUBLICKEY || member.publickey;
+        if (!pubkey || pubkey === myPublicKey) continue;
+
+        try {
+          const res = await this.runSQL(
+            `SELECT address FROM DISCOVERED_PEERS WHERE publickey='${pubkey.replace(/'/g, "''")}'`,
+          );
+          if (res.rows && res.rows.length > 0) {
+            const address = res.rows[0].ADDRESS || res.rows[0].address;
+            const jsonStr = JSON.stringify(payload);
+            const hexData =
+              "0x" +
+              Array.from(new TextEncoder().encode(jsonStr))
+                .map((b) => b.toString(16).padStart(2, "0"))
+                .join("")
+                .toUpperCase();
+
+            await MDS.cmd.maxima({
+              params: {
+                action: "send",
+                to: address,
+                application: "metachain-group",
+                data: hexData,
+                poll: false,
+              } as any,
+            });
+            propagatedCount++;
+          }
+        } catch (e) {
+          console.error(
+            `[GROUP-MGMT] Failed to send auto_approve toggle to ${pubkey}:`,
+            e,
+          );
+        }
+      }
+      console.log(
+        `✅ [GROUP-MGMT] Broadcasted auto_approve change to ${propagatedCount} members.`,
+      );
+      this.notifyGroupUpdate(groupId, { auto_approve: autoApprove });
+    } catch (error) {
+      console.error(
+        "❌ [GROUP-MGMT] Failed to update group auto_approve:",
+        error,
+      );
+      throw error;
     }
   }
 
@@ -784,9 +898,7 @@ class GroupService {
     }
   }
 
-  async getGroupBans(
-    groupId: string,
-  ): Promise<
+  async getGroupBans(groupId: string): Promise<
     Array<{
       publickey: string;
       username: string;
@@ -827,7 +939,47 @@ class GroupService {
                 ORDER BY m.joined_date ASC
             `;
       const res = await this.runSQL(sql);
-      return res.rows || [];
+      const rows = res.rows || [];
+      const normalizedMembers: GroupMember[] = [];
+
+      for (const row of rows) {
+        const memberPubkey = String(
+          row.PUBLICKEY || row.publickey || "",
+        ).trim();
+        if (!memberPubkey) continue;
+
+        normalizedMembers.push({
+          ...(row as GroupMember),
+          publickey: memberPubkey,
+          username: row.USERNAME || row.username || "Unknown",
+          joined_date: Number(row.JOINED_DATE || row.joined_date || Date.now()),
+          role: row.ROLE || row.role || "member",
+          group_id: row.GROUP_ID || row.group_id || groupId,
+          // Preserve uppercase aliases because legacy callers still read raw SQL casing.
+          PUBLICKEY: memberPubkey,
+          USERNAME: row.USERNAME || row.username || "Unknown",
+          ROLE: row.ROLE || row.role || "member",
+        } as unknown as GroupMember);
+      }
+
+      // Cleanup legacy/corrupt rows that would trigger Maxima "BLANK param not allowed : publickey".
+      if (normalizedMembers.length < rows.length) {
+        console.warn(
+          `[GROUP-MEMBER] Removed ${rows.length - normalizedMembers.length} invalid members (blank publickey) from in-memory list for ${groupId}.`,
+        );
+        try {
+          await this.runSQL(
+            `DELETE FROM GROUP_MEMBERS WHERE group_id='${groupId}' AND (publickey IS NULL OR TRIM(publickey)='')`,
+          );
+        } catch (cleanupErr) {
+          console.warn(
+            "[GROUP-MEMBER] Failed to cleanup blank publickey rows:",
+            cleanupErr,
+          );
+        }
+      }
+
+      return normalizedMembers;
     } catch (err) {
       console.error("❌ [GROUP-MEMBER] Failed to get members:", err);
       return [];
@@ -899,10 +1051,17 @@ class GroupService {
       // Send to ALL group members (no Maxima contact required — uses Mx address routing)
       let sentCount = 0;
       for (const member of members) {
-        const memberPubkey = (member as any).PUBLICKEY;
+        const memberPubkey = String(
+          (member as any).PUBLICKEY || (member as any).publickey || "",
+        ).trim();
+
+        if (!memberPubkey) {
+          console.warn("⚠️ [GROUP-MSG] Skipping member with blank publickey");
+          continue;
+        }
 
         // Skip myself
-        if (memberPubkey === myPublicKey) continue;
+        if (memberPubkey.toUpperCase() === myPublicKey.toUpperCase()) continue;
 
         try {
           await this.sendMaximaMessage(memberPubkey, maximaMessage);
@@ -1184,10 +1343,27 @@ class GroupService {
         case "group_join_request":
         case "group_join_request_propagated":
         case "group_join_request_resolved":
-        case "group_update_details":
-        case "group_role_update":
         case "group_address_beacon":
           // Handled by Service Worker
+          break;
+        case "group_update_details": {
+          const autoApprove =
+            message.auto_approve === true ||
+            (message.auto_approve as any) === 1 ||
+            String(message.auto_approve).toUpperCase() === "TRUE" ||
+            String(message.auto_approve) === "1";
+          this.notifyGroupUpdate(message.groupId, {
+            name: message.newName,
+            description: message.newDescription,
+            avatar: message.avatar,
+            ...(message.auto_approve !== undefined
+              ? { auto_approve: autoApprove }
+              : {}),
+          });
+          break;
+        }
+        case "group_role_update":
+          this.notifyGroupUpdate(message.groupId);
           break;
         default:
           console.warn("⚠️ [GROUP-MSG] Unknown type:", message.messageType);
@@ -1200,9 +1376,7 @@ class GroupService {
     }
   }
 
-  private async handleGroupInvite(
-    message: GroupMaximaMessage,
-  ): Promise<void> {
+  private async handleGroupInvite(message: GroupMaximaMessage): Promise<void> {
     console.log("✅ [GROUP-INVITE] Invite received for:", message.groupId);
     // UI will refresh from DB (which SW has updated)
     this.notifyGroupUpdate();
@@ -1225,7 +1399,10 @@ class GroupService {
   ): Promise<void> {
     if (!message.memberPublickey) return;
 
-    console.log("✅ [GROUP-MEMBER] Update for member:", message.memberPublickey);
+    console.log(
+      "✅ [GROUP-MEMBER] Update for member:",
+      message.memberPublickey,
+    );
     this.notifyGroupUpdate(message.groupId);
   }
 
@@ -1247,15 +1424,20 @@ class GroupService {
     console.log(`🔄 [HISTORY-SYNC] Requesting history for group ${groupId}...`);
 
     // Signal sync start to UI
-    MDS.comms.solo(JSON.stringify({
-      type: "GROUP_SYNC_START",
-      groupId: groupId
-    }), () => { });
+    MDS.comms.solo(
+      JSON.stringify({
+        type: "GROUP_SYNC_START",
+        groupId: groupId,
+      }),
+      () => {},
+    );
 
     // NEW: Direct dispatch for immediate UI feedback (MDS_SOLO from DApp doesn't reflect back)
-    window.dispatchEvent(new CustomEvent("GROUP_UPDATE", {
-      detail: { type: "GROUP_SYNC_START", groupId: groupId }
-    }));
+    window.dispatchEvent(
+      new CustomEvent("GROUP_UPDATE", {
+        detail: { type: "GROUP_SYNC_START", groupId: groupId },
+      }),
+    );
 
     try {
       // 1. Get last message timestamp
@@ -1283,10 +1465,19 @@ class GroupService {
 
       let sentCount = 0;
       for (const member of members) {
-        const memberPubkey = (member as any).PUBLICKEY;
+        const memberPubkey = String(
+          (member as any).PUBLICKEY || (member as any).publickey || "",
+        ).trim();
+
+        if (!memberPubkey) {
+          console.warn(
+            "⚠️ [HISTORY-SYNC] Skipping member with blank publickey",
+          );
+          continue;
+        }
 
         // Skip myself
-        if (memberPubkey === myPublicKey) continue;
+        if (memberPubkey.toUpperCase() === myPublicKey.toUpperCase()) continue;
 
         try {
           await this.sendMaximaMessage(memberPubkey, requestMsg);
@@ -1303,7 +1494,9 @@ class GroupService {
       );
 
       if (sentCount === 0) {
-        console.log("ℹ️ [GROUP-SYNC] No peers to request history from. Stopping.");
+        console.log(
+          "ℹ️ [GROUP-SYNC] No peers to request history from. Stopping.",
+        );
         this.notifyGroupSyncEnd(groupId);
       }
     } catch (err) {
@@ -1314,7 +1507,7 @@ class GroupService {
 
   private notifyGroupSyncEnd(groupId: string) {
     const detail = { type: "GROUP_SYNC_END", groupId: groupId };
-    MDS.comms.solo(JSON.stringify(detail), () => { });
+    MDS.comms.solo(JSON.stringify(detail), () => {});
     window.dispatchEvent(new CustomEvent("GROUP_UPDATE", { detail }));
   }
 
@@ -1420,9 +1613,9 @@ class GroupService {
         const myName =
           myNameData.rows && myNameData.rows.length > 0
             ? myNameData.rows[0].ALIAS ||
-            myNameData.rows[0].alias ||
-            myInfo.response.name ||
-            "Anonymous"
+              myNameData.rows[0].alias ||
+              myInfo.response.name ||
+              "Anonymous"
             : myInfo.response.name || "Anonymous";
 
         const payload: any = {
@@ -1448,11 +1641,8 @@ class GroupService {
                 `);
 
         // Send directly via the admin address (Mx...) using poll:true
-        // — same pattern as sendChatRequest. No need to add admin as a permanent Maxima contact.
-        const payloadJsonStr = JSON.stringify({
-          ...payload,
-          app: "metachain-group",
-        });
+        // — same pattern as channel join request.
+        const payloadJsonStr = JSON.stringify(payload);
         const hexData =
           "0x" +
           Array.from(new TextEncoder().encode(payloadJsonStr))
@@ -1460,20 +1650,47 @@ class GroupService {
             .join("")
             .toUpperCase();
 
-        MDS.executeRaw(
-          `maxima action:send application:metachain-group to:${adminAddress} data:${hexData} poll:true`,
-          (sendRes: any) => {
-            if (sendRes.status) {
-              resolve();
-            } else {
-              reject(
-                "Could not send join request to group admin: " + sendRes.error,
-              );
-            }
-          },
+        console.log(
+          "📝 [GROUP-SERVICE] Sending join request for group:",
+          groupId,
+          "to admin address:",
+          adminAddress,
         );
+        MDS.log(
+          "📝 [GROUP-SERVICE] Sending join request to adminAddress: " +
+            adminAddress,
+        );
+
+        const sendCmd = `maxima action:send application:metachain-group to:${adminAddress.trim()} data:${hexData} poll:true`;
+        MDS.executeRaw(sendCmd, (sendRes: any) => {
+          if (sendRes.status || sendRes?.response?.delivered === true) {
+            console.log("✅ [GROUP-SERVICE] Join request sent successfully.");
+            MDS.log(
+              "✅ [GROUP-SERVICE] Join request sent successfully to: " +
+                adminAddress,
+            );
+            resolve();
+          } else {
+            console.error(
+              "❌ [GROUP-SERVICE] Failed to send join request:",
+              sendRes.error || sendRes.response,
+            );
+            MDS.log(
+              "❌ [GROUP-SERVICE] Failed to send join request: " +
+                (sendRes.error || JSON.stringify(sendRes.response)),
+            );
+            reject(
+              "Could not send join request to group admin: " +
+                (sendRes.error || "Delivery failed"),
+            );
+          }
+        });
       } catch (e: any) {
-        reject("Failed to process invite link: " + e.message);
+        console.error(
+          "❌ [GROUP-SERVICE] Critical error in sendJoinRequest:",
+          e,
+        );
+        reject("Failed to process invite link: " + (e.message || e));
       }
     });
   }
@@ -1548,7 +1765,11 @@ class GroupService {
     this.groupMessageCallbacks.forEach((cb) => cb(message));
   }
 
-  private notifyGroupUpdate(groupId?: string, extraDetail?: any, skipDispatch = false) {
+  private notifyGroupUpdate(
+    groupId?: string,
+    extraDetail?: any,
+    skipDispatch = false,
+  ) {
     this.groupUpdateCallbacks.forEach((cb) => cb());
     if (!skipDispatch && typeof window !== "undefined") {
       window.dispatchEvent(
