@@ -204,6 +204,7 @@ function ChatPage() {
   const [contact, setContact] = useState<Contact | null>(null);
   const [messages, setMessages] = useState<ParsedMessage[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
+  const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [input, setInput] = useState("");
   const [showTransferSelector, setShowTransferSelector] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -1242,6 +1243,13 @@ function ChatPage() {
             contact.publickey,
           );
           setIsSyncing(true);
+          // Auto-clear after 15 seconds if no response
+          if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+          syncTimeoutRef.current = setTimeout(() => {
+            setIsSyncing(false);
+            syncTimeoutRef.current = null;
+          }, 15000);
+
           minimaService
             .requestChatHistory(contact.publickey)
             .catch((err) =>
@@ -1307,6 +1315,13 @@ function ChatPage() {
           `🔄 [CHAT] Triggering history sync for: ${contact.publickey}`,
         );
         setIsSyncing(true);
+        // Auto-clear after 15 seconds if no response
+        if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+        syncTimeoutRef.current = setTimeout(() => {
+          setIsSyncing(false);
+          syncTimeoutRef.current = null;
+        }, 15000);
+
         minimaService
           .requestChatHistory(contact.publickey)
           .catch(console.error);
@@ -1498,6 +1513,13 @@ function ChatPage() {
         );
         // Show syncing indicator
         setIsSyncing(true);
+        // Auto-clear after 15 seconds if no response
+        if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+        syncTimeoutRef.current = setTimeout(() => {
+          setIsSyncing(false);
+          syncTimeoutRef.current = null;
+        }, 15000);
+
         // Request history (Optimized: SW will handle range or full fetch)
         minimaService
           .requestChatHistory(contact.publickey)
@@ -1522,6 +1544,10 @@ function ChatPage() {
 
       // Turn off syncing indicator if this was a history sync response
       if (payload.type === "history_sync") {
+        if (syncTimeoutRef.current) {
+          clearTimeout(syncTimeoutRef.current);
+          syncTimeoutRef.current = null;
+        }
         setIsSyncing(false);
       }
     };
@@ -2308,43 +2334,14 @@ function ChatPage() {
                 />
               )}
             </strong>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1.5 min-w-0">
               {appStatus === "installed" ? (
-                <>
-                  <span className="text-xs text-green-200 flex items-center gap-1">
-                    <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
-                    Online
-                  </span>
-                  {isSyncing && (
-                    <>
-                      <span className="text-xs text-gray-400">•</span>
-                      <span className="text-xs opacity-80 flex items-center gap-1">
-                        <svg
-                          className="w-3 h-3 animate-spin"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                        >
-                          <circle
-                            className="opacity-25"
-                            cx="12"
-                            cy="12"
-                            r="10"
-                            stroke="currentColor"
-                            strokeWidth="4"
-                          ></circle>
-                          <path
-                            className="opacity-75"
-                            fill="currentColor"
-                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                          ></path>
-                        </svg>
-                        Syncing...
-                      </span>
-                    </>
-                  )}
-                </>
+                <span className="text-xs text-green-200 flex items-center gap-1 font-medium">
+                  <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+                  Online
+                </span>
               ) : appStatus === "checking" ? (
-                <span className="text-xs opacity-80 cursor-default">
+                <span className="text-xs opacity-80 cursor-default truncate">
                   Checking status...
                 </span>
               ) : appStatus === "not_found" ? (
@@ -2373,6 +2370,34 @@ function ChatPage() {
                 <span className="text-xs opacity-80 truncate block">
                   online
                 </span>
+              )}
+
+              {isSyncing && (
+                <>
+                  <span className="text-gray-400 opacity-60">·</span>
+                  <span className="flex items-center gap-1 text-sky-200 animate-pulse whitespace-nowrap text-[11px] font-medium leading-none">
+                    <svg
+                      className="w-3 h-3 animate-spin"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      ></circle>
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      ></path>
+                    </svg>
+                    Syncing...
+                  </span>
+                </>
               )}
             </div>
           </div>
@@ -2406,16 +2431,13 @@ function ChatPage() {
                 className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 rounded-t-lg transition-colors text-left"
                 onClick={() => {
                   setShowMenu(false);
-                  navigate({
-                    to: `/contact-info/${address}`,
-                    search: { returnTo: `/chat/${address}`, tab: "settings" },
-                  });
+                  setShowChatInfo(true);
                 }}
               >
-                <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
-                  <Settings size={16} />
+                <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
+                  <Info size={16} />
                 </div>
-                <span className="font-medium">Actions</span>
+                <span className="font-medium">Chat Info</span>
               </button>
               <button
                 className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
@@ -2436,15 +2458,16 @@ function ChatPage() {
                 className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
                 onClick={() => {
                   setShowMenu(false);
-                  handleToggleArchive();
+                  navigate({
+                    to: `/contact-info/${address}`,
+                    search: { returnTo: `/chat/${address}`, tab: "settings" },
+                  });
                 }}
               >
-                <div className="w-8 h-8 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center text-orange-600 dark:text-orange-400">
-                  <Archive size={16} />
+                <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+                  <Settings size={16} />
                 </div>
-                <span className="font-medium">
-                  {isArchived ? "Unarchive Chat" : "Archive Chat"}
-                </span>
+                <span className="font-medium">Actions</span>
               </button>
               <button
                 className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
@@ -2467,13 +2490,15 @@ function ChatPage() {
                 className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
                 onClick={() => {
                   setShowMenu(false);
-                  setShowChatInfo(true);
+                  handleToggleArchive();
                 }}
               >
-                <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
-                  <Info size={16} />
+                <div className="w-8 h-8 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center text-orange-600 dark:text-orange-400">
+                  <Archive size={16} />
                 </div>
-                <span className="font-medium">Chat Info</span>
+                <span className="font-medium">
+                  {isArchived ? "Unarchive Chat" : "Archive Chat"}
+                </span>
               </button>
               <button
                 className="flex items-center gap-3 w-full p-3 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 rounded-b-lg transition-colors text-left border-t border-gray-100 dark:border-gray-700"

@@ -14,6 +14,7 @@ import { messagingService } from "./messaging.service";
 import { contactRequestsService } from "./contact-requests.service";
 // import { DiscoveryService as discoveryService } from './discovery.service';
 import { groupService } from "./group.service";
+import { channelService } from "./channel.service";
 
 import * as profileService from "./profile.service";
 import { offlineQueueService } from "./offline-queue.service";
@@ -291,39 +292,48 @@ SELECT * FROM TRANSACTIONS
     const app = maximaData.application.toLowerCase();
     if (app === "metachain" || app === "metachain-group" || app === "metachain-channel") {
       const from = maximaData.from; // This is the Public Key
-      let datastr = maximaData.data;
+      let datastr = ""; // Initialize datastr here
 
-      // Check if data is in hex format (starts with 0x)
-      if (typeof datastr === "string" && datastr.startsWith("0x")) {
-        console.log("🔄 [MAXIMA] Converting hex data to UTF8");
-        datastr = this.hexToUtf8(datastr.substring(2)); // Remove 0x prefix
-        console.log("📝 [MAXIMA] Data converted/parsed:", datastr);
+      if (maximaData.data.startsWith("0x")) {
+        try {
+          const hex = maximaData.data.substring(2);
+          datastr = hexToUtf8(hex);
+        } catch (e) {
+          console.warn("⚠️ [MAXIMA] Hex decoding failed, using raw data");
+          datastr = maximaData.data;
+        }
+      } else {
+        datastr = maximaData.data;
       }
 
       try {
         const json = JSON.parse(datastr) as any;
         console.log(
-          `📨[MAXIMA - DEBUG] Processing msg type: ${json.type}, from: ${from} `,
+          `📨[MAXIMA - DEBUG] Processing msg type: ${json.type || json.messageType}, from: ${from} `,
         );
         console.log(`📨[MAXIMA - DEBUG] Full Payload: `, json);
 
         // Check if this is a group message (by app name OR content)
         if (app === "metachain-group" || (json.messageType && json.groupId)) {
           console.log("👥 [GROUPS] Message detected:", json.messageType);
-          // Import dynamically to avoid circular dependency
-          // Replaced with static import
-          // import('./group.service').then(({ groupService }) => {
-          //    groupService.handleIncomingGroupMessage(json, from);
-          // });
-          // Static call now that circular dependency is resolved via utils/hex.ts
-          groupService.handleIncomingGroupMessage(json, from);
 
+          // Handle history sync response specifically to ensure UI signal
+          if (json.messageType === "history_response") {
+            console.log(`✅ [GROUPS] History response received for ${json.groupId}. Waiting for SW to process...`);
+          }
+
+          groupService.handleIncomingGroupMessage(json, from);
           return;
         }
         if (app === "metachain-channel" || (json.messageType && json.channelId)) {
-          console.log("📢 [CHANNELS] Message detected (handled by Service Worker):", json.messageType);
-          // Redundant: handleIncomingChannelMessage will be removed from channel.service.ts
-          // The Service Worker already handles persistence and notifies the UI via MDS_SOLO.
+          console.log("📢 [CHANNELS] Message detected:", json.messageType);
+
+          // Handle history sync response specifically to ensure UI signal
+          if (json.messageType === "channel_history_response") {
+            console.log(`✅ [CHANNELS] History response received for ${json.channelId}. Waiting for SW to process...`);
+          }
+
+          channelService.handleIncomingChannelMessage(json, from);
           return;
         }
 
@@ -1831,12 +1841,25 @@ WHERE(${addressClause}) AND status = 'pending'`;
           this.notifyChatListUpdate();
         } else {
           const parsedMsg = JSON.parse(msg);
-          if (parsedMsg.type === "group_update" || parsedMsg.type === "group_join_requests_update") {
-            console.log(`🚀 [SERVICE] Group ${parsedMsg.groupId} updated`);
-            window.dispatchEvent(new CustomEvent("GROUP_UPDATE", { detail: parsedMsg }));
-          } else if (parsedMsg.type && typeof parsedMsg.type === 'string' && parsedMsg.type.startsWith("CHANNEL_")) {
+          if (
+            parsedMsg.type === "group_update" ||
+            parsedMsg.type === "group_join_requests_update" ||
+            parsedMsg.type === "GROUP_SYNC_START" ||
+            parsedMsg.type === "GROUP_SYNC_END"
+          ) {
+            console.log(`🚀 [SERVICE] Group event received: ${parsedMsg.type}`);
+            window.dispatchEvent(
+              new CustomEvent("GROUP_UPDATE", { detail: parsedMsg }),
+            );
+          } else if (
+            parsedMsg.type &&
+            typeof parsedMsg.type === "string" &&
+            parsedMsg.type.startsWith("CHANNEL_")
+          ) {
             console.log(`🚀 [SERVICE] Channel event received: ${parsedMsg.type}`);
-            window.dispatchEvent(new CustomEvent("CHANNEL_UPDATE", { detail: parsedMsg }));
+            window.dispatchEvent(
+              new CustomEvent("CHANNEL_UPDATE", { detail: parsedMsg }),
+            );
           }
         }
       } catch (e) {

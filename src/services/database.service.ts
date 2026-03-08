@@ -421,6 +421,14 @@ export async function initDB(): Promise<void> {
                         console.log("📂 [DB] sender_seq column added/verified in GROUP_MESSAGES");
                     });
 
+                    // Migration: Add customid column for deduplication (same as CHAT_MESSAGES)
+                    const alterCustomIdSql =
+                      "ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS customid VARCHAR(128)";
+                    MDS.sql(alterCustomIdSql, (customRes: any) => {
+                      if (customRes.status)
+                        console.log("📂 [DB] customid column added/verified in GROUP_MESSAGES");
+                    });
+
                     // Create GROUP_MSG_COUNTERS table for per-sender sequence tracking
                     const createCountersTable = `
                       CREATE TABLE IF NOT EXISTS GROUP_MSG_COUNTERS (

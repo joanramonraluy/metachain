@@ -151,7 +151,7 @@ function GroupInfoPage() {
       setStats({
         total: allMsgs.length,
         mine,
-        firstDate: allMsgs.length > 0 ? Number(allMsgs[0].date) : 0
+        firstDate: allMsgs.length > 0 ? Number(allMsgs[0].date) : Number((info as any).CREATED_DATE || (info as any).created_date || 0)
       });
 
     } catch (err) {

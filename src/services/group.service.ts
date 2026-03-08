@@ -65,6 +65,7 @@ export interface GroupMaximaMessage {
   type?: "text" | "image" | "file";
   filedata?: string;
   seq?: number; // Per-sender sequence number for gap detection
+  customid?: string;
 
   // For group_update_details and history_response:
   newName?: string;
@@ -872,10 +873,11 @@ class GroupService {
       }
 
       // Save message locally - only escape SQL quotes
+      const customId = `group_${groupId}_${now}_${Math.random().toString(36).substr(2, 9)}`;
       const escapedMsg = message.replace(/'/g, "''");
       const insertSql = `
-                INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read, sender_seq)
-                VALUES ('${groupId}', '${myPublicKey}', '${myUsername.replace(/'/g, "''")}', '${type}', '${escapedMsg}', '${filedata}', ${now}, 1, ${mySeq})
+                INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read, sender_seq, customid)
+                VALUES ('${groupId}', '${myPublicKey}', '${myUsername.replace(/'/g, "''")}', '${type}', '${escapedMsg}', '${filedata}', ${now}, 1, ${mySeq}, '${customId}')
             `;
       await this.runSQL(insertSql);
 
@@ -891,6 +893,7 @@ class GroupService {
         type: type as any,
         filedata,
         seq: mySeq,
+        customid: customId,
       };
 
       // Send to ALL group members (no Maxima contact required — uses Mx address routing)
@@ -949,7 +952,20 @@ class GroupService {
                 ORDER BY date ASC
             `;
       const res = await this.runSQL(sql);
-      return res.rows || [];
+      if (!res.rows) return [];
+      return res.rows.map((row: any) => ({
+        id: row.ID || row.id,
+        group_id: row.GROUP_ID || row.group_id,
+        sender_publickey: row.SENDER_PUBLICKEY || row.sender_publickey,
+        sender_username: row.SENDER_USERNAME || row.sender_username,
+        type: row.TYPE || row.type,
+        message: row.MESSAGE || row.message,
+        filedata: row.FILEDATA || row.filedata,
+        date: Number(row.DATE || row.date),
+        read: Number(row.READ || row.read),
+        sender_seq: Number(row.SENDER_SEQ || row.sender_seq || 0),
+        customid: row.CUSTOMID || row.customid || "",
+      }));
     } catch (err) {
       console.error("❌ [GROUP-MSG] Failed to get messages:", err);
       return [];
@@ -1140,17 +1156,17 @@ class GroupService {
     ---------------------------------------------------------------------------- */
   async handleIncomingGroupMessage(
     message: GroupMaximaMessage,
-    fromPublicKey: string,
+    _fromPublicKey: string,
   ): Promise<void> {
     try {
       console.log("📨 [GROUP-MSG] Incoming:", message);
 
       switch (message.messageType) {
         case "group_invite":
-          await this.handleGroupInvite(message, fromPublicKey);
+          await this.handleGroupInvite(message);
           break;
         case "group_message":
-          await this.handleGroupChatMessage(message, fromPublicKey);
+          await this.handleGroupChatMessage(message);
           break;
         case "group_member_added":
           await this.handleMemberAdded(message);
@@ -1162,10 +1178,8 @@ class GroupService {
           await this.handleMemberUnbanned(message);
           break;
         case "history_request":
-          await this.handleHistoryRequest(message, fromPublicKey);
-          break;
         case "history_response":
-          await this.handleHistoryResponse(message);
+          // Handled by Service Worker for better background sync reliability
           break;
         case "group_join_request":
         case "group_join_request_propagated":
@@ -1188,79 +1202,20 @@ class GroupService {
 
   private async handleGroupInvite(
     message: GroupMaximaMessage,
-    fromPublicKey: string,
   ): Promise<void> {
-    // Check if group already exists
-    const existing = await this.getGroupInfo(message.groupId);
-    if (existing) {
-      console.log("ℹ️ [GROUP-INVITE] Group exists, skipping");
-      return;
-    }
-
-    // Create group locally
-    const createGroupSql = `
-            INSERT INTO GROUPS (group_id, name, creator_publickey, created_date, description)
-            VALUES ('${message.groupId}', '${message.groupName.replace(/'/g, "''")}', '${fromPublicKey}', ${message.timestamp}, '${(message.description || "").replace(/'/g, "''")}')
-        `;
-    await this.runSQL(createGroupSql);
-
-    // Add all members
-    if (message.members) {
-      for (const member of message.members) {
-        const memberRole =
-          member.role ||
-          (member.publickey === message.creatorPublickey
-            ? "creator"
-            : "member");
-        const addMemberSql = `
-                    INSERT INTO GROUP_MEMBERS (group_id, publickey, username, joined_date, role)
-                    VALUES ('${message.groupId}', '${member.publickey}', '${(member.username || "Unknown").replace(/'/g, "''")}', ${message.timestamp}, '${memberRole}')
-                `;
-        await this.runSQL(addMemberSql);
-      }
-    }
-
-    console.log("✅ [GROUP-INVITE] Accepted:", message.groupId);
+    console.log("✅ [GROUP-INVITE] Invite received for:", message.groupId);
+    // UI will refresh from DB (which SW has updated)
     this.notifyGroupUpdate();
   }
 
   private async handleGroupChatMessage(
     message: GroupMaximaMessage,
-    fromPublicKey: string,
   ): Promise<void> {
-    // Save message locally - only escape SQL quotes
-    const escapedMsg = (message.message || "").replace(/'/g, "''");
-
-    // FIX: Use ORIGINAL sender's public key (from payload), not the relayer's (fromPublicKey)
-    const originalSender = message.senderPublickey || fromPublicKey;
-
-    const insertSql = `
-            INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read)
-            VALUES ('${message.groupId}', '${originalSender}', '${message.senderUsername.replace(/'/g, "''")}', '${message.type}', '${escapedMsg}', '${message.filedata || ""}', ${message.timestamp}, 0)
-        `;
-    await this.runSQL(insertSql);
-
-    console.log("✅ [GROUP-MSG] Saved:", message.groupId);
+    console.log("✅ [GROUP-MSG] Received:", message.groupId);
+    // UI will refresh from DB (which SW has updated)
   }
 
   private async handleMemberAdded(message: GroupMaximaMessage): Promise<void> {
-    if (!message.memberPublickey || !message.memberUsername) return;
-
-    // Check if member already exists
-    const checkSql = `SELECT * FROM GROUP_MEMBERS WHERE group_id = '${message.groupId}' AND publickey = '${message.memberPublickey}'`;
-    const checkRes = await this.runSQL(checkSql);
-    if (checkRes.rows && checkRes.rows.length > 0) {
-      console.log("ℹ️ [GROUP-MEMBER] Exists, skipping");
-      return;
-    }
-
-    // Add member
-    const addSql = `
-            INSERT INTO GROUP_MEMBERS (group_id, publickey, username, joined_date, role)
-            VALUES ('${message.groupId}', '${message.memberPublickey}', '${message.memberUsername.replace(/'/g, "''")}', ${message.timestamp}, 'member')
-        `;
-    await this.runSQL(addSql);
-
     console.log("✅ [GROUP-MEMBER] Added:", message.memberPublickey);
     this.notifyGroupUpdate();
   }
@@ -1270,34 +1225,7 @@ class GroupService {
   ): Promise<void> {
     if (!message.memberPublickey) return;
 
-    const { myPublicKey } = await this.getIdentity();
-
-    if (message.memberPublickey === myPublicKey) {
-      console.log(
-        "🚫 [GROUP-MEMBER] I have been removed/banned from the group.",
-      );
-      await this.deleteGroup(message.groupId); // already calls notifyGroupUpdate(groupId)
-      return;
-    }
-
-    const removeSql = `DELETE FROM GROUP_MEMBERS WHERE group_id = '${message.groupId}' AND UPPER(publickey) = UPPER('${message.memberPublickey}')`;
-    await this.runSQL(removeSql);
-
-    // If removed by someone else, auto-ban locally as well
-    if (
-      message.senderPublickey &&
-      message.senderPublickey !== message.memberPublickey
-    ) {
-      const now = Date.now();
-      const safeUsername = (message.memberUsername || "Unknown").replace(
-        /'/g,
-        "''",
-      );
-      const banSql = `MERGE INTO GROUP_BANS (group_id, publickey, username, banned_by, banned_at) KEY(group_id, publickey) VALUES ('${message.groupId}', '${message.memberPublickey}', '${safeUsername}', '${message.senderPublickey}', ${now})`;
-      await this.runSQL(banSql);
-    }
-
-    console.log("✅ [GROUP-MEMBER] Removed:", message.memberPublickey);
+    console.log("✅ [GROUP-MEMBER] Update for member:", message.memberPublickey);
     this.notifyGroupUpdate(message.groupId);
   }
 
@@ -1305,10 +1233,8 @@ class GroupService {
     message: GroupMaximaMessage,
   ): Promise<void> {
     if (!message.memberPublickey) return;
-    const sql = `DELETE FROM GROUP_BANS WHERE group_id = '${message.groupId}' AND UPPER(publickey) = UPPER('${message.memberPublickey}')`;
-    await this.runSQL(sql);
     console.log(
-      "✅ [GROUP-BAN] Unbanned via broadcast:",
+      "✅ [GROUP-BAN] Unbanned notification received for:",
       message.memberPublickey,
     );
     this.notifyGroupUpdate();
@@ -1319,6 +1245,17 @@ class GroupService {
     ---------------------------------------------------------------------------- */
   async requestGroupHistory(groupId: string): Promise<void> {
     console.log(`🔄 [HISTORY-SYNC] Requesting history for group ${groupId}...`);
+
+    // Signal sync start to UI
+    MDS.comms.solo(JSON.stringify({
+      type: "GROUP_SYNC_START",
+      groupId: groupId
+    }), () => { });
+
+    // NEW: Direct dispatch for immediate UI feedback (MDS_SOLO from DApp doesn't reflect back)
+    window.dispatchEvent(new CustomEvent("GROUP_UPDATE", {
+      detail: { type: "GROUP_SYNC_START", groupId: groupId }
+    }));
 
     try {
       // 1. Get last message timestamp
@@ -1362,142 +1299,28 @@ class GroupService {
       }
 
       console.log(
-        `📤 [HISTORY-SYNC] Requested history from ${sentCount} peers.`,
+        `📤 [GROUP-SYNC] Requested history from ${sentCount} peers (poll:true).`,
       );
+
+      if (sentCount === 0) {
+        console.log("ℹ️ [GROUP-SYNC] No peers to request history from. Stopping.");
+        this.notifyGroupSyncEnd(groupId);
+      }
     } catch (err) {
       console.error("❌ [HISTORY-SYNC] Failed to request history:", err);
+      this.notifyGroupSyncEnd(groupId);
     }
   }
 
-  private async handleHistoryRequest(
-    message: GroupMaximaMessage,
-    fromPublicKey: string,
-  ): Promise<void> {
-    console.log(
-      `📥 [HISTORY-SYNC] History request from ${message.senderUsername} since ${message.historySince}`,
-    );
-
-    // 1. Fetch missing messages
-    // Limit to 50 to prevent huge payloads
-    const sql = `
-            SELECT * FROM GROUP_MESSAGES
-            WHERE group_id = '${message.groupId}'
-            AND date > ${message.historySince || 0}
-            ORDER BY date ASC
-            LIMIT 50
-        `;
-
-    try {
-      const res = await this.runSQL(sql);
-      const messages = res.rows || [];
-
-      if (messages.length === 0) {
-        console.log("ℹ️ [HISTORY-SYNC] No new history.");
-        return;
-      }
-
-      console.log(
-        `📤 [HISTORY-SYNC] Sending ${messages.length} messages to ${message.senderUsername}`,
-      );
-
-      // 2. Map DB rows to GroupMessage objects
-      // We use DECODED message content here because handleHistoryResponse expects to ENCODE it.
-      const historyMessages: GroupMessage[] = messages.map((row: any) => ({
-        group_id: row.GROUP_ID,
-        sender_publickey: row.SENDER_PUBLICKEY,
-        sender_username: row.SENDER_USERNAME,
-        type: row.TYPE,
-        message: row.MESSAGE, // Send plain text now, was decodeURIComponent(row.MESSAGE)
-        filedata: row.FILEDATA,
-        date: Number(row.DATE),
-        read: 1,
-      }));
-
-      // 3. Send Response
-      const { myPublicKey, myUsername } = await new Promise<{
-        myPublicKey: string;
-        myUsername: string;
-      }>((resolve) => {
-        MDS.executeRaw("maxima", (res: any) => {
-          let pub = "";
-          let name = "User";
-          if (res && res.status && res.response) {
-            pub = res.response.publickey || "";
-            name = res.response.name || "User";
-          }
-          resolve({ myPublicKey: pub, myUsername: name });
-        });
-      });
-
-      const responseMsg: GroupMaximaMessage = {
-        messageType: "history_response",
-        groupId: message.groupId,
-        groupName: message.groupName,
-        senderPublickey: myPublicKey,
-        senderUsername: myUsername,
-        timestamp: Date.now(),
-        historyMessages: historyMessages,
-      };
-
-      await this.sendMaximaMessage(fromPublicKey, responseMsg);
-    } catch (err) {
-      console.error(
-        "❌ [HISTORY-SYNC] Failed to process history request:",
-        err,
-      );
-    }
+  private notifyGroupSyncEnd(groupId: string) {
+    const detail = { type: "GROUP_SYNC_END", groupId: groupId };
+    MDS.comms.solo(JSON.stringify(detail), () => { });
+    window.dispatchEvent(new CustomEvent("GROUP_UPDATE", { detail }));
   }
 
-  private async handleHistoryResponse(
-    message: GroupMaximaMessage,
-  ): Promise<void> {
-    console.log(
-      `📥 [HISTORY-SYNC] Received response: ${message.historyMessages?.length} messages`,
-    );
-
-    if (!message.historyMessages || message.historyMessages.length === 0)
-      return;
-
-    let addedCount = 0;
-    for (const msg of message.historyMessages) {
-      // Check if already exists to avoid duplicates
-      // Also check using original sender public key
-      const checkSql = `
-                SELECT id FROM GROUP_MESSAGES
-                WHERE group_id = '${message.groupId}'
-                AND date = ${msg.date}
-                AND sender_publickey = '${msg.sender_publickey}'
-             `;
-
-      try {
-        const checkWin = await this.runSQL(checkSql);
-        if (checkWin.rows && checkWin.rows.length > 0) {
-          continue;
-        }
-
-        // Insert - only escape SQL quotes
-        const escapedMsg = msg.message.replace(/'/g, "''");
-        const filedata = msg.filedata || "";
-
-        // FIX: Set propagated=1 to prevent Service Worker from re-broadcasting history as new messages
-        const insertSql = `
-                    INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read, propagated)
-                    VALUES ('${message.groupId}', '${msg.sender_publickey}', '${msg.sender_username.replace(/'/g, "''")}', '${msg.type}', '${escapedMsg}', '${filedata}', ${msg.date}, 0, 1)
-                 `;
-
-        await this.runSQL(insertSql);
-        addedCount++;
-      } catch (err) {
-        console.warn("❌ [DB] Error inserting sync message:", err);
-      }
-    }
-
-    if (addedCount > 0) {
-      console.log(`✅ [HISTORY-SYNC] Added ${addedCount} missing messages.`);
-      this.notifyGroupUpdate();
-      this.notifyGroupMessage(message); // Also notify message listeners to trigger refresh
-    }
-  }
+  /* ----------------------------------------------------------------------------
+      UTILITIES
+  ---------------------------------------------------------------------------- */
 
   // Join Requests API
   async getPendingJoinRequests(groupId: string): Promise<any[]> {

@@ -40,6 +40,8 @@ function ChannelPage() {
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const [isFavorite, setIsFavorite] = useState(false);
     const [isArchived, setIsArchived] = useState(false);
+    const [isSyncing, setIsSyncing] = useState(false);
+    const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     const menuRef = useRef<HTMLDivElement>(null);
     const emojiPickerRef = useRef<HTMLDivElement>(null);
@@ -78,6 +80,7 @@ function ChannelPage() {
         setSubscriberCount(subs.length);
         await loadMessages();
         await channelService.markChannelMessagesAsRead(channelId);
+        await channelService.requestChannelHistory(channelId);
     }, [channelId, myPublicKey, loadMessages]);
 
     useEffect(() => {
@@ -92,36 +95,49 @@ function ChannelPage() {
 
     // Listen for real-time SW events & Role Updates
     useEffect(() => {
-        const handleSwEvent = (event: MessageEvent) => {
-            try {
-                const payload = JSON.parse(event.data);
-                if (
-                    payload.type === "CHANNEL_NEW_MESSAGE" &&
-                    payload.channelId === channelId
-                ) {
-                    loadMessages();
-                }
-            } catch { }
-        };
-
         const handleUpdate = (e: any) => {
-            if (e.detail && e.detail.channelId !== channelId) return;
+            if (!e.detail || !e.detail.channelId || e.detail.channelId.toUpperCase() !== channelId.toUpperCase()) return;
+
+            const payload = e.detail;
+
+            // Handle Sync Events
+            if (payload.type === "CHANNEL_SYNC_START") {
+                setIsSyncing(true);
+                // Auto-clear after 15 seconds if no response
+                if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+                syncTimeoutRef.current = setTimeout(() => {
+                    setIsSyncing(false);
+                    syncTimeoutRef.current = null;
+                }, 15000);
+                return;
+            }
+            if (payload.type === "CHANNEL_SYNC_END") {
+                if (syncTimeoutRef.current) {
+                    clearTimeout(syncTimeoutRef.current);
+                    syncTimeoutRef.current = null;
+                }
+                setIsSyncing(false);
+                loadMessages();
+                return;
+            }
+            if (payload.type === "CHANNEL_NEW_MESSAGE") {
+                loadMessages();
+                return;
+            }
 
             console.log("📢 [CHANNEL-CHAT] refreshing info...");
-            if (e.detail && e.detail.favorite !== undefined) {
-                setIsFavorite(!!e.detail.favorite);
+            if (payload.favorite !== undefined) {
+                setIsFavorite(!!payload.favorite);
             }
-            if (e.detail && e.detail.archived !== undefined) {
-                setIsArchived(!!e.detail.archived);
+            if (payload.archived !== undefined) {
+                setIsArchived(!!payload.archived);
             }
             init();
         };
 
-        navigator.serviceWorker?.addEventListener("message", handleSwEvent);
         window.addEventListener("CHANNEL_UPDATE", handleUpdate);
 
         return () => {
-            navigator.serviceWorker?.removeEventListener("message", handleSwEvent);
             window.removeEventListener("CHANNEL_UPDATE", handleUpdate);
         };
     }, [channelId, loadMessages, init]);
@@ -271,9 +287,23 @@ function ChannelPage() {
                                 />
                             )}
                         </strong>
-                        <span className="text-xs opacity-80">
-                            {subscriberCount} subscriber{subscriberCount !== 1 ? "s" : ""}
-                            {isAdmin ? " · admin" : " · read-only"}
+                        <span className="text-xs opacity-80 flex items-center gap-1.5 min-w-0">
+                            <span className="truncate">
+                                {subscriberCount} subscriber{subscriberCount !== 1 ? "s" : ""}
+                                {isAdmin ? " · admin" : " · read-only"}
+                            </span>
+                            {isSyncing && (
+                                <>
+                                    <span className="text-gray-400 opacity-60">·</span>
+                                    <span className="flex items-center gap-1 text-sky-200 animate-pulse whitespace-nowrap text-[11px] font-medium leading-none">
+                                        <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        Syncing...
+                                    </span>
+                                </>
+                            )}
                         </span>
                     </div>
                 </div>
@@ -295,18 +325,6 @@ function ChannelPage() {
                                     navigate({ to: "/channel-info/$channelId", params: { channelId } });
                                 }}
                             >
-                                <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
-                                    <Settings size={16} />
-                                </div>
-                                <span className="font-medium">Actions</span>
-                            </button>
-                            <button
-                                className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
-                                onClick={() => {
-                                    setShowMenu(false);
-                                    navigate({ to: "/channel-info/$channelId", params: { channelId } });
-                                }}
-                            >
                                 <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
                                     <Info size={16} />
                                 </div>
@@ -316,15 +334,13 @@ function ChannelPage() {
                                 className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
                                 onClick={() => {
                                     setShowMenu(false);
-                                    handleToggleArchive();
+                                    navigate({ to: "/channel-info/$channelId", params: { channelId } });
                                 }}
                             >
-                                <div className="w-8 h-8 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center text-orange-600 dark:text-orange-400">
-                                    <Archive size={16} />
+                                <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+                                    <Settings size={16} />
                                 </div>
-                                <span className="font-medium">
-                                    {isArchived ? "Unarchive Channel" : "Archive Channel"}
-                                </span>
+                                <span className="font-medium">Actions</span>
                             </button>
                             <button
                                 className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
@@ -341,6 +357,20 @@ function ChannelPage() {
                                 </div>
                                 <span className="font-medium">
                                     {isFavorite ? "Unfavorite Channel" : "Favorite Channel"}
+                                </span>
+                            </button>
+                            <button
+                                className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
+                                onClick={() => {
+                                    setShowMenu(false);
+                                    handleToggleArchive();
+                                }}
+                            >
+                                <div className="w-8 h-8 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center text-orange-600 dark:text-orange-400">
+                                    <Archive size={16} />
+                                </div>
+                                <span className="font-medium">
+                                    {isArchived ? "Unarchive Channel" : "Archive Channel"}
                                 </span>
                             </button>
                             <button

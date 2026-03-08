@@ -817,7 +817,7 @@ export default function ChatsAndGroups() {
               }`}
           >
             <MessageCircle size={16} className="flex-shrink-0" />
-            <span className="hidden md:inline">Max-Contacts</span>{" "}
+            <span className="hidden md:inline">Contacts</span>{" "}
             {individualsCount > 0 && `(${individualsCount})`}
           </button>
           <button
@@ -827,8 +827,8 @@ export default function ChatsAndGroups() {
               : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
               }`}
           >
-            <Inbox size={16} className="flex-shrink-0" />
-            <span className="hidden md:inline">Other-Users</span>{" "}
+            <Globe size={16} className="flex-shrink-0" />
+            <span className="hidden md:inline">Community</span>{" "}
             {requestsCount > 0 && `(${requestsCount})`}
           </button>
           <button
@@ -876,7 +876,7 @@ export default function ChatsAndGroups() {
               {activeTab === "groups" ? (
                 <Users className="w-12 h-12 text-primary-600" />
               ) : activeTab === "requests" ? (
-                <Inbox className="w-12 h-12 text-primary-600" />
+                <Globe className="w-12 h-12 text-primary-600" />
               ) : activeTab === "individuals" ? (
                 <MessageCircle className="w-12 h-12 text-primary-600" />
               ) : (
@@ -887,14 +887,14 @@ export default function ChatsAndGroups() {
               {activeTab === "groups"
                 ? "No groups yet"
                 : activeTab === "requests"
-                  ? "No other users yet"
+                  ? "No community users yet"
                   : "No chats yet"}
             </h3>
             <p className="text-sm mb-6">
               {activeTab === "groups"
                 ? "Create a group to start chatting with multiple people."
                 : activeTab === "requests"
-                  ? "Users outside your Max-Contacts will appear here."
+                  ? "Users outside your Contacts will appear here."
                   : "Start a new conversation to see it here."}
             </p>
             {activeTab === "groups" ? (

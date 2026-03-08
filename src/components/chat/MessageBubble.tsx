@@ -287,6 +287,10 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
     </div>
   );
 
+  if (!text && !charm && !tokenAmount) {
+    return null;
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}

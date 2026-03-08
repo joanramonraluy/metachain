@@ -7,6 +7,7 @@ import { groupService } from "../services/group.service";
 import MessageBubble from "../components/chat/MessageBubble";
 import { useTheme } from "../context/ThemeContext";
 import { EmojiClickData } from "emoji-picker-react";
+import { MDS } from "@minima-global/mds";
 
 // Lazy load EmojiPicker to reduce initial bundle size (~60KB)
 const EmojiPicker = lazy(() => import("emoji-picker-react"));
@@ -39,6 +40,7 @@ interface ParsedMessage {
   senderPublicKey?: string;
   senderUsername?: string; // Added to store original username
   type?: string;
+  customid?: string;
 }
 
 
@@ -48,10 +50,16 @@ function ChatPage() {
   const deduplicateMessages = (msgs: ParsedMessage[]) => {
     const seen = new Set<string>();
     return msgs.filter((m) => {
-      // Create a more unique key including type info
+      // Prioritize customid for deduplication
+      if (m.customid) {
+        if (seen.has(m.customid)) return false;
+        seen.add(m.customid);
+        return true;
+      }
+
+      // Fallback to timestamp + text for messages without customid (legacy or system)
       const typeStr = m.charm ? 'charm' : m.tokenAmount ? 'token' : 'text';
       const key = `${m.timestamp}-${typeStr}-${m.text || ''}`;
-
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -71,6 +79,8 @@ function ChatPage() {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isFavorite, setIsFavorite] = useState(false);
   const [isArchived, setIsArchived] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const cursorPositionRef = useRef<number | null>(null);
@@ -168,7 +178,7 @@ function ChatPage() {
       LOAD MESSAGES FROM DB
   ---------------------------------------------------------------------------- */
   // Helper to load messages from DB - reusable for initial load and after sending
-  const loadMessagesFromDB = async () => {
+  const loadMessagesFromDB = useCallback(async () => {
     if (!address) return;
 
     // Prevent simultaneous loads
@@ -184,32 +194,36 @@ function ChatPage() {
 
       if (Array.isArray(rawMessages)) {
         const parsedMessages = rawMessages.map((row: any) => {
-          const displayText = row.MESSAGE || "";
+          const displayText = row.MESSAGE || row.message || "";
+          const senderPk = row.SENDER_PUBLICKEY || row.sender_publickey || "";
+          const type = row.TYPE || row.type || "text";
 
           const parsed: ParsedMessage = {
             text: displayText,
-            fromMe: (row.SENDER_PUBLICKEY || "").toLowerCase() === (myPublicKey || "").toLowerCase(),
+            fromMe: (senderPk || "").toLowerCase() === (myPublicKey || "").toLowerCase(),
             charm: null,
             amount: null,
-            timestamp: Number(row.DATE || 0),
-            status: 'sent' as const,
-            tokenAmount: undefined,
-            senderPublicKey: row.SENDER_PUBLICKEY,
-            senderUsername: row.SENDER_USERNAME, // Map sender username
-            type: row.TYPE,
+            timestamp: Number(row.DATE || row.date || 0),
+            senderPublicKey: senderPk,
+            senderUsername: row.SENDER_USERNAME || row.sender_username,
+            type: type,
+            customid: row.CUSTOMID || row.customid,
           };
 
           return parsed;
         });
 
-        const deduplicatedMessages = deduplicateMessages(parsedMessages);
-        setMessages(deduplicatedMessages);
+        // Merge DB messages with existing pending messages
+        setMessages((prev) => {
+          const pending = prev.filter(m => m.status === 'pending');
+          return deduplicateMessages([...parsedMessages, ...pending]);
+        });
 
         // Extract unique sender public keys (excluding self)
-        const uniqueSenders = Array.from(new Set(deduplicatedMessages
-          .filter(m => !m.fromMe && (m as any).senderPublicKey)
-          .map(m => (m as any).senderPublicKey as string)
-        ));
+        const uniqueSenders = Array.from(new Set(parsedMessages
+          .filter(m => !m.fromMe && m.senderPublicKey)
+          .map(m => m.senderPublicKey as string)
+        )) as string[];
 
         // Fetch missing contacts
         if (uniqueSenders.length > 0) {
@@ -221,7 +235,7 @@ function ChatPage() {
     } finally {
       isLoadingMessages.current = false;
     }
-  };
+  }, [address, myPublicKey]);
 
   useEffect(() => {
     if (!address) return;
@@ -260,9 +274,32 @@ function ChatPage() {
     // Subscribe to new group messages
     groupService.onGroupMessage(handleNewMessage);
 
-    // Subscribe to group data updates (like name changes)
+    // Subscribe to group data updates (like name changes or sync)
     const handleGroupUpdate = async (e: any) => {
-      if (!e.detail || e.detail.groupId !== address) return;
+      if (!e.detail || !e.detail.groupId || e.detail.groupId.toUpperCase() !== address.toUpperCase()) return;
+
+      const payload = e.detail;
+
+      // Handle Sync Events
+      if (payload.type === "GROUP_SYNC_START") {
+        setIsSyncing(true);
+        // Auto-clear after 15 seconds if no response
+        if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+        syncTimeoutRef.current = setTimeout(() => {
+          setIsSyncing(false);
+          syncTimeoutRef.current = null;
+        }, 15000);
+        return;
+      }
+      if (payload.type === "GROUP_SYNC_END") {
+        if (syncTimeoutRef.current) {
+          clearTimeout(syncTimeoutRef.current);
+          syncTimeoutRef.current = null;
+        }
+        setIsSyncing(false);
+        loadMessagesFromDB();
+        return;
+      }
 
       // Check if the group still exists (we may have been kicked)
       try {
@@ -279,28 +316,24 @@ function ChatPage() {
       }
 
       // Group still exists — update name and status
-      if (e.detail.name) {
+      if (payload.name) {
         setContact(prev => {
           if (!prev) return prev;
           return {
             ...prev,
-            extradata: {
-              ...prev.extradata,
-              name: e.detail.name
-            }
+            extradata: { ...prev.extradata, name: payload.name }
           };
         });
       }
-      if (e.detail.favorite !== undefined) {
-        setIsFavorite(!!e.detail.favorite);
+      if (payload.favorite !== undefined) {
+        setIsFavorite(!!payload.favorite);
       }
-      if (e.detail.archived !== undefined) {
-        setIsArchived(!!e.detail.archived);
+      if (payload.archived !== undefined) {
+        setIsArchived(!!payload.archived);
       }
     };
     window.addEventListener("GROUP_UPDATE", handleGroupUpdate);
 
-    // Cleanup: remove listener when component unmounts or dependencies change
     return () => {
       groupService.removeGroupMessageCallback(handleNewMessage);
       window.removeEventListener("GROUP_UPDATE", handleGroupUpdate);
@@ -342,13 +375,27 @@ function ChatPage() {
     if (!input.trim()) return;
     if (!address || !userName || !myPublicKey) return;
 
-    const newMsg: ParsedMessage = { text: input, fromMe: true, charm: null, amount: null, timestamp: Date.now(), status: 'sent', senderUsername: userName };
+    const customId = `group_${address}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const newMsg: ParsedMessage = {
+      text: input,
+      fromMe: true,
+      charm: null,
+      amount: null,
+      timestamp: Date.now(),
+      status: 'pending', // Use pending to ensure it's not replaced by DB load until synced
+      senderUsername: userName,
+      customid: customId
+    };
     setMessages((prev) => [...prev, newMsg]);
 
     try {
       await groupService.sendGroupMessage(address, input, "text", myPublicKey, userName);
+      // After sending, refresh to get the actual DB record (which will match by customid)
+      setTimeout(() => loadMessagesFromDB(), 100);
     } catch (err) {
       console.error("❌ [GROUP-CHAT] Send error:", err);
+      // Update its status to failed
+      setMessages(prev => prev.map(m => m.customid === customId ? { ...m, status: 'failed' as const } : m));
     }
 
     setInput("");
@@ -401,49 +448,48 @@ function ChatPage() {
   /* ----------------------------------------------------------------------------
       FETCH CONTACTS HELPER
   ---------------------------------------------------------------------------- */
-  const fetchContactsForKeys = async (publicKeys: string[]) => {
+  const fetchContactsForKeys = useCallback(async (publicKeys: string[]) => {
     // Filter out keys we already have
     const missingKeys = publicKeys.filter(key => !contactsMap[key]);
     if (missingKeys.length === 0) return;
 
     try {
       // Get all contacts from MAXIMA
-      MDS.cmd.maxcontacts((res: any) => {
-        if (res.status && res.response && res.response.contacts) {
-          const newContacts: Record<string, { name: string; icon?: string }> = {};
+      const res: any = await MDS.cmd.maxcontacts({ params: { action: "list" } });
+      if (res.status && res.response && res.response.contacts) {
+        const newContacts: Record<string, { name: string; icon?: string }> = {};
 
-          res.response.contacts.forEach((c: any) => {
-            if (missingKeys.includes(c.publickey)) {
-              let icon = c.extradata?.icon;
-              let validIcon: string | undefined = undefined;
+        res.response.contacts.forEach((c: any) => {
+          if (missingKeys.includes(c.publickey)) {
+            let icon = c.extradata?.icon;
+            let validIcon: string | undefined = undefined;
 
-              if (icon && typeof icon === 'string') {
-                try {
-                  // Handle both encoded (data%3A) and regular strings
-                  const decoded = icon.startsWith('data%3A') ? decodeURIComponent(icon) : icon;
-                  // Validate it's a real image data URI and not 0x00
-                  if (decoded.startsWith("data:image") && !decoded.includes("0x00")) {
-                    validIcon = decoded;
-                  }
-                } catch (e) {
-                  console.warn("⚠️ [AVATAR] Decode warning:", e);
+            if (icon && typeof icon === 'string') {
+              try {
+                // Handle both encoded (data%3A) and regular strings
+                const decoded = icon.startsWith('data%3A') ? decodeURIComponent(icon) : icon;
+                // Validate it's a real image data URI and not 0x00
+                if (decoded.startsWith("data:image") && !decoded.includes("0x00")) {
+                  validIcon = decoded;
                 }
+              } catch (e) {
+                console.warn("⚠️ [AVATAR] Decode warning:", e);
               }
-
-              newContacts[c.publickey] = {
-                name: c.extradata?.name || c.currentaddress || "Unknown",
-                icon: validIcon
-              };
             }
-          });
 
-          setContactsMap(prev => ({ ...prev, ...newContacts }));
-        }
-      });
+            newContacts[c.publickey] = {
+              name: c.extradata?.name || c.currentaddress || "Unknown",
+              icon: validIcon
+            };
+          }
+        });
+
+        setContactsMap(prev => ({ ...prev, ...newContacts }));
+      }
     } catch (err) {
       console.error("❌ [CONTACTS] Fetch error:", err);
     }
-  };
+  }, [contactsMap]);
 
 
 
@@ -481,8 +527,22 @@ function ChatPage() {
                 />
               )}
             </strong>
-            <span className="text-xs opacity-80 truncate block">
-              {memberCount} Group members
+            <span className="text-xs opacity-80 flex items-center gap-1.5 min-w-0">
+              <span className="truncate">
+                {memberCount} Group members
+              </span>
+              {isSyncing && (
+                <>
+                  <span className="text-gray-400 opacity-60">·</span>
+                  <span className="flex items-center gap-1 text-sky-200 animate-pulse whitespace-nowrap text-[11px] font-medium leading-none">
+                    <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Syncing...
+                  </span>
+                </>
+              )}
             </span>
           </div>
         </div>
@@ -508,22 +568,6 @@ function ChatPage() {
                   navigate({
                     to: '/group-info/$groupId',
                     params: { groupId: address },
-                    search: { returnTo: `/groups/${address}`, tab: "settings" },
-                  });
-                }}
-              >
-                <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
-                  <Settings size={16} />
-                </div>
-                <span className="font-medium">Actions</span>
-              </button>
-              <button
-                className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
-                onClick={() => {
-                  setShowMenu(false);
-                  navigate({
-                    to: '/group-info/$groupId',
-                    params: { groupId: address },
                     search: { returnTo: `/groups/${address}` },
                   });
                 }}
@@ -537,15 +581,17 @@ function ChatPage() {
                 className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
                 onClick={() => {
                   setShowMenu(false);
-                  handleToggleArchive();
+                  navigate({
+                    to: '/group-info/$groupId',
+                    params: { groupId: address },
+                    search: { returnTo: `/groups/${address}`, tab: "settings" },
+                  });
                 }}
               >
-                <div className="w-8 h-8 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center text-orange-600 dark:text-orange-400">
-                  <Archive size={16} />
+                <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+                  <Settings size={16} />
                 </div>
-                <span className="font-medium">
-                  {isArchived ? "Unarchive Group" : "Archive Group"}
-                </span>
+                <span className="font-medium">Actions</span>
               </button>
               <button
                 className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
@@ -562,6 +608,20 @@ function ChatPage() {
                 </div>
                 <span className="font-medium">
                   {isFavorite ? "Unfavorite Group" : "Favorite Group"}
+                </span>
+              </button>
+              <button
+                className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
+                onClick={() => {
+                  setShowMenu(false);
+                  handleToggleArchive();
+                }}
+              >
+                <div className="w-8 h-8 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center text-orange-600 dark:text-orange-400">
+                  <Archive size={16} />
+                </div>
+                <span className="font-medium">
+                  {isArchived ? "Unarchive Group" : "Archive Group"}
                 </span>
               </button>
               <button
@@ -613,37 +673,6 @@ function ChatPage() {
                 <span className="text-lg font-bold text-white md:text-gray-900 dark:text-white">{messages.length}</span>
               </div>
 
-              {/* Charms Sent/Received */}
-              <div className="flex items-center justify-between p-3 bg-gray-700/50 md:bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-purple-500/20 rounded-full flex items-center justify-center">
-                    <span className="text-xl">✨</span>
-                  </div>
-                  <span className="font-medium text-gray-300 md:text-gray-700 dark:text-gray-300">Charms</span>
-                </div>
-                <div className="text-right">
-                  <div className="text-sm text-gray-400 md:text-gray-500 dark:text-gray-400">
-                    Sent: {messages.filter(m => m.charm && m.fromMe).length} | Received: {messages.filter(m => m.charm && !m.fromMe).length}
-                  </div>
-                </div>
-              </div>
-
-              {/* Tokens Transferred */}
-              <div className="flex items-center justify-between p-3 bg-gray-700/50 md:bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-green-500/20 rounded-full flex items-center justify-center">
-                    <svg className="w-5 h-5 text-green-400 md:text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  </div>
-                  <span className="font-medium text-gray-300 md:text-gray-700 dark:text-gray-300">Token Transfers</span>
-                </div>
-                <div className="text-right">
-                  <div className="text-sm text-gray-400 md:text-gray-500 dark:text-gray-400">
-                    Sent: {messages.filter(m => m.tokenAmount && m.fromMe).length} | Received: {messages.filter(m => m.tokenAmount && !m.fromMe).length}
-                  </div>
-                </div>
-              </div>
 
               {/* First Message Date */}
               {messages.length > 0 && messages[0].timestamp && (
@@ -739,34 +768,6 @@ function ChatPage() {
           />
         )}
 
-        {/* Pending Transactions Indicator */}
-        {messages.filter(m => m.status === 'pending').length > 0 && (
-          <div className="sticky top-0 z-20 mb-4 mx-2 mt-2">
-            {messages.filter(m => m.status === 'pending').map((msg) => (
-              <div key={msg.timestamp} className="bg-primary-50/95 dark:bg-primary-900/40 backdrop-blur-sm border border-primary-200 dark:border-primary-700 rounded-lg shadow-sm p-4 mb-2 animate-in fade-in slide-in-from-top-2 duration-300">
-                <div className="flex items-start gap-3">
-                  <div className="flex-shrink-0 w-10 h-10 bg-primary-100 dark:bg-primary-800 rounded-full flex items-center justify-center">
-                    <svg className="w-5 h-5 text-primary-600 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-1">
-                      Sending {msg.tokenAmount ? 'Token' : 'Charm'}
-                    </p>
-                    <p className="text-sm text-gray-600 dark:text-gray-300">
-                      {msg.tokenAmount
-                        ? `${msg.tokenAmount.amount} ${msg.tokenAmount.tokenName} `
-                        : `${msg.amount} MINIMA`}
-                      {' · '}
-                      <span className="text-primary-600 dark:text-primary-400 font-medium">Waiting for confirmation...</span>
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
 
         {messages.length === 0 && (
           <div className="flex-1 flex items-center justify-center z-0">

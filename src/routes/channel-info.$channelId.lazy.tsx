@@ -4,7 +4,7 @@ import { useNavigate, createLazyFileRoute } from "@tanstack/react-router";
 import { appContext } from "../AppContext";
 import { channelService, ChannelSubscriber } from "../services/channel.service";
 import { chatService } from "../services/chat.service";
-import { ArrowLeft, Radio, UserPlus, UserX, Search, ShieldCheck, ShieldAlert, MessageSquare, Info, Users, X, Edit2, Check, Camera, Link, Copy, CheckCheck } from "lucide-react";
+import { ArrowLeft, UserPlus, UserX, Search, ShieldCheck, ShieldAlert, MessageSquare, Info, Users, X, Edit2, Check, Camera, Copy, Database, History, Trash2 } from "lucide-react";
 import { MDS } from "@minima-global/mds";
 import { ChannelTabs, ChannelTab } from "../components/channel/ChannelTabs";
 
@@ -21,6 +21,11 @@ interface Person {
     extradata?: { name?: string; icon?: string };
 }
 
+const shortenKey = (key: string) => {
+    if (!key) return "";
+    return `${key.substring(0, 8)}...${key.substring(key.length - 8)}`;
+};
+
 function ChannelInfoPage() {
     const { channelId } = Route.useParams();
     const search: any = Route.useSearch();
@@ -31,6 +36,7 @@ function ChannelInfoPage() {
     const [channelName, setChannelName] = useState("");
     const [description, setDescription] = useState("");
     const [isAdmin, setIsAdmin] = useState(false);
+    const [creatorPublicKey, setCreatorPublicKey] = useState("");
     const [subscribers, setSubscribers] = useState<ChannelSubscriber[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -59,7 +65,10 @@ function ChannelInfoPage() {
     // -------------------------------------------------------------------------
     // Load channel data
     // -------------------------------------------------------------------------
-    const [stats, setStats] = useState({ total: 0, mine: 0 });
+    const [stats, setStats] = useState({ total: 0, mine: 0, firstDate: 0 });
+    const [copiedField, setCopiedField] = useState<string | null>(null);
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
 
     const loadData = async () => {
         if (!myPublicKey) return;
@@ -68,6 +77,7 @@ function ChannelInfoPage() {
             setChannelName((info as any).NAME || (info as any).name || "Channel");
             setDescription((info as any).DESCRIPTION || (info as any).description || "");
             setAvatar((info as any).AVATAR || (info as any).avatar || null);
+            setCreatorPublicKey((info as any).ADMIN_PUBLICKEY || (info as any).admin_publickey || "");
         }
         const admin = await channelService.isAdmin(channelId, myPublicKey);
         setIsAdmin(admin);
@@ -80,7 +90,11 @@ function ChannelInfoPage() {
             const me = (myPublicKey || "").toLowerCase();
             return sender === me;
         }).length;
-        setStats({ total: msgs.length, mine });
+        setStats({
+            total: msgs.length,
+            mine,
+            firstDate: msgs.length > 0 ? Number((msgs[0] as any).DATE || msgs[0].date) : Number((info as any).CREATED_DATE || (info as any).created_date || 0)
+        });
 
         const mappedSubs = rawSubs.map((s: any) => {
             const pk = s.PUBLICKEY || s.publickey;
@@ -122,6 +136,23 @@ function ChannelInfoPage() {
         window.addEventListener("CHANNEL_UPDATE", handleUpdate);
         return () => window.removeEventListener("CHANNEL_UPDATE", handleUpdate);
     }, [channelId, myPublicKey]);
+
+    const copyToClipboard = (text: string, fieldId: string) => {
+        navigator.clipboard.writeText(text).then(() => {
+            setCopiedField(fieldId);
+            setTimeout(() => setCopiedField(null), 2000);
+        });
+    };
+
+    const handleExitChannel = async () => {
+        try {
+            await channelService.removeSubscriber(channelId, myPublicKey || "", myPublicKey || "", userName || "Unknown");
+            navigate({ to: '/' });
+        } catch (err) {
+            console.error("Failed to exit channel:", err);
+            setTimeout(() => alert("Failed to exit channel"), 100);
+        }
+    };
 
     // -------------------------------------------------------------------------
     // Load people for invite modal (contacts + community, excluding current subs)
@@ -306,15 +337,28 @@ function ChannelInfoPage() {
 
     return (
         <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-900">
-            {/* Header */}
-            <div className="bg-primary-600 dark:bg-gray-800 text-white p-4 flex items-center gap-3 shadow-sm border-b dark:border-gray-700">
+            {/* HEADER */}
+            <div className="sticky top-0 z-10 bg-white/80 dark:bg-gray-800/80 backdrop-blur-md border-b border-gray-200 dark:border-gray-700 px-4 py-3 flex items-center gap-3">
                 <button
-                    onClick={() => navigate({ to: "/channels/$channelId", params: { channelId } })}
-                    className="p-2 hover:bg-white/10 dark:hover:bg-gray-700 rounded-full transition-colors"
+                    onClick={() => {
+                        if (search.returnTo) {
+                            navigate({ to: search.returnTo });
+                        } else {
+                            navigate({ to: `/channels/${channelId}` });
+                        }
+                    }}
+                    className="p-2 -ml-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors text-gray-700 dark:text-gray-200"
                 >
-                    <ArrowLeft size={24} />
+                    <ArrowLeft size={20} />
                 </button>
-                <h1 className="text-xl font-bold">Channel Info</h1>
+                <div className="flex flex-col min-w-0">
+                    <h1 className="text-lg font-semibold text-gray-800 dark:text-white truncate leading-tight">
+                        {channelName}
+                    </h1>
+                    <span className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                        Channel Info
+                    </span>
+                </div>
             </div>
 
             {/* Tab Navigation */}
@@ -323,9 +367,9 @@ function ChannelInfoPage() {
             <div className="flex-1 overflow-y-auto p-4 pb-10">
                 <div className="max-w-2xl mx-auto space-y-6">
                     {activeTab === 'profile' && (
-                        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                            {/* Channel identity */}
-                            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-6 flex flex-col items-center gap-3 border border-gray-100 dark:border-gray-700">
+                        <div className="space-y-6">
+                            {/* CHANNEL IDENTITY CARD */}
+                            <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col items-center relative">
                                 <input
                                     type="file"
                                     ref={fileInputRef}
@@ -333,12 +377,12 @@ function ChannelInfoPage() {
                                     accept="image/*"
                                     onChange={handleAvatarFileSelect}
                                 />
-                                <div className="relative group/avatar">
-                                    <div className={`w-20 h-20 rounded-full flex items-center justify-center shadow-lg overflow-hidden ${!avatar ? 'bg-sky-500 shadow-sky-500/20' : 'bg-gray-200 dark:bg-gray-700'}`}>
+                                <div className="relative group/avatar mb-4">
+                                    <div className={`w-24 h-24 rounded-full flex items-center justify-center text-white text-4xl font-bold shadow-lg overflow-hidden ${!avatar ? 'bg-primary-500 shadow-primary-500/30' : 'bg-gray-200 dark:bg-gray-700'}`}>
                                         {avatar ? (
                                             <img src={avatar} alt={channelName} className="w-full h-full object-cover" />
                                         ) : (
-                                            <Radio size={36} className="text-white" />
+                                            channelName.charAt(0).toUpperCase()
                                         )}
                                     </div>
 
@@ -351,7 +395,7 @@ function ChannelInfoPage() {
                                             {savingAvatar ? (
                                                 <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
                                             ) : (
-                                                <Camera size={20} />
+                                                <Camera size={24} />
                                             )}
                                         </button>
                                     )}
@@ -381,7 +425,7 @@ function ChannelInfoPage() {
                                     </div>
                                 ) : (
                                     <div className="flex items-center justify-center gap-2 mb-1 w-full relative group/name">
-                                        <h2 className="text-xl font-bold text-gray-900 dark:text-white text-center break-all px-8">{channelName}</h2>
+                                        <h1 className="text-2xl font-bold text-gray-900 dark:text-white text-center break-all px-8">{channelName}</h1>
                                         {isAdmin && (
                                             <button
                                                 onClick={() => { setNewName(channelName); setIsEditingName(true); }}
@@ -395,7 +439,7 @@ function ChannelInfoPage() {
                                 )}
 
                                 {isEditingDesc ? (
-                                    <div className="w-full mt-1 mb-2 flex flex-col items-end gap-2">
+                                    <div className="w-full mt-3 mb-4 flex flex-col items-end gap-2">
                                         <div className="relative w-full">
                                             <textarea
                                                 value={newDesc}
@@ -410,7 +454,7 @@ function ChannelInfoPage() {
                                                     if (e.key === 'Escape') { setNewDesc(description); setIsEditingDesc(false); }
                                                 }}
                                                 className="w-full bg-gray-50 dark:bg-gray-900 border border-primary-500 rounded-lg px-3 py-2 text-sm text-gray-700 dark:text-gray-300 focus:outline-none resize-none pr-12"
-                                                rows={2}
+                                                rows={3}
                                                 placeholder="Add a channel description..."
                                                 disabled={savingDesc}
                                             />
@@ -420,9 +464,9 @@ function ChannelInfoPage() {
                                         </div>
                                     </div>
                                 ) : (
-                                    <div className={`mt-1 mb-2 w-full relative group/desc flex items-start ${description ? "justify-center text-center" : "justify-center"}`}>
+                                    <div className={`mt-3 mb-4 w-full relative group/desc flex items-start ${description ? "justify-center text-center" : "justify-center"}`}>
                                         {description ? (
-                                            <p className="text-sm text-gray-500 dark:text-gray-400 text-center italic px-8 whitespace-pre-wrap max-w-sm break-words">
+                                            <p className="text-gray-600 dark:text-gray-300 text-sm italic px-8 whitespace-pre-wrap text-center max-w-sm break-words">
                                                 {description}
                                             </p>
                                         ) : isAdmin ? (
@@ -443,70 +487,66 @@ function ChannelInfoPage() {
                                         )}
                                     </div>
                                 )}
-                                <span className="text-xs font-bold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-900/30 px-3 py-1 rounded-full border border-sky-100 dark:border-sky-800 uppercase tracking-wide">
-                                    {isAdmin ? "📢 Admin" : "👁️ Subscriber"}
-                                </span>
+                            </div>
 
-                                {/* INVITE LINK — admin only */}
-                                {isAdmin && (
-                                    <div className="w-full mt-4 border-t border-gray-100 dark:border-gray-700 pt-4">
-                                        <p className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                                            <Link size={12} />
-                                            Invite Link
-                                        </p>
-                                        {inviteLink ? (
-                                            <div className="space-y-2">
-                                                <div className="flex items-center gap-2">
-                                                    <input
-                                                        type="text"
-                                                        readOnly
-                                                        value={inviteLink}
-                                                        className="flex-1 text-xs bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-gray-500 dark:text-gray-400 truncate focus:outline-none"
-                                                    />
-                                                    <button
-                                                        onClick={handleCopyLink}
-                                                        className="p-2 rounded-lg bg-sky-50 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400 hover:bg-sky-100 dark:hover:bg-sky-900/50 transition-colors flex-shrink-0"
-                                                        title="Copy link"
-                                                    >
-                                                        {inviteLinkCopied ? <CheckCheck size={16} /> : <Copy size={16} />}
-                                                    </button>
-                                                </div>
-                                                <button
-                                                    onClick={handleGenerateInvite}
-                                                    disabled={generatingLink}
-                                                    className="w-full text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors py-1"
-                                                >
-                                                    🔄 Regenerate link
-                                                </button>
-                                            </div>
-                                        ) : (
+                            {/* CHAT STATISTICS */}
+                            <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 space-y-4">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <Info size={18} className="text-primary-500" />
+                                    <h3 className="font-semibold text-gray-900 dark:text-white">Chat Statistics</h3>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl">
+                                        <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center text-blue-600 dark:text-blue-400">
+                                            <MessageSquare size={20} />
+                                        </div>
+                                        <div>
+                                            <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">Messages</p>
+                                            <p className="text-sm font-bold text-gray-900 dark:text-white">{stats.total} total ({stats.mine} mine)</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl">
+                                        <div className="w-10 h-10 bg-orange-100 dark:bg-orange-900/30 rounded-full flex items-center justify-center text-orange-600 dark:text-orange-400" >
+                                            <History size={20} />
+                                        </div>
+                                        <div>
+                                            <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">History</p>
+                                            <p className="text-sm font-bold text-gray-900 dark:text-white">
+                                                Since {stats.firstDate ? new Date(stats.firstDate).toLocaleDateString() : 'N/A'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* TECHNICAL DATA */}
+                            <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 space-y-4">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <Database size={18} className="text-primary-500" />
+                                    <h3 className="font-semibold text-gray-900 dark:text-white">Technical Data</h3>
+                                </div>
+
+                                <div className="space-y-3">
+                                    <div className="group relative">
+                                        <p className="text-xs text-gray-500 dark:text-gray-400 font-medium mb-1">Channel ID (Public Key)</p>
+                                        <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-transparent hover:border-primary-200 dark:hover:border-primary-900/50 transition-all">
+                                            <p className="text-xs font-mono text-gray-800 dark:text-gray-200 break-all pr-8">{channelId}</p>
                                             <button
-                                                onClick={handleGenerateInvite}
-                                                disabled={generatingLink}
-                                                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-sky-50 dark:bg-sky-900/20 text-sky-600 dark:text-sky-400 rounded-xl border border-sky-100 dark:border-sky-800 hover:bg-sky-100 dark:hover:bg-sky-900/40 transition-colors text-sm font-semibold disabled:opacity-50"
+                                                onClick={() => copyToClipboard(channelId || "", 'channelid')}
+                                                className="absolute right-3 top-1/2 -translate-y-1/2 p-2 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg text-gray-400 hover:text-primary-500 opacity-0 group-hover:opacity-100 transition-all shadow-sm"
                                             >
-                                                {generatingLink ? (
-                                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-sky-600" />
-                                                ) : (
-                                                    <Link size={15} />
-                                                )}
-                                                {generatingLink ? "Generating..." : "Generate Invite Link"}
+                                                {copiedField === 'channelid' ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
                                             </button>
-                                        )}
+                                        </div>
                                     </div>
-                                )}
 
-                                {/* STATISTICS */}
-                                <div className="w-full grid grid-cols-2 gap-3 mt-4">
-                                    <div className="flex flex-col items-center p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl">
-                                        <MessageSquare size={18} className="text-primary-500 mb-1" />
-                                        <p className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Total</p>
-                                        <p className="text-sm font-bold text-gray-900 dark:text-white">{stats.total}</p>
-                                    </div>
-                                    <div className="flex flex-col items-center p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl">
-                                        <Info size={18} className="text-primary-500 mb-1" />
-                                        <p className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Mine</p>
-                                        <p className="text-sm font-bold text-gray-900 dark:text-white">{stats.mine}</p>
+                                    <div>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400 font-medium mb-1">My Role</p>
+                                        <div className="inline-flex items-center px-3 py-1 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 rounded-full text-xs font-mono font-bold uppercase tracking-wider">
+                                            {myPublicKey && creatorPublicKey && myPublicKey.toLowerCase() === creatorPublicKey.toLowerCase() ? 'creator' : isAdmin ? 'admin' : 'subscriber'}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -514,10 +554,10 @@ function ChannelInfoPage() {
                     )}
 
                     {activeTab === 'settings' && (
-                        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                        <div className="space-y-6">
                             {/* SUBSCRIBERS LIST */}
-                            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
-                                <div className="p-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between bg-gray-50/50 dark:bg-gray-800/50">
+                            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
+                                <div className="p-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
                                     <div className="flex items-center gap-2">
                                         <Users size={18} className="text-gray-500" />
                                         <span className="font-semibold text-gray-900 dark:text-white">Subscribers</span>
@@ -529,10 +569,10 @@ function ChannelInfoPage() {
                                                 className="flex items-center gap-1.5 text-xs font-semibold text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/30 hover:bg-primary-100 dark:hover:bg-primary-900/50 px-3 py-1.5 rounded-full transition-colors"
                                             >
                                                 <UserPlus size={13} />
-                                                Add Member
+                                                Add
                                             </button>
                                         )}
-                                        <span className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2.5 py-1 rounded-full font-bold">
+                                        <span className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-1 rounded-full">
                                             {subscribers.length}
                                         </span>
                                     </div>
@@ -540,38 +580,60 @@ function ChannelInfoPage() {
 
                                 <div className="divide-y divide-gray-100 dark:divide-gray-700">
                                     {subscribers.length === 0 ? (
-                                        <div className="p-10 text-center">
-                                            <p className="text-gray-500 dark:text-gray-400 text-sm italic">No subscribers found.</p>
-                                        </div>
+                                        <div className="p-8 text-center text-gray-500">No subscribers found.</div>
                                     ) : (
-                                        subscribers.map((sub: any) => {
+                                        subscribers.map((sub: any, i) => {
                                             const pk = sub.publickey;
                                             const name = sub.username;
                                             const role = sub.role;
-                                            const isSelf = pk && myPublicKey && pk.toLowerCase() === myPublicKey.toLowerCase();
+                                            const isMe = pk && myPublicKey && pk.toLowerCase() === myPublicKey.toLowerCase();
 
                                             return (
-                                                <div key={pk} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50/50 dark:hover:bg-gray-800/50 transition-colors">
-                                                    <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-gray-600 dark:text-gray-300 font-bold flex-shrink-0">
-                                                        {name.charAt(0).toUpperCase()}
-                                                    </div>
-                                                    <div className="flex-1 min-w-0">
-                                                        <p className="font-medium text-gray-900 dark:text-white truncate">
-                                                            {name} {isSelf ? "(you)" : ""}
-                                                        </p>
-                                                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                                                            {role === "admin" ? "📢 Admin" : "👁️ Subscriber"}
-                                                        </p>
-                                                    </div>
-                                                    {isAdmin && !isSelf && (
-                                                        <div className="flex items-center gap-1">
+                                                <div key={pk || i} className={`relative flex items-center z-0 ${isMe ? 'bg-primary-50/50 dark:bg-primary-900/10' : 'hover:bg-gray-100 dark:hover:bg-gray-700/50'}`}>
+                                                    <button
+                                                        onClick={() => {
+                                                            if (!isMe) {
+                                                                navigate({
+                                                                    to: `/contact-info/${pk}`,
+                                                                    search: { returnTo: `/channel-info/${channelId}` }
+                                                                });
+                                                            }
+                                                        }}
+                                                        className={`flex-1 p-4 flex items-center gap-3 transition-all text-left group min-w-0
+                                                                  ${isMe
+                                                                ? 'cursor-default'
+                                                                : 'cursor-pointer active:scale-[0.99]'
+                                                            }`}
+                                                    >
+                                                        <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 flex-shrink-0 flex items-center justify-center text-gray-600 dark:text-gray-300 font-medium text-sm group-hover:bg-gray-300 dark:group-hover:bg-gray-600 transition-colors">
+                                                            {isMe ? 'You' : (name && name !== "Unknown Member" && name !== "Unknown" ? name.charAt(0).toUpperCase() : '?')}
+                                                        </div>
+                                                        <div className="flex-1 min-w-0">
+                                                            <div>
+                                                                <p className="text-sm font-medium text-gray-900 dark:text-white truncate flex items-center gap-2">
+                                                                    {isMe ? 'You' : (name && name !== "Unknown Member" && name !== "Unknown" ? name : shortenKey(pk))}
+                                                                    {pk && creatorPublicKey && pk.toLowerCase() === creatorPublicKey.toLowerCase() ? (
+                                                                        <span className="text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-400 px-1.5 py-0.5 rounded-md uppercase tracking-wide flex-shrink-0">Creator</span>
+                                                                    ) : role === 'admin' ? (
+                                                                        <span className="text-[10px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-400 px-1.5 py-0.5 rounded-md uppercase tracking-wide flex-shrink-0">Admin</span>
+                                                                    ) : null}
+                                                                </p>
+                                                                <p className="text-xs text-gray-500 dark:text-gray-400 truncate font-mono">
+                                                                    {shortenKey(pk)}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                    </button>
+
+                                                    {isAdmin && !isMe && (
+                                                        <div className="flex items-center gap-1 pr-3 flex-shrink-0">
                                                             {role === "subscriber" ? (
                                                                 <button
                                                                     onClick={() => handleUpdateRole(pk, "admin")}
                                                                     className="p-1.5 text-sky-600 hover:text-sky-700 dark:hover:text-sky-400 transition-colors rounded-full hover:bg-sky-50 dark:hover:bg-sky-900/20"
                                                                     title="Promote to admin"
                                                                 >
-                                                                    <ShieldCheck size={16} />
+                                                                    <ShieldCheck size={18} />
                                                                 </button>
                                                             ) : (
                                                                 <button
@@ -579,7 +641,7 @@ function ChannelInfoPage() {
                                                                     className="p-1.5 text-amber-600 hover:text-amber-700 dark:hover:text-amber-400 transition-colors rounded-full hover:bg-amber-50 dark:hover:bg-amber-900/20"
                                                                     title="Demote to subscriber"
                                                                 >
-                                                                    <ShieldAlert size={16} />
+                                                                    <ShieldAlert size={18} />
                                                                 </button>
                                                             )}
                                                             <button
@@ -587,7 +649,7 @@ function ChannelInfoPage() {
                                                                 className="p-1.5 text-red-500 hover:text-red-700 dark:hover:text-red-400 transition-colors rounded-full hover:bg-red-50 dark:hover:bg-red-900/20"
                                                                 title="Remove subscriber"
                                                             >
-                                                                <UserX size={16} />
+                                                                <UserX size={18} />
                                                             </button>
                                                         </div>
                                                     )}
@@ -597,10 +659,95 @@ function ChannelInfoPage() {
                                     )}
                                 </div>
                             </div>
+
+                            {/* GENERATE INVITE LINK */}
+                            {isAdmin && (
+                                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-4">
+                                    <div className="mb-3 flex items-center gap-2">
+                                        <Users size={18} className="text-primary-500" />
+                                        <span className="font-semibold text-gray-900 dark:text-white">Invite Link</span>
+                                    </div>
+
+                                    {inviteLink ? (
+                                        <div className="space-y-3">
+                                            <div className="p-3 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-600 break-all text-sm font-mono text-gray-600 dark:text-gray-300 relative group/link">
+                                                {inviteLink}
+                                                <button
+                                                    onClick={handleCopyLink}
+                                                    className="absolute right-2 top-2 p-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md text-gray-500 hover:text-primary-500 transition-colors shadow-sm"
+                                                    title="Copy Invite Link"
+                                                >
+                                                    {inviteLinkCopied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
+                                                </button>
+                                            </div>
+                                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                                                Share this link carefully. Anyone with this link can request to join the channel.
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <button
+                                            onClick={handleGenerateInvite}
+                                            disabled={generatingLink}
+                                            className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 font-medium rounded-lg hover:bg-primary-100 dark:hover:bg-primary-900/50 transition-colors disabled:opacity-50"
+                                        >
+                                            {generatingLink ? (
+                                                "Generating..."
+                                            ) : (
+                                                <>
+                                                    <Copy size={16} />
+                                                    Generate Invite Link
+                                                </>
+                                            )}
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* EXIT CHANNEL BUTTON */}
+                            <div className="bg-white dark:bg-gray-800 rounded-2xl overflow-hidden shadow-sm border border-gray-100 dark:border-gray-700">
+                                <button
+                                    onClick={() => setShowDeleteConfirm(true)}
+                                    className="w-full flex items-center gap-3 p-4 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-left font-medium"
+                                >
+                                    <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                                        <Trash2 size={20} />
+                                    </div>
+                                    Exit Channel
+                                </button>
+                            </div>
                         </div>
                     )}
                 </div>
             </div>
+
+            {/* EXIT CONFIRMATION DIALOG */}
+            {showDeleteConfirm && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-sm w-full p-6 animate-in zoom-in-95 fade-in duration-200 border border-gray-200 dark:border-gray-700">
+                        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Exit Channel?</h3>
+                        <p className="text-gray-600 dark:text-gray-300 mb-6">
+                            Are you sure you want to exit this channel? You will no longer receive new messages.
+                        </p>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setShowDeleteConfirm(false)}
+                                className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-medium"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setShowDeleteConfirm(false);
+                                    handleExitChannel();
+                                }}
+                                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
+                            >
+                                Exit
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Invite Modal */}
             {showInvite && (

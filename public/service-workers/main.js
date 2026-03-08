@@ -181,9 +181,21 @@ MDS.init(function (msg) {
         MDS.log("🔍 [MAXIMA] Type: " + (maxjson.type || maxjson.messageType));
 
         // ================== GROUP MESSAGES ==================
-        // history_request and history_response are handled by the frontend (group.service.ts)
-        // They flow through the MAXIMA event to minima.service.ts → groupService.handleIncomingGroupMessage()
-        // Do NOT handle or ignore them here in the SW.
+        if (
+          app === "metachain-group" &&
+          maxjson.messageType === "history_request"
+        ) {
+          handleGroupHistoryRequest(pubkey, maxjson);
+          return;
+        }
+
+        if (
+          app === "metachain-group" &&
+          maxjson.messageType === "history_response"
+        ) {
+          handleGroupHistoryResponse(pubkey, maxjson);
+          return;
+        }
 
         if (
           (app === "metachain-group" &&

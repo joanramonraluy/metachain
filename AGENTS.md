@@ -1,6 +1,6 @@
 # AGENTS.md - MetaChain Engineering Guide
 
-Last reviewed against codebase: 2026-02-27 (commit `c964b879`)
+Last reviewed against codebase: 2026-03-07 (commit `45380b7e`)
 Scope: `/home/joanramon/Minima/metachain`
 
 ## 1) Project Intent
@@ -165,6 +165,7 @@ SW handles:
 - `chat_history_response` DB merge
 - gap detection by `sender_seq`
 - `sync_status_check` / `sync_status_report`
+- group/channel history request fanout and `*_SYNC_START`/`*_SYNC_END` signaling, including immediate `*_SYNC_END` when there are no remote peers (or only self)
 
 FE handles:
 - triggering sync requests from open chats

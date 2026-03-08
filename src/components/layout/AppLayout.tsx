@@ -12,8 +12,19 @@ export default function AppLayout({ children }: AppLayoutProps) {
   const router = useRouterState();
   const currentPath = router.location.pathname;
 
-  // Pages that handle their own header (chat detail and group chat)
-  const hasCustomHeader = currentPath.startsWith("/chat/") || currentPath.startsWith("/groups/");
+  // Pages that handle their own header
+  const customHeaderRoutes = [
+    "/chat/",
+    "/groups/",
+    "/channels/",
+    "/channel-info/",
+    "/group-info/",
+    "/contact-info/",
+    "/create-channel",
+    "/create-group",
+    "/discovery",
+  ];
+  const hasCustomHeader = customHeaderRoutes.some((route) => currentPath.startsWith(route));
 
   useEffect(() => {
     const handleOpenSidebar = () => setSidebarOpen(true);
