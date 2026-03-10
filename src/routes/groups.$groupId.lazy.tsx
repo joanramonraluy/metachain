@@ -2,9 +2,10 @@
 import { useEffect, useRef, useState, useContext, useCallback, lazy, Suspense } from "react";
 import { useNavigate, createLazyFileRoute } from "@tanstack/react-router";
 import { appContext } from "../AppContext";
-import { Settings, Trash2, Star, Archive, Info } from 'lucide-react';
+import { Settings, Trash2, Star, Archive, Info, Image as ImageIcon } from 'lucide-react';
 import { groupService } from "../services/group.service";
 import MessageBubble from "../components/chat/MessageBubble";
+import { compressImage } from "../utils/image";
 import { useTheme } from "../context/ThemeContext";
 import { EmojiClickData } from "emoji-picker-react";
 import { MDS } from "@minima-global/mds";
@@ -41,6 +42,7 @@ interface ParsedMessage {
   senderUsername?: string; // Added to store original username
   type?: string;
   customid?: string;
+  filedata?: string;
 }
 
 
@@ -84,6 +86,7 @@ function ChatPage() {
   const menuRef = useRef<HTMLDivElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const cursorPositionRef = useRef<number | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -208,6 +211,7 @@ function ChatPage() {
             senderUsername: row.SENDER_USERNAME || row.sender_username,
             type: type,
             customid: row.CUSTOMID || row.customid,
+            filedata: row.FILEDATA || row.filedata,
           };
 
           return parsed;
@@ -399,6 +403,68 @@ function ChatPage() {
     }
 
     setInput("");
+  };
+
+  /* ----------------------------------------------------------------------------
+      HANDLE IMAGE ATTACHMENT
+  ---------------------------------------------------------------------------- */
+  const handleImageSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+
+    const MAX_MB = 5;
+    if (file.size > MAX_MB * 1024 * 1024) {
+      alert(`Aquest fitxer és massa gran. (Max: ${MAX_MB}MB)`);
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      alert("Aquest fitxer no és una imatge vàlida.");
+      return;
+    }
+
+    if (!address || !userName || !myPublicKey) return;
+
+    try {
+      const compressedBase64 = await compressImage(file, 800, 800, 0.7);
+
+      const customId = `group_${address}_img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const timestamp = Date.now();
+
+      const newMsg: ParsedMessage = {
+        text: "",
+        fromMe: true,
+        charm: null,
+        amount: null,
+        timestamp,
+        status: 'pending',
+        senderUsername: userName,
+        customid: customId,
+        type: "image",
+        filedata: compressedBase64
+      };
+
+      setMessages((prev) => [...prev, newMsg]);
+
+      await groupService.sendGroupMessage(
+        address,
+        "",
+        "image",
+        myPublicKey,
+        userName,
+        compressedBase64
+      );
+
+      setTimeout(() => loadMessagesFromDB(), 100);
+
+    } catch (err) {
+      console.error("❌ [GROUP-CHAT] Send image error:", err);
+      alert("Error processing the image. It might be too complex or an unsupported format.");
+    }
   };
 
   /* ----------------------------------------------------------------------------
@@ -807,6 +873,8 @@ function ChatPage() {
                   timestamp={msg.timestamp}
                   status={msg.status}
                   tokenAmount={msg.tokenAmount}
+                  type={msg.type}
+                  filedata={msg.filedata}
                   senderName={msg.fromMe ? (userName || "You") : (msg.senderPublicKey ? (contactsMap[msg.senderPublicKey]?.name || msg.senderUsername || msg.senderPublicKey.substring(0, 6)) : (msg.senderUsername || "Unknown"))}
                   senderImage={msg.fromMe ? userAvatar : (msg.senderPublicKey ? contactsMap[msg.senderPublicKey]?.icon : undefined)}
                   onAvatarClick={!msg.fromMe && msg.senderPublicKey ? () => navigate({ to: `/contact-info/${msg.senderPublicKey}`, search: { returnTo: `/groups/${address}` } }) : undefined}
@@ -865,6 +933,24 @@ function ChatPage() {
                 d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
               />
             </svg>
+          </button>
+
+          <input
+            type="file"
+            ref={fileInputRef}
+            accept="image/*"
+            className="hidden"
+            onChange={handleImageSelect}
+          />
+          <button
+            className={`p-1 mr-1 rounded-full transition-colors flex-shrink-0 text-gray-400 hover:text-gray-600`}
+            onClick={(e) => {
+              e.stopPropagation();
+              fileInputRef.current?.click();
+            }}
+            title="Attach Image"
+          >
+            <ImageIcon className="w-5 h-5" />
           </button>
 
           <input

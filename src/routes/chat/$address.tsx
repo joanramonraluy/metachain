@@ -14,8 +14,9 @@ import { Capacitor } from "@capacitor/core";
 import { MDS } from "@minima-global/mds";
 import { appContext } from "../../AppContext";
 import TransferSelector from "../../components/chat/TransferSelector";
-import { Trash2, Wallet, Info, Archive, Settings, Users, Star } from "lucide-react";
+import { Trash2, Wallet, Info, Archive, Settings, Users, Star, Image as ImageIcon } from "lucide-react";
 import MessageBubble from "../../components/chat/MessageBubble";
+import { compressImage } from "../../utils/image";
 
 import { minimaService } from "../../services/minima.service";
 import * as contactRequestsService from "../../services/contact-requests.service";
@@ -73,6 +74,8 @@ interface ParsedMessage {
   isSystem?: boolean; // For system messages (centered)
   isCharm?: boolean; // For charm messages
   isToken?: boolean; // For token transfer messages
+  type?: "text" | "image" | "charm" | "token" | "system"; // Message type
+  filedata?: string; // Base64 encoded file data (e.g., for images)
   sender_seq?: number;
   customid?: string;
   id?: number;
@@ -229,6 +232,7 @@ function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const historyRequestedFor = useRef<string | null>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const cursorPositionRef = useRef<number | null>(null);
@@ -1130,6 +1134,8 @@ function ChatPage() {
 
               return false;
             })(),
+            type: row.TYPE, // Extract type (e.g., 'image')
+            filedata: row.FILEDATA, // Extract base64 file data
             timestamp: Number(row.DATE) || Date.now(), // Convert to number, fallback to now if invalid
             message: row.MESSAGE,
             amount: row.AMOUNT,
@@ -1180,6 +1186,8 @@ function ChatPage() {
               customid: msg.customid,
               originalTimestamp: msg.originalTimestamp,
               isSystem: msg.isSystem,
+              type: msg.type,
+              filedata: msg.filedata,
             } as ParsedMessage;
           }),
         );
@@ -1679,6 +1687,105 @@ function ChatPage() {
       console.error("[Send] Error sending message:", err);
       // Optional: Restore input on failure? Or just show toast.
       // setInput(messageToSend); // Only restore if critical failure
+    }
+  };
+
+  /* ----------------------------------------------------------------------------
+      HANDLE IMAGE ATTACHMENT
+  ---------------------------------------------------------------------------- */
+  const handleImageSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Reset input so the same file can be selected again if needed
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+
+    // 1. Validate File Size (Max 5MB uncompressed)
+    const MAX_MB = 5;
+    if (file.size > MAX_MB * 1024 * 1024) {
+      alert(`Aquest fitxer és massa gran. (Max: ${MAX_MB}MB)`);
+      return;
+    }
+
+    // 2. Validate File Type
+    if (!file.type.startsWith("image/")) {
+      alert("Aquest fitxer no és una imatge vàlida.");
+      return;
+    }
+
+    if (blockReason !== "none" || isBlocked || blockedByThem) {
+      alert("No pots enviar imatges. Aquest xat està bloquejat o pendent d'aprovació.");
+      return;
+    }
+
+    if (!contact?.currentaddress && !contact?.publickey) {
+      console.error("[Send Image] Cannot send: no Maxima address or Public Key for contact");
+      return;
+    }
+
+    const senderName = userName || "Me";
+    const recipientName = contact?.extradata?.name || "Unknown";
+    let targetApp = "metachain";
+
+    if (appStatus === "not_found") {
+      const proceed = confirm("⚠️ The recipient doesn't seem to have MetaChain installed.\n\nDo you want to send this as a standard Maxima message (MaxSolo)?");
+      if (!proceed) return;
+      targetApp = "maxima";
+    }
+
+    try {
+      // Show optimistic pending image message? (Optional, but good UX)
+      // For now, we will compress first. If compress takes long, a loader could be useful.
+
+      // 3. Compress Image to fit within 64KB Maxima limit
+      const compressedBase64 = await compressImage(file, 800, 800, 0.7);
+
+      // Verify the compressed size is broadly under the ~60KB target
+      // A base64 string's length * 0.75 roughly gives its size in bytes
+      const approxBytes = compressedBase64.length * 0.75;
+      if (approxBytes > 55000) {
+        console.warn(`[Send Image] Compressed size is quite large (~${Math.round(approxBytes / 1024)}KB). It might fail Maxima transmission limits.`);
+      }
+
+      const timestamp = Date.now();
+
+      // Optimitistic UI Update
+      const newMsg: ParsedMessage = {
+        text: "",
+        fromMe: true,
+        charm: null,
+        amount: null,
+        timestamp,
+        status: "sent",
+        type: "image",
+        customid: `img_${timestamp}`
+      };
+
+      // Add 'filedata' to the object safely before putting in state to get the UI to render it
+      (newMsg as any).filedata = compressedBase64;
+      setMessages((prev) => [...prev, newMsg]);
+
+      // 4. Send the message via Maxima using the `filedata` field
+      await minimaService.sendMessage(
+        contact.publickey || contact.currentaddress,
+        senderName,
+        "", // Send empty text for pure images, or include input if desired
+        "image", // Use 'image' type
+        compressedBase64, // The actual image data
+        0,
+        timestamp,
+        recipientName,
+        targetApp,
+      );
+
+      // Reload from DB to ensure it was saved correctly
+      setTimeout(() => loadMessagesFromDB(), 500);
+
+    } catch (err) {
+      console.error("[Send Image] Error compressing or sending image:", err);
+      alert("Error processing the image. It might be too complex or an unsupported format.");
     }
   };
 
@@ -3085,6 +3192,8 @@ function ChatPage() {
                     timestamp={msg.timestamp}
                     status={msg.status}
                     tokenAmount={msg.tokenAmount}
+                    type={msg.type}
+                    filedata={msg.filedata}
                     senderName={
                       msg.fromMe
                         ? userName || "You"
@@ -3131,6 +3240,40 @@ function ChatPage() {
           disabled={!contact?.extradata?.minimaaddress}
         >
           <Wallet className="w-6 h-6" />
+        </button>
+
+        {/* Hidden File Input for Image Attachments */}
+        <input
+          type="file"
+          ref={fileInputRef}
+          accept="image/*"
+          className="hidden"
+          onChange={handleImageSelect}
+        />
+
+        <button
+          className={`p-2 mr-1 rounded-full transition-colors ${blockReason !== "none" || isBlocked || blockedByThem
+            ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
+            : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+            }`}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (blockReason !== "none" || isBlocked || blockedByThem) return;
+
+            // Small timeout to prevent UI flicker/bar effect
+            setTimeout(() => {
+              if (inputRef.current) inputRef.current.blur(); // Dismiss keyboard
+              fileInputRef.current?.click();
+            }, 50);
+          }}
+          title={
+            blockReason !== "none" || isBlocked || blockedByThem
+              ? "Chat unavailable - Cannot send images right now"
+              : "Attach Image"
+          }
+          disabled={blockReason !== "none" || isBlocked || blockedByThem}
+        >
+          <ImageIcon className="w-5 h-5" />
         </button>
 
         <div className="flex-1 min-w-0 bg-white dark:bg-gray-700 rounded-2xl flex items-center border border-gray-200 dark:border-gray-600 focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-transparent shadow-sm px-3 py-2 transition-all cursor-text relative">

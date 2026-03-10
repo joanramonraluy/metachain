@@ -19,6 +19,8 @@ interface MessageBubbleProps {
   senderName?: string;
   senderImage?: string; // Base64 or URL
   onAvatarClick?: () => void;
+  type?: string;        // Added type to detect images
+  filedata?: string;    // Added filedata to hold the base64 string
 }
 
 // Flying money emoji component
@@ -78,9 +80,10 @@ const ConfettiParticle = ({ delay = 0, color }: { delay?: number; color: string 
 
 const defaultAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23cbd5e1'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E";
 
-export default function MessageBubble({ fromMe, text, charm, amount, timestamp, status, tokenAmount, senderName, senderImage, onAvatarClick }: MessageBubbleProps) {
+export default function MessageBubble({ fromMe, text, charm, amount, timestamp, status, tokenAmount, senderName, senderImage, onAvatarClick, type, filedata }: MessageBubbleProps) {
   const isCharm = !!charm;
   const isTokenTransfer = !!tokenAmount;
+  const isImage = type === 'image' || (filedata && filedata.startsWith('data:image')); // Detect images
   const [showCelebration, setShowCelebration] = useState(false);
   const [prevStatus, setPrevStatus] = useState<MessageBubbleProps['status']>(status);
 
@@ -254,7 +257,7 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
 
             {/* Text Content */}
             {text && (!isTokenTransfer || (isTokenTransfer && !text.includes(tokenAmount!.amount))) && (
-              <p className={`text-sm leading-relaxed whitespace-pre-wrap break-words ${isCharm ? 'mt-2' : ''}`}>
+              <p className={`text-sm leading-relaxed whitespace-pre-wrap break-words ${isCharm || isImage ? 'mt-2' : ''}`}>
                 {text.split(/((?:https?:\/\/|www\.)[^\s]+)/g).map((part, i) => {
                   if ((part.startsWith('http') || part.startsWith('www.')) && /^(?:https?:\/\/|www\.)[^\s]+$/.test(part)) {
                     let url = part.startsWith('http') ? part : 'https://' + part;
@@ -267,6 +270,19 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
                   return part;
                 })}
               </p>
+            )}
+
+            {/* Image Content */}
+            {isImage && filedata && (
+              <div className="mt-1 mb-1 max-w-[240px] sm:max-w-xs md:max-w-sm rounded-[10px] overflow-hidden bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 shadow-sm">
+                <img
+                  src={filedata}
+                  alt="Attachment"
+                  className="w-full h-auto object-cover hover:opacity-90 transition-opacity cursor-pointer"
+                  onClick={() => window.open(filedata, '_blank')}
+                  loading="lazy"
+                />
+              </div>
             )}
 
             {/* Status Footer */}
@@ -287,7 +303,7 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
     </div>
   );
 
-  if (!text && !charm && !tokenAmount) {
+  if (!text && !charm && !tokenAmount && !isImage) {
     return null;
   }
 

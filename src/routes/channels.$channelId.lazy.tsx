@@ -2,8 +2,9 @@
 import { useEffect, useRef, useState, useContext, useCallback, lazy, Suspense } from "react";
 import { useNavigate, createLazyFileRoute } from "@tanstack/react-router";
 import { appContext } from "../AppContext";
-import { Radio, Settings, Info, Trash2, Star, Archive } from "lucide-react";
+import { Radio, Settings, Info, Trash2, Star, Archive, Image as ImageIcon } from "lucide-react";
 import { channelService } from "../services/channel.service";
+import { compressImage } from "../utils/image";
 import { useTheme } from "../context/ThemeContext";
 import { EmojiClickData } from "emoji-picker-react";
 
@@ -21,6 +22,7 @@ interface ParsedMessage {
     senderPublicKey?: string;
     senderUsername?: string;
     type?: string;
+    filedata?: string;
 }
 
 function ChannelPage() {
@@ -49,6 +51,7 @@ function ChannelPage() {
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const isInitialLoad = useRef(true);
     const cursorPositionRef = useRef<number | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     // -------------------------------------------------------------------------
     // Load channel info & messages
@@ -63,6 +66,7 @@ function ChannelPage() {
             senderPublicKey: m.SENDER_PUBLICKEY || m.sender_publickey,
             senderUsername: m.SENDER_USERNAME || m.sender_username,
             type: m.TYPE || m.type || "text",
+            filedata: m.FILEDATA || m.filedata,
         }));
         setMessages(parsed);
     }, [channelId, myPublicKey]);
@@ -210,6 +214,61 @@ function ChannelPage() {
             await channelService.publishMessage(channelId, toSend, "text", myPublicKey, userName);
         } catch (err) {
             console.error("❌ [CHANNEL-CHAT] Send failed:", err);
+        } finally {
+            setSending(false);
+        }
+    };
+
+    // -------------------------------------------------------------------------
+    // Send Image message (admin only)
+    // -------------------------------------------------------------------------
+    const handleImageSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        if (fileInputRef.current) {
+            fileInputRef.current.value = "";
+        }
+
+        const MAX_MB = 5;
+        if (file.size > MAX_MB * 1024 * 1024) {
+            alert(`Aquest fitxer és massa gran. (Max: ${MAX_MB}MB)`);
+            return;
+        }
+
+        if (!file.type.startsWith("image/")) {
+            alert("Aquest fitxer no és una imatge vàlida.");
+            return;
+        }
+
+        if (!channelId || !myPublicKey || !userName) return;
+
+        try {
+            setSending(true);
+            const compressedBase64 = await compressImage(file, 800, 800, 0.7);
+
+            const optimistic: ParsedMessage = {
+                text: "",
+                fromMe: true,
+                timestamp: Date.now(),
+                senderPublicKey: myPublicKey,
+                senderUsername: userName,
+                type: "image",
+                filedata: compressedBase64,
+            };
+            setMessages((prev) => [...prev, optimistic]);
+
+            await channelService.publishMessage(
+                channelId,
+                "",
+                "image",
+                myPublicKey,
+                userName,
+                compressedBase64
+            );
+        } catch (err) {
+            console.error("❌ [CHANNEL-CHAT] Send image failed:", err);
+            alert("Error processing the image. It might be too complex or an unsupported format.");
         } finally {
             setSending(false);
         }
@@ -491,7 +550,13 @@ function ChannelPage() {
                                             </span>
                                         </div>
                                         <div className="bg-white dark:bg-gray-800 rounded-2xl rounded-tl-sm px-4 py-2.5 shadow-sm max-w-lg border border-gray-100 dark:border-gray-700">
-                                            <p className="text-gray-900 dark:text-gray-100 text-sm whitespace-pre-wrap break-words">{msg.text}</p>
+                                            {msg.type === "image" || msg.filedata?.startsWith("data:image/") ? (
+                                                <div className="relative group rounded-xl overflow-hidden cursor-pointer" onClick={() => window.open(msg.filedata, '_blank')}>
+                                                    <img src={msg.filedata} alt="Attached Image" className="max-w-[280px] max-h-[400px] object-cover rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm transition-transform duration-300 group-hover:scale-105" loading="lazy" />
+                                                </div>
+                                            ) : (
+                                                <p className="text-gray-900 dark:text-gray-100 text-sm whitespace-pre-wrap break-words">{msg.text}</p>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
@@ -533,6 +598,24 @@ function ChannelPage() {
                             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                             </svg>
+                        </button>
+
+                        <input
+                            type="file"
+                            ref={fileInputRef}
+                            accept="image/*"
+                            className="hidden"
+                            onChange={handleImageSelect}
+                        />
+                        <button
+                            className={`p-1 mr-1 rounded-full transition-colors flex-shrink-0 text-gray-400 hover:text-gray-600`}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                fileInputRef.current?.click();
+                            }}
+                            title="Attach Image"
+                        >
+                            <ImageIcon className="w-5 h-5" />
                         </button>
 
                         <textarea
