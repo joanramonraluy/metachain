@@ -25,6 +25,8 @@ interface MessageBubbleProps {
   filedata?: string;    // Added filedata to hold the base64 string
   forwarded?: boolean;
   currentChatId?: string;
+  showName?: boolean;
+  showAvatar?: boolean;
 }
 
 // Flying money emoji component
@@ -84,7 +86,7 @@ const ConfettiParticle = ({ delay = 0, color }: { delay?: number; color: string 
 
 const defaultAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23cbd5e1'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E";
 
-export default function MessageBubble({ fromMe, text, charm, amount, timestamp, status, tokenAmount, senderName, senderImage, onAvatarClick, type, filedata, forwarded, currentChatId }: MessageBubbleProps) {
+export default function MessageBubble({ fromMe, text, charm, amount, timestamp, status, tokenAmount, senderName, senderImage, onAvatarClick, type, filedata, forwarded, currentChatId, showName = true, showAvatar = true }: MessageBubbleProps) {
   const isCharm = !!charm;
   const isTokenTransfer = !!tokenAmount;
   const isImage = type === 'image' || (filedata && filedata.startsWith('data:image')); // Detect images
@@ -170,29 +172,32 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
   const renderBubbleContent = () => (
     <div className={`flex ${flexDir} gap-3 mb-2 max-w-full group`}>
       {/* Avatar Section */}
-      <div
-        className={`flex-shrink-0 mt-1 ${onAvatarClick ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
-        onClick={onAvatarClick}
-      >
-        <div className={`w-9 h-9 rounded-full ${fromMe ? 'bg-primary-500' : 'bg-sky-500'} flex items-center justify-center text-white text-xs font-bold shadow-sm overflow-hidden`}>
-          {senderImage ? (
-            <img
-              src={senderImage}
-              alt={senderName || "User"}
-              className="w-full h-full object-cover"
-              onError={(e: any) => { e.target.src = defaultAvatar; }}
-            />
-          ) : (
-            <span>{senderName?.charAt(0).toUpperCase() || "?"}</span>
-          )}
+      {showAvatar && (
+        <div
+          className={`flex-shrink-0 mt-1 ${onAvatarClick ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+          onClick={onAvatarClick}
+        >
+          <div className={`w-9 h-9 rounded-full ${fromMe ? 'bg-primary-500' : 'bg-sky-500'} flex items-center justify-center text-white text-xs font-bold shadow-sm overflow-hidden`}>
+            {senderImage ? (
+              <img
+                src={senderImage}
+                alt={senderName || "User"}
+                className="w-full h-full object-cover"
+                onError={(e: any) => { e.target.src = defaultAvatar; }}
+              />
+            ) : (
+              <span>{senderName?.charAt(0).toUpperCase() || "?"}</span>
+            )}
+          </div>
         </div>
-      </div>
+      )}
+      {!showAvatar && <div className="w-9 flex-shrink-0" />}
 
       {/* Content Section */}
       <div className={`flex-1 min-w-0 flex flex-col ${fromMe ? 'items-end' : 'items-start'}`}>
         {/* Header (Name + Time) */}
         <div className={`flex items-baseline gap-2 mb-1 px-1 ${headerAlign}`}>
-          {!fromMe && (
+          {showName && !fromMe && (
             <span className="text-xs font-semibold text-sky-600 dark:text-sky-400">
               {senderName || "Unknown"}
             </span>
@@ -202,7 +207,7 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
               {new Date(timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </span>
           )}
-          {fromMe && (
+          {showName && fromMe && (
             <span className="text-xs font-semibold text-primary-600 dark:text-primary-400">
               {senderName || "You"}
             </span>

@@ -884,6 +884,8 @@ function ChatPage() {
           const currentDate = new Date(msg.timestamp || 0).toDateString();
           const prevDate = i > 0 ? new Date(arr[i - 1].timestamp || 0).toDateString() : null;
           const showDate = currentDate !== prevDate;
+          const isFirstInGroup = i === 0 || arr[i - 1].senderPublicKey !== msg.senderPublicKey || arr[i - 1].type === 'system' || showDate;
+          const isLastInGroup = i === arr.length - 1 || arr[i + 1].senderPublicKey !== msg.senderPublicKey || arr[i + 1].type === 'system' || (i < arr.length - 1 && new Date(arr[i + 1].timestamp || 0).toDateString() !== currentDate);
 
           return (
             <div key={`${msg.timestamp}-${msg.text || 'no-text'}-${i}`} className="flex flex-col w-full z-0 relative">
@@ -914,6 +916,8 @@ function ChatPage() {
                   senderName={msg.fromMe ? (userName || "You") : (msg.senderPublicKey ? (contactsMap[msg.senderPublicKey]?.name || msg.senderUsername || msg.senderPublicKey.substring(0, 6)) : (msg.senderUsername || "Unknown"))}
                   senderImage={msg.fromMe ? userAvatar : (msg.senderPublicKey ? contactsMap[msg.senderPublicKey]?.icon : undefined)}
                   forwarded={msg.forwarded}
+                  showName={isFirstInGroup}
+                  showAvatar={isLastInGroup}
                   currentChatId={address}
                   onAvatarClick={!msg.fromMe && msg.senderPublicKey ? () => navigate({ to: `/contact-info/${msg.senderPublicKey}`, search: { returnTo: `/groups/${address}` } }) : undefined}
                 />

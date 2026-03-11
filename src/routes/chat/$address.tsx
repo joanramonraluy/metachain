@@ -3197,6 +3197,8 @@ function ChatPage() {
             const prevDate =
               i > 0 ? new Date(arr[i - 1].timestamp || 0).toDateString() : null;
             const showDate = currentDate !== prevDate;
+            const isFirstInGroup = i === 0 || arr[i - 1].fromMe !== msg.fromMe || arr[i - 1].isSystem || showDate;
+            const isLastInGroup = i === arr.length - 1 || arr[i + 1].fromMe !== msg.fromMe || arr[i + 1].isSystem || (i < arr.length - 1 && new Date(arr[i + 1].timestamp || 0).toDateString() !== currentDate);
 
             return (
               <div
@@ -3215,7 +3217,7 @@ function ChatPage() {
                 )}
                 {msg.isSystem ? (
                   // System message (centered)
-                  <div className="flex justify-center my-2">
+                  <div className="flex justify-center my-4 px-6">
                     <span
                       className={`text-xs px-3 py-1.5 rounded-full ${msg.text?.toLowerCase().includes("accepted")
                         ? "text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/40" // Accepted = Green
@@ -3252,6 +3254,8 @@ function ChatPage() {
                     }
                     forwarded={msg.forwarded}
                     currentChatId={address}
+                    showName={isFirstInGroup}
+                    showAvatar={isLastInGroup}
                   />
                 )}
               </div>

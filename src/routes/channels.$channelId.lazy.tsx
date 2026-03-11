@@ -549,6 +549,8 @@ function ChannelPage() {
                     const currentDate = new Date(msg.timestamp).toDateString();
                     const prevDate = i > 0 ? new Date(arr[i - 1].timestamp).toDateString() : null;
                     const showDate = currentDate !== prevDate;
+                    const isFirstInGroup = i === 0 || arr[i - 1].senderPublicKey !== msg.senderPublicKey || arr[i - 1].type === 'system' || showDate;
+                    const isLastInGroup = i === arr.length - 1 || arr[i + 1].senderPublicKey !== msg.senderPublicKey || arr[i + 1].type === 'system' || (i < arr.length - 1 && new Date(arr[i + 1].timestamp).toDateString() !== currentDate);
 
                     return (
                         <div key={msg.id || `${msg.timestamp}-${msg.senderPublicKey}-${i}`} className="flex flex-col w-full z-0 relative">
@@ -569,14 +571,20 @@ function ChannelPage() {
                                 /* Channel messages — always full-width, sender on left, styled consistently */
                                 <div className="flex gap-3 mb-3 items-start">
                                     {/* Sender avatar */}
-                                    <div className="w-8 h-8 rounded-full bg-sky-500 flex items-center justify-center text-white text-xs font-bold flex-shrink-0 mt-0.5">
-                                        {msg.senderUsername?.charAt(0).toUpperCase() || "?"}
-                                    </div>
+                                    {isLastInGroup ? (
+                                        <div className="w-8 h-8 rounded-full bg-sky-500 flex items-center justify-center text-white text-xs font-bold flex-shrink-0 mt-0.5 shadow-sm">
+                                            {msg.senderUsername?.charAt(0).toUpperCase() || "?"}
+                                        </div>
+                                    ) : (
+                                        <div className="w-8 flex-shrink-0" />
+                                    )}
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-baseline gap-2 mb-1">
-                                            <span className="text-xs font-semibold text-sky-600 dark:text-sky-400">
-                                                {msg.senderUsername || "Admin"}
-                                            </span>
+                                            {isFirstInGroup && (
+                                                <span className="text-xs font-semibold text-sky-600 dark:text-sky-400">
+                                                    {msg.senderUsername || "Admin"}
+                                                </span>
+                                            )}
                                             <span className="text-[10px] text-gray-400">
                                                 {msg.timestamp > 0 ? new Date(msg.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}
                                             </span>
