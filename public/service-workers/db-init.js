@@ -116,6 +116,9 @@ function initDatabase() {
         runSQL(
           "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS customid VARCHAR(128)",
         ),
+        runSQL(
+          "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS forwarded INT DEFAULT 0",
+        ),
       ]);
     });
   });
@@ -221,9 +224,14 @@ function initDatabase() {
           : "❌ [DB] GROUP_MESSAGES init failed: " + res.error,
       );
 
-      return runSQL(
-        "ALTER TABLE GROUP_MESSAGES ADD COLUMN propagated INTEGER DEFAULT 0",
-      );
+      return Promise.all([
+        runSQL(
+          "ALTER TABLE GROUP_MESSAGES ADD COLUMN propagated INTEGER DEFAULT 0",
+        ),
+        runSQL(
+          "ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS forwarded INT DEFAULT 0",
+        ),
+      ]);
     });
   });
 
@@ -513,9 +521,14 @@ function initDatabase() {
           ? "📢 [DB] CHANNEL_MESSAGES checked/init"
           : "❌ [DB] CHANNEL_MESSAGES init failed: " + res.error,
       );
-      return runSQL(
-        "ALTER TABLE CHANNEL_MESSAGES ADD COLUMN IF NOT EXISTS sender_seq INT DEFAULT 0",
-      );
+      return Promise.all([
+        runSQL(
+          "ALTER TABLE CHANNEL_MESSAGES ADD COLUMN IF NOT EXISTS sender_seq INT DEFAULT 0",
+        ),
+        runSQL(
+          "ALTER TABLE CHANNEL_MESSAGES ADD COLUMN IF NOT EXISTS forwarded INT DEFAULT 0",
+        ),
+      ]);
     });
   });
 

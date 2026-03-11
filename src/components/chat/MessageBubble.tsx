@@ -2,7 +2,9 @@
 
 import Lottie from "lottie-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { Forward } from "lucide-react";
+import ForwardModal from "./ForwardModal";
 
 // Dynamic import of all .json files
 const charmModules = import.meta.glob('../../assets/animations/*.json', { eager: true });
@@ -21,6 +23,7 @@ interface MessageBubbleProps {
   onAvatarClick?: () => void;
   type?: string;        // Added type to detect images
   filedata?: string;    // Added filedata to hold the base64 string
+  forwarded?: boolean;
 }
 
 // Flying money emoji component
@@ -80,12 +83,33 @@ const ConfettiParticle = ({ delay = 0, color }: { delay?: number; color: string 
 
 const defaultAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23cbd5e1'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E";
 
-export default function MessageBubble({ fromMe, text, charm, amount, timestamp, status, tokenAmount, senderName, senderImage, onAvatarClick, type, filedata }: MessageBubbleProps) {
+export default function MessageBubble({ fromMe, text, charm, amount, timestamp, status, tokenAmount, senderName, senderImage, onAvatarClick, type, filedata, forwarded }: MessageBubbleProps) {
   const isCharm = !!charm;
   const isTokenTransfer = !!tokenAmount;
   const isImage = type === 'image' || (filedata && filedata.startsWith('data:image')); // Detect images
   const [showCelebration, setShowCelebration] = useState(false);
   const [prevStatus, setPrevStatus] = useState<MessageBubbleProps['status']>(status);
+  const [showForwardModal, setShowForwardModal] = useState(false);
+  const [forwardAsForwarded, setForwardAsForwarded] = useState(false);
+  const [showActions, setShowActions] = useState(false);
+  const actionsRef = useRef<HTMLDivElement>(null);
+
+  // Close actions when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showActions && actionsRef.current && !actionsRef.current.contains(event.target as Node)) {
+        setShowActions(false);
+      }
+    };
+
+    if (showActions) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [showActions]);
 
   // Trigger celebration when status changes from pending to sent/read
   useEffect(() => {
@@ -215,8 +239,59 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
           </AnimatePresence>
 
           <div
-            className={`relative px-4 py-2.5 ${borderRadius} ${bubbleColor} ${textColor} min-w-[80px] shadow-sm transition-all duration-200`}
+            ref={actionsRef}
+            onClick={() => !isTokenTransfer && setShowActions(!showActions)}
+            className={`relative px-4 py-2.5 ${borderRadius} ${bubbleColor} ${textColor} min-w-[80px] shadow-sm transition-all duration-200 ${!isTokenTransfer ? 'cursor-pointer hover:shadow-md' : ''} ${showActions ? 'ring-2 ring-primary-400 ring-opacity-50' : ''}`}
           >
+            {/* Forwarded Indicator */}
+            {forwarded && (
+              <div className="flex items-center gap-1 mb-1 opacity-60 text-[10px] font-medium italic">
+                <Forward size={10} />
+                <span>Forwarded</span>
+              </div>
+            )}
+
+            {/* Action overlay */}
+            <AnimatePresence>
+              {showActions && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                  className="absolute -top-12 left-1/2 -translate-x-1/2 flex items-center bg-white dark:bg-gray-800 shadow-xl rounded-full p-1 border border-gray-100 dark:border-gray-700 z-[60] overflow-hidden whitespace-nowrap"
+                >
+                  <div className="flex divide-x divide-gray-100 dark:divide-gray-700">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setForwardAsForwarded(false);
+                        setShowForwardModal(true);
+                        setShowActions(false);
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 text-primary-600 dark:text-primary-400 text-xs font-bold transition-colors"
+                    >
+                      <Forward size={14} />
+                      <span>Forward</span>
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setForwardAsForwarded(true);
+                        setShowForwardModal(true);
+                        setShowActions(false);
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 text-sky-600 dark:text-sky-400 text-xs font-bold transition-colors"
+                    >
+                      <div className="relative">
+                        <Forward size={14} />
+                        <div className="absolute -top-1 -right-1 w-1.5 h-1.5 bg-sky-500 rounded-full border border-white dark:border-gray-800" />
+                      </div>
+                      <span>Forwarded</span>
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
             {/* Token Transfer Content */}
             {isTokenTransfer && (
               <div className="flex flex-col gap-1 min-w-[200px] max-w-full p-1">
@@ -308,12 +383,24 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
   }
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      className={`flex flex-col w-full px-2 ${alignment}`}
-    >
-      {renderBubbleContent()}
-    </motion.div>
+    <>
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className={`flex flex-col w-full px-2 ${alignment}`}
+      >
+        {renderBubbleContent()}
+      </motion.div>
+
+      {showForwardModal && (
+        <ForwardModal
+          message={isCharm || isImage ? "" : (text || "")}
+          messageType={isCharm ? "charm" : isImage ? "image" : (type || "text")}
+          filedata={isCharm ? (charm?.id || "") : isImage ? (filedata || "") : ""}
+          onClose={() => setShowForwardModal(false)}
+          isForwarded={forwardAsForwarded}
+        />
+      )}
+    </>
   );
 }

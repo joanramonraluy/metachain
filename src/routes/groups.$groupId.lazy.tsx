@@ -43,6 +43,7 @@ interface ParsedMessage {
   type?: string;
   customid?: string;
   filedata?: string;
+  forwarded?: boolean;
 }
 
 
@@ -212,6 +213,7 @@ function ChatPage() {
             type: type,
             customid: row.CUSTOMID || row.customid,
             filedata: row.FILEDATA || row.filedata,
+            forwarded: row.FORWARDED == 1 || row.forwarded == 1,
           };
 
           return parsed;
@@ -877,6 +879,7 @@ function ChatPage() {
                   filedata={msg.filedata}
                   senderName={msg.fromMe ? (userName || "You") : (msg.senderPublicKey ? (contactsMap[msg.senderPublicKey]?.name || msg.senderUsername || msg.senderPublicKey.substring(0, 6)) : (msg.senderUsername || "Unknown"))}
                   senderImage={msg.fromMe ? userAvatar : (msg.senderPublicKey ? contactsMap[msg.senderPublicKey]?.icon : undefined)}
+                  forwarded={msg.forwarded}
                   onAvatarClick={!msg.fromMe && msg.senderPublicKey ? () => navigate({ to: `/contact-info/${msg.senderPublicKey}`, search: { returnTo: `/groups/${address}` } }) : undefined}
                 />
               )}

@@ -80,6 +80,7 @@ interface ParsedMessage {
   customid?: string;
   id?: number;
   originalTimestamp?: number; // Sender's creation time (for correct ordering across peers)
+  forwarded?: boolean;
 }
 
 // Helper function to format relative time
@@ -1145,7 +1146,8 @@ function ChatPage() {
             customid: row.CUSTOMID, // Map custom ID for deduplication
             originalTimestamp: row.ORIGINAL_TIMESTAMP
               ? Number(row.ORIGINAL_TIMESTAMP)
-              : undefined, // Convert to number
+              : undefined, // Convert to number,
+            forwarded: row.FORWARDED == 1 || row.forwarded == 1,
           };
         });
 
@@ -1188,6 +1190,7 @@ function ChatPage() {
               isSystem: msg.isSystem,
               type: msg.type,
               filedata: msg.filedata,
+              forwarded: msg.forwarded,
             } as ParsedMessage;
           }),
         );
@@ -3202,6 +3205,7 @@ function ChatPage() {
                     senderImage={
                       msg.fromMe ? userAvatar : contact?.extradata?.icon
                     }
+                    forwarded={msg.forwarded}
                   />
                 )}
               </div>

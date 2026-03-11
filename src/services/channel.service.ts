@@ -38,6 +38,7 @@ export interface ChannelMessage {
   message: string;
   filedata?: string;
   date: number;
+  forwarded?: boolean;
   read?: number;
 }
 
@@ -59,6 +60,7 @@ export interface ChannelMaximaMessage {
   senderPublickey?: string;
   senderUsername?: string;
   sender_seq?: number;
+  forwarded?: boolean;
   timestamp: number;
 
   // channel_invite
@@ -473,7 +475,7 @@ class ChannelService {
     type: string,
     myPublicKey: string,
     myUsername: string,
-    filedata: string = "",
+    filedata: string = "", forwarded: boolean = false,
   ): Promise<void> {
     const channel = await this.getChannelInfo(channelId);
     if (!channel) throw new Error("Channel not found");
@@ -490,8 +492,8 @@ class ChannelService {
     // 2. Save locally
     const escapedMsg = message.replace(/'/g, "''");
     await this.runSQL(`
-            INSERT INTO CHANNEL_MESSAGES (channel_id, sender_publickey, sender_username, type, message, filedata, date, read, sender_seq)
-            VALUES ('${channelId}', '${myPublicKey}', '${myUsername.replace(/'/g, "''")}', '${type}', '${escapedMsg}', '${filedata}', ${now}, 1, ${seq})
+            INSERT INTO CHANNEL_MESSAGES (channel_id, sender_publickey, sender_username, type, message, filedata, date, read, sender_seq, forwarded)
+            VALUES ('${channelId}', '${myPublicKey}', '${myUsername.replace(/'/g, "''")}', '${type}', '${escapedMsg}', '${filedata}', ${now}, 1, ${seq}, ${forwarded ? 1 : 0})
         `);
 
     // 3. Construct payload
@@ -507,7 +509,7 @@ class ChannelService {
       message,
       messageContentType: type as any,
       filedata,
-      timestamp: now,
+      timestamp: now, forwarded,
     };
 
     // Send to all subscribers (except self)

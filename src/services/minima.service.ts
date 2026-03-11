@@ -958,6 +958,7 @@ WHERE(${addressClause}) AND status = 'pending'`;
     saveToDb: boolean = true,
     txpowid?: string,
     overrideSeq?: number,
+    forwarded: boolean = false,
   ) {
     if (!this.initialized) await this.init();
     return messagingService.sendMessage(
@@ -973,6 +974,7 @@ WHERE(${addressClause}) AND status = 'pending'`;
       saveToDb,
       txpowid,
       overrideSeq,
+      forwarded,
     );
   }
 

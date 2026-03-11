@@ -143,6 +143,7 @@ function handleChannelMessage(senderPublickey, maxjson, skipNotify) {
       }
 
       var senderSeq = maxjson.sender_seq || 0;
+      var forwarded = maxjson.forwarded ? 1 : 0;
 
       // 2. Duplicate Check
       var checkSql =
@@ -187,7 +188,7 @@ function handleChannelMessage(senderPublickey, maxjson, skipNotify) {
 
           // 4. Save Message
           var cmd =
-            "INSERT INTO CHANNEL_MESSAGES (channel_id, sender_publickey, sender_username, type, message, filedata, date, read, sender_seq) " +
+            "INSERT INTO CHANNEL_MESSAGES (channel_id, sender_publickey, sender_username, type, message, filedata, date, read, sender_seq, forwarded) " +
             "VALUES ('" +
             channelId +
             "', '" +
@@ -204,7 +205,7 @@ function handleChannelMessage(senderPublickey, maxjson, skipNotify) {
             date +
             ", 0, " +
             senderSeq +
-            ")";
+            ", " + (forwarded ? 1 : 0) + ")";
 
           channelRunSQL(cmd, function (insRes) {
             if (insRes.status) {
@@ -284,6 +285,7 @@ function handleChannelHistoryRequest(pubkey, maxjson) {
             filedata: row.FILEDATA || row.filedata,
             timestamp: Number(row.DATE || row.date),
             sender_seq: Number(row.SENDER_SEQ || row.sender_seq || 0),
+            forwarded: row.FORWARDED === true || row.FORWARDED === 'true' || row.FORWARDED === 1,
           });
         }
       }
@@ -304,7 +306,7 @@ function handleChannelHistoryRequest(pubkey, maxjson) {
         pubkey +
         " application:metachain-channel data:" +
         hexData +
-        " poll:false",
+        " poll:true", // CORRECT: poll:true ensures message delivery for offline/non-contact recipients
       );
     });
   });

@@ -15,6 +15,7 @@ function handleChatMessage(pubkey, maxjson) {
     var msgType = maxjson.type || "text";
     var amount = maxjson.amount || 0;
     var senderSeq = maxjson.seq ? parseInt(maxjson.seq) : 0; // SEQUENCE TRACKING
+    var forwarded = maxjson.forwarded === true || maxjson.forwarded === 'true' || maxjson.forwarded === 1;
 
     // 1. CHECK IF BLOCKED
     var checkBlockSql = "SELECT blocked FROM CHAT_STATUS WHERE publickey='" + safePubkey + "'";
@@ -114,8 +115,9 @@ function handleChatMessage(pubkey, maxjson) {
                 MDS.log("✨ [CHAT-DEBUG] No duplicate found. Proceeding to INSERT...");
             }
 
-            var insertSql = "INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, txpowid, original_timestamp, sender_seq, customid) "
-                + "VALUES ('', '" + safePubkey + "', '" + safeUsername + "', '" + msgType + "', '" + safeMessage + "', '" + safeFiledata + "', '" + initialState + "', " + amount + ", " + (originalTimestamp || now) + ", " + txpowidVal + ", " + originalTimestamp + ", " + senderSeq + ", '" + customid + "')";
+            var forwardedVal = forwarded ? 1 : 0;
+            var insertSql = "INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, txpowid, original_timestamp, sender_seq, customid, forwarded) "
+                + "VALUES ('', '" + safePubkey + "', '" + safeUsername + "', '" + msgType + "', '" + safeMessage + "', '" + safeFiledata + "', '" + initialState + "', " + amount + ", " + (originalTimestamp || now) + ", " + txpowidVal + ", " + originalTimestamp + ", " + senderSeq + ", '" + customid + "', " + forwardedVal + ")";
 
             MDS.sql(insertSql, function (res) {
                 if (res.status) {
@@ -290,7 +292,8 @@ function handleChatHistoryRequest(pubkey, maxjson) {
                         tokenid: row.TOKENID,
                         state: row.STATE,
                         txpowid: row.TXPOWID,
-                        sender_seq: row.SENDER_SEQ // Include sequence for ordering
+                        sender_seq: row.SENDER_SEQ, // Include sequence for ordering
+                        forwarded: (row.FORWARDED === 1 || row.forwarded === 1)
                     };
                 });
 
@@ -385,8 +388,9 @@ function processHistoryMessage(safePubkey, messages, index) {
                     resolvedName = escapeSql(res.rows[0].ALIAS || res.rows[0].alias || "Contact");
                 }
 
-                var insertSql = "INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, txpowid, original_timestamp, customid, sender_seq) "
-                    + "VALUES ('', '" + safePubkey + "', '" + resolvedName + "', '" + type + "', '" + content + "', '" + safeFiledata + "', '" + state + "', " + amount + ", " + timestamp + ", " + txpowidVal + ", " + timestamp + ", '" + safeCustomId + "', " + senderSeq + ")";
+                var forwardedVal = msg.forwarded ? 1 : 0;
+                var insertSql = "INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, txpowid, original_timestamp, customid, sender_seq, forwarded) "
+                    + "VALUES ('', '" + safePubkey + "', '" + resolvedName + "', '" + type + "', '" + content + "', '" + safeFiledata + "', '" + state + "', " + amount + ", " + timestamp + ", " + txpowidVal + ", " + timestamp + ", '" + safeCustomId + "', " + senderSeq + ", " + forwardedVal + ")";
 
                 MDS.sql(insertSql, function (insRes) {
                     if (insRes.status) {
@@ -401,8 +405,9 @@ function processHistoryMessage(safePubkey, messages, index) {
             return; // EXIT here, async SQL handles the recursion
         }
 
-        var insertSql = "INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, txpowid, original_timestamp, customid, sender_seq) "
-            + "VALUES ('', '" + safePubkey + "', '" + finalUsername + "', '" + type + "', '" + content + "', '" + safeFiledata + "', '" + state + "', " + amount + ", " + timestamp + ", " + txpowidVal + ", " + timestamp + ", '" + safeCustomId + "', " + senderSeq + ")";
+        var forwardedVal = msg.forwarded ? 1 : 0;
+        var insertSql = "INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, txpowid, original_timestamp, customid, sender_seq, forwarded) "
+            + "VALUES ('', '" + safePubkey + "', '" + finalUsername + "', '" + type + "', '" + content + "', '" + safeFiledata + "', '" + state + "', " + amount + ", " + timestamp + ", " + txpowidVal + ", " + timestamp + ", '" + safeCustomId + "', " + senderSeq + ", " + forwardedVal + ")";
 
         MDS.sql(insertSql, function (insRes) {
             if (insRes.status) {

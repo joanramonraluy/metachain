@@ -86,7 +86,8 @@ export async function sendMessage(
     targetApplication: string = "metachain",
     saveToDb: boolean = true,
     txpowid?: string,
-    overrideSeq?: number
+    overrideSeq?: number,
+    forwarded: boolean = false
 ): Promise<any> {
     try {
         const cleanMessage = message.trim();
@@ -160,7 +161,8 @@ export async function sendMessage(
                 date: messageTimestamp,
                 customid: customid,
                 sender_seq: seq,
-                originalTimestamp: messageTimestamp
+                originalTimestamp: messageTimestamp,
+                forwarded: forwarded
             };
 
             await chatService.insertMessage(msgData);
@@ -180,7 +182,8 @@ export async function sendMessage(
             from_address: myAddress,
             txpowid: txpowid || undefined,
             customid: customid,
-            seq: (saveToDb || overrideSeq !== undefined) ? seq : undefined
+            seq: (saveToDb || overrideSeq !== undefined) ? seq : undefined,
+            forwarded: forwarded
         };
 
         if (type === "charm" && amount > 0) payload.amount = amount;

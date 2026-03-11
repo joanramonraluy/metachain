@@ -23,6 +23,7 @@ interface ParsedMessage {
     senderUsername?: string;
     type?: string;
     filedata?: string;
+    forwarded?: boolean;
 }
 
 function ChannelPage() {
@@ -66,6 +67,7 @@ function ChannelPage() {
             senderPublicKey: m.SENDER_PUBLICKEY || m.sender_publickey,
             senderUsername: m.SENDER_USERNAME || m.sender_username,
             type: m.TYPE || m.type || "text",
+            forwarded: m.FORWARDED == 1 || m.forwarded == 1,
             filedata: m.FILEDATA || m.filedata,
         }));
         setMessages(parsed);
@@ -548,6 +550,7 @@ function ChannelPage() {
                                             <span className="text-[10px] text-gray-400">
                                                 {msg.timestamp > 0 ? new Date(msg.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}
                                             </span>
+                                            {msg.forwarded && (<div className="flex items-center gap-1 mb-1 opacity-60 text-[10px] font-medium italic"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6" /><path d="M10 14L21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></svg><span>Forwarded</span></div>)}
                                         </div>
                                         <div className="bg-white dark:bg-gray-800 rounded-2xl rounded-tl-sm px-4 py-2.5 shadow-sm max-w-lg border border-gray-100 dark:border-gray-700">
                                             {msg.type === "image" || msg.filedata?.startsWith("data:image/") ? (

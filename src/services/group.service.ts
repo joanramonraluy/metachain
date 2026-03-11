@@ -35,26 +35,27 @@ export interface GroupMessage {
   filedata?: string;
   date: number;
   read?: number;
+  forwarded?: boolean;
 }
 
 // MAXIMA message types for group communication
 export interface GroupMaximaMessage {
   messageType:
-    | "group_message"
-    | "group_invite"
-    | "group_member_added"
-    | "group_member_removed"
-    | "group_info_updated"
-    | "group_member_unbanned"
-    | "group_update_details"
-    | "history_request"
-    | "history_response"
-    | "group_join_request"
-    | "group_join_request_propagated"
-    | "group_join_request_resolved"
-    | "group_update_details"
-    | "group_role_update"
-    | "group_address_beacon";
+  | "group_message"
+  | "group_invite"
+  | "group_member_added"
+  | "group_member_removed"
+  | "group_info_updated"
+  | "group_member_unbanned"
+  | "group_update_details"
+  | "history_request"
+  | "history_response"
+  | "group_join_request"
+  | "group_join_request_propagated"
+  | "group_join_request_resolved"
+  | "group_update_details"
+  | "group_role_update"
+  | "group_address_beacon";
   groupId: string;
   groupName: string;
   senderPublickey: string;
@@ -68,6 +69,7 @@ export interface GroupMaximaMessage {
   filedata?: string;
   seq?: number; // Per-sender sequence number for gap detection
   customid?: string;
+  forwarded?: boolean;
 
   // For group_update_details and history_response:
   newName?: string;
@@ -121,7 +123,7 @@ class GroupService {
   private groupMessageCallbacks: GroupMessageCallback[] = [];
   private groupUpdateCallbacks: GroupUpdateCallback[] = [];
 
-  constructor() {}
+  constructor() { }
 
   /* ----------------------------------------------------------------------------
       UTILITY FUNCTIONS
@@ -995,7 +997,7 @@ class GroupService {
     type: string,
     myPublicKey: string,
     myUsername: string,
-    filedata: string = "",
+    filedata: string = "", forwarded: boolean = false,
   ): Promise<void> {
     try {
       const now = Date.now();
@@ -1028,8 +1030,8 @@ class GroupService {
       const customId = `group_${groupId}_${now}_${Math.random().toString(36).substr(2, 9)}`;
       const escapedMsg = message.replace(/'/g, "''");
       const insertSql = `
-                INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read, sender_seq, customid)
-                VALUES ('${groupId}', '${myPublicKey}', '${myUsername.replace(/'/g, "''")}', '${type}', '${escapedMsg}', '${filedata}', ${now}, 1, ${mySeq}, '${customId}')
+                INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read, sender_seq, customid, forwarded)
+                VALUES ('${groupId}', '${myPublicKey}', '${myUsername.replace(/'/g, "''")}', '${type}', '${escapedMsg}', '${filedata}', ${now}, 1, ${mySeq}, '${customId}', ${forwarded ? 1 : 0})
             `;
       await this.runSQL(insertSql);
 
@@ -1046,6 +1048,7 @@ class GroupService {
         filedata,
         seq: mySeq,
         customid: customId,
+        forwarded,
       };
 
       // Send to ALL group members (no Maxima contact required — uses Mx address routing)
@@ -1429,7 +1432,7 @@ class GroupService {
         type: "GROUP_SYNC_START",
         groupId: groupId,
       }),
-      () => {},
+      () => { },
     );
 
     // NEW: Direct dispatch for immediate UI feedback (MDS_SOLO from DApp doesn't reflect back)
@@ -1507,7 +1510,7 @@ class GroupService {
 
   private notifyGroupSyncEnd(groupId: string) {
     const detail = { type: "GROUP_SYNC_END", groupId: groupId };
-    MDS.comms.solo(JSON.stringify(detail), () => {});
+    MDS.comms.solo(JSON.stringify(detail), () => { });
     window.dispatchEvent(new CustomEvent("GROUP_UPDATE", { detail }));
   }
 
@@ -1613,9 +1616,9 @@ class GroupService {
         const myName =
           myNameData.rows && myNameData.rows.length > 0
             ? myNameData.rows[0].ALIAS ||
-              myNameData.rows[0].alias ||
-              myInfo.response.name ||
-              "Anonymous"
+            myNameData.rows[0].alias ||
+            myInfo.response.name ||
+            "Anonymous"
             : myInfo.response.name || "Anonymous";
 
         const payload: any = {
@@ -1658,7 +1661,7 @@ class GroupService {
         );
         MDS.log(
           "📝 [GROUP-SERVICE] Sending join request to adminAddress: " +
-            adminAddress,
+          adminAddress,
         );
 
         const sendCmd = `maxima action:send application:metachain-group to:${adminAddress.trim()} data:${hexData} poll:true`;
@@ -1667,7 +1670,7 @@ class GroupService {
             console.log("✅ [GROUP-SERVICE] Join request sent successfully.");
             MDS.log(
               "✅ [GROUP-SERVICE] Join request sent successfully to: " +
-                adminAddress,
+              adminAddress,
             );
             resolve();
           } else {
@@ -1677,11 +1680,11 @@ class GroupService {
             );
             MDS.log(
               "❌ [GROUP-SERVICE] Failed to send join request: " +
-                (sendRes.error || JSON.stringify(sendRes.response)),
+              (sendRes.error || JSON.stringify(sendRes.response)),
             );
             reject(
               "Could not send join request to group admin: " +
-                (sendRes.error || "Delivery failed"),
+              (sendRes.error || "Delivery failed"),
             );
           }
         });
