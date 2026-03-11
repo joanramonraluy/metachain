@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, useContext, useCallback, lazy, Suspense } from "react";
 import { useNavigate, createLazyFileRoute } from "@tanstack/react-router";
 import { appContext } from "../AppContext";
-import { Settings, Trash2, Star, Archive, Info, Image as ImageIcon } from 'lucide-react';
+import { Settings, Trash2, Star, Archive, Info, Image as ImageIcon, CheckCircle2 } from 'lucide-react';
 import { groupService } from "../services/group.service";
 import MessageBubble from "../components/chat/MessageBubble";
 import { compressImage } from "../utils/image";
@@ -83,6 +83,7 @@ function ChatPage() {
   const [isFavorite, setIsFavorite] = useState(false);
   const [isArchived, setIsArchived] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [showForwardSuccess, setShowForwardSuccess] = useState(false);
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
@@ -149,6 +150,20 @@ function ChatPage() {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [showMenu]);
+
+  // Listen for Forward Success event
+  useEffect(() => {
+    const handleForwardSuccess = () => {
+      setShowForwardSuccess(true);
+      setTimeout(() => {
+        setShowForwardSuccess(false);
+      }, 2000);
+    };
+
+    window.addEventListener("FORWARD_SUCCESS", handleForwardSuccess);
+    return () =>
+      window.removeEventListener("FORWARD_SUCCESS", handleForwardSuccess);
+  }, []);
 
   // Handle click outside emoji picker
   useEffect(() => {
@@ -837,6 +852,25 @@ function ChatPage() {
         )}
 
 
+        {showForwardSuccess && (
+          <div className="sticky top-0 z-40 mb-2 mx-2 mt-2 pointer-events-none">
+            <div className="bg-emerald-50/95 dark:bg-emerald-900/30 backdrop-blur-sm border border-emerald-200 dark:border-emerald-800 rounded-lg shadow-sm p-3 animate-in fade-in slide-in-from-top-2 duration-300">
+              <div className="flex items-center gap-3">
+                <div className="flex-shrink-0 w-8 h-8 bg-emerald-100 dark:bg-emerald-900/50 rounded-full flex items-center justify-center">
+                  <CheckCircle2 size={16} className="text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-emerald-900 dark:text-emerald-100 leading-none">
+                    Message Forwarded!
+                  </p>
+                  <p className="text-[11px] text-emerald-700 dark:text-emerald-400 mt-1 leading-none">
+                    Sent successfully
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         {messages.length === 0 && (
           <div className="flex-1 flex items-center justify-center z-0">
             <div className="bg-[#FFF5C4] dark:bg-yellow-900/30 text-gray-800 dark:text-yellow-100 text-[12.5px] p-3 rounded-lg shadow-sm text-center max-w-xs leading-relaxed select-none border border-yellow-200 dark:border-yellow-800">
@@ -880,6 +914,7 @@ function ChatPage() {
                   senderName={msg.fromMe ? (userName || "You") : (msg.senderPublicKey ? (contactsMap[msg.senderPublicKey]?.name || msg.senderUsername || msg.senderPublicKey.substring(0, 6)) : (msg.senderUsername || "Unknown"))}
                   senderImage={msg.fromMe ? userAvatar : (msg.senderPublicKey ? contactsMap[msg.senderPublicKey]?.icon : undefined)}
                   forwarded={msg.forwarded}
+                  currentChatId={address}
                   onAvatarClick={!msg.fromMe && msg.senderPublicKey ? () => navigate({ to: `/contact-info/${msg.senderPublicKey}`, search: { returnTo: `/groups/${address}` } }) : undefined}
                 />
               )}

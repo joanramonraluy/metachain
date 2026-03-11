@@ -14,11 +14,12 @@ import { Capacitor } from "@capacitor/core";
 import { MDS } from "@minima-global/mds";
 import { appContext } from "../../AppContext";
 import TransferSelector from "../../components/chat/TransferSelector";
-import { Trash2, Wallet, Info, Archive, Settings, Users, Star, Image as ImageIcon } from "lucide-react";
+import { Trash2, Wallet, Info, Archive, Settings, Users, Star, Image as ImageIcon, CheckCircle2 } from "lucide-react";
 import MessageBubble from "../../components/chat/MessageBubble";
 import { compressImage } from "../../utils/image";
 
 import { minimaService } from "../../services/minima.service";
+import { chatService } from "../../services/chat.service";
 import * as contactRequestsService from "../../services/contact-requests.service";
 import { transactionService } from "../../services/transaction.service";
 import { requestProfile } from "../../services/profile.service";
@@ -227,6 +228,7 @@ function ChatPage() {
 
   const [showInviteDialog, setShowInviteDialog] = useState(false);
   const [inviteSending, setInviteSending] = useState(false);
+  const [showForwardSuccess, setShowForwardSuccess] = useState(false);
 
   const { chatBackground, mode } = useTheme();
 
@@ -250,6 +252,8 @@ function ChatPage() {
     }, 150);
     return () => clearTimeout(timer);
   }, [address, showTransferSelector]);
+
+
 
   // Scroll to bottom when keyboard opens
   useEffect(() => {
@@ -309,7 +313,7 @@ function ChatPage() {
     });
   }, []);
 
-  const { writeMode, userName, userAvatar, myPublicKey } =
+  const { loaded, writeMode, userName, userAvatar, myPublicKey } =
     useContext(appContext);
   const isLoadingMessages = useRef(false); // Flag to prevent simultaneous loads
   const pendingReload = useRef(false); // Flag to queue a reload if one is requested while loading
@@ -325,6 +329,27 @@ function ChatPage() {
     | "incoming_restricted"
     | "no_permission"
   >("none");
+
+  // Request notification permissions on app load (Android 13+)
+  useEffect(() => {
+    if (loaded) {
+      chatService.requestNotificationPermission();
+    }
+  }, [loaded]);
+
+  // Listen for Forward Success event
+  useEffect(() => {
+    const handleForwardSuccess = () => {
+      setShowForwardSuccess(true);
+      setTimeout(() => {
+        setShowForwardSuccess(false);
+      }, 2000);
+    };
+
+    window.addEventListener("FORWARD_SUCCESS", handleForwardSuccess);
+    return () =>
+      window.removeEventListener("FORWARD_SUCCESS", handleForwardSuccess);
+  }, []);
 
   const defaultAvatar =
     "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23cbd5e1'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E";
@@ -2857,6 +2882,25 @@ function ChatPage() {
 
         {/* Contact Request Banner */}
         {/* Contact Request Banner (Checking logic updated to use relaxed SQL) */}
+        {showForwardSuccess && (
+          <div className="sticky top-0 z-40 mb-2 mx-2 mt-2 pointer-events-none">
+            <div className="bg-emerald-50/95 dark:bg-emerald-900/30 backdrop-blur-sm border border-emerald-200 dark:border-emerald-800 rounded-lg shadow-sm p-3 animate-in fade-in slide-in-from-top-2 duration-300">
+              <div className="flex items-center gap-3">
+                <div className="flex-shrink-0 w-8 h-8 bg-emerald-100 dark:bg-emerald-900/50 rounded-full flex items-center justify-center">
+                  <CheckCircle2 size={16} className="text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-emerald-900 dark:text-emerald-100 leading-none">
+                    Message Forwarded!
+                  </p>
+                  <p className="text-[11px] text-emerald-700 dark:text-emerald-400 mt-1 leading-none">
+                    Sent successfully
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         {(contactRequest || blockReason === "incoming_restricted") && (
           <div className="sticky top-0 z-20 mb-4 mx-2 mt-2">
             <div className="bg-primary-50/95 dark:bg-gray-800/95 backdrop-blur-sm border border-primary-200 dark:border-gray-700 rounded-lg shadow-sm p-4 animate-in fade-in slide-in-from-top-2 duration-300">
@@ -3188,6 +3232,7 @@ function ChatPage() {
                   </div>
                 ) : (
                   <MessageBubble
+                    key={`${msg.timestamp}-${i}`}
                     fromMe={msg.fromMe}
                     text={msg.text}
                     charm={msg.charm}
@@ -3206,6 +3251,7 @@ function ChatPage() {
                       msg.fromMe ? userAvatar : contact?.extradata?.icon
                     }
                     forwarded={msg.forwarded}
+                    currentChatId={address}
                   />
                 )}
               </div>

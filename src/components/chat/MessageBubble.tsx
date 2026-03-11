@@ -3,7 +3,7 @@
 import Lottie from "lottie-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useEffect, useRef } from "react";
-import { Forward } from "lucide-react";
+import { Forward, Copy, Check } from "lucide-react";
 import ForwardModal from "./ForwardModal";
 
 // Dynamic import of all .json files
@@ -24,6 +24,7 @@ interface MessageBubbleProps {
   type?: string;        // Added type to detect images
   filedata?: string;    // Added filedata to hold the base64 string
   forwarded?: boolean;
+  currentChatId?: string;
 }
 
 // Flying money emoji component
@@ -83,7 +84,7 @@ const ConfettiParticle = ({ delay = 0, color }: { delay?: number; color: string 
 
 const defaultAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23cbd5e1'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E";
 
-export default function MessageBubble({ fromMe, text, charm, amount, timestamp, status, tokenAmount, senderName, senderImage, onAvatarClick, type, filedata, forwarded }: MessageBubbleProps) {
+export default function MessageBubble({ fromMe, text, charm, amount, timestamp, status, tokenAmount, senderName, senderImage, onAvatarClick, type, filedata, forwarded, currentChatId }: MessageBubbleProps) {
   const isCharm = !!charm;
   const isTokenTransfer = !!tokenAmount;
   const isImage = type === 'image' || (filedata && filedata.startsWith('data:image')); // Detect images
@@ -92,6 +93,7 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
   const [showForwardModal, setShowForwardModal] = useState(false);
   const [forwardAsForwarded, setForwardAsForwarded] = useState(false);
   const [showActions, setShowActions] = useState(false);
+  const [copied, setCopied] = useState(false);
   const actionsRef = useRef<HTMLDivElement>(null);
 
   // Close actions when clicking outside
@@ -258,9 +260,28 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
                   initial={{ opacity: 0, y: 10, scale: 0.95 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                  className="absolute -top-12 left-1/2 -translate-x-1/2 flex items-center bg-white dark:bg-gray-800 shadow-xl rounded-full p-1 border border-gray-100 dark:border-gray-700 z-[60] overflow-hidden whitespace-nowrap"
+                  className={`absolute bottom-full mb-2 ${fromMe ? 'right-0' : 'left-0'} flex flex-col bg-white dark:bg-gray-800 shadow-2xl rounded-2xl border border-gray-100 dark:border-gray-700 z-[60] overflow-hidden whitespace-nowrap min-w-[140px]`}
                 >
-                  <div className="flex divide-x divide-gray-100 dark:divide-gray-700">
+                  <div className="flex flex-col divide-y divide-gray-100 dark:divide-gray-700">
+                    {text && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigator.clipboard.writeText(text);
+                          setCopied(true);
+                          setTimeout(() => {
+                            setCopied(false);
+                            setShowActions(false);
+                          }, 1500);
+                        }}
+                        className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-300 text-[13px] font-bold transition-all active:scale-95 text-left w-full"
+                      >
+                        <div className="flex items-center gap-2">
+                          {copied ? <Check size={16} className="text-green-500" /> : <Copy size={16} />}
+                          <span>{copied ? 'Copied!' : 'Copy'}</span>
+                        </div>
+                      </button>
+                    )}
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -268,10 +289,12 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
                         setShowForwardModal(true);
                         setShowActions(false);
                       }}
-                      className="flex items-center gap-1.5 px-3 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 text-primary-600 dark:text-primary-400 text-xs font-bold transition-colors"
+                      className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-primary-600 dark:text-primary-400 text-[13px] font-bold transition-all active:scale-95 text-left w-full"
                     >
-                      <Forward size={14} />
-                      <span>Forward</span>
+                      <div className="flex items-center gap-2">
+                        <Forward size={16} />
+                        <span>Forward (Simple)</span>
+                      </div>
                     </button>
                     <button
                       onClick={(e) => {
@@ -280,13 +303,12 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
                         setShowForwardModal(true);
                         setShowActions(false);
                       }}
-                      className="flex items-center gap-1.5 px-3 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 text-sky-600 dark:text-sky-400 text-xs font-bold transition-colors"
+                      className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-sky-600 dark:text-sky-400 text-[13px] font-bold transition-all active:scale-95 text-left w-full"
                     >
-                      <div className="relative">
-                        <Forward size={14} />
-                        <div className="absolute -top-1 -right-1 w-1.5 h-1.5 bg-sky-500 rounded-full border border-white dark:border-gray-800" />
+                      <div className="flex items-center gap-2">
+                        <Forward size={16} />
+                        <span>Forward (with Tag)</span>
                       </div>
-                      <span>Forwarded</span>
                     </button>
                   </div>
                 </motion.div>
@@ -399,6 +421,7 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
           filedata={isCharm ? (charm?.id || "") : isImage ? (filedata || "") : ""}
           onClose={() => setShowForwardModal(false)}
           isForwarded={forwardAsForwarded}
+          currentChatId={currentChatId}
         />
       )}
     </>

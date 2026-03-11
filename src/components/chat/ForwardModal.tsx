@@ -12,6 +12,7 @@ interface ForwardModalProps {
     filedata?: string;
     onClose: () => void;
     isForwarded: boolean;
+    currentChatId?: string;
 }
 
 interface Recipient {
@@ -22,7 +23,7 @@ interface Recipient {
     lastMessageDate?: number;
 }
 
-const ForwardModal: React.FC<ForwardModalProps> = ({ message, messageType, filedata, onClose, isForwarded }) => {
+const ForwardModal: React.FC<ForwardModalProps> = ({ message, messageType, filedata, onClose, isForwarded, currentChatId }) => {
     const { loaded, myPublicKey, userName } = useContext(appContext);
     const [searchTerm, setSearchTerm] = useState('');
     const [recipients, setRecipients] = useState<Recipient[]>([]);
@@ -77,10 +78,12 @@ const ForwardModal: React.FC<ForwardModalProps> = ({ message, messageType, filed
                         lastMessageDate: f.ch.created_date
                     }));
 
-                // Combine and sort by last action date
-                const all = [...individuals, ...groups, ...channels].sort((a, b) =>
-                    (b.lastMessageDate || 0) - (a.lastMessageDate || 0)
-                );
+                // Combine, filter out current chat, and sort by last action date
+                const all = [...individuals, ...groups, ...channels]
+                    .filter(r => r.id !== currentChatId)
+                    .sort((a, b) =>
+                        (b.lastMessageDate || 0) - (a.lastMessageDate || 0)
+                    );
 
                 setRecipients(all);
                 setLoading(false);
@@ -135,7 +138,11 @@ const ForwardModal: React.FC<ForwardModalProps> = ({ message, messageType, filed
                     isForwarded
                 );
             }
-            onClose();
+
+            window.dispatchEvent(new CustomEvent('FORWARD_SUCCESS'));
+            setTimeout(() => {
+                onClose();
+            }, 100);
         } catch (err) {
             console.error("Failed to forward message:", err);
             alert("Error: " + (err instanceof Error ? err.message : String(err)));

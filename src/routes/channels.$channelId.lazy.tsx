@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, useContext, useCallback, lazy, Suspense } from "react";
 import { useNavigate, createLazyFileRoute } from "@tanstack/react-router";
 import { appContext } from "../AppContext";
-import { Radio, Settings, Info, Trash2, Star, Archive, Image as ImageIcon } from "lucide-react";
+import { Radio, Settings, Info, Trash2, Star, Archive, Image as ImageIcon, CheckCircle2 } from "lucide-react";
 import { channelService } from "../services/channel.service";
 import { compressImage } from "../utils/image";
 import { useTheme } from "../context/ThemeContext";
@@ -44,6 +44,7 @@ function ChannelPage() {
     const [isFavorite, setIsFavorite] = useState(false);
     const [isArchived, setIsArchived] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
+    const [showForwardSuccess, setShowForwardSuccess] = useState(false);
     const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     const menuRef = useRef<HTMLDivElement>(null);
@@ -143,8 +144,18 @@ function ChannelPage() {
 
         window.addEventListener("CHANNEL_UPDATE", handleUpdate);
 
+        // Listen for Forward Success event
+        const handleForwardSuccess = () => {
+            setShowForwardSuccess(true);
+            setTimeout(() => {
+                setShowForwardSuccess(false);
+            }, 2000);
+        };
+        window.addEventListener("FORWARD_SUCCESS", handleForwardSuccess);
+
         return () => {
             window.removeEventListener("CHANNEL_UPDATE", handleUpdate);
+            window.removeEventListener("FORWARD_SUCCESS", handleForwardSuccess);
         };
     }, [channelId, loadMessages, init]);
 
@@ -492,6 +503,25 @@ function ChannelPage() {
                 className={`flex-1 overflow-y-auto flex flex-col p-2 sm:p-4 relative transition-colors
           ${chatBackground === 'dots' ? "" : chatBackground === 'grid' ? "" : ""}`}
             >
+                {showForwardSuccess && (
+                    <div className="sticky top-0 z-40 mb-2 mx-2 mt-2 pointer-events-none">
+                        <div className="bg-emerald-50/95 dark:bg-emerald-900/30 backdrop-blur-sm border border-emerald-200 dark:border-emerald-800 rounded-lg shadow-sm p-3 animate-in fade-in slide-in-from-top-2 duration-300">
+                            <div className="flex items-center gap-3">
+                                <div className="flex-shrink-0 w-8 h-8 bg-emerald-100 dark:bg-emerald-900/50 rounded-full flex items-center justify-center">
+                                    <CheckCircle2 size={16} className="text-emerald-600 dark:text-emerald-400" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-bold text-emerald-900 dark:text-emerald-100 leading-none">
+                                        Message Forwarded!
+                                    </p>
+                                    <p className="text-[11px] text-emerald-700 dark:text-emerald-400 mt-1 leading-none">
+                                        Sent successfully
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
                 {/* Background patterns (same as group chat) */}
                 {chatBackground === 'dots' && (
                     <div className="fixed inset-0 opacity-[0.05] dark:opacity-[0.1] pointer-events-none z-0"

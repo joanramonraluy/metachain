@@ -1127,6 +1127,7 @@ class GroupService {
         read: Number(row.READ || row.read),
         sender_seq: Number(row.SENDER_SEQ || row.sender_seq || 0),
         customid: row.CUSTOMID || row.customid || "",
+        forwarded: row.FORWARDED == 1 || row.forwarded == 1,
       }));
     } catch (err) {
       console.error("❌ [GROUP-MSG] Failed to get messages:", err);
