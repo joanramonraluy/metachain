@@ -1,6 +1,6 @@
 # AGENTS.md - MetaChain Engineering Guide
 
-Last reviewed against codebase: 2026-03-08 (commit `7916d803`)
+Last reviewed against codebase: 2026-03-14 (commit `09cd1d26` + MLS beacon hub response routing + SW static MLS auto-config)
 Scope: `/home/joanramon/Minima/metachain`
 
 ## 1) Project Intent
@@ -54,39 +54,62 @@ If you are unsure where to place logic, default to SW for network/event ingestio
 
 ## 4) Beacon + Gossip + MLS (Must Understand)
 
-## 4.1 Beacon payload and processing
+### 4.1 Beacon transport: P2P, NOT Maxima (with MLS hub exception)
+
+Beacon messages are sent via **Minima P2P network** (`MDS.cmd("message data:0x...")`) which maps to `MSG_GENMESSAGE` (type byte 5) in the Minima NIO layer. This is a **direct-peer broadcast only** — Minima does NOT relay `MSG_GENMESSAGE` between nodes. A node receives a beacon only if it is a direct P2P peer of the sender.
+
+Maxima is used for **unicast follow-up** (gossip replies, chat, history). **Exception:** the Service Worker now also unicasts its own beacon to the configured MLS server via Maxima so the MLS can act as a discovery hub.
+
+### 4.2 Beacon payload and processing
 Beacon messages use type `BEACON` (and legacy/MLS registration type `register` is also accepted).
 
 SW `handleBeacon` (`public/service-workers/handlers/beacon.handler.js`) currently enforces:
 - required fields: `pubkey`, `address`, `alias`
 - debounce: 10s per peer (except `GOSSIP`/`BOOTSTRAP` sources)
-- self-beacon ignore by comparing `MY_MAXIMA_PK`
+- self-beacon ignore by comparing `MY_MAXIMA_PK` (except `source === SELF` so the node can persist itself)
 - persistence into `DISCOVERED_PEERS` with `allow_non_contact_chats` and `extra_data`
 - promotion into stable `METACHAIN_USERS`
-- optional reactive gossip (`sendWelcomePackage`, `askPeers`) for `P2P`/`MAXIMA` sources
+- reactive relay: when source is `P2P` or `MAXIMA`, calls `sendWelcomePackage` + `askPeers`
 
-### 4.2 Background beacon schedule
-SW sends periodic beacons from `sendBackgroundBeacon()` called during `NEWBLOCK` gossip interval.
-Current SW interval is controlled by `GOSSIP_INTERVAL` (30s in `public/service-workers/utils.js`).
-It reads profile/privacy from `MY_PROFILE` + keypair and broadcasts via:
-- `message data:0x...` (P2P)
-- local self-save through `handleBeacon(..., 'SELF')`
+### 4.3 Beacon relay chain (how discovery propagates)
+When a node receives a beacon from a P2P or MAXIMA source, it:
+1. Saves the peer to `DISCOVERED_PEERS`
+2. Calls `sendWelcomePackage(pubkey, alias)` — broadcasts ALL known peers as a `peers_response` via `message data:` (P2P broadcast to all direct NIO connections)
+3. Calls `askPeers([pubkey])` — sends `get_peers` via Maxima to the new peer
 
-### 4.3 Discovery freshness and cleanup
+This creates a **reactive multi-hop relay**: Node A broadcasts → Node X (MetaChain) receives → X broadcasts its catalog → Node B (MetaChain, neighbor of X) learns A's existence.
+
+**Critical constraint**: only nodes with MetaChain installed participate in this relay. Nodes without MetaChain receive `MSG_GENMESSAGE` and discard it (Minima core only logs it). There is no way to make non-MetaChain nodes relay beacons.
+
+**Consequence for sparse networks**: two MetaChain nodes that share no MetaChain-running P2P neighbors cannot discover each other via beacon alone. The solution is either a shared MLS server (for Maxima messaging) or a MetaChain node acting as a common P2P neighbor.
+
+### 4.4 Periodic beacon schedule (SW-owned)
+SW sends its own beacon every `GOSSIP_INTERVAL` (30s, hardcoded in `public/service-workers/utils.js`) on `NEWBLOCK` events via:
+- `sendBackgroundBeacon()` — emits **own** beacon via `message data:` + saves self to DB
+- `startGossip()` — if `DISCOVERED_PEERS` is not empty, sends `get_peers` to top 5 peers via Maxima; if empty, falls back to `maxcontacts`
+
+> **Known Bug**: `src/routes/settings/discovery.tsx` exposes `discovery_interval` and `discovery_limit` controls that save values to keypair, but the Service Worker reads **hardcoded** `GOSSIP_INTERVAL`/`BEACON_INTERVAL` from `utils.js` and never reads these keypair values. The settings UI has no effect on the actual gossip frequency. Fix requires SW to read `discovery_interval` keypair value at startup and use it instead of the hardcoded constant. See section 17.
+
+### 4.5 Discovery freshness and cleanup
 - SW cleanup TTL for `DISCOVERED_PEERS`: 10 minutes (`startCleanupTimer`)
 - Discovery UI online threshold (`src/services/discovery.service.ts`): 5 minutes
 Do not change one without evaluating the other.
 
-### 4.4 MLS / Static MLS behavior
+### 4.6 MLS / Static MLS behavior
 MLS is managed through Maxima static MLS configuration (`maxextra action:staticmls`).
 UI settings page: `src/routes/settings/discovery.tsx`
 
 Current behavior:
 - Reads `maxima action:info` -> `mls` + `staticmls`
-- If absent, auto-attempts Community Node static MLS assignment
-- Supports manual server entry and “use my node as server” mode
+- If absent, Service Worker auto-attempts default static MLS assignment
+- Settings UI supports manual server entry and "use my node as server" mode
+- Settings UI no longer auto-sets static MLS on load
+- Self-MLS detection uses `p2pidentity` to avoid loops when contact address differs
+- `staticmls` persists across normal restarts and is lost only on clean reset or data wipe (e.g. `-clean`, `reset`, basefolder change, or restoring an old backup)
 
-### 4.5 Permanent registration flow
+MLS is used for **Maxima routing** (unicast). With the MLS beacon hub behavior, nodes also unicast their own beacons to the MLS server so it can answer `get_peers` even when P2P MetaChain neighbors are sparse. Two nodes sharing an MLS server can exchange Maxima messages and discover peers via MLS without direct P2P MetaChain neighbors, assuming the MLS runs MetaChain and receives those beacons. `get_peers` now includes the requester `address` so the MLS can respond via `to:` even when the requester is not a Maxima contact. Prefer `mls` (stable `Mx@ip:port`) over `contact` (often transient) when populating this field. MLS responses are sent to both `to:<address>` and `publickey` to handle stale/ephemeral addresses.
+
+### 4.7 Permanent registration flow
 `minima.service.ts` handles incoming `mls_register_permanent` and runs:
 - `maxextra action:addpermanent publickey:<pubkey>`
 
@@ -282,6 +305,8 @@ When changing protocol code, log:
 7. Chat-permission state uses DB first with legacy keypair fallbacks. Adding new key names increases false allow/deny risk.
 8. Group invite payload member fields can arrive with uppercase DB-style keys (`PUBLICKEY`/`USERNAME`/`ROLE`) or protocol lowercase keys; invite send/receive paths must normalize both.
 9. Legacy/corrupt `GROUP_MEMBERS` rows with blank `publickey` can break Maxima sends (`BLANK param not allowed : publickey`); sender/sync loops must skip and cleanup blank keys.
+10. **`discovery_interval` / `discovery_limit` UI controls are disconnected from the SW** (`src/routes/settings/discovery.tsx` saves to keypair but SW uses hardcoded `GOSSIP_INTERVAL`/`BEACON_INTERVAL` in `utils.js`). These settings have zero effect until the SW is updated to read them. See section 4.4.
+11. **Beacon transport is P2P-only (`MSG_GENMESSAGE`), not Maxima**. Two MetaChain nodes with no shared MetaChain-running P2P neighbor cannot discover each other via beacon. Do not assume discovery will work on sparse mainnet deployments without a common MetaChain relay node or shared MLS for Maxima fallback. See section 4.3.
 
 ## 12) Pre-merge Checklist (Mandatory for protocol/state changes)
 
@@ -344,8 +369,15 @@ Expected: permission gate behavior changes accordingly and beacon updates propag
 1. Update the header review line (date + commit hash) whenever protocol handlers, discovery logic, or DB schema are touched.
 2. Any new message type must update section `6.4 Protocol Matrix` and section `6.5 Single Owner Per Flow` in the same change.
 3. Any schema change must include migration parity in both runtimes:
-- `public/service-workers/db-init.js`
-- `src/services/database.service.ts`
+   - `public/service-workers/db-init.js`
+   - `src/services/database.service.ts`
 4. Documentation update is mandatory in the same patch when changes impact behavior described in this file (protocols, flows, schema, ownership, guardrails).
 5. If a PR/patch touches networking logic and does not update this document, include an explicit `AGENTS.md: N/A` rationale in handoff notes.
 6. Handoff notes must include one line: `AGENTS.md updated: yes/no` and, if `yes`, list affected sections.
+
+## 17) Open Bugs / Pending Fixes
+
+| # | Component | Description | Severity |
+|---|---|---|---|
+| 1 | `src/routes/settings/discovery.tsx` + `public/service-workers/utils.js` | `discovery_interval` and `discovery_limit` keypair values saved by UI are never read by SW. SW uses hardcoded `GOSSIP_INTERVAL=30000` and `BEACON_INTERVAL=60000`. Fix: SW must read keypair values at init (and on NEWBLOCK) and apply them dynamically. | Medium |
+| 2 | Discovery / mainnet | Two MetaChain nodes with no shared MetaChain P2P neighbor cannot discover each other via beacon relay. No fix possible at SW level without a common MetaChain intermediary or MLS-based Maxima contact exchange. | By design / known limitation |

@@ -565,6 +565,14 @@ function initDatabase() {
     sendBackgroundBeacon();
     startGossip();
 
+    // Bootstrap discovery from MLS if DISCOVERED_PEERS is empty (e.g. after -clean)
+    // Wait 2s for Maxima connections to stabilize before contacting MLS
+    MDS.cmd("timer 2000", function () {
+      if (typeof bootstrapFromMLS === "function") {
+        bootstrapFromMLS();
+      }
+    });
+
     // Register for periodic tasks
     MDS.cmd("event on newblock", function () {
       MDS.log("✅ [INIT] NEWBLOCK listener registered for periodic tasks.");
