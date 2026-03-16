@@ -193,7 +193,7 @@ function saveBeaconWithBio(
 
           // Reactive gossip
           if (source === "P2P" || source === "MAXIMA") {
-            sendWelcomePackage(beacon.pubkey, beacon.alias);
+            sendWelcomePackage(beacon.pubkey, beacon.alias, cleanAddress);
             askPeers([beacon.pubkey]);
           }
         } else {

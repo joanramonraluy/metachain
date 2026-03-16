@@ -259,7 +259,7 @@ function askPeers(pubkeys) {
   });
 }
 
-function sendWelcomePackage(targetPubkey, targetAlias) {
+function sendWelcomePackage(targetPubkey, targetAlias, targetAddress) {
   if (MY_MAXIMA_PK && targetPubkey === MY_MAXIMA_PK) return;
 
   MDS.log("🎁 [GOSSIP] Sending Welcome Package to " + targetAlias);
@@ -310,15 +310,30 @@ function sendWelcomePackage(targetPubkey, targetAlias) {
       var hexData =
         "0x" + utf8ToHex(JSON.stringify(responsePayload)).toUpperCase();
 
-      // Send via P2P broadcast instead of MAXIMA to avoid contact requirement
-      MDS.cmd("message data:" + hexData, function (msgRes) {
-        if (msgRes.status) {
-          MDS.log("✅ [GOSSIP] Welcome Package broadcast to network");
-        } else {
+      // Send via Maxima unicast directly to the target
+      // Prioritize to:address (no contact required), fallback to publickey
+      var sendCmd = targetAddress
+        ? "maxima action:send to:" +
+          targetAddress +
+          " application:metachain data:" +
+          hexData +
+          " poll:false"
+        : "maxima action:send publickey:" +
+          targetPubkey +
+          " application:metachain data:" +
+          hexData +
+          " poll:false";
+
+      MDS.cmd(sendCmd, function (sendRes) {
+        if (sendRes && sendRes.status === false) {
           MDS.log(
-            "⚠️ [GOSSIP] Failed to broadcast Welcome Package: " +
-              (msgRes.error || "unknown error"),
+            "⚠️ [GOSSIP] Failed to send Welcome Package to " +
+              targetAlias +
+              ": " +
+              (sendRes.error || "unknown error"),
           );
+        } else {
+          MDS.log("✅ [GOSSIP] Welcome Package sent to " + targetAlias);
         }
       });
     }
