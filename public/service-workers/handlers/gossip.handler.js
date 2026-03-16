@@ -183,7 +183,18 @@ function startGossip() {
         for (var i = 0; i < res.rows.length; i++) {
           pubkeys.push(res.rows[i].PUBLICKEY);
         }
-        askPeers(pubkeys);
+        var validPubkeys = pubkeys.filter(function (pk) {
+          return pk !== MY_MAXIMA_PK;
+        });
+
+        if (validPubkeys.length > 0) {
+          askPeers(validPubkeys);
+        } else {
+          MDS.log("⚠️ [GOSSIP] Only self found in discovery — triggering MLS bootstrap fallback.");
+          if (typeof bootstrapFromMLS === "function") {
+            bootstrapFromMLS();
+          }
+        }
       } else {
         // Fallback to contacts
         MDS.cmd("maxcontacts", function (contactRes) {

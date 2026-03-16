@@ -119,42 +119,89 @@ function saveBeaconWithBio(
 ) {
   var escapedBio = escapeSql(bio);
   var extraData = escapeSql(JSON.stringify(beacon));
+  var incomingTimestamp = beacon.timestamp || 0;
 
-  var discoverySql =
-    "MERGE INTO DISCOVERED_PEERS (publickey, alias, bio, address, last_seen, source, allow_non_contact_chats, extra_data) " +
-    "KEY (publickey) " +
-    "VALUES ('" +
-    beacon.pubkey +
-    "', '" +
-    escapedAlias +
-    "', '" +
-    escapedBio +
-    "', '" +
-    cleanAddress +
-    "', " +
-    now +
-    ", '" +
-    source +
-    "', " +
-    allowNonContactChats +
-    ", '" +
-    extraData +
-    "')";
-
-  MDS.sql(discoverySql, function (res) {
-    if (res.status) {
-      MDS.log("✅ [BEACON] Saved: " + beacon.alias);
-      promoteToUserRegistry(beacon, now);
-
-      // Reactive gossip
-      if (source === "P2P" || source === "MAXIMA") {
-        sendWelcomePackage(beacon.pubkey, beacon.alias);
-        askPeers([beacon.pubkey]);
+  // Check stored beacon timestamp to avoid overwriting newer profile data with old gossip
+  MDS.sql(
+    "SELECT extra_data FROM DISCOVERED_PEERS WHERE publickey='" + beacon.pubkey + "'",
+    function (existingRes) {
+      var storedTimestamp = 0;
+      if (
+        existingRes.status &&
+        existingRes.rows &&
+        existingRes.rows.length > 0 &&
+        existingRes.rows[0].EXTRA_DATA
+      ) {
+        try {
+          var stored = JSON.parse(existingRes.rows[0].EXTRA_DATA);
+          storedTimestamp = stored.timestamp || 0;
+        } catch (e) {}
       }
-    } else {
-      MDS.log("❌ [BEACON] Save failed: " + JSON.stringify(res));
+
+      // If the incoming beacon is older than what we have stored, only touch last_seen
+      if (incomingTimestamp > 0 && storedTimestamp > incomingTimestamp) {
+        MDS.log(
+          "⏭️ [BEACON] Skipping profile overwrite for " +
+            beacon.alias +
+            " — stored beacon is newer (" +
+            storedTimestamp +
+            " > " +
+            incomingTimestamp +
+            "). Touching last_seen only."
+        );
+        MDS.sql(
+          "UPDATE DISCOVERED_PEERS SET last_seen=" +
+            now +
+            " WHERE publickey='" +
+            beacon.pubkey +
+            "'",
+          function (updateRes) {
+            if (updateRes.status) {
+              MDS.log("✅ [BEACON] Touched last_seen for: " + beacon.alias);
+            }
+          }
+        );
+        return;
+      }
+
+      // Proceed with full profile MERGE
+      var discoverySql =
+        "MERGE INTO DISCOVERED_PEERS (publickey, alias, bio, address, last_seen, source, allow_non_contact_chats, extra_data) " +
+        "KEY (publickey) " +
+        "VALUES ('" +
+        beacon.pubkey +
+        "', '" +
+        escapedAlias +
+        "', '" +
+        escapedBio +
+        "', '" +
+        cleanAddress +
+        "', " +
+        now +
+        ", '" +
+        source +
+        "', " +
+        allowNonContactChats +
+        ", '" +
+        extraData +
+        "')";
+
+      MDS.sql(discoverySql, function (res) {
+        if (res.status) {
+          MDS.log("✅ [BEACON] Saved: " + beacon.alias);
+          promoteToUserRegistry(beacon, now);
+
+          // Reactive gossip
+          if (source === "P2P" || source === "MAXIMA") {
+            sendWelcomePackage(beacon.pubkey, beacon.alias);
+            askPeers([beacon.pubkey]);
+          }
+        } else {
+          MDS.log("❌ [BEACON] Save failed: " + JSON.stringify(res));
+        }
+      });
     }
-  });
+  );
 }
 
 function promoteToUserRegistry(beacon, now) {

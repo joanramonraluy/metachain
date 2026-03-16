@@ -155,6 +155,12 @@ MDS.init(function (msg) {
       if (typeof requestAllChannelsHistory === "function") {
         requestAllChannelsHistory();
       }
+      // Re-bootstrap from MLS to refresh DISCOVERED_PEERS
+      if (typeof bootstrapFromMLS === "function") {
+        MDS.cmd("timer 2000", function () {
+          bootstrapFromMLS();
+        });
+      }
     }
 
     LAST_MAXIMA_EVENT_TIME = now;

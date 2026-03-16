@@ -115,7 +115,7 @@ export const getUsersWithStatus = async (): Promise<UserWithStatus[]> => {
 
   // ...
 
-  const ONLINE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+  const ONLINE_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes (matches SW cleanup TTL)
   const now = Date.now();
 
   // 2. Add/Update with Discovered Peers (Online)
