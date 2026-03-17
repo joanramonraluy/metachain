@@ -57,3 +57,10 @@ export function utf8ToHex(s: string): string {
     for (const b of encoder.encode(s)) r += ("0" + b.toString(16)).slice(-2);
     return r;
 }
+
+// Shorten public key for display (e.g., 0x1234...5678)
+export function shortenPublicKey(pk: string | undefined | null, startChars: number = 6, endChars: number = 8): string {
+    if (!pk) return "";
+    if (pk.length <= startChars + endChars) return pk;
+    return `${pk.substring(0, startChars)}...${pk.substring(pk.length - endChars)}`;
+}

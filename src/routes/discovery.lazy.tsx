@@ -5,6 +5,7 @@ import {
   UserWithStatus,
 } from "../services/discovery.service";
 import { Search, Globe, Info, RefreshCw, X, Filter } from "lucide-react";
+import { shortenPublicKey } from "../utils/hex";
 
 const DISCOVERY_DEBUG = false;
 const STALE_THRESHOLD = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
@@ -453,7 +454,7 @@ function DiscoveryPage() {
                           <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 border-2 border-white rounded-full"></div>
                         )}
                       </div>
-                      <div className="flex-1 min-w-0">
+                      <div className="flex-1 min-w-0 pr-4">
                         <h3 className="font-bold text-gray-900 dark:text-white truncate">
                           {user.alias || "Anonymous"}
                         </h3>
@@ -463,14 +464,10 @@ function DiscoveryPage() {
                           </p>
                         )}
                         <p
-                          className="text-xs text-gray-400 font-mono truncate"
+                          className="text-xs text-gray-400 font-mono truncate mr-1"
                           title={user.publickey || user.user_id || ""}
                         >
-                          {(user.publickey || user.user_id || "").substring(
-                            0,
-                            12,
-                          )}
-                          ...
+                          {shortenPublicKey(user.publickey || user.user_id || "")}
                         </p>
                       </div>
                     </div>

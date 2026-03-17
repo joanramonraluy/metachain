@@ -1,6 +1,6 @@
 # AGENTS.md - MetaChain Engineering Guide
 
-Last reviewed against codebase: 2026-03-14 (commit `09cd1d26` + MLS beacon hub response routing + SW static MLS auto-config)
+Last reviewed against codebase: 2026-03-16 (commit `[latest]` + timestamp-aware beacon merge + MLS Maxima unicast relay + 10m online threshold)
 Scope: `/home/joanramon/Minima/metachain`
 
 ## 1) Project Intent
@@ -74,7 +74,7 @@ SW `handleBeacon` (`public/service-workers/handlers/beacon.handler.js`) currentl
 ### 4.3 Beacon relay chain (how discovery propagates)
 When a node receives a beacon from a P2P or MAXIMA source, it:
 1. Saves the peer to `DISCOVERED_PEERS`
-2. Calls `sendWelcomePackage(pubkey, alias)` — broadcasts ALL known peers as a `peers_response` via `message data:` (P2P broadcast to all direct NIO connections)
+2. Calls `sendWelcomePackage(pubkey, alias, address)` — sends `peers_response` via **Maxima unicast** (`to:<address>` or `publickey:<0x...>`) to ensure target receives it even without a shared P2P neighbor.
 3. Calls `askPeers([pubkey])` — sends `get_peers` via Maxima to the new peer
 
 This creates a **reactive multi-hop relay**: Node A broadcasts → Node X (MetaChain) receives → X broadcasts its catalog → Node B (MetaChain, neighbor of X) learns A's existence.
@@ -92,7 +92,7 @@ SW sends its own beacon every `GOSSIP_INTERVAL` (30s, hardcoded in `public/servi
 
 ### 4.5 Discovery freshness and cleanup
 - SW cleanup TTL for `DISCOVERED_PEERS`: 10 minutes (`startCleanupTimer`)
-- Discovery UI online threshold (`src/services/discovery.service.ts`): 5 minutes
+- Discovery UI online threshold (`src/services/discovery.service.ts`): 10 minutes
 Do not change one without evaluating the other.
 
 ### 4.6 MLS / Static MLS behavior
@@ -306,7 +306,9 @@ When changing protocol code, log:
 8. Group invite payload member fields can arrive with uppercase DB-style keys (`PUBLICKEY`/`USERNAME`/`ROLE`) or protocol lowercase keys; invite send/receive paths must normalize both.
 9. Legacy/corrupt `GROUP_MEMBERS` rows with blank `publickey` can break Maxima sends (`BLANK param not allowed : publickey`); sender/sync loops must skip and cleanup blank keys.
 10. **`discovery_interval` / `discovery_limit` UI controls are disconnected from the SW** (`src/routes/settings/discovery.tsx` saves to keypair but SW uses hardcoded `GOSSIP_INTERVAL`/`BEACON_INTERVAL` in `utils.js`). These settings have zero effect until the SW is updated to read them. See section 4.4.
-11. **Beacon transport is P2P-only (`MSG_GENMESSAGE`), not Maxima**. Two MetaChain nodes with no shared MetaChain-running P2P neighbor cannot discover each other via beacon. Do not assume discovery will work on sparse mainnet deployments without a common MetaChain relay node or shared MLS for Maxima fallback. See section 4.3.
+11. **Discovery relies on periodic bootstrap for recovery**. If `DISCOVERED_PEERS` is empty (except for `SELF`), `startGossip` triggers `bootstrapFromMLS()`. The node also re-bootstraps on `RECONNECTED` signals to ensure network visibility after long offline periods.
+12. **Beacon merging is timestamp-aware**. Older gossip beacons (lower `timestamp` in payload) will only update `last_seen` but will NOT overwrite newer profile bio/alias data.
+13. **Beacon transport is dual-layer**. Initial discovery is P2P-only (`MSG_GENMESSAGE`), but subsequent relay via MLS hub uses Maxima unicast (`to:<address>`) to bridge nodes that share no P2P MetaChain neighbors.
 
 ## 12) Pre-merge Checklist (Mandatory for protocol/state changes)
 
@@ -380,4 +382,4 @@ Expected: permission gate behavior changes accordingly and beacon updates propag
 | # | Component | Description | Severity |
 |---|---|---|---|
 | 1 | `src/routes/settings/discovery.tsx` + `public/service-workers/utils.js` | `discovery_interval` and `discovery_limit` keypair values saved by UI are never read by SW. SW uses hardcoded `GOSSIP_INTERVAL=30000` and `BEACON_INTERVAL=60000`. Fix: SW must read keypair values at init (and on NEWBLOCK) and apply them dynamically. | Medium |
-| 2 | Discovery / mainnet | Two MetaChain nodes with no shared MetaChain P2P neighbor cannot discover each other via beacon relay. No fix possible at SW level without a common MetaChain intermediary or MLS-based Maxima contact exchange. | By design / known limitation |
+| 2 | Discovery / mainnet | Two MetaChain nodes with no shared MetaChain P2P neighbor can now discover each other as long as both connect to a MetaChain-running MLS server. The MLS acts as a Maxima relay, providing `peers_response` via unicast. | Resolved (MLS Hub) |

@@ -26,6 +26,7 @@ import { requestProfile } from "../../services/profile.service";
 import InviteDialog from "../../components/chat/InviteDialog";
 import { useTheme } from "../../context/ThemeContext";
 import { getAndIncrementSequenceNumber } from "../../services/database.service";
+import { shortenPublicKey } from "../../utils/hex";
 import { EmojiClickData } from "emoji-picker-react";
 
 // Lazy load EmojiPicker to reduce initial bundle size (~60KB)
@@ -773,7 +774,7 @@ function ChatPage() {
     const recipientAllowsNonContacts =
       await minimaService.getContactChatPermission(contact.publickey);
     console.log(
-      `🔍 [CHAT] Recipient ${contact?.extradata?.name || contact.publickey.substring(0, 10)} allowsNonContacts: ${recipientAllowsNonContacts}`,
+      `🔍 [CHAT] Recipient ${contact?.extradata?.name || shortenPublicKey(contact.publickey)} allowsNonContacts: ${recipientAllowsNonContacts}`,
     );
 
     // Also log MY setting for comparison/debugging
@@ -1486,7 +1487,7 @@ function ChatPage() {
       if (payload.type === "contact_request") {
         console.log("📨 [CHAT] Received contact request");
         if (contact.publickey && myPublicKey) {
-          console.log(`📨 [CHAT] From: ${contact.publickey.substring(0, 10)}`);
+          console.log(`📨 [CHAT] From: ${shortenPublicKey(contact.publickey)}`);
 
           // Trust the Service Worker to satisfy the insert
           setTimeout(() => {

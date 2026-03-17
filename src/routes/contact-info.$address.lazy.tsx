@@ -9,7 +9,7 @@ import { minimaService } from "../services/minima.service";
 import type { ExtendedProfile } from "../services/profile.service";
 import { personalContactsService } from "../services/personal-contacts.service";
 import { appContext } from "../AppContext";
-
+import { shortenPublicKey } from "../utils/hex";
 import { safeUrl } from "../utils/sanitization";
 
 export const Route = createLazyFileRoute("/contact-info/$address")({
@@ -924,7 +924,7 @@ function ContactInfoPage() {
                                 onClick={() => copyToClipboard(contact?.publickey || "", "pk-main")}
                                 title="Click to copy public key"
                             >
-                                {contact?.publickey ? `${contact.publickey.substring(0, 10)}...${contact.publickey.substring(contact.publickey.length - 8)}` : "Loading..."}
+                                {contact?.publickey ? shortenPublicKey(contact.publickey) : "Loading..."}
                             </p>
 
                             {/* Extended Profile Details */}
