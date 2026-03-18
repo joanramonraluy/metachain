@@ -24,6 +24,9 @@ interface ParsedMessage {
     type?: string;
     filedata?: string;
     forwarded?: boolean;
+    reply_to?: string;
+    customid?: string;
+    username?: string; // Standardized fallback for UI
 }
 
 function ChannelPage() {
@@ -45,6 +48,8 @@ function ChannelPage() {
     const [isArchived, setIsArchived] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
     const [showForwardSuccess, setShowForwardSuccess] = useState(false);
+    const [replyingTo, setReplyingTo] = useState<ParsedMessage | null>(null);
+    const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
     const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     const menuRef = useRef<HTMLDivElement>(null);
@@ -66,10 +71,13 @@ function ChannelPage() {
             fromMe: (m.SENDER_PUBLICKEY || m.sender_publickey || "").toLowerCase() === (myPublicKey || "").toLowerCase(),
             timestamp: Number(m.DATE || m.date || 0),
             senderPublicKey: m.SENDER_PUBLICKEY || m.sender_publickey,
-            senderUsername: m.SENDER_USERNAME || m.sender_username,
             type: m.TYPE || m.type || "text",
             forwarded: m.FORWARDED == 1 || m.forwarded == 1,
             filedata: m.FILEDATA || m.filedata,
+            reply_to: m.REPLY_TO || m.reply_to,
+            customid: `${m.SENDER_PUBLICKEY || m.sender_publickey}_${m.DATE || m.date}`,
+            username: m.SENDER_USERNAME && !m.SENDER_USERNAME.toLowerCase().includes('unknown') ? m.SENDER_USERNAME : "Admin",
+            senderUsername: m.SENDER_USERNAME && !m.SENDER_USERNAME.toLowerCase().includes('unknown') ? m.SENDER_USERNAME : "Admin",
         }));
         setMessages(parsed);
     }, [channelId, myPublicKey]);
@@ -197,6 +205,17 @@ function ChannelPage() {
         return () => document.removeEventListener("mousedown", handler);
     }, []);
 
+    const jumpToMessage = (customid: string) => {
+        const element = document.getElementById(`msg-${customid}`);
+        if (element) {
+            element.scrollIntoView({ behavior: "smooth", block: "center" });
+            setHighlightedMessageId(customid);
+            setTimeout(() => setHighlightedMessageId(null), 2000);
+        } else {
+            console.warn(`[Jump] Message ${customid} not found in DOM`);
+        }
+    };
+
     const onEmojiClick = useCallback((data: EmojiClickData) => {
         setInput((prev) => {
             const pos = cursorPositionRef.current ?? prev.length;
@@ -217,14 +236,18 @@ function ChannelPage() {
             fromMe: true,
             timestamp: Date.now(),
             senderPublicKey: myPublicKey,
-            senderUsername: userName,
             type: "text",
+            customid: `${myPublicKey}_${Date.now()}`,
+            username: userName,
+            senderUsername: userName,
+            reply_to: replyingTo?.customid,
         };
         setMessages((prev) => [...prev, optimistic]);
         const toSend = input;
         setInput("");
         try {
-            await channelService.publishMessage(channelId, toSend, "text", myPublicKey, userName);
+            await channelService.publishMessage(channelId, toSend, "text", myPublicKey, userName, "", false, replyingTo?.customid);
+            setReplyingTo(null);
         } catch (err) {
             console.error("❌ [CHANNEL-CHAT] Send failed:", err);
         } finally {
@@ -268,6 +291,8 @@ function ChannelPage() {
                 senderUsername: userName,
                 type: "image",
                 filedata: compressedBase64,
+                customid: `${myPublicKey}_${Date.now()}`,
+                reply_to: replyingTo?.customid,
             };
             setMessages((prev) => [...prev, optimistic]);
 
@@ -277,8 +302,11 @@ function ChannelPage() {
                 "image",
                 myPublicKey,
                 userName,
-                compressedBase64
+                compressedBase64,
+                false,
+                replyingTo?.customid
             );
+            setReplyingTo(null);
         } catch (err) {
             console.error("❌ [CHANNEL-CHAT] Send image failed:", err);
             alert("Error processing the image. It might be too complex or an unsupported format.");
@@ -553,7 +581,11 @@ function ChannelPage() {
                     const isLastInGroup = i === arr.length - 1 || arr[i + 1].senderPublicKey !== msg.senderPublicKey || arr[i + 1].type === 'system' || (i < arr.length - 1 && new Date(arr[i + 1].timestamp).toDateString() !== currentDate);
 
                     return (
-                        <div key={msg.id || `${msg.timestamp}-${msg.senderPublicKey}-${i}`} className="flex flex-col w-full z-0 relative">
+                        <div 
+                            key={msg.id || `${msg.timestamp}-${msg.senderPublicKey}-${i}`} 
+                            id={msg.customid ? `msg-${msg.customid}` : undefined}
+                            className="flex flex-col w-full z-0 relative"
+                        >
                             {showDate && msg.timestamp > 0 && (
                                 <div className="flex justify-center my-3 sticky top-2 z-10">
                                     <span className="text-xs text-gray-600 dark:text-gray-300 font-medium bg-[#E1F3FB] dark:bg-gray-800 border border-white/50 dark:border-gray-700 px-3 py-1.5 rounded-lg shadow-sm uppercase tracking-wide backdrop-blur-sm">
@@ -590,7 +622,24 @@ function ChannelPage() {
                                             </span>
                                             {msg.forwarded && (<div className="flex items-center gap-1 mb-1 opacity-60 text-[10px] font-medium italic"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6" /><path d="M10 14L21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></svg><span>Forwarded</span></div>)}
                                         </div>
-                                        <div className="bg-white dark:bg-gray-800 rounded-2xl rounded-tl-sm px-4 py-2.5 shadow-sm max-w-lg border border-gray-100 dark:border-gray-700">
+                                        {msg.reply_to && messages.find((m) => m.customid === msg.reply_to) && (
+                                            <div
+                                                className="mb-1 bg-black/5 dark:bg-white/5 border-l-[3px] border-primary-500 rounded-r-lg px-3 py-1.5 cursor-pointer max-w-lg hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
+                                                onClick={() => {
+                                                    if (msg.reply_to) {
+                                                        jumpToMessage(msg.reply_to);
+                                                    }
+                                                }}
+                                            >
+                                                <div className="text-[11px] font-bold text-primary-600 dark:text-primary-400 mb-0.5">
+                                                    {messages.find((m) => m.customid === msg.reply_to)?.senderUsername || "Unknown"}
+                                                </div>
+                                                <div className="text-[12px] text-gray-600 dark:text-gray-300 truncate">
+                                                    {messages.find((m) => m.customid === msg.reply_to)?.text || "📷 Image"}
+                                                </div>
+                                            </div>
+                                        )}
+                                        <div className={`bg-white dark:bg-gray-800 rounded-2xl rounded-tl-sm px-4 py-2.5 shadow-sm max-w-lg border border-gray-100 dark:border-gray-700 relative group/msg transition-all duration-200 ${highlightedMessageId === msg.customid ? 'animate-reply-pulse ring-4 ring-primary-500 shadow-xl' : ''}`}>
                                             {msg.type === "image" || msg.filedata?.startsWith("data:image/") ? (
                                                 <div className="relative group rounded-xl overflow-hidden cursor-pointer" onClick={() => window.open(msg.filedata, '_blank')}>
                                                     <img src={msg.filedata} alt="Attached Image" className="max-w-[280px] max-h-[400px] object-cover rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm transition-transform duration-300 group-hover:scale-105" loading="lazy" />
@@ -598,6 +647,17 @@ function ChannelPage() {
                                             ) : (
                                                 <p className="text-gray-900 dark:text-gray-100 text-sm whitespace-pre-wrap break-words">{msg.text}</p>
                                             )}
+                                            
+                                            {/* Action Menu Trigger (Only show for subscribers on hover) */}
+                                            <div className="absolute right-2 top-2 opacity-0 group-hover/msg:opacity-100 transition-opacity">
+                                                <button 
+                                                    onClick={() => setReplyingTo(msg)}
+                                                    className="p-1 rounded-full bg-white dark:bg-gray-700 shadow-sm border border-gray-100 dark:border-gray-600 text-gray-500 hover:text-primary-600 transition-colors"
+                                                    title="Reply"
+                                                >
+                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 17 4 12 9 7"></polyline><path d="M20 18v-2a4 4 0 0 0-4-4H4"></path></svg>
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -608,6 +668,28 @@ function ChannelPage() {
 
                 <div ref={messagesEndRef} />
             </div>
+
+            {/* Replying To Banner */}
+            {replyingTo && (
+                <div className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-800/80 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                    <div className="flex flex-col flex-1 min-w-0 border-l-[3px] border-primary-500 pl-3">
+                        <span className="text-[11px] font-bold text-primary-600 dark:text-primary-400 mb-0.5">
+                            Replying to {replyingTo.fromMe ? "yourself" : (replyingTo.senderUsername && !replyingTo.senderUsername.toLowerCase().includes('unknown') ? replyingTo.senderUsername : (replyingTo.username && !replyingTo.username.toLowerCase().includes('unknown') ? replyingTo.username : "Admin"))}
+                        </span>
+                        <span className="text-[13px] text-gray-600 dark:text-gray-300 truncate">
+                            {replyingTo.text || (replyingTo.type === "image" ? "📷 Image" : "Message")}
+                        </span>
+                    </div>
+                    <button
+                        onClick={() => setReplyingTo(null)}
+                        className="p-2 ml-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                    >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+            )}
 
             {/* INPUT BAR — only for admins */}
             {isAdmin && (

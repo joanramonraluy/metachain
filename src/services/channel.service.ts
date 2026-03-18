@@ -40,6 +40,7 @@ export interface ChannelMessage {
   date: number;
   forwarded?: boolean;
   read?: number;
+  reply_to?: string;
 }
 
 export interface ChannelMaximaMessage {
@@ -62,6 +63,7 @@ export interface ChannelMaximaMessage {
   sender_seq?: number;
   forwarded?: boolean;
   timestamp: number;
+  reply_to?: string;
 
   // channel_invite
   description?: string;
@@ -475,7 +477,9 @@ class ChannelService {
     type: string,
     myPublicKey: string,
     myUsername: string,
-    filedata: string = "", forwarded: boolean = false,
+    filedata: string = "",
+    forwarded: boolean = false,
+    reply_to?: string
   ): Promise<void> {
     const channel = await this.getChannelInfo(channelId);
     if (!channel) throw new Error("Channel not found");
@@ -492,8 +496,8 @@ class ChannelService {
     // 2. Save locally
     const escapedMsg = message.replace(/'/g, "''");
     await this.runSQL(`
-            INSERT INTO CHANNEL_MESSAGES (channel_id, sender_publickey, sender_username, type, message, filedata, date, read, sender_seq, forwarded)
-            VALUES ('${channelId}', '${myPublicKey}', '${myUsername.replace(/'/g, "''")}', '${type}', '${escapedMsg}', '${filedata}', ${now}, 1, ${seq}, ${forwarded ? 1 : 0})
+            INSERT INTO CHANNEL_MESSAGES (channel_id, sender_publickey, sender_username, type, message, filedata, date, read, sender_seq, forwarded, reply_to)
+            VALUES ('${channelId}', '${myPublicKey}', '${myUsername.replace(/'/g, "''")}', '${type}', '${escapedMsg}', '${filedata}', ${now}, 1, ${seq}, ${forwarded ? 1 : 0}, ${reply_to ? "'" + reply_to.replace(/'/g, "''") + "'" : "NULL"})
         `);
 
     // 3. Construct payload
@@ -509,7 +513,9 @@ class ChannelService {
       message,
       messageContentType: type as any,
       filedata,
-      timestamp: now, forwarded,
+      timestamp: now,
+      forwarded,
+      reply_to,
     };
 
     // Send to all subscribers (except self)
@@ -533,7 +539,20 @@ class ChannelService {
                 WHERE channel_id = '${channelId}'
                 ORDER BY date ASC
             `);
-      return res.rows || [];
+      return res.rows?.map((row: any) => ({
+        ...row,
+        id: row.ID ?? row.id,
+        channel_id: row.CHANNEL_ID ?? row.channel_id,
+        sender_publickey: row.SENDER_PUBLICKEY ?? row.sender_publickey,
+        sender_username: row.SENDER_USERNAME ?? row.sender_username,
+        type: row.TYPE ?? row.type,
+        message: row.MESSAGE ?? row.message,
+        filedata: row.FILEDATA ?? row.filedata,
+        date: Number(row.DATE ?? row.date),
+        forwarded: row.FORWARDED == 1 || row.forwarded == 1,
+        read: Number(row.READ ?? row.read),
+        reply_to: row.REPLY_TO ?? row.reply_to,
+      })) || [];
     } catch {
       return [];
     }

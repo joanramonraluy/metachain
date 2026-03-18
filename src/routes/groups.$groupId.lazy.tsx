@@ -44,6 +44,8 @@ interface ParsedMessage {
   customid?: string;
   filedata?: string;
   forwarded?: boolean;
+  reply_to?: string;
+  username?: string; // Standardized fallback for UI
 }
 
 
@@ -84,6 +86,8 @@ function ChatPage() {
   const [isArchived, setIsArchived] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [showForwardSuccess, setShowForwardSuccess] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<ParsedMessage | null>(null);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
@@ -224,11 +228,13 @@ function ChatPage() {
             amount: null,
             timestamp: Number(row.DATE || row.date || 0),
             senderPublicKey: senderPk,
-            senderUsername: row.SENDER_USERNAME || row.sender_username,
             type: type,
             customid: row.CUSTOMID || row.customid,
             filedata: row.FILEDATA || row.filedata,
             forwarded: row.FORWARDED == 1 || row.forwarded == 1,
+            reply_to: row.REPLY_TO || row.reply_to,
+            senderUsername: row.SENDER_USERNAME && !row.SENDER_USERNAME.toLowerCase().includes('unknown') ? row.SENDER_USERNAME : undefined,
+            username: row.SENDER_USERNAME && !row.SENDER_USERNAME.toLowerCase().includes('unknown') ? row.SENDER_USERNAME : undefined,
           };
 
           return parsed;
@@ -387,6 +393,17 @@ function ChatPage() {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   };
+  const jumpToMessage = (customid: string) => {
+    const element = document.getElementById(`msg-${customid}`);
+    if (element) {
+      element.scrollIntoView({ behavior: "smooth", block: "center" });
+      setHighlightedMessageId(customid);
+      setTimeout(() => setHighlightedMessageId(null), 2000);
+    } else {
+      console.warn(`[Jump] Message ${customid} not found in DOM`);
+    }
+  };
+
   useEffect(scrollToBottom, [messages]);
 
   /* ----------------------------------------------------------------------------
@@ -405,12 +422,24 @@ function ChatPage() {
       timestamp: Date.now(),
       status: 'pending', // Use pending to ensure it's not replaced by DB load until synced
       senderUsername: userName,
-      customid: customId
+      username: userName,
+      customid: customId,
+      reply_to: replyingTo?.customid
     };
     setMessages((prev) => [...prev, newMsg]);
 
     try {
-      await groupService.sendGroupMessage(address, input, "text", myPublicKey, userName);
+      await groupService.sendGroupMessage(
+        address, 
+        input, 
+        "text", 
+        myPublicKey, 
+        userName, 
+        "", 
+        false, 
+        replyingTo?.customid
+      );
+      setReplyingTo(null);
       // After sending, refresh to get the actual DB record (which will match by customid)
       setTimeout(() => loadMessagesFromDB(), 100);
     } catch (err) {
@@ -462,7 +491,8 @@ function ChatPage() {
         senderUsername: userName,
         customid: customId,
         type: "image",
-        filedata: compressedBase64
+        filedata: compressedBase64,
+        reply_to: replyingTo?.customid
       };
 
       setMessages((prev) => [...prev, newMsg]);
@@ -473,8 +503,12 @@ function ChatPage() {
         "image",
         myPublicKey,
         userName,
-        compressedBase64
+        compressedBase64,
+        false,
+        replyingTo?.customid
       );
+
+      setReplyingTo(null);
 
       setTimeout(() => loadMessagesFromDB(), 100);
 
@@ -888,7 +922,11 @@ function ChatPage() {
           const isLastInGroup = i === arr.length - 1 || arr[i + 1].senderPublicKey !== msg.senderPublicKey || arr[i + 1].type === 'system' || (i < arr.length - 1 && new Date(arr[i + 1].timestamp || 0).toDateString() !== currentDate);
 
           return (
-            <div key={`${msg.timestamp}-${msg.text || 'no-text'}-${i}`} className="flex flex-col w-full z-0 relative">
+            <div 
+              key={msg.customid || `${msg.timestamp}-${i}`} 
+              id={msg.customid ? `msg-${msg.customid}` : undefined}
+              className="flex flex-col w-full z-0 relative"
+            >
               {showDate && msg.timestamp && (
                 <div className="flex justify-center my-3 sticky top-2 z-10">
                   <span className="text-xs text-gray-600 dark:text-gray-300 font-medium bg-[#E1F3FB] dark:bg-gray-800 border border-white/50 dark:border-gray-700 px-3 py-1.5 rounded-lg shadow-sm uppercase tracking-wide backdrop-blur-sm">
@@ -902,32 +940,68 @@ function ChatPage() {
                     {msg.text}
                   </span>
                 </div>
-              ) : (
-                <MessageBubble
-                  fromMe={msg.fromMe}
-                  text={msg.text}
-                  charm={msg.charm}
-                  amount={msg.amount}
-                  timestamp={msg.timestamp}
-                  status={msg.status}
-                  tokenAmount={msg.tokenAmount}
-                  type={msg.type}
-                  filedata={msg.filedata}
-                  senderName={msg.fromMe ? (userName || "You") : (msg.senderPublicKey ? (contactsMap[msg.senderPublicKey]?.name || msg.senderUsername || msg.senderPublicKey.substring(0, 6)) : (msg.senderUsername || "Unknown"))}
-                  senderImage={msg.fromMe ? userAvatar : (msg.senderPublicKey ? contactsMap[msg.senderPublicKey]?.icon : undefined)}
-                  forwarded={msg.forwarded}
-                  showName={isFirstInGroup}
-                  showAvatar={isLastInGroup}
-                  currentChatId={address}
-                  onAvatarClick={!msg.fromMe && msg.senderPublicKey ? () => navigate({ to: `/contact-info/${msg.senderPublicKey}`, search: { returnTo: `/groups/${address}` } }) : undefined}
-                />
-              )}
+              ) : (() => {
+                const repliedMsg = msg.reply_to 
+                  ? messages.find((m) => m.customid === msg.reply_to) 
+                  : undefined;
+                return (
+                  <MessageBubble
+                    fromMe={msg.fromMe}
+                    text={msg.text}
+                    charm={msg.charm}
+                    amount={msg.amount}
+                    timestamp={msg.timestamp}
+                    status={msg.status}
+                    tokenAmount={msg.tokenAmount}
+                    type={msg.type}
+                    filedata={msg.filedata}
+                    senderName={msg.fromMe ? (userName || "You") : (msg.senderPublicKey ? (contactsMap[msg.senderPublicKey]?.name || msg.senderUsername || msg.senderPublicKey.substring(0, 6)) : (msg.senderUsername || "Unknown"))}
+                    senderImage={msg.fromMe ? userAvatar : (msg.senderPublicKey ? contactsMap[msg.senderPublicKey]?.icon : undefined)}
+                    forwarded={msg.forwarded}
+                    showName={isFirstInGroup}
+                    showAvatar={isLastInGroup}
+                    currentChatId={address}
+                    onAvatarClick={!msg.fromMe && msg.senderPublicKey ? () => navigate({ to: `/contact-info/${msg.senderPublicKey}`, search: { returnTo: `/groups/${address}` } }) : undefined}
+                    repliedMessage={repliedMsg}
+                    onReply={() => setReplyingTo(msg)}
+                    isHighlighted={highlightedMessageId === msg.customid}
+                    onJumpToMessage={jumpToMessage}
+                  />
+                );
+              })()}
             </div>
           );
         })}
 
         <div ref={messagesEndRef} />
       </div>
+
+      {/* Replying To Banner */}
+      {replyingTo && (
+        <div className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-800/80 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
+          <div className="flex flex-col flex-1 min-w-0 border-l-[3px] border-primary-500 pl-3">
+            <span className="text-[11px] font-bold text-primary-600 dark:text-primary-400 mb-0.5">
+              Replying to {replyingTo.fromMe ? "yourself" : (replyingTo.senderUsername && !replyingTo.senderUsername.toLowerCase().includes('unknown') ? replyingTo.senderUsername : (replyingTo.username && !replyingTo.username.toLowerCase().includes('unknown') ? replyingTo.username : "Unknown member"))}
+            </span>
+            <span className="text-[13px] text-gray-600 dark:text-gray-300 truncate">
+              {replyingTo.text || (replyingTo.type === "image" ? "📷 Image" : "Message")}
+            </span>
+          </div>
+          <button
+            onClick={() => setReplyingTo(null)}
+            className="p-2 ml-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+          >
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
 
       {/* INPUT BAR - Fixed at bottom */}
       <div className="p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] bg-white dark:bg-gray-800 flex gap-1 items-center flex-shrink-0 z-10 relative border-t border-gray-200 dark:border-gray-700">

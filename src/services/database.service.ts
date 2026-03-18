@@ -166,6 +166,16 @@ export async function initDB(): Promise<void> {
               "📂 [DB] customid column added/verified in CHAT_MESSAGES",
             );
         });
+
+        // Migration: Add reply_to column for replies
+        const alterSql5 =
+          "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS reply_to VARCHAR(128)";
+        MDS.sql(alterSql5, (alterRes: any) => {
+          if (alterRes.status)
+            console.log(
+              "📂 [DB] reply_to column added/verified in CHAT_MESSAGES",
+            );
+        });
       }
     });
 
@@ -431,6 +441,14 @@ export async function initDB(): Promise<void> {
                         console.log("📂 [DB] customid column added/verified in GROUP_MESSAGES");
                     });
 
+                    // Migration: Add reply_to column for replies
+                    const alterReplyToSql =
+                      "ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS reply_to VARCHAR(128)";
+                    MDS.sql(alterReplyToSql, (replyRes: any) => {
+                      if (replyRes.status)
+                        console.log("📂 [DB] reply_to column added/verified in GROUP_MESSAGES");
+                    });
+
                     // Create GROUP_MSG_COUNTERS table for per-sender sequence tracking
                     const createCountersTable = `
                       CREATE TABLE IF NOT EXISTS GROUP_MSG_COUNTERS (
@@ -585,6 +603,7 @@ export async function initDB(): Promise<void> {
                           MDS.sql(createChannelMessagesTable, (cmRes: any) => {
                             if (cmRes.status) {
                               MDS.sql("ALTER TABLE CHANNEL_MESSAGES ADD COLUMN IF NOT EXISTS sender_seq INT DEFAULT 0", () => { });
+                              MDS.sql("ALTER TABLE CHANNEL_MESSAGES ADD COLUMN IF NOT EXISTS reply_to VARCHAR(128)", () => { });
                             }
                           });
 

@@ -3,8 +3,9 @@
 import Lottie from "lottie-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useEffect, useRef } from "react";
-import { Forward, Copy, Check } from "lucide-react";
+import { Forward, Copy, Check, Reply } from "lucide-react";
 import ForwardModal from "./ForwardModal";
+import { shortenPublicKey } from "../../utils/hex";
 
 // Dynamic import of all .json files
 const charmModules = import.meta.glob('../../assets/animations/*.json', { eager: true });
@@ -27,6 +28,10 @@ interface MessageBubbleProps {
   currentChatId?: string;
   showName?: boolean;
   showAvatar?: boolean;
+  repliedMessage?: any;
+  onReply?: () => void;
+  isHighlighted?: boolean;
+  onJumpToMessage?: (customid: string) => void;
 }
 
 // Flying money emoji component
@@ -86,7 +91,7 @@ const ConfettiParticle = ({ delay = 0, color }: { delay?: number; color: string 
 
 const defaultAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23cbd5e1'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E";
 
-export default function MessageBubble({ fromMe, text, charm, amount, timestamp, status, tokenAmount, senderName, senderImage, onAvatarClick, type, filedata, forwarded, currentChatId, showName = true, showAvatar = true }: MessageBubbleProps) {
+export default function MessageBubble({ fromMe, text, charm, amount, timestamp, status, tokenAmount, senderName, senderImage, onAvatarClick, type, filedata, forwarded, currentChatId, showName = true, showAvatar = true, repliedMessage, onReply, isHighlighted, onJumpToMessage }: MessageBubbleProps) {
   const isCharm = !!charm;
   const isTokenTransfer = !!tokenAmount;
   const isImage = type === 'image' || (filedata && filedata.startsWith('data:image')); // Detect images
@@ -248,13 +253,52 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
           <div
             ref={actionsRef}
             onClick={() => !isTokenTransfer && setShowActions(!showActions)}
-            className={`relative px-4 py-2.5 ${borderRadius} ${bubbleColor} ${textColor} min-w-[80px] shadow-sm transition-all duration-200 ${!isTokenTransfer ? 'cursor-pointer hover:shadow-md' : ''} ${showActions ? 'ring-2 ring-primary-400 ring-opacity-50' : ''}`}
+            className={`relative px-4 py-2.5 ${borderRadius} ${bubbleColor} ${textColor} min-w-[80px] shadow-sm transition-all duration-200 ${!isTokenTransfer ? 'cursor-pointer hover:shadow-md' : ''} ${showActions ? 'ring-2 ring-primary-400 ring-opacity-50' : ''} ${isHighlighted ? 'animate-reply-pulse ring-4 ring-primary-500 shadow-xl' : ''}`}
           >
             {/* Forwarded Indicator */}
             {forwarded && (
               <div className="flex items-center gap-1 mb-1 opacity-60 text-[10px] font-medium italic">
                 <Forward size={10} />
                 <span>Forwarded</span>
+              </div>
+            )}
+            
+            {/* Replied Message Preview */}
+            {repliedMessage && (
+              <div 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (onJumpToMessage && (repliedMessage.customid || repliedMessage.customId)) {
+                    onJumpToMessage(repliedMessage.customid || repliedMessage.customId);
+                  }
+                }}
+                className="relative overflow-hidden bg-black/5 dark:bg-white/5 rounded-lg p-2 mb-2 border-l-[3px] border-primary-500 cursor-pointer hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
+              >
+                <span className="block text-[11px] font-bold text-primary-600 dark:text-primary-400 mb-0.5">
+                  {(() => {
+                    if (repliedMessage.fromMe) return "You";
+                    
+                    // Filter chain: find the first non-empty, non-"Unknown" name
+                    const names = [
+                      repliedMessage.senderUsername,
+                      repliedMessage.sender_username,
+                      repliedMessage.username,
+                    ].filter(n => n && typeof n === 'string' && !n.toLowerCase().includes('unknown') && n.toLowerCase() !== 'me');
+
+                    if (names.length > 0) return names[0];
+                    
+                    // Fallback to shortened public key if available
+                    if (repliedMessage.senderPublicKey) {
+                        return shortenPublicKey(repliedMessage.senderPublicKey);
+                    }
+                    
+                    // Fallback to custom rendering or generic
+                    return "Unknown User";
+                  })()}
+                </span>
+                <span className="block text-[13px] opacity-80 truncate">
+                  {repliedMessage.text || (repliedMessage.type === "image" ? "📷 Image" : "Message")}
+                </span>
               </div>
             )}
 
@@ -284,6 +328,21 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
                         <div className="flex items-center gap-2">
                           {copied ? <Check size={16} className="text-green-500" /> : <Copy size={16} />}
                           <span>{copied ? 'Copied!' : 'Copy'}</span>
+                        </div>
+                      </button>
+                    )}
+                    {onReply && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onReply();
+                          setShowActions(false);
+                        }}
+                        className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-300 text-[13px] font-bold transition-all active:scale-95 text-left w-full border-b border-gray-100 dark:border-gray-700"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Reply size={16} />
+                          <span>Reply</span>
                         </div>
                       </button>
                     )}

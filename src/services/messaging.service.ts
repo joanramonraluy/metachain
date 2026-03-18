@@ -87,7 +87,8 @@ export async function sendMessage(
     saveToDb: boolean = true,
     txpowid?: string,
     overrideSeq?: number,
-    forwarded: boolean = false
+    forwarded: boolean = false,
+    replyTo?: string
 ): Promise<any> {
     try {
         const cleanMessage = message.trim();
@@ -162,7 +163,8 @@ export async function sendMessage(
                 customid: customid,
                 sender_seq: seq,
                 originalTimestamp: messageTimestamp,
-                forwarded: forwarded
+                forwarded: forwarded,
+                reply_to: replyTo
             };
 
             await chatService.insertMessage(msgData);
@@ -183,7 +185,8 @@ export async function sendMessage(
             txpowid: txpowid || undefined,
             customid: customid,
             seq: (saveToDb || overrideSeq !== undefined) ? seq : undefined,
-            forwarded: forwarded
+            forwarded: forwarded,
+            reply_to: replyTo
         };
 
         if (type === "charm" && amount > 0) payload.amount = amount;
@@ -191,86 +194,89 @@ export async function sendMessage(
         const jsonStr = JSON.stringify(payload);
         const hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
 
-        const sendParams: any = {
-            action: "send",
-            application: targetApplication,
-            data: hexData,
-            poll: true, // CORRECT: poll:true ensures message delivery for offline/non-contact recipients
-        };
-
-        if (toPublicKey.startsWith("Mx") || toPublicKey.startsWith("MX")) {
-            sendParams.to = cleanMaximaAddress(toPublicKey);
-        } else {
-            sendParams.publickey = toPublicKey;
-        }
-
         console.log("📤 [MAXIMA] Sending to:", toPublicKey);
 
         try {
-            const response = await MDS.cmd.maxima({ params: sendParams });
+            // DUAL-SEND STRATEGY (mirrors group.service.ts sendMaximaMessage):
+            // Resolve Mx address upfront and, if found, send via BOTH to:MxAddr AND publickey:
+            // concurrently. One of the two will reach the recipient without waiting for an error
+            // round-trip first. This eliminates the delivery delay for non-contact recipients.
 
-            if (!(response as any).status) {
-                throw new Error((response as any).error || "MDS command failed");
+            let mxAddress: string | null = null;
+
+            if (toPublicKey.startsWith("Mx") || toPublicKey.startsWith("MX")) {
+                // Already an address — use directly
+                mxAddress = cleanMaximaAddress(toPublicKey);
+            } else {
+                // Proactively resolve Mx address from DISCOVERED_PEERS (no error round-trip needed)
+                mxAddress = await resolveMaximaAddressFromPubkey(toPublicKey);
+                if (mxAddress) {
+                    console.log(`🔍 [MAXIMA] Proactively resolved Mx address: ${mxAddress.substring(0, 25)}...`);
+                }
             }
-            // Reference implementation only checks status, not delivered
 
-            console.log("✅ [MAXIMA] Sent successfully.");
+            if (mxAddress) {
+                // Dual-send: fire both in parallel and consider success if at least one lands
+                const [mxResult, pkResult] = await Promise.allSettled([
+                    MDS.cmd.maxima({
+                        params: {
+                            action: "send",
+                            to: mxAddress,
+                            application: targetApplication,
+                            data: hexData,
+                            poll: true,
+                        } as any,
+                    }),
+                    MDS.cmd.maxima({
+                        params: {
+                            action: "send",
+                            publickey: toPublicKey.startsWith("Mx") ? undefined : toPublicKey,
+                            application: targetApplication,
+                            data: hexData,
+                            poll: true,
+                        } as any,
+                    }).catch(() => ({ status: false })), // publickey send may fail for Mx-addressed peers
+                ]);
+
+                const mxOk = mxResult.status === "fulfilled" && (mxResult.value as any).status !== false;
+                const pkOk = pkResult.status === "fulfilled" && (pkResult.value as any).status !== false;
+
+                if (!mxOk && !pkOk) {
+                    const err = mxResult.status === "rejected" ? mxResult.reason?.message :
+                        (mxResult.value as any)?.error || "Both send paths failed";
+                    throw new Error(err);
+                }
+
+                console.log(`✅ [MAXIMA] Dual-send complete. Mx: ${mxOk}, PK: ${pkOk}`);
+            } else {
+                // No Mx address known — fall back to publickey-only send
+                console.log("⚠️ [MAXIMA] No Mx address found, using publickey-only send");
+                const response = await MDS.cmd.maxima({
+                    params: {
+                        action: "send",
+                        publickey: toPublicKey,
+                        application: targetApplication,
+                        data: hexData,
+                        poll: true,
+                    } as any,
+                });
+
+                if (!(response as any).status) {
+                    throw new Error((response as any).error || "MDS command failed");
+                }
+                console.log("✅ [MAXIMA] Sent successfully via publickey.");
+            }
 
             // 5. UPDATE TO SENT
             if (saveToDb) {
                 chatService.updateMessageState(databasePublicKey, messageTimestamp, "sent", txpowid);
             }
 
-            return response;
+            return { status: true };
 
         } catch (networkErr: any) {
             const errorMessage = networkErr.message || "";
-
-            // FALLBACK: If "No Contact found", try resolving address from Discovery and retry
-            if (errorMessage.includes("No Contact found")) {
-                console.log("⚠️ [MAXIMA] Target not in contacts. Attempting to resolve address from Discovery...");
-
-                const safeKey = toPublicKey.replace(/'/g, "''");
-                // Inline resolve query or call helper if available. runSQL is imported.
-                const peerSql = `SELECT ADDRESS FROM DISCOVERED_PEERS WHERE PUBLICKEY='${safeKey}' LIMIT 1`;
-                try {
-                    const peerRes = await runSQL(peerSql);
-
-                    if (peerRes.rows && peerRes.rows.length > 0) {
-                        const mxAddress = peerRes.rows[0].ADDRESS;
-                        console.log(`🔍 [MAXIMA] Found Mx address for non-contact: ${mxAddress}`);
-
-                        // Retry using the specific Mx address
-                        const retryResponse = await MDS.cmd.maxima({
-                            params: {
-                                action: "send",
-                                to: cleanMaximaAddress(mxAddress),
-                                application: targetApplication,
-                                data: hexData,
-                                poll: true,
-                            } as any,
-                        });
-
-                        if (!(retryResponse as any).status) {
-                            throw new Error((retryResponse as any).error || "Fallback retry failed");
-                        }
-                        // Reference implementation only checks status, not delivered
-
-                        console.log("✅ [MAXIMA] Message sent successfully via Mx address (fallback)");
-
-                        if (saveToDb) {
-                            chatService.updateMessageState(databasePublicKey, messageTimestamp, "sent", txpowid);
-                        }
-                        return retryResponse;
-                    }
-                } catch (fallbackErr: any) {
-                    console.warn(`⚠️ [MAXIMA] Fallback retry failed: ${fallbackErr.message}`);
-                    // Continue to queueing logic below
-                }
-            }
-
             console.warn(`⚠️ [MAXIMA] Send failed: ${errorMessage}. Queueing.`);
-
 
             // 6. QUEUE ON FAILURE
             if (saveToDb) {

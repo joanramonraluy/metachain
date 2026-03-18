@@ -83,6 +83,11 @@ interface ParsedMessage {
   id?: number;
   originalTimestamp?: number; // Sender's creation time (for correct ordering across peers)
   forwarded?: boolean;
+  reply_to?: string;
+  sender_username?: string; // Legacy DB compatibility
+  senderUsername?: string;  // Internal standardized naming
+  username?: string;        // Fallback for MessageBubble
+  senderPublicKey?: string; // Track sender public key for name resolution fallback
 }
 
 // Helper function to format relative time
@@ -214,6 +219,8 @@ function ChatPage() {
   const [input, setInput] = useState("");
   const [showTransferSelector, setShowTransferSelector] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<ParsedMessage | null>(null);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
 
   const [showMenu, setShowMenu] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -240,6 +247,9 @@ function ChatPage() {
   const historyRequestedFor = useRef<string | null>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const cursorPositionRef = useRef<number | null>(null);
+  // Tracks which contact PKs have had their profile confirmed via a live profile_response this session.
+  // Prevents stale cached allowNonContactChats from blocking the UI before confirmation arrives.
+  const profileConfirmedRef = useRef<Set<string>>(new Set());
 
   const navigate = useNavigate();
 
@@ -695,6 +705,12 @@ function ChatPage() {
     const handlePeerUpdate = (e: CustomEvent) => {
       const updatedPeer = e.detail;
       console.log("🔄 [CHAT] Received peer_updated event:", updatedPeer);
+      // Mark the profile as confirmed so checkPending will trust the DB value
+      const updatedPk = updatedPeer?.publickey || updatedPeer?.pubkey;
+      if (updatedPk) {
+        profileConfirmedRef.current.add(updatedPk);
+        console.log(`✅ [CHAT] Profile confirmed for ${updatedPk.substring(0, 10)}...`);
+      }
       console.log("🔄 [CHAT] Triggering contact refresh due to peer update.");
       fetchContact();
     };
@@ -771,11 +787,29 @@ function ChatPage() {
 
     // CRITICAL FIX: Check THEIR permission, not mine!
     // When I (sender) want to chat with THEM (recipient), I need to check if THEY allow non-contact chats
-    const recipientAllowsNonContacts =
+    const cachedAllowsNonContacts =
       await minimaService.getContactChatPermission(contact.publickey);
     console.log(
-      `🔍 [CHAT] Recipient ${contact?.extradata?.name || shortenPublicKey(contact.publickey)} allowsNonContacts: ${recipientAllowsNonContacts}`,
+      `🔍 [CHAT] Recipient ${contact?.extradata?.name || shortenPublicKey(contact.publickey)} allowsNonContacts (cached): ${cachedAllowsNonContacts}`,
     );
+
+    // RACE CONDITION FIX: The cached value in DISCOVERED_PEERS can be stale (e.g. after restart).
+    // If the cached value is `false` and we have not yet received a live profile_response for this
+    // contact in this session, treat it as OPTIMISTICALLY TRUE and request the fresh profile.
+    // The peer_updated event (fired after profile_response arrives) will re-run checkPending
+    // with the confirmed value. Only block if the live value confirms `false`.
+    let recipientAllowsNonContacts = cachedAllowsNonContacts;
+    if (!cachedAllowsNonContacts && !profileConfirmedRef.current.has(contact.publickey)) {
+      console.log(
+        `🔄 [CHAT] Cached permission is false but profile not yet confirmed — treating as TRUE (optimistic) and requesting fresh profile...`,
+      );
+      recipientAllowsNonContacts = true; // Optimistic: don't block until confirmed
+      // Fire profile request in background; peer_updated will re-run checkPending
+      requestProfile(
+        contact.currentaddress || contact.publickey,
+        contact.publickey,
+      ).catch((err) => console.warn("⚠️ [CHAT] Profile refresh for permission failed:", err));
+    }
 
     // Also log MY setting for comparison/debugging
     const myAllowNonContacts = await minimaService.getChatPermission();
@@ -970,6 +1004,22 @@ function ChatPage() {
     };
   }, [contact]);
 
+  // Listen for SW CHAT_LIST_UPDATE signal (MDS.comms.solo from service worker after DB write).
+  // This is the secondary/safety trigger: if the direct MAXIMA event at the FE is delayed,
+  // de-duplicated, or arrives via poll relay, the SW signal ensures the open chat reloads.
+  useEffect(() => {
+    const handleChatListUpdate = () => {
+      console.log("🔄 [CHAT] SW CHAT_LIST_UPDATE received - reloading messages");
+      loadMessagesFromDB();
+    };
+
+    minimaService.onChatListUpdate(handleChatListUpdate);
+
+    return () => {
+      minimaService.removeChatListUpdateCallback(handleChatListUpdate);
+    };
+  }, []);
+
   // Check for pending contact requests
   const loadContactRequest = useCallback(async () => {
     if (!contact?.publickey || !myPublicKey) return;
@@ -1140,7 +1190,6 @@ function ChatPage() {
             isToken,
             isCharm,
             tokenAmount,
-            username: row.USERNAME,
             // ROBUST FIX: Case-insensitive check and log for debugging
             isSystem: (() => {
               const u = row.USERNAME ? String(row.USERNAME).trim() : "";
@@ -1174,6 +1223,10 @@ function ChatPage() {
               ? Number(row.ORIGINAL_TIMESTAMP)
               : undefined, // Convert to number,
             forwarded: row.FORWARDED == 1 || row.forwarded == 1,
+            reply_to: row.REPLY_TO || row.reply_to,
+            senderPublicKey: row.PUBLICKEY || (row.USERNAME === "Me" ? myPublicKey : address),
+            senderUsername: row.USERNAME === "Me" ? "You" : (row.USERNAME && !row.USERNAME.toLowerCase().includes('unknown') ? row.USERNAME : (contact?.extradata?.name || undefined)),
+            username: row.USERNAME === "Me" ? "You" : (row.USERNAME && !row.USERNAME.toLowerCase().includes('unknown') ? row.USERNAME : (contact?.extradata?.name || undefined)),
           };
         });
 
@@ -1217,6 +1270,7 @@ function ChatPage() {
               type: msg.type,
               filedata: msg.filedata,
               forwarded: msg.forwarded,
+              reply_to: msg.reply_to,
             } as ParsedMessage;
           }),
         );
@@ -1304,7 +1358,7 @@ function ChatPage() {
     return () => {
       // Cleanup if needed
     };
-  }, [address, contact?.publickey]);
+  }, [address, contact?.publickey, contact?.extradata?.name]);
 
   const [appStatus, setAppStatus] = useState<
     "unknown" | "checking" | "installed" | "not_found" | "offline"
@@ -1526,12 +1580,40 @@ function ChatPage() {
         return;
       }
 
-      // Reload messages for read/delivery receipts to update checkmarks
-      if (
-        payload.type === "read_receipt" ||
-        payload.type === "delivery_receipt"
-      ) {
-        loadMessagesFromDB(); // Refresh UI to show updated message states
+      // Incremental Update: Handle read receipts by updating state directly
+      if (payload.type === "read_receipt") {
+        if (payload.from === contact?.publickey) {
+          console.log("📖 [CHAT] Incremental UPDATE for read receipt");
+          setMessages((prev) =>
+            prev.map((m) => {
+              // Update all my sent/delivered text messages to 'read'
+              if (
+                m.fromMe &&
+                (m.status === "sent" || m.status === "delivered")
+              ) {
+                return { ...m, status: "read" };
+              }
+              return m;
+            }),
+          );
+        }
+        return;
+      }
+
+      // Incremental Update: Handle delivery receipts by updating state directly
+      if (payload.type === "delivery_receipt") {
+        if (payload.from === contact?.publickey) {
+          console.log("📬 [CHAT] Incremental UPDATE for delivery receipt");
+          setMessages((prev) =>
+            prev.map((m) => {
+              // Update only 'sent' messages to 'delivered' (don't downgrade 'read')
+              if (m.fromMe && m.status === "sent") {
+                return { ...m, status: "delivered" };
+              }
+              return m;
+            }),
+          );
+        }
         return;
       }
 
@@ -1539,6 +1621,7 @@ function ChatPage() {
       if (payload.type === "peer_discovered") {
         console.log("🔄 [CHAT] Peer info updated, re-checking permissions...");
         checkPending();
+        loadMessagesFromDB(); // Reload to pick up updated name/alias
         return;
       }
 
@@ -1651,6 +1734,18 @@ function ChatPage() {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   };
+  const jumpToMessage = (customid: string) => {
+    const element = document.getElementById(`msg-${customid}`);
+    if (element) {
+      element.scrollIntoView({ behavior: "smooth", block: "center" });
+      setHighlightedMessageId(customid);
+      // Remove highlight after 2 seconds
+      setTimeout(() => setHighlightedMessageId(null), 2000);
+    } else {
+      console.warn(`[Jump] Message ${customid} not found in DOM`);
+    }
+  };
+
   useEffect(scrollToBottom, [messages]);
 
   /* ----------------------------------------------------------------------------
@@ -1684,6 +1779,7 @@ function ChatPage() {
     }
 
     const timestamp = Date.now();
+    const customId = `optimistic_${timestamp}_${Math.random().toString(36).substr(2, 9)}`;
     const newMsg: ParsedMessage = {
       text: input,
       fromMe: true,
@@ -1691,6 +1787,10 @@ function ChatPage() {
       amount: null,
       timestamp,
       status: "sent",
+      reply_to: replyingTo?.customid,
+      username: "You",
+      senderUsername: "You",
+      customid: customId,
     };
     setMessages((prev) => [...prev, newMsg]);
 
@@ -1711,7 +1811,14 @@ function ChatPage() {
         timestamp,
         recipientName,
         targetApp,
+        true, // saveToDb
+        undefined, // txpowid
+        undefined, // overrideSeq
+        false, // forwarded
+        replyingTo?.customid // replyTo
       );
+      
+      setReplyingTo(null);
     } catch (err) {
       console.error("[Send] Error sending message:", err);
       // Optional: Restore input on failure? Or just show toast.
@@ -1789,7 +1896,8 @@ function ChatPage() {
         timestamp,
         status: "sent",
         type: "image",
-        customid: `img_${timestamp}`
+        customid: `img_${timestamp}`,
+        reply_to: replyingTo?.customid,
       };
 
       // Add 'filedata' to the object safely before putting in state to get the UI to render it
@@ -1807,7 +1915,14 @@ function ChatPage() {
         timestamp,
         recipientName,
         targetApp,
+        true, // saveToDb
+        undefined, // txpowid
+        undefined, // overrideSeq
+        false, // forwarded
+        replyingTo?.customid // replyTo
       );
+      
+      setReplyingTo(null);
 
       // Reload from DB to ensure it was saved correctly
       setTimeout(() => loadMessagesFromDB(), 500);
@@ -3203,7 +3318,8 @@ function ChatPage() {
 
             return (
               <div
-                key={msg.timestamp}
+                key={msg.customid || msg.timestamp}
+                id={msg.customid ? `msg-${msg.customid}` : undefined}
                 className="flex flex-col w-full z-0 relative"
               >
                 {showDate && msg.timestamp && (
@@ -3234,10 +3350,13 @@ function ChatPage() {
                     </span>
                   </div>
                 ) : (
-                  <MessageBubble
-                    key={`${msg.timestamp}-${i}`}
-                    fromMe={msg.fromMe}
-                    text={msg.text}
+                  (() => {
+                    const repliedMsg = msg.reply_to ? messages.find((m) => m.customid === msg.reply_to) : undefined;
+                    return (
+                      <MessageBubble
+                        key={`${msg.timestamp}-${i}`}
+                        fromMe={msg.fromMe}
+                        text={msg.text}
                     charm={msg.charm}
                     amount={msg.amount}
                     timestamp={msg.timestamp}
@@ -3257,7 +3376,13 @@ function ChatPage() {
                     currentChatId={address}
                     showName={isFirstInGroup}
                     showAvatar={isLastInGroup}
+                    repliedMessage={repliedMsg}
+                    onReply={() => setReplyingTo(msg)}
+                    isHighlighted={highlightedMessageId === msg.customid}
+                    onJumpToMessage={jumpToMessage}
                   />
+                    );
+                  })()
                 )}
               </div>
             );
@@ -3265,6 +3390,34 @@ function ChatPage() {
 
         <div ref={messagesEndRef} />
       </div>
+
+      {/* Replying To Banner */}
+      {replyingTo && (
+        <div className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-800/80 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
+          <div className="flex flex-col flex-1 min-w-0 border-l-[3px] border-primary-500 pl-3">
+            <span className="text-[11px] font-bold text-primary-600 dark:text-primary-400 mb-0.5">
+              Replying to {replyingTo.fromMe ? "yourself" : (replyingTo.senderUsername && !replyingTo.senderUsername.toLowerCase().includes('unknown') ? replyingTo.senderUsername : (contact?.extradata?.name || "Unknown User"))}
+            </span>
+            <span className="text-[13px] text-gray-600 dark:text-gray-300 truncate">
+              {replyingTo.text || (replyingTo.type === "image" ? "📷 Image" : "Message")}
+            </span>
+          </div>
+          <button
+            onClick={() => setReplyingTo(null)}
+            className="p-2 ml-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+          >
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
+
       {/* INPUT BAR - Fixed at bottom */}
       <div className="w-full max-w-full px-1.5 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] bg-white dark:bg-gray-800 flex gap-0.5 items-center flex-shrink-0 z-10 relative border-t border-gray-200 dark:border-gray-700 transition-colors box-border">
         <button

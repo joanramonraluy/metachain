@@ -119,6 +119,9 @@ function initDatabase() {
         runSQL(
           "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS forwarded INT DEFAULT 0",
         ),
+        runSQL(
+          "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS reply_to VARCHAR(128)",
+        ),
       ]);
     });
   });
@@ -230,6 +233,9 @@ function initDatabase() {
         ),
         runSQL(
           "ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS forwarded INT DEFAULT 0",
+        ),
+        runSQL(
+          "ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS reply_to VARCHAR(128)",
         ),
       ]);
     });
@@ -527,6 +533,9 @@ function initDatabase() {
         ),
         runSQL(
           "ALTER TABLE CHANNEL_MESSAGES ADD COLUMN IF NOT EXISTS forwarded INT DEFAULT 0",
+        ),
+        runSQL(
+          "ALTER TABLE CHANNEL_MESSAGES ADD COLUMN IF NOT EXISTS reply_to VARCHAR(128)",
         ),
       ]);
     });

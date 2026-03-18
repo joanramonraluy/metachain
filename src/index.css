@@ -78,3 +78,17 @@
   background: #94a3b8;
   /* gray-400 */
 }
+
+/* Reply Pulse Animation */
+@keyframes reply-pulse {
+  0% {
+    @apply ring-4 ring-primary-500 ring-opacity-100 scale-[1.02];
+  }
+  100% {
+    @apply ring-0 ring-primary-500 ring-opacity-0 scale-100;
+  }
+}
+
+.animate-reply-pulse {
+  animation: reply-pulse 2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}

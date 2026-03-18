@@ -27,6 +27,7 @@ export interface ChatMessage {
   archived_date?: number;
   favorite?: boolean;
   forwarded?: boolean;
+  reply_to?: string;
 }
 
 export type MessageCallback = (msg: any) => void;
@@ -418,6 +419,7 @@ class ChatService {
       originalTimestamp,
       customid,
       forwarded,
+      reply_to,
     } = msg;
 
     // SAFE ESCAPING FOR ALL STRINGS
@@ -434,10 +436,11 @@ class ChatService {
     const sqlSeq =
       sender_seq === null || sender_seq === undefined ? "0" : sender_seq;
     const sqlForwarded = forwarded ? 1 : 0;
+    const sqlReplyTo = reply_to ? "'" + reply_to.replace(/'/g, "''") + "'" : "NULL";
 
     const sql = `
-            INSERT INTO CHAT_MESSAGES (roomname,publickey,username,type,message,filedata,state,amount,date,customid,sender_seq,original_timestamp,forwarded)
-            VALUES ('${safeRoomname}','${safeKey}','${safeUsername}','${type}','${escapedMsg}','${safeFiledata}','${state}',${amount},${timestamp},'${safeCustomId}', ${sqlSeq}, ${msgOriginalTimestamp}, ${sqlForwarded})
+            INSERT INTO CHAT_MESSAGES (roomname,publickey,username,type,message,filedata,state,amount,date,customid,sender_seq,original_timestamp,forwarded,reply_to)
+            VALUES ('${safeRoomname}','${safeKey}','${safeUsername}','${type}','${escapedMsg}','${safeFiledata}','${state}',${amount},${timestamp},'${safeCustomId}', ${sqlSeq}, ${msgOriginalTimestamp}, ${sqlForwarded}, ${sqlReplyTo})
         `;
     console.log("📥 [CHAT-DB] Inserting message:", {
       type,

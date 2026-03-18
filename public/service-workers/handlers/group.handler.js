@@ -250,6 +250,7 @@ function handleGroupHistoryRequest(pubkey, maxjson) {
             date: Number(row.DATE || row.date),
             sender_seq: Number(row.SENDER_SEQ || row.sender_seq || 0),
             forwarded: row.FORWARDED === true || row.FORWARDED === 'true' || row.FORWARDED === 1,
+            reply_to: row.REPLY_TO || row.reply_to,
           });
         }
       }
@@ -322,7 +323,7 @@ function handleGroupHistoryResponse(pubkey, maxjson) {
         processNext(index + 1);
       } else {
         var insSql =
-          "INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read, propagated, sender_seq, customid, forwarded) VALUES " +
+          "INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read, propagated, sender_seq, customid, forwarded, reply_to) VALUES " +
           "('" +
           escapeSql(groupId) +
           "','" +
@@ -341,7 +342,8 @@ function handleGroupHistoryResponse(pubkey, maxjson) {
           (msg.sender_seq || 0) +
           ", '" +
           escapeSql(msg.customid || "") +
-          "', " + (msg.forwarded ? 1 : 0) + ")";
+          "', " + (msg.forwarded ? 1 : 0) +
+          ", " + (msg.reply_to ? "'" + escapeSql(msg.reply_to) + "'" : "NULL") + ")";
         MDS.sql(insSql, function () {
           processNext(index + 1);
         });
@@ -440,8 +442,11 @@ function processGroupMessage(
     } else {
       shouldPropagate = true;
       var forwardedVal = maxjson.forwarded ? 1 : 0;
+      var replyTo = maxjson.reply_to ? escapeSql(maxjson.reply_to) : null;
+      var replyToVal = replyTo ? "'" + replyTo + "'" : "NULL";
+      
       var groupMsgSql =
-        "INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read, propagated, sender_seq, customid, forwarded) VALUES " +
+        "INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read, propagated, sender_seq, customid, forwarded, reply_to) VALUES " +
         "('" +
         safeGroupId +
         "','" +
@@ -460,7 +465,7 @@ function processGroupMessage(
         incomingSeq +
         ", '" +
         escapeSql(maxjson.customid || "") +
-        "', " + forwardedVal + ")";
+        "', " + forwardedVal + ", " + replyToVal + ")";
 
       MDS.sql(groupMsgSql, function (res) {
         if (res.status) {
@@ -469,7 +474,7 @@ function processGroupMessage(
           MDS.log("❌ [DB] Failed to save group message: " + res.error);
           if (res.error && res.error.indexOf("propagated") !== -1) {
             var retrySql =
-              "INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read) VALUES " +
+              "INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read, reply_to) VALUES " +
               "('" +
               safeGroupId +
               "','" +
@@ -484,7 +489,7 @@ function processGroupMessage(
               safeFileData +
               "'," +
               messageTimestamp +
-              ", 0)";
+              ", 0, " + replyToVal + ")";
             MDS.sql(retrySql);
           }
         }

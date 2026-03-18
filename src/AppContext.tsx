@@ -425,10 +425,24 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
   // Session Expiry Detection (Startup & Resume)
   const [sessionExpired, setSessionExpired] = useState(false);
 
+  const lastCheckRef = useRef<number>(0);
+  const SESSION_CHECK_THROTTLE_MS = 30000; // 30 seconds
+
   useEffect(() => {
-    const checkSession = async () => {
-      // Run check regardless of storage source to catch all invalid states
+    const checkSession = async (force = false) => {
+      const now = Date.now();
+      if (!force && now - lastCheckRef.current < SESSION_CHECK_THROTTLE_MS) {
+        console.log(
+          "🕵️‍♂️ [AppContext] Skipping session check (throttled - last check was " +
+            Math.round((now - lastCheckRef.current) / 1000) +
+            "s ago)",
+        );
+        return;
+      }
+
+      lastCheckRef.current = now;
       console.log("🕵️‍♂️ [AppContext] Checking Session Validity...");
+      const startTime = performance.now();
 
       try {
         // TIMEOUT ENFORCEMENT: MDS.cmd can hang on 500 errors (invalid UID)
@@ -438,8 +452,12 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
         );
 
         const res = await Promise.race([MDS.cmd.block(), timeout]);
+        const endTime = performance.now();
 
-        console.log("🕵️‍♂️ [AppContext] Session Check Result:", res);
+        console.log(
+          `🕵️‍♂️ [AppContext] Session Check Result (${Math.round(endTime - startTime)}ms):`,
+          res,
+        );
 
         // STRICT CHECK: Only flag as expired if the node EXPLICITLY rejects the UID.
         // If it's a network error, timeout, or 500 without specific message, it might just be offline/busy.
@@ -476,8 +494,8 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
       }
     };
 
-    // Run on mount (Startup)
-    checkSession();
+    // Run on mount (Startup) - FORCE first check
+    checkSession(true);
 
     // Run on Resume
     const handleVisibilityChange = () => {

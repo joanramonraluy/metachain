@@ -36,6 +36,7 @@ export interface GroupMessage {
   date: number;
   read?: number;
   forwarded?: boolean;
+  reply_to?: string;
 }
 
 // MAXIMA message types for group communication
@@ -70,6 +71,7 @@ export interface GroupMaximaMessage {
   seq?: number; // Per-sender sequence number for gap detection
   customid?: string;
   forwarded?: boolean;
+  reply_to?: string;
 
   // For group_update_details and history_response:
   newName?: string;
@@ -997,7 +999,9 @@ class GroupService {
     type: string,
     myPublicKey: string,
     myUsername: string,
-    filedata: string = "", forwarded: boolean = false,
+    filedata: string = "",
+    forwarded: boolean = false,
+    reply_to?: string
   ): Promise<void> {
     try {
       const now = Date.now();
@@ -1030,8 +1034,8 @@ class GroupService {
       const customId = `group_${groupId}_${now}_${Math.random().toString(36).substr(2, 9)}`;
       const escapedMsg = message.replace(/'/g, "''");
       const insertSql = `
-                INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read, sender_seq, customid, forwarded)
-                VALUES ('${groupId}', '${myPublicKey}', '${myUsername.replace(/'/g, "''")}', '${type}', '${escapedMsg}', '${filedata}', ${now}, 1, ${mySeq}, '${customId}', ${forwarded ? 1 : 0})
+                INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read, sender_seq, customid, forwarded, reply_to)
+                VALUES ('${groupId}', '${myPublicKey}', '${myUsername.replace(/'/g, "''")}', '${type}', '${escapedMsg}', '${filedata}', ${now}, 1, ${mySeq}, '${customId}', ${forwarded ? 1 : 0}, ${reply_to ? "'" + reply_to.replace(/'/g, "''") + "'" : "NULL"})
             `;
       await this.runSQL(insertSql);
 
@@ -1049,6 +1053,7 @@ class GroupService {
         seq: mySeq,
         customid: customId,
         forwarded,
+        reply_to,
       };
 
       // Send to ALL group members (no Maxima contact required — uses Mx address routing)
@@ -1128,6 +1133,7 @@ class GroupService {
         sender_seq: Number(row.SENDER_SEQ || row.sender_seq || 0),
         customid: row.CUSTOMID || row.customid || "",
         forwarded: row.FORWARDED == 1 || row.forwarded == 1,
+        reply_to: row.REPLY_TO || row.reply_to,
       }));
     } catch (err) {
       console.error("❌ [GROUP-MSG] Failed to get messages:", err);

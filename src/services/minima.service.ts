@@ -896,7 +896,7 @@ WHERE(${addressClause}) AND status = 'pending'`;
               type: "history_sync", // Special type to trigger broad refresh
               from,
             });
-          }, 2000);
+          }, 500);
           return;
         }
 
@@ -912,6 +912,8 @@ WHERE(${addressClause}) AND status = 'pending'`;
           "gif",
           "sticker",
           "voice",
+          "read_receipt",
+          "delivery_receipt",
         ];
         if (!validChatTypes.includes(json.type)) {
           console.log(`ℹ️ [MAXIMA] Ignoring non-chat type: ${json.type}`);
@@ -959,6 +961,7 @@ WHERE(${addressClause}) AND status = 'pending'`;
     txpowid?: string,
     overrideSeq?: number,
     forwarded: boolean = false,
+    replyTo?: string
   ) {
     if (!this.initialized) await this.init();
     return messagingService.sendMessage(
@@ -975,6 +978,7 @@ WHERE(${addressClause}) AND status = 'pending'`;
       txpowid,
       overrideSeq,
       forwarded,
+      replyTo
     );
   }
 
@@ -1793,6 +1797,7 @@ WHERE(${addressClause}) AND status = 'pending'`;
     // Handle MAXIMA events
     // Handle MAXIMA events
     if (event.event === "MAXIMA") {
+      const startTime = performance.now();
       // Deduplicate events by msgid
       if (event.data && event.data.msgid) {
         if (this.processedMsgIds.has(event.data.msgid)) {
@@ -1810,8 +1815,14 @@ WHERE(${addressClause}) AND status = 'pending'`;
           }
         }
       }
-      console.log("✉️ [MDS] MAXIMA event detected:", event);
+      console.log(
+        `✉️ [MDS] MAXIMA event detected from ${event.data?.from?.substring(0, 10)}...`,
+      );
       this.processIncomingMessage(event);
+      const duration = performance.now() - startTime;
+      if (duration > 100) {
+        console.warn(`⏱️ [MAXIMA] Processing took ${Math.round(duration)}ms`);
+      }
     }
 
     // Handle NEWBALANCE events for transaction tracking
