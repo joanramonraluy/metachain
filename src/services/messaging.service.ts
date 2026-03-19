@@ -8,10 +8,17 @@ import { runSQL, utf8ToHex, getAndIncrementSequenceNumber } from "./database.ser
 import { chatService, ChatMessage } from "./chat.service";
 import { offlineQueueService } from "./offline-queue.service";
 
-const VERBOSE_NETWORK_LOGS = false;
-const networkLog = (...args: any[]) => {
-    if (VERBOSE_NETWORK_LOGS) console.log(...args);
+const networkLog = (..._args: any[]) => {
+    // if (VERBOSE_NETWORK_LOGS) console.log(..._args);
 };
+
+// PING THROTTLING: Prevent Maxima queue saturation
+const pingThrottler = new Map<string, number>(); // pubkey -> lastSentTimestamp
+const pongThrottler = new Map<string, number>(); // Debounce responding to pings
+const pongTracker = new Map<string, number>();   // pubkey -> lastReceivedTimestamp
+const syncThrottler = new Map<string, number>();  // pubkey -> lastRequestTimestamp
+
+const STRICT_SERIAL_PROTOCOL = true; // [TOGGLE] Set to false to re-enable Concurrent Dual-send
 
 /* ----------------------------------------------------------------------------
    HELPER: Address Cleaner (Ported from Service Worker)
@@ -37,7 +44,7 @@ function cleanMaximaAddress(addr: string): string {
 /* ----------------------------------------------------------------------------
    HELPER: UUID Generator
 ---------------------------------------------------------------------------- */
-function generateUUID() {
+export function generateUUID() {
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
         var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
         return v.toString(16);
@@ -75,7 +82,7 @@ async function resolveMaximaAddressFromPubkey(publicKey: string): Promise<string
 ---------------------------------------------------------------------------- */
 
 export async function sendMessage(
-    toPublicKey: string,
+    toPubKey: string,
     senderName: string,
     message: string,
     type: string = "text",
@@ -88,11 +95,13 @@ export async function sendMessage(
     txpowid?: string,
     overrideSeq?: number,
     forwarded: boolean = false,
-    replyTo?: string
+    replyTo?: string,
+    providedCustomid?: string
 ): Promise<any> {
+    const toPublicKey = (toPubKey || "").toLowerCase();
     try {
         const cleanMessage = message.trim();
-        const customid = generateUUID();
+        const customid = providedCustomid || generateUUID();
 
         // 1. RESOLVE IDENTIFIER
         let databasePublicKey = toPublicKey;
@@ -216,9 +225,94 @@ export async function sendMessage(
             }
 
             if (mxAddress) {
-                // Dual-send: fire both in parallel and consider success if at least one lands
-                const [mxResult, pkResult] = await Promise.allSettled([
-                    MDS.cmd.maxima({
+                // SAFETY: Concurrent Dual-send is ONLY for lightweight payloads (text, tokens, receipts, etc.)
+                // Large files/images must use a single transport to save bandwidth and prevent node crashes.
+                const isLightweight = ["text", "token", "charm", "read_receipt", "delivery_receipt", "sync_status_check", "sync_status_report", "chat_history_request"].includes(type);
+                const isSmallData = !filedata || filedata.length < 50000; // Under 50KB is safe
+                
+                if (isLightweight && isSmallData) {
+                    if (STRICT_SERIAL_PROTOCOL) {
+                        // --- STRICT SERIAL PROTOCOL PATH ---
+                        console.log("📡 [MAXIMA] Using Serial Fallback for lightweight payload");
+                        const bestParams: any = {
+                            action: "send",
+                            to: mxAddress,
+                            application: targetApplication,
+                            data: hexData,
+                            poll: true,
+                        };
+                        const fallbackParams: any = {
+                            action: "send",
+                            publickey: toPublicKey.startsWith("Mx") ? undefined : toPublicKey,
+                            application: targetApplication,
+                            data: hexData,
+                            poll: true,
+                        };
+
+                        const response = await MDS.cmd.maxima({ params: bestParams }) as any;
+                        if (response.status) {
+                            console.log("✅ [MAXIMA] Serial send succeeded.");
+                        } else if (response.error && response.error.includes("No Contact found") && fallbackParams.publickey) {
+                            console.log("⚠️ [MAXIMA] No Contact found. Attempting fallback...");
+                            const fallbackResponse = await MDS.cmd.maxima({ params: fallbackParams }) as any;
+                            if (!fallbackResponse.status) {
+                                throw new Error(fallbackResponse.error || "Fallback send failed");
+                            }
+                            console.log("✅ [MAXIMA] Fallback send succeeded.");
+                        } else {
+                            throw new Error(response.error || "Serial send failed");
+                        }
+                    } else {
+                        console.log("🚀 [MAXIMA] Using Concurrent Dual-send for lightweight payload (Race to Success)");
+                        // Dual-send: fire both in parallel and return on the FIRST successful response
+                        const mxPromise = MDS.cmd.maxima({
+                            params: {
+                                action: "send",
+                                to: mxAddress,
+                                application: targetApplication,
+                                data: hexData,
+                                poll: true,
+                            } as any,
+                        }).then(res => {
+                            if ((res as any).status) return res;
+                            throw res;
+                        });
+
+                        const pkPromise = MDS.cmd.maxima({
+                            params: {
+                                action: "send",
+                                publickey: toPublicKey.startsWith("Mx") ? undefined : toPublicKey,
+                                application: targetApplication,
+                                data: hexData,
+                                poll: true,
+                            } as any,
+                        }).then(res => {
+                            if ((res as any).status) return res;
+                            throw res;
+                        }).catch(e => {
+                            // Suppress background errors if PK send fails (common for non-contacts)
+                            throw e;
+                        });
+
+                        // We use a manual race that ignores rejections as long as one succeeds
+                        await new Promise((resolve, reject) => {
+                            let settled = 0;
+                            let lastErr: any = null;
+                            const promises = [mxPromise, pkPromise];
+                            promises.forEach(p => {
+                                p.then(resolve).catch(err => {
+                                    settled++;
+                                    lastErr = err;
+                                    if (settled === promises.length) reject(lastErr);
+                                });
+                            });
+                        });
+                        console.log(`✅ [MAXIMA] Dual-send succeeded via one transport layer.`);
+                    }
+                } else {
+                    console.log(`📡 [MAXIMA] Using single transport for large/file payload (${type})`);
+                    // Single transport for large files: Prefer Address (Mx) if resolved, else Public Key
+                    const resp = await MDS.cmd.maxima({
                         params: {
                             action: "send",
                             to: mxAddress,
@@ -226,28 +320,13 @@ export async function sendMessage(
                             data: hexData,
                             poll: true,
                         } as any,
-                    }),
-                    MDS.cmd.maxima({
-                        params: {
-                            action: "send",
-                            publickey: toPublicKey.startsWith("Mx") ? undefined : toPublicKey,
-                            application: targetApplication,
-                            data: hexData,
-                            poll: true,
-                        } as any,
-                    }).catch(() => ({ status: false })), // publickey send may fail for Mx-addressed peers
-                ]);
+                    });
 
-                const mxOk = mxResult.status === "fulfilled" && (mxResult.value as any).status !== false;
-                const pkOk = pkResult.status === "fulfilled" && (pkResult.value as any).status !== false;
-
-                if (!mxOk && !pkOk) {
-                    const err = mxResult.status === "rejected" ? mxResult.reason?.message :
-                        (mxResult.value as any)?.error || "Both send paths failed";
-                    throw new Error(err);
+                    if (!(resp as any).status) {
+                        throw new Error((resp as any).error || "Single transport send failed");
+                    }
+                    console.log("✅ [MAXIMA] Sent successfully via single transport.");
                 }
-
-                console.log(`✅ [MAXIMA] Dual-send complete. Mx: ${mxOk}, PK: ${pkOk}`);
             } else {
                 // No Mx address known — fall back to publickey-only send
                 console.log("⚠️ [MAXIMA] No Mx address found, using publickey-only send");
@@ -291,7 +370,8 @@ export async function sendMessage(
                     recipientName: recipientName || "",
                     targetApplication,
                     txpowid,
-                    overrideSeq: seq
+                    overrideSeq: seq,
+                    customid: customid
                 });
 
                 return { status: true, pending: true, message: "Queued for offline delivery" };
@@ -320,7 +400,8 @@ export async function retryMessage(data: {
     recipientName: string,
     targetApplication: string,
     txpowid?: string,
-    overrideSeq?: number
+    overrideSeq?: number,
+    customid?: string
 }): Promise<void> {
     console.log(`🔄 [RETRY] Resending to ${data.publickey}...`);
 
@@ -345,48 +426,79 @@ export async function retryMessage(data: {
     const avatarRes = await MDS.keypair.get("profile_avatar");
     const myAvatar = (avatarRes && avatarRes.status) ? avatarRes.value : "";
 
-    const payload: any = {
-        message: data.message,
-        type: data.type,
-        username: data.senderName,
-        filedata: data.filedata,
-        timestamp: data.timestamp,
-        avatar: myAvatar,
-        from_address: myAddress,
-        txpowid: data.txpowid,
-        customid: generateUUID(),
-        seq: data.overrideSeq
-    };
-
-    if (data.type === "charm" && data.amount > 0) payload.amount = data.amount;
-
-    const jsonStr = JSON.stringify(payload);
-    const hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
-
-    const sendParams: any = {
-        action: "send",
-        application: data.targetApplication,
-        data: hexData,
-        poll: true,
-    };
-
-    if (target.startsWith("Mx") || target.startsWith("MX")) {
-        sendParams.to = target;
-    } else {
-        sendParams.publickey = target;
-    }
-
     try {
-        const response = await MDS.cmd.maxima({ params: sendParams });
+        const payload: any = {
+            message: data.message,
+            type: data.type,
+            username: data.senderName,
+            filedata: data.filedata,
+            timestamp: data.timestamp,
+            avatar: myAvatar,
+            from_address: myAddress,
+            txpowid: data.txpowid,
+            customid: data.customid || generateUUID(),
+            seq: data.overrideSeq
+        };
 
-        console.log("🔍 [RETRY] Response:", JSON.stringify(response).substring(0, 200));
+        if (data.type === "charm" && data.amount > 0) payload.amount = data.amount;
 
-        if (!(response as any).status) {
-            const errMsg = (response as any).error || "MDS command failed";
-            console.warn(`⚠️ [RETRY] MDS status false: ${errMsg}`);
-            throw new Error(errMsg);
+        const jsonStr = JSON.stringify(payload);
+        const hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
+
+        const pkParams: any = {
+            action: "send",
+            publickey: data.publickey.startsWith('0x') ? data.publickey : undefined,
+            application: data.targetApplication,
+            data: hexData,
+            poll: true,
+        };
+
+        const mxParams: any = {
+            action: "send",
+            to: target.startsWith('Mx') ? target : undefined,
+            application: data.targetApplication,
+            data: hexData,
+            poll: true,
+        };
+
+        const hasMx = !!mxParams.to;
+        const hasPk = !!pkParams.publickey;
+
+        if (STRICT_SERIAL_PROTOCOL) {
+            // --- STRICT SERIAL PROTOCOL PATH ---
+            console.log("📡 [RETRY] Using Serial Fallback for retry");
+            const response = await MDS.cmd.maxima({ params: hasMx ? mxParams : pkParams }) as any;
+            if (!response.status) {
+                if (response.error && response.error.includes("No Contact found") && hasPk && hasMx) {
+                     console.log("⚠️ [RETRY] No Contact found. Attempting fallback...");
+                     const fallbackResponse = await MDS.cmd.maxima({ params: pkParams }) as any;
+                     if (!fallbackResponse.status) throw new Error(fallbackResponse.error || "Fallback failed");
+                } else {
+                    throw new Error(response.error || "Retry failed");
+                }
+            }
+            console.log(`✅ [RETRY] Resent successfully.`);
+        } else {
+            // CONCURRENT DUAL-SEND: Race to success
+            const sendPromises: Promise<any>[] = [];
+            if (hasPk) sendPromises.push(MDS.cmd.maxima({ params: pkParams }).then(r => { if (r.status) return r; throw r; }));
+            if (hasMx) sendPromises.push(MDS.cmd.maxima({ params: mxParams }).then(r => { if (r.status) return r; throw r; }));
+
+            await new Promise((resolve, reject) => {
+                let settled = 0;
+                let lastErr: any = null;
+                sendPromises.forEach(p => {
+                    p.then(resolve).catch(err => {
+                        settled++;
+                        lastErr = err;
+                        if (settled === sendPromises.length) reject(lastErr);
+                    });
+                });
+            });
+            console.log(`✅ [RETRY] Resent successfully via one transport layer.`);
         }
-        // Reference implementation only checks status, not delivered
+
+        // Success - update DB
 
         // Success - update DB
         let dbKey = data.publickey;
@@ -397,48 +509,10 @@ export async function retryMessage(data: {
         }
 
         await chatService.updateMessageState(dbKey, data.timestamp, "sent", data.txpowid);
-        console.log("✅ [RETRY] Success.");
+        console.log("✅ [RETRY] Success via Dual-send.");
 
     } catch (retryErr: any) {
-        const errorMessage = retryErr.message || "";
-
-        // FALLBACK: If "No Contact found", try resolving address from Discovery and retry
-        if (errorMessage.includes("No Contact found") && data.publickey.startsWith('0x')) {
-            console.log("⚠️ [RETRY] Target not in contacts. Attempting to resolve address from Discovery...");
-
-            const safeKey = data.publickey.replace(/'/g, "''");
-            const peerSql = `SELECT ADDRESS FROM DISCOVERED_PEERS WHERE PUBLICKEY='${safeKey}' LIMIT 1`;
-
-            const peerRes = await runSQL(peerSql);
-
-            if (peerRes.rows && peerRes.rows.length > 0) {
-                const mxAddress = peerRes.rows[0].ADDRESS;
-                console.log(`🔍 [RETRY] Found Mx address for non-contact: ${mxAddress}`);
-
-                // Retry using the specific Mx address
-                const fallbackResponse = await MDS.cmd.maxima({
-                    params: {
-                        action: "send",
-                        to: cleanMaximaAddress(mxAddress),
-                        application: data.targetApplication,
-                        data: hexData,
-                        poll: true,
-                    } as any,
-                });
-
-                if (!(fallbackResponse as any).status || !(fallbackResponse as any).response.delivered) {
-                    throw new Error((fallbackResponse as any).error || (fallbackResponse as any).response?.error || "Fallback retry failed");
-                }
-
-                console.log("✅ [RETRY] Message sent successfully via Mx address (fallback)");
-
-                // Update DB
-                await chatService.updateMessageState(data.publickey, data.timestamp, "sent", data.txpowid);
-                return;
-            }
-        }
-
-        // If fallback didn't work or wasn't applicable, re-throw
+        console.error("❌ [RETRY] Critical failure:", retryErr);
         throw retryErr;
     }
 }
@@ -447,7 +521,8 @@ export async function retryMessage(data: {
    RECEIPTS
 ---------------------------------------------------------------------------- */
 
-export async function sendReadReceipt(toPublicKey: string) {
+export async function sendReadReceipt(toPubKey: string) {
+    const toPublicKey = (toPubKey || "").toLowerCase();
     networkLog("📤 [READ-RECEIPT] Sending to", toPublicKey);
     try {
         const payload = {
@@ -464,7 +539,7 @@ export async function sendReadReceipt(toPublicKey: string) {
             action: "send",
             application: "metachain",
             data: hexData,
-            poll: true,
+            poll: false, // Changed to false to avoid blocking the command queue
         };
 
         if (toPublicKey.startsWith('0x')) {
@@ -482,6 +557,7 @@ export async function sendReadReceipt(toPublicKey: string) {
         }
 
         await MDS.cmd.maxima({ params: sendParams });
+        recordActivity(toPublicKey); // Record outbound activity
         networkLog("✅ [READ-RECEIPT] Sent successfully");
 
         // Mark received messages as read locally
@@ -496,7 +572,8 @@ export async function sendReadReceipt(toPublicKey: string) {
     }
 }
 
-export async function sendDeliveryReceipt(toPublicKey: string) {
+export async function sendDeliveryReceipt(toPubKey: string) {
+    const toPublicKey = (toPubKey || "").toLowerCase();
     console.log("📤 [DELIVERY-RECEIPT] Sending to", toPublicKey);
     try {
         const payload = {
@@ -513,7 +590,7 @@ export async function sendDeliveryReceipt(toPublicKey: string) {
             action: "send",
             application: "metachain",
             data: hexData,
-            poll: true,
+            poll: false, // Background task
         };
 
         if (toPublicKey.startsWith('0x')) {
@@ -530,6 +607,7 @@ export async function sendDeliveryReceipt(toPublicKey: string) {
         }
 
         await MDS.cmd.maxima({ params: sendParams });
+        recordActivity(toPublicKey); // Record outbound activity
         console.log("✅ [DELIVERY-RECEIPT] Sent successfully");
     } catch (err) {
         console.error("❌ [DELIVERY-RECEIPT] Error sending:", err);
@@ -540,8 +618,28 @@ export async function sendDeliveryReceipt(toPublicKey: string) {
    PING / PONG
 ---------------------------------------------------------------------------- */
 
-export async function sendPing(toPublicKey: string) {
+export async function sendPing(toPubKey: string) {
+    const toPublicKey = (toPubKey || "").toLowerCase();
+    
+    // 1. Debounce Check (10 seconds)
+    const now = Date.now();
+    const lastPing = pingThrottler.get(toPublicKey) || 0;
+    if (now - lastPing < 10000) {
+        networkLog("📡 [PING] Skipping redundant ping (throttled):", toPublicKey);
+        return;
+    }
+
+    // 2. Online Awareness: If we received a pong recently, skip the ping
+    // 2. Online Awareness: If we received activity recently, skip the ping
+    const lastSeen = pongTracker.get(toPublicKey) || 0;
+    if (now - lastSeen < 60000) {
+        networkLog("📡 [PING] Skipping ping - contact is already 'online' (recent activity):", toPublicKey);
+        return;
+    }
+
     networkLog("📡 [PING] Sending to", toPublicKey);
+    pingThrottler.set(toPublicKey, now);
+    
     try {
         const payload = {
             message: "",
@@ -557,7 +655,7 @@ export async function sendPing(toPublicKey: string) {
             action: "send",
             application: "metachain",
             data: hexData,
-            poll: true,
+            poll: false, // Background task
         };
 
         if (toPublicKey.startsWith('0x')) {
@@ -575,6 +673,7 @@ export async function sendPing(toPublicKey: string) {
         }
 
         await MDS.cmd.maxima({ params: sendParams });
+        recordActivity(toPublicKey); // Record outbound activity
         networkLog("✅ [PING] Sent successfully");
     } catch (err) {
         console.error("❌ [PING] Error sending:", err);
@@ -582,7 +681,33 @@ export async function sendPing(toPublicKey: string) {
     }
 }
 
-export async function sendPong(toPublicKey: string) {
+/**
+ * Update the last received pong timestamp for a contact.
+ * Called by minima.service when a 'pong' message is received.
+ */
+export function updatePongStatus(toPubKey: string) {
+    recordActivity(toPubKey);
+}
+
+/**
+ * Record any activity (incoming/outgoing) to suppress redundant pings.
+ */
+export function recordActivity(toPubKey: string) {
+    const pubkey = (toPubKey || "").toLowerCase();
+    pongTracker.set(pubkey, Date.now());
+}
+
+export async function sendPong(toPubKey: string) {
+    const toPublicKey = (toPubKey || "").toLowerCase();
+
+    // Throttle responding with a Pong (5s debounce)
+    // This prevents duplicate pongs caused by Dual-send pings
+    const lastSent = pongThrottler.get(toPublicKey) || 0;
+    if (Date.now() - lastSent < 5000) {
+        return;
+    }
+    pongThrottler.set(toPublicKey, Date.now());
+
     console.log("📡 [PONG] Sending to", toPublicKey);
     try {
         const payload = {
@@ -628,7 +753,8 @@ export async function sendPong(toPublicKey: string) {
    INVITATION & HISTORY
 ---------------------------------------------------------------------------- */
 
-export async function sendInvitation(toPublicKey: string, fromUsername: string) {
+export async function sendInvitation(toPubKey: string, fromUsername: string) {
+    const toPublicKey = (toPubKey || "").toLowerCase();
     console.log("📨 [INVITE] Sending to", toPublicKey);
     try {
         const payload = {
@@ -658,7 +784,8 @@ export async function sendInvitation(toPublicKey: string, fromUsername: string) 
     }
 }
 
-export async function requestChatHistory(toPublicKey: string) {
+export async function requestChatHistory(toPubKey: string) {
+    const toPublicKey = (toPubKey || "").toLowerCase();
     console.log("🔄 [HISTORY-SYNC] Requesting from", toPublicKey);
     try {
         // Get the timestamp of the last message we have for this contact
@@ -668,6 +795,15 @@ export async function requestChatHistory(toPublicKey: string) {
         const sinceTimestamp = lastMessageTime || (Date.now() - (7 * 24 * 60 * 60 * 1000));
 
         console.log(`🔍 [HISTORY-SYNC] Last local message: ${lastMessageTime}, requesting since: ${sinceTimestamp}`);
+
+        // 30-second cooldown per peer to prevent "sync storms"
+        const now = Date.now();
+        const lastSync = syncThrottler.get(toPublicKey) || 0;
+        if (now - lastSync < 30000) {
+            console.log("⏭️ [HISTORY-SYNC] Throttling redundant request to", toPublicKey.substring(0, 10));
+            return;
+        }
+        syncThrottler.set(toPublicKey, now);
 
         const payload = {
             message: "",
@@ -680,36 +816,38 @@ export async function requestChatHistory(toPublicKey: string) {
         const jsonStr = JSON.stringify(payload);
         const hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
 
-        // Try to resolve MxAddress for better delivery reliability
+        // Use resolution logic
         const mxAddress = await resolveMaximaAddressFromPubkey(toPublicKey);
 
         if (mxAddress) {
-            // FIX: Clean address to prevent NumberFormatException
             const cleanAddr = cleanMaximaAddress(mxAddress);
-            console.log("🔍 [HISTORY-SYNC] Using resolved address:", cleanAddr.substring(0, 20) + "...");
+            console.log("🔍 [HISTORY-SYNC] Sending to Address (Exclusive):", cleanAddr.substring(0, 15) + "...");
+            
+            // For history requests, we prefer a single reliable transport (Mx address)
+            // if known, to avoid saturating the network and causing duplicate responses.
             await MDS.cmd.maxima({
                 params: {
                     action: "send",
                     to: cleanAddr,
                     application: "metachain",
                     data: hexData,
-                    poll: true,
+                    poll: false,
                 } as any,
             });
         } else {
-            console.log("⚠️ [HISTORY-SYNC] No address found, using publickey");
+            console.log("⚠️ [HISTORY-SYNC] No address found, using publickey only");
             await MDS.cmd.maxima({
                 params: {
                     action: "send",
                     publickey: toPublicKey,
                     application: "metachain",
                     data: hexData,
-                    poll: true,
+                    poll: false,
                 } as any,
             });
         }
 
-        console.log("✅ [HISTORY-SYNC] Request sent successfully");
+        console.log("✅ [HISTORY-SYNC] Request sent");
     } catch (err) {
         console.error("❌ [HISTORY-SYNC] Error requesting:", err);
         throw err;
@@ -729,11 +867,14 @@ export const messagingService = {
     sendInvitation,
     requestChatHistory,
     sendSyncResponse: sendChatHistoryResponse,
-    retryMessage // Added for OfflineQueueService
+    retryMessage, // Added for OfflineQueueService
+    updatePongStatus,
+    recordActivity
 };
 
 // Also export sendChatHistoryResponse for use by handlers if needed (though it's usually triggered by incoming request)
-export async function sendChatHistoryResponse(toPublicKey: string, messages: any[]) {
+export async function sendChatHistoryResponse(toPubKey: string, messages: any[]) {
+    const toPublicKey = (toPubKey || "").toLowerCase();
     console.log("🔄 [HISTORY-RESP] Sending " + messages.length + " messages to " + toPublicKey);
     try {
         const payload = {
@@ -747,21 +888,63 @@ export async function sendChatHistoryResponse(toPublicKey: string, messages: any
 
         // Use resolution logic
         const mxAddress = await resolveMaximaAddressFromPubkey(toPublicKey);
-        let sendParams: any = {
-            action: "send",
-            application: "metachain",
-            data: hexData,
-            poll: true,
-        };
 
         if (mxAddress) {
-            sendParams.to = cleanMaximaAddress(mxAddress);
+            const cleanAddr = cleanMaximaAddress(mxAddress);
+            
+            // SAFETY: Only use Concurrent Dual-send for smaller history batches
+            // Large history responses must use a single transport to avoid network saturation.
+            const isSmallData = hexData.length < 100000; // ~50KB threshold
+            
+            if (isSmallData) {
+                console.log("🚀 [HISTORY-RESP] Dual-sending lightweight history to", cleanAddr.substring(0, 15) + "...");
+                // CONCURRENT DUAL-SEND
+                await Promise.allSettled([
+                    MDS.cmd.maxima({
+                        params: {
+                            action: "send",
+                            to: cleanAddr,
+                            application: "metachain",
+                            data: hexData,
+                            poll: false,
+                        } as any,
+                    }),
+                    MDS.cmd.maxima({
+                        params: {
+                            action: "send",
+                            publickey: toPublicKey,
+                            application: "metachain",
+                            data: hexData,
+                            poll: false,
+                        } as any,
+                    }).catch(() => (null)),
+                ]);
+            } else {
+                console.log(`📡 [HISTORY-RESP] Sending large history (${Math.round(hexData.length / 2)} bytes) via single Mx transport`);
+                await MDS.cmd.maxima({
+                    params: {
+                        action: "send",
+                        to: cleanAddr,
+                        application: "metachain",
+                        data: hexData,
+                        poll: false,
+                    } as any,
+                });
+            }
         } else {
-            sendParams.publickey = toPublicKey;
+            console.log("⚠️ [HISTORY-RESP] No address found, using publickey only");
+            await MDS.cmd.maxima({
+                params: {
+                    action: "send",
+                    publickey: toPublicKey,
+                    application: "metachain",
+                    data: hexData,
+                    poll: false,
+                } as any,
+            });
         }
 
-        await MDS.cmd.maxima({ params: sendParams });
-        console.log("✅ [HISTORY-RESP] Response sent successfully");
+        console.log("✅ [HISTORY-RESP] Response sent");
     } catch (err) {
         console.error("❌ [HISTORY-RESP] Error sending response:", err);
     }

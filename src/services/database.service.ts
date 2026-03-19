@@ -261,6 +261,9 @@ export async function initDB(): Promise<void> {
                 status VARCHAR(32) NOT NULL,
                 created_at BIGINT NOT NULL,
                 updated_at BIGINT NOT NULL,
+                date BIGINT,
+                amount VARCHAR(64),
+                tokenid VARCHAR(128),
                 metadata TEXT,
                 pendinguid VARCHAR(128)
             )`;
@@ -275,13 +278,22 @@ export async function initDB(): Promise<void> {
       } else {
         console.log("📂 [DB] TRANSACTIONS table initialized");
 
-        // Migration 1: Add pendinguid column if it doesn't exist
-        const alterSql1 =
-          "ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS pendinguid VARCHAR(128)";
-        MDS.sql(alterSql1, (alterRes: any) => {
-          if (alterRes.status) {
-            console.log("📂 [DB] pendinguid column added/verified");
-          }
+        // Migration: Add missing columns if they don't exist
+        const migrations = [
+          "ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS pendinguid VARCHAR(128)",
+          "ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS amount VARCHAR(64)",
+          "ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS tokenid VARCHAR(128)",
+          "ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS date BIGINT",
+          "ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS created_at BIGINT",
+          "ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS updated_at BIGINT",
+          "ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS message_timestamp BIGINT",
+          "ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS type VARCHAR(32)",
+          "ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS metadata TEXT"
+        ];
+
+        migrations.forEach(sql => {
+          MDS.sql(sql, () => { });
+        });
 
           // Create PROFILES table for local storage of extended profile data
           const createProfilesTable = `
@@ -656,7 +668,8 @@ export async function initDB(): Promise<void> {
                                     avatar TEXT,
                                     last_seen BIGINT,
                                     allow_non_contact_chats BOOLEAN DEFAULT TRUE,
-                                    source VARCHAR(20) DEFAULT 'P2P'
+                                    source VARCHAR(20) DEFAULT 'P2P',
+                                    allow_non_contact_chats_source VARCHAR(20) DEFAULT NULL
                                 )`;
 
               MDS.sql(createDiscoveredPeersTable, (res: any) => {
@@ -731,15 +744,143 @@ export async function initDB(): Promise<void> {
                         res.error,
                       );
                     }
+                    // This is the last table creation, now run migrations
+                    runNormalizationMigrations()
+                      .then(() => resolve())
+                      .catch((err) => {
+                        console.error("❌ [DB] Migration failed (resolved anyway):", err);
+                        resolve();
+                      });
                   });
                 });
               });
             });
           });
-        });
-      }
+        }
+      });
     });
-  });
+}
+
+/**
+ * Global Public Key Normalization Migration (Frontend Parity)
+ */
+async function runNormalizationMigrations(): Promise<void> {
+  console.log("🔄 [DB] Running Global Pubkey Normalization Migration...");
+
+  const targets = [
+    { table: "CHAT_MESSAGES", columns: ["publickey"] },
+    { table: "CHAT_STATUS", columns: ["publickey"], pk: true },
+    { table: "PROFILES", columns: ["pubkey"], pk: true },
+    { table: "MY_PROFILE", columns: [] }, // No pubkey column usually
+    { table: "GROUPS", columns: ["creator_publickey"] },
+    { table: "GROUP_MEMBERS", columns: ["publickey"] }, // Part of PK, but we'll try update
+    { table: "GROUP_MESSAGES", columns: ["sender_publickey"] },
+    { table: "GROUP_MSG_COUNTERS", columns: ["sender_publickey"] },
+    { table: "GROUP_BANS", columns: ["publickey", "banned_by"] },
+    { table: "CONTACT_REQUESTS", columns: ["from_publickey", "to_publickey"] },
+    { table: "MAXIMA_CONTACT_REQUESTS", columns: ["from_publickey", "to_publickey"] },
+    { table: "MESSAGE_COUNTERS", columns: ["publickey"], pk: true },
+    { table: "DISCOVERED_PEERS", columns: ["publickey"], pk: true },
+    { table: "METACHAIN_USERS", columns: ["publickey"], pk: true },
+    { table: "CHANNELS", columns: ["admin_publickey"] },
+    { table: "CHANNEL_MESSAGES", columns: ["sender_publickey"] },
+    { table: "CHANNEL_MSG_COUNTERS", columns: ["sender_publickey"] },
+  ];
+
+  for (const t of targets) {
+    try {
+      if (t.pk) {
+        // DEDUPLICATE first
+        const pkCol = t.table === "PROFILES" ? "pubkey" : "publickey";
+        await runSQL(
+          `DELETE FROM ${t.table} WHERE ${pkCol} != LOWER(${pkCol}) AND LOWER(${pkCol}) IN (SELECT ${pkCol} FROM ${t.table} WHERE ${pkCol} = LOWER(${pkCol}))`,
+        );
+        await runSQL(`UPDATE ${t.table} SET ${pkCol} = LOWER(${pkCol})`);
+      } else {
+        for (const col of t.columns) {
+          await runSQL(`UPDATE ${t.table} SET ${col} = LOWER(${col})`);
+        }
+      }
+    } catch (err) {
+      console.warn(`⚠️ [DB] Migration skip/error on ${t.table}:`, err);
+    }
+  }
+
+  console.log("✅ [DB] Global Pubkey Normalization Migration complete.");
+  
+  // RUN CLEANUP
+  await cleanupRedundantDiscoveryEntries();
+  await cleanupRedundantChatStatus();
+}
+
+/**
+ * Cleanup redundant DISCOVERED_PEERS entries after normalization.
+ * Finds rows with same lowercase publickey and merges them.
+ */
+async function cleanupRedundantDiscoveryEntries(): Promise<void> {
+  try {
+    console.log("🧹 [DB] Cleaning up redundant DISCOVERED_PEERS...");
+    const res = await runSQL(`SELECT publickey, COUNT(*) as cnt FROM DISCOVERED_PEERS GROUP BY publickey HAVING COUNT(*) > 1`);
+    if (res.rows && res.rows.length > 0) {
+      for (const row of res.rows) {
+        const pk = row.PUBLICKEY;
+        const pkRes = await runSQL(`SELECT * FROM DISCOVERED_PEERS WHERE publickey='${pk}' ORDER BY last_seen DESC`);
+        if (pkRes.rows && pkRes.rows.length > 1) {
+          const keep = pkRes.rows[0];
+          // Delete all except newest
+          await runSQL(`DELETE FROM DISCOVERED_PEERS WHERE publickey='${pk}' AND last_seen < ${keep.LAST_SEEN}`);
+          // If still multiple (same last_seen), delete by arbitrary filter or just keep one
+          await runSQL(`DELETE FROM DISCOVERED_PEERS WHERE publickey='${pk}' AND last_seen = ${keep.LAST_SEEN} AND ROWID != (SELECT MIN(ROWID) FROM DISCOVERED_PEERS WHERE publickey='${pk}' AND last_seen = ${keep.LAST_SEEN})`);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("⚠️ [DB] Discovery cleanup failed:", err);
+  }
+}
+
+/**
+ * Cleanup redundant CHAT_STATUS entries after normalization.
+ */
+async function cleanupRedundantChatStatus(): Promise<void> {
+  try {
+    console.log("🧹 [DB] Cleaning up redundant CHAT_STATUS...");
+    const res = await runSQL(`SELECT publickey, COUNT(*) as cnt FROM CHAT_STATUS GROUP BY publickey HAVING COUNT(*) > 1`);
+    if (res.rows && res.rows.length > 0) {
+      for (const row of res.rows) {
+        const pk = row.PUBLICKEY;
+        const pkRows = await runSQL(`SELECT * FROM CHAT_STATUS WHERE publickey='${pk}'`);
+        if (pkRows.rows && pkRows.rows.length > 1) {
+          // Merge unread counts
+          let totalUnread = 0;
+          let isArchived = false;
+          let isMuted = false;
+          let isFavorite = false;
+          let isBlocked = false;
+          let isAppInstalled = false;
+
+          for (const r of pkRows.rows) {
+            totalUnread += parseInt(r.UNREAD_COUNT || 0);
+            if (r.ARCHIVED == 1 || r.archived == 1) isArchived = true;
+            if (r.MUTED == 1 || r.muted == 1) isMuted = true;
+            if (r.FAVORITE == 1 || r.favorite == 1) isFavorite = true;
+            if (r.BLOCKED == 1 || r.blocked == 1) isBlocked = true;
+            if (r.APP_INSTALLED == 1 || r.app_installed == 1) isAppInstalled = true;
+          }
+
+          // Delete all
+          await runSQL(`DELETE FROM CHAT_STATUS WHERE publickey='${pk}'`);
+          // Insert merged
+          await runSQL(`
+            INSERT INTO CHAT_STATUS (publickey, unread_count, archived, muted, favorite, blocked, app_installed)
+            VALUES ('${pk}', ${totalUnread}, ${isArchived ? 1 : 0}, ${isMuted ? 1 : 0}, ${isFavorite ? 1 : 0}, ${isBlocked ? 1 : 0}, ${isAppInstalled ? 1 : 0})
+          `);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("⚠️ [DB] Chat status cleanup failed:", err);
+  }
 }
 
 /**

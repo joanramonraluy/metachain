@@ -152,12 +152,14 @@ class GroupService {
   async createGroup(
     name: string,
     description: string,
-    memberPublicKeys: string[],
-    myPublicKey: string,
+    memberPubKeys: string[],
+    myPubKey: string,
     myUsername: string,
   ): Promise<string> {
     const groupId = this.generateGroupId();
     const now = Date.now();
+    const myPublicKey = (myPubKey || "").toLowerCase();
+    const memberPublicKeys = (memberPubKeys || []).map(pk => (pk || "").toLowerCase());
 
     try {
       // 1. Create group in database
@@ -228,7 +230,8 @@ class GroupService {
     }
   }
 
-  async getMyGroups(myPublicKey: string): Promise<Group[]> {
+  async getMyGroups(myPubKey: string): Promise<Group[]> {
+    const myPublicKey = (myPubKey || "").toLowerCase();
     try {
       const sql = `
                 SELECT DISTINCT g.*, gm.role AS my_role
@@ -390,8 +393,9 @@ class GroupService {
     newName: string | null,
     newDescription: string | null,
     avatar: string | null,
-    myPublicKey: string,
+    myPubKey: string,
   ): Promise<void> {
+    const myPublicKey = (myPubKey || "").toLowerCase();
     try {
       const updates: string[] = [];
       if (newName !== null)
@@ -481,8 +485,9 @@ class GroupService {
   async updateGroupAutoApprove(
     groupId: string,
     autoApprove: boolean,
-    myPublicKey: string,
+    myPubKey: string,
   ): Promise<void> {
+    const myPublicKey = (myPubKey || "").toLowerCase();
     try {
       const sql = `UPDATE GROUPS SET auto_approve = ${autoApprove ? 1 : 0} WHERE group_id = '${groupId}'`;
       await this.runSQL(sql);
@@ -560,14 +565,16 @@ class GroupService {
     groupId: string,
     memberPubkey: string,
     newRole: "admin" | "member",
-    myPublicKey: string,
+    myPubKey: string,
   ): Promise<void> {
+    const memberPublickey = (memberPubkey || "").toLowerCase();
+    const myPublicKey = (myPubKey || "").toLowerCase();
     try {
       // Optimistic update locally
-      const sql = `UPDATE GROUP_MEMBERS SET role = '${newRole}' WHERE group_id = '${groupId}' AND publickey = '${memberPubkey}'`;
+      const sql = `UPDATE GROUP_MEMBERS SET role = '${newRole}' WHERE group_id = '${groupId}' AND publickey = '${memberPublickey}'`;
       await this.runSQL(sql);
       console.log(
-        `✅ [GROUP-MGMT] Updated role for ${memberPubkey} to ${newRole} locally.`,
+        `✅ [GROUP-MGMT] Updated role for ${memberPublickey} to ${newRole} locally.`,
       );
 
       // Construct maxjson payload for broadcast
@@ -634,11 +641,13 @@ class GroupService {
 
   async addMember(
     groupId: string,
-    publickey: string,
+    pubkey: string,
     username: string,
-    myPublicKey: string,
+    myPubKey: string,
     myUsername: string,
   ): Promise<void> {
+    const publickey = (pubkey || "").toLowerCase();
+    const myPublicKey = (myPubKey || "").toLowerCase();
     try {
       // 🚫 Check if the member is banned
       const isBanned = await this.isMemberBanned(groupId, publickey);
@@ -727,10 +736,12 @@ class GroupService {
 
   async removeMember(
     groupId: string,
-    publickey: string,
-    myPublicKey: string,
+    pubkey: string,
+    myPubKey: string,
     myUsername: string,
   ): Promise<void> {
+    const publickey = (pubkey || "").toLowerCase();
+    const myPublicKey = (myPubKey || "").toLowerCase();
     try {
       // Get member info before deleting
       const memberSql = `

@@ -14,11 +14,12 @@ import { Capacitor } from "@capacitor/core";
 import { MDS } from "@minima-global/mds";
 import { appContext } from "../../AppContext";
 import TransferSelector from "../../components/chat/TransferSelector";
-import { Trash2, Wallet, Info, Archive, Settings, Users, Star, Image as ImageIcon, CheckCircle2 } from "lucide-react";
+import { Trash2, Wallet, Info, Archive, Settings, Users, Star, Image as ImageIcon, CheckCircle2, Zap } from "lucide-react";
 import MessageBubble from "../../components/chat/MessageBubble";
 import { compressImage } from "../../utils/image";
 
 import { minimaService } from "../../services/minima.service";
+import { generateUUID } from "../../services/messaging.service";
 import { chatService } from "../../services/chat.service";
 import * as contactRequestsService from "../../services/contact-requests.service";
 import { transactionService } from "../../services/transaction.service";
@@ -26,7 +27,7 @@ import { requestProfile } from "../../services/profile.service";
 import InviteDialog from "../../components/chat/InviteDialog";
 import { useTheme } from "../../context/ThemeContext";
 import { getAndIncrementSequenceNumber } from "../../services/database.service";
-import { shortenPublicKey } from "../../utils/hex";
+import { shortenPublicKey, utf8ToHex } from "../../utils/hex";
 import { EmojiClickData } from "emoji-picker-react";
 
 // Lazy load EmojiPicker to reduce initial bundle size (~60KB)
@@ -71,7 +72,7 @@ interface ParsedMessage {
   charm: { id: string } | null;
   amount: number | null;
   timestamp?: number;
-  status?: "pending" | "sent" | "delivered" | "read" | "failed" | "zombie";
+  status?: "pending" | "sent" | "delivered" | "read" | "failed" | "zombie" | "received" | "confirmed";
   tokenAmount?: { amount: string; tokenName: string }; // For token transfer messages
   isSystem?: boolean; // For system messages (centered)
   isCharm?: boolean; // For charm messages
@@ -249,7 +250,8 @@ function ChatPage() {
   const cursorPositionRef = useRef<number | null>(null);
   // Tracks which contact PKs have had their profile confirmed via a live profile_response this session.
   // Prevents stale cached allowNonContactChats from blocking the UI before confirmation arrives.
-  const profileConfirmedRef = useRef<Set<string>>(new Set());
+   const profileConfirmedRef = useRef<Set<string>>(new Set());
+   const reloadDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
   const navigate = useNavigate();
 
@@ -1009,8 +1011,8 @@ function ChatPage() {
   // de-duplicated, or arrives via poll relay, the SW signal ensures the open chat reloads.
   useEffect(() => {
     const handleChatListUpdate = () => {
-      console.log("🔄 [CHAT] SW CHAT_LIST_UPDATE received - reloading messages");
-      loadMessagesFromDB();
+      console.log("🔄 [CHAT] SW CHAT_LIST_UPDATE received - reloading messages (FORCE FRESH)");
+      loadMessagesFromDB(true);
     };
 
     minimaService.onChatListUpdate(handleChatListUpdate);
@@ -1079,7 +1081,7 @@ function ChatPage() {
       LOAD MESSAGES FROM DB
   ---------------------------------------------------------------------------- */
   // Helper to load messages from DB - reusable for initial load and after sending
-  const loadMessagesFromDB = async () => {
+  const loadMessagesFromDB = async (forceFresh?: boolean) => {
     // FIX: Use address instead of contact.publickey so we can see messages/history
     // even if the user is not in our contacts list anymore
     const targetKey = address || contact?.publickey;
@@ -1096,31 +1098,35 @@ function ChatPage() {
     pendingReload.current = false; // Clear pending flag as we are starting now
 
     try {
-      // 1. Try to load from cache
-      const cacheKey = `cached_msgs_${targetKey}`;
-      const cached = localStorage.getItem(cacheKey);
-      if (cached) {
-        try {
-          const cachedMsgs = JSON.parse(cached);
-          // Apply cache only on cold load.
-          // During active chat use (send/reload), applying cache can override
-          // optimistic state and cause appear/disappear flicker.
-          if (
-            Array.isArray(cachedMsgs) &&
-            cachedMsgs.length > 0 &&
-            messages.length === 0
-          ) {
-            // We need to pass them through the parser logic or store parsed?
-            // Storing parsed is risky due to types.
-            // Let's assume we store PARSED messages in cache to save processing.
-            // Wait, check if we parsed rawMessages below.
-            // YES, we map rawMessages to parsedMessages.
-            // So we should store parsedMessages.
-            setMessages(deduplicateMessages(cachedMsgs));
-            console.log("⚠️ [CHAT-DB] Loaded messages from cache");
-            // Don't return, allow fetch to proceed and update
-          }
-        } catch (e) { }
+      // 1. Try to load from cache (Skip if forceFresh is requested)
+      if (!forceFresh) {
+        const cacheKey = `cached_msgs_${targetKey}`;
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+          try {
+            const cachedMsgs = JSON.parse(cached);
+            // Apply cache only on cold load.
+            // During active chat use (send/reload), applying cache can override
+            // optimistic state and cause appear/disappear flicker.
+            if (
+              Array.isArray(cachedMsgs) &&
+              cachedMsgs.length > 0 &&
+              messages.length === 0
+            ) {
+              // We need to pass them through the parser logic or store parsed?
+              // Storing parsed is risky due to types.
+              // Let's assume we store PARSED messages in cache to save processing.
+              // Wait, check if we parsed rawMessages below.
+              // YES, we map rawMessages to parsedMessages.
+              // So we should store parsedMessages.
+              setMessages(deduplicateMessages(cachedMsgs));
+              console.log("⚠️ [CHAT-DB] Loaded messages from cache");
+              // Don't return, allow fetch to proceed and update
+            }
+          } catch (e) { }
+        }
+      } else {
+        console.log("🔄 [CHAT-DB] Cache bypass requested - fetching fresh from SQL.");
       }
 
       // 2. Fetch fresh with timeout
@@ -1364,6 +1370,7 @@ function ChatPage() {
     "unknown" | "checking" | "installed" | "not_found" | "offline"
   >("unknown");
   const [lastSeen, setLastSeen] = useState<number | null>(null);
+  const pingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   /* ----------------------------------------------------------------------------
       LISTEN FOR INCOMING MESSAGES
@@ -1418,7 +1425,6 @@ function ChatPage() {
           .catch(console.error);
 
         // SMART SYNC: Trigger Status Check (Phase 1/2)
-        // This ensures we catch any gaps even if we bypassed the Global Sync Check
         minimaService
           .sendSyncStatusCheck(contact.publickey)
           .catch((err) => console.warn("Sync Check Failed:", err));
@@ -1428,8 +1434,11 @@ function ChatPage() {
         );
       }
 
-      // Timeout for auto-check
-      setTimeout(async () => {
+      // 3. Set fallback timeout (5 seconds)
+      // Clear any existing timeout from previous mount/render
+      if (pingTimeoutRef.current) clearTimeout(pingTimeoutRef.current);
+
+      pingTimeoutRef.current = setTimeout(async () => {
         // Fetch last seen if needed
         const lastSeenTimestamp = await minimaService.getPeerLastSeen(
           contact.publickey,
@@ -1450,18 +1459,49 @@ function ChatPage() {
           }
           return currentStatus;
         });
+        
+      pingTimeoutRef.current = null;
       }, 5000);
     }
 
+    return () => {
+      if (pingTimeoutRef.current) {
+        clearTimeout(pingTimeoutRef.current);
+        pingTimeoutRef.current = null;
+      }
+    };
+  }, [contact?.publickey, address]);
+
+  /* ----------------------------------------------------------------------------
+      LISTEN FOR INCOMING MESSAGES
+  ---------------------------------------------------------------------------- */
+  useEffect(() => {
+    if (!contact) return;
+
     const handleNewMessage = (payload: any) => {
+      // FILTER: Only process if relevant to this chat
+      const isThisChat = (payload.from === contact?.publickey) ||
+                         (payload.pubkey === contact?.publickey) ||
+                         (payload.type === "reconnected") ||
+                         (payload.type === "history_sync"); // Global history sync end signal or specific
+
+      if (!isThisChat) {
+          // If it's a history sync signal but for another user, skip
+          if (payload.type === "history_sync" && payload.pubkey && payload.pubkey !== contact?.publickey) {
+              return;
+          }
+          // For other random events, skip
+          if (payload.type !== "reconnected") {
+              return;
+          }
+      }
+
       // Handle Pong response
       if (payload.type === "pong") {
-        // Only update if it's from the current contact
         if (payload.from === contact?.publickey) {
           console.log("✅ [PING] Pong received from current contact");
           setAppStatus("installed");
-          setLastSeen(null); // Clear last seen when user is online
-          // Save that this user has the app installed
+          setLastSeen(null);
           if (contact.publickey) {
             minimaService.setAppInstalled(contact.publickey);
           }
@@ -1469,128 +1509,13 @@ function ChatPage() {
         return;
       }
 
-      // Handle Contact Requests (Real-time Banner Update)
-      // This eliminates the need for polling!
-      if (
-        payload.type === "contact_request" ||
-        payload.type === "maxima_contact_request"
-      ) {
-        console.log("🔔 [CHAT] Contact request received, refreshing UI...");
-        checkPending();
-        loadContactRequest();
-      }
-
-      // Handle Declined Requests
-      if (
-        payload.type === "contact_declined" ||
-        payload.type === "maxima_contact_declined"
-      ) {
-        console.log("🚫 [CHAT] Contact request declined, refreshing UI...");
-        checkPending();
-        loadContactRequest();
-        loadMessagesFromDB(); // Force reload to show "Declined" system message
-      }
-
-      // Handle contact accepted - CRITICAL for unblocking sender's chat
-      if (
-        payload.type === "contact_accepted" ||
-        payload.type === "maxima_contact_accepted"
-      ) {
-        console.log("✅ [CHAT] Contact accepted! Updating state.");
-
-        // 1. Immediately unblock locally to feel responsive
-        setBlockReason("none");
-        setIsPendingOutgoing(false); // Clear pending flag
-        setContactRequest(null); // Clear request banner
-
-        // 2. Wait a moment for DB update from service worker, then verify
-        setTimeout(async () => {
-          console.log("🔄 [CHAT] Verifying acceptance state...");
-
-          // Reload everything
-          loadMessagesFromDB();
-          loadContactRequest();
-
-          // CRITICAL: Refresh pending state to ensure UI is correct
-          checkPending();
-
-          // Manual fallback removed for stability
-          console.log(
-            "✅ [CHAT] Chat fully unblocked and updated after acceptance",
-          );
-
-          console.log(
-            "✅ [CHAT] Chat fully unblocked and updated after acceptance",
-          );
-        }, 1000); // Increased timeout significantly to allow SW to finish
-        return;
-      }
-
-      // Handle Block/Unblock
-      if (
-        payload.type === "contact_blocked" ||
-        payload.type === "contact_unblocked"
-      ) {
-        console.log("🔒 [CHAT] Block status changed, refreshing...");
-        checkChatStatus();
-        loadMessagesFromDB(); // Reload to show the system message
-        return;
-      }
-
-      // Handle contact request - reload to show the incoming request
-      if (payload.type === "contact_request") {
-        console.log("📨 [CHAT] Received contact request");
-        if (contact.publickey && myPublicKey) {
-          console.log(`📨 [CHAT] From: ${shortenPublicKey(contact.publickey)}`);
-
-          // Trust the Service Worker to satisfy the insert
-          setTimeout(() => {
-            loadMessagesFromDB();
-            loadContactRequest(); // Refresh banner
-          }, 500);
-        }
-        return;
-      }
-
-      // Handle contact declined - re-evaluate blocking state
-      if (payload.type === "contact_declined") {
-        console.log("🚫 [CHAT] Contact request declined");
-
-        // Refresh messages to show the system message
-        loadMessagesFromDB();
-
-        // CRITICAL: Refresh the pending status to remove the banner and update blocking
-        if (contact && contact.publickey) {
-          // CRITICAL: Request fresh profile to ensure allowNonContactChats is up-to-date
-          requestProfile(contact.currentaddress, contact.publickey)
-            .then(() => {
-              console.log("🔄 [CHAT] Profile refreshed after decline");
-              // After profile refresh, re-run full checkPending logic
-              checkPending();
-            })
-            .catch((err) => {
-              console.warn(
-                "⚠️ [CHAT] Could not refresh profile after decline:",
-                err,
-              );
-              // Even if profile refresh fails, still run checkPending
-              checkPending();
-            });
-        }
-        return;
-      }
-
-      // Incremental Update: Handle read receipts by updating state directly
+      // 3. Read/Delivery Receipts (Fast Path: Incremental state update, no reload)
       if (payload.type === "read_receipt") {
         if (payload.from === contact?.publickey) {
           console.log("📖 [CHAT] Incremental UPDATE for read receipt");
           setMessages((prev) =>
             prev.map((m) => {
-              // Update all my sent/delivered text messages to 'read'
-              if (
-                m.fromMe &&
-                (m.status === "sent" || m.status === "delivered")
-              ) {
+              if (m.fromMe && (m.status === "sent" || m.status === "delivered")) {
                 return { ...m, status: "read" };
               }
               return m;
@@ -1599,14 +1524,11 @@ function ChatPage() {
         }
         return;
       }
-
-      // Incremental Update: Handle delivery receipts by updating state directly
       if (payload.type === "delivery_receipt") {
         if (payload.from === contact?.publickey) {
           console.log("📬 [CHAT] Incremental UPDATE for delivery receipt");
           setMessages((prev) =>
             prev.map((m) => {
-              // Update only 'sent' messages to 'delivered' (don't downgrade 'read')
               if (m.fromMe && m.status === "sent") {
                 return { ...m, status: "delivered" };
               }
@@ -1617,59 +1539,68 @@ function ChatPage() {
         return;
       }
 
-      // Re-check permissions when peer info updates (Critical fix for dynamic blocking)
-      if (payload.type === "peer_discovered") {
-        console.log("🔄 [CHAT] Peer info updated, re-checking permissions...");
+      // 4. UI-Critical (Immediate state update - full reload will follow via throttle)
+      if (payload.type === "contact_request" || payload.type === "maxima_contact_request") {
+        console.log("🔔 [CHAT] Contact request received, refreshing UI...");
         checkPending();
-        loadMessagesFromDB(); // Reload to pick up updated name/alias
-        return;
+        loadContactRequest();
+      }
+      if (payload.type === "contact_accepted" || payload.type === "maxima_contact_accepted") {
+        console.log("✅ [CHAT] Contact accepted! Updating UI state.");
+        setBlockReason("none");
+        setIsPendingOutgoing(false);
+        setContactRequest(null);
+      }
+      if (payload.type === "peer_updated" && payload.publickey === contact?.publickey) {
+        console.log("👤 [CHAT] Peer updated, refreshing permissions...");
+        checkPending();
       }
 
-      // SMART SYNC: Handle Gap Report (Phase 2)
-      // If peer reports we are missing messages, trigger a fetch.
-      if (payload.type === "sync_status_report") {
-        console.log(
-          `📊 [CHAT] Sync Report: Missing ${payload.missing_count} messages. Triggering fetch...`,
-        );
-        // Show syncing indicator
-        setIsSyncing(true);
-        // Auto-clear after 15 seconds if no response
-        if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
-        syncTimeoutRef.current = setTimeout(() => {
+      // OPTIMISTIC INJECTION: Immediately show text/token/charm messages
+      const validOptimisticTypes = ["text", "charm", "token", "image"];
+      if (validOptimisticTypes.includes(payload.type) && payload.from === contact?.publickey) {
+        console.log(`🚀 [CHAT] Optimistically injecting ${payload.type} message`);
+        
+        const optimisticMsg: ParsedMessage = {
+          text: payload.message || null,
+          fromMe: false,
+          charm: payload.type === "charm" ? { id: payload.message } : null,
+          amount: payload.amount || null,
+          timestamp: payload.timestamp || Date.now(),
+          status: "received",
+          type: payload.type,
+          filedata: payload.filedata || undefined,
+          customid: payload.customid || "0x00",
+          sender_seq: payload.seq || 0,
+          originalTimestamp: payload.timestamp || Date.now()
+        };
+
+        setMessages(prev => deduplicateMessages([...prev, optimisticMsg]));
+      }
+      // THROTTLED RELOAD: Prevent rapid-fire reloads from saturating the bridge
+      if (reloadDebounceRef.current) {
+        clearTimeout(reloadDebounceRef.current);
+      }
+
+      reloadDebounceRef.current = setTimeout(() => {
+        console.log("🔄 [CHAT] Throttled reload triggered...");
+        loadMessagesFromDB(true).then(() => {
+          // Only send read receipt if we are in this chat and it's a message or sync
+          if (contact?.publickey && (payload.type === "text" || payload.type === "history_sync")) {
+            minimaService.sendReadReceipt(contact.publickey);
+            minimaService.markChatAsOpened(contact.publickey);
+          }
+        });
+
+        // Turn off syncing indicator if this was a history sync response
+        if (payload.type === "history_sync") {
+          if (syncTimeoutRef.current) {
+            clearTimeout(syncTimeoutRef.current);
+            syncTimeoutRef.current = null;
+          }
           setIsSyncing(false);
-          syncTimeoutRef.current = null;
-        }, 15000);
-
-        // Request history (Optimized: SW will handle range or full fetch)
-        minimaService
-          .requestChatHistory(contact.publickey)
-          .catch(console.error);
-        return;
-      }
-
-      // Skip loading for ping - it doesn't affect messages
-      if (payload.type === "ping") {
-        return;
-      }
-
-      // Only reload for actual new messages (text, charm, token)
-      loadMessagesFromDB().then(() => {
-        // Send read receipt for new messages
-        if (contact.publickey) {
-          minimaService.sendReadReceipt(contact.publickey);
-          // Mark as opened so it doesn't show as unread if we are in the chat
-          minimaService.markChatAsOpened(contact.publickey);
         }
-      });
-
-      // Turn off syncing indicator if this was a history sync response
-      if (payload.type === "history_sync") {
-        if (syncTimeoutRef.current) {
-          clearTimeout(syncTimeoutRef.current);
-          syncTimeoutRef.current = null;
-        }
-        setIsSyncing(false);
-      }
+      }, 200); // 200ms debounce
     };
 
     // Send read receipt immediately when entering the chat
@@ -1752,6 +1683,80 @@ function ChatPage() {
       SEND TEXT MESSAGE
   ---------------------------------------------------------------------------- */
 
+  const handleSimpleSend = async () => {
+    // If we have a resolved public key, try it first
+    const targetPk = contact?.publickey || (address?.startsWith("0x") ? address : null);
+    if (!targetPk) return;
+
+    // Recipient address for fallback
+    const recipientMx = contact?.currentaddress || (address?.startsWith("Mx") ? address : null);
+
+    const simplePayload = {
+      type: "text",
+      message: "⚡️ SIMPLE FLUX TEST",
+      timestamp: Date.now(),
+      customid: generateUUID(),
+      username: userName || "Me",
+      seq: 0,
+    };
+
+    try {
+      const datastr = JSON.stringify(simplePayload);
+      const hex = utf8ToHex(datastr).toUpperCase();
+
+      const onSuccess = () => {
+        // Optimistically show it in the UI
+        const optimisticMsg: ParsedMessage = {
+          text: simplePayload.message,
+          fromMe: true,
+          timestamp: simplePayload.timestamp,
+          status: "sent",
+          type: "text",
+          customid: simplePayload.customid,
+          sender_seq: 0,
+          originalTimestamp: simplePayload.timestamp,
+          charm: null,
+          amount: null,
+        };
+        setMessages((prev) => deduplicateMessages([...prev, optimisticMsg]));
+      };
+
+      const sendToAddress = (to: string) => {
+        const cmd = `maxima action:send to:${to} application:metachain data:0x${hex}`;
+        console.log("⚡️ [FLUX] Executing raw simple send to Address:", to);
+        MDS.executeRaw(cmd, (res: any) => {
+          if (res.status) {
+            console.log("✅ [FLUX] Simple send (Address) succeeded.");
+            onSuccess();
+          } else {
+            console.error("❌ [FLUX] Simple send (Address) failed:", res.error);
+          }
+        });
+      };
+
+      const sendToPk = (pk: string) => {
+        const cmd = `maxima action:send publickey:${pk} application:metachain data:0x${hex}`;
+        console.log("⚡️ [FLUX] Executing raw simple send to PK:", pk);
+        MDS.executeRaw(cmd, (res: any) => {
+          if (res.status) {
+            console.log("✅ [FLUX] Simple send (PK) succeeded.");
+            onSuccess();
+          } else if (res.error && res.error.includes("No Contact found") && recipientMx) {
+            console.warn("⚠️ [FLUX] No contact for PK. Falling back to Address:", recipientMx);
+            sendToAddress(recipientMx);
+          } else {
+            console.error("❌ [FLUX] Simple send (PK) failed:", res.error);
+          }
+        });
+      };
+
+      // Start the chain
+      sendToPk(targetPk);
+    } catch (err) {
+      console.error("❌ [FLUX] Simple send error:", err);
+    }
+  };
+
   const handleSendMessage = async () => {
     if (blockReason !== "none") return; // Cannot send while blocked
     if (!input.trim()) return;
@@ -1779,7 +1784,11 @@ function ChatPage() {
     }
 
     const timestamp = Date.now();
-    const customId = `optimistic_${timestamp}_${Math.random().toString(36).substr(2, 9)}`;
+    const customId = generateUUID();
+    
+    // UX-TIMING: User clicked SEND
+    console.log(`[UX-TIMING-SEND] ${timestamp} - User clicked SEND (ID: ${customId})`);
+
     const newMsg: ParsedMessage = {
       text: input,
       fromMe: true,
@@ -1815,7 +1824,8 @@ function ChatPage() {
         undefined, // txpowid
         undefined, // overrideSeq
         false, // forwarded
-        replyingTo?.customid // replyTo
+        replyingTo?.customid, // replyTo
+        customId
       );
       
       setReplyingTo(null);
@@ -1886,6 +1896,7 @@ function ChatPage() {
       }
 
       const timestamp = Date.now();
+      const customId = generateUUID();
 
       // Optimitistic UI Update
       const newMsg: ParsedMessage = {
@@ -1896,7 +1907,7 @@ function ChatPage() {
         timestamp,
         status: "sent",
         type: "image",
-        customid: `img_${timestamp}`,
+        customid: customId,
         reply_to: replyingTo?.customid,
       };
 
@@ -1919,7 +1930,8 @@ function ChatPage() {
         undefined, // txpowid
         undefined, // overrideSeq
         false, // forwarded
-        replyingTo?.customid // replyTo
+        replyingTo?.customid, // replyTo
+        customId
       );
       
       setReplyingTo(null);
@@ -3460,10 +3472,27 @@ function ChatPage() {
         />
 
         <button
-          className={`p-2 mr-1 rounded-full transition-colors ${blockReason !== "none" || isBlocked || blockedByThem
-            ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
-            : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-            }`}
+          className={`p-2 mr-1 rounded-full transition-colors ${
+            !contact?.publickey && !address?.startsWith("0x")
+              ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
+              : "text-amber-500 hover:text-amber-600 dark:text-amber-400 dark:hover:text-amber-300"
+          }`}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleSimpleSend();
+          }}
+          title="Simple Direct Send (Bypass logic)"
+          disabled={!contact?.publickey && !address?.startsWith("0x")}
+        >
+          <Zap className="w-5 h-5" />
+        </button>
+
+        <button
+          className={`p-2 mr-1 rounded-full transition-colors ${
+            blockReason !== "none" || isBlocked || blockedByThem
+              ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
+              : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+          }`}
           onClick={(e) => {
             e.stopPropagation();
             if (blockReason !== "none" || isBlocked || blockedByThem) return;

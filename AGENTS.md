@@ -1,6 +1,6 @@
 # AGENTS.md - MetaChain Engineering Guide
 
-Last reviewed against codebase: 2026-03-16 (commit `[latest]` + timestamp-aware beacon merge + MLS Maxima unicast relay + 10m online threshold)
+Last reviewed against codebase: 2026-03-19 (commit `[latest]` + Flux Optimization + Serial Fallback + Lightweight Gossip + Strict Serial Protocol toggle + History Sync Debounce)
 Scope: `/home/joanramon/Minima/metachain`
 
 ## 1) Project Intent
@@ -42,8 +42,8 @@ Both FE and SW process overlapping protocol messages. Never implement new protoc
 When implementing features/fixes, use this precedence:
 1. Message persistence + confirmation state: Service Worker is authoritative.
 2. UI reaction and route behavior: Frontend is authoritative.
-3. Discovery identity cache (`DISCOVERED_PEERS`): shared, but writes must be deterministic and idempotent.
-4. Contact permission gating (`allow_non_contact_chats`): DB-driven, not UI-only.
+3. Discovery identity cache (`DISCOVERED_PEERS`): shared, but writes must be deterministic, idempotent, and **normalized to lowercase public keys**.
+4. Contact permission gating (`allow_non_contact_chats`): DB-driven, not UI-only. Gating must check `allow_non_contact_chats_source` — only trust `PROFILE` or `MESSAGE` sources.
 
 If you are unsure where to place logic, default to SW for network/event ingestion and DB mutation, FE for rendering and user interaction.
 
@@ -65,7 +65,7 @@ Beacon messages use type `BEACON` (and legacy/MLS registration type `register` i
 
 SW `handleBeacon` (`public/service-workers/handlers/beacon.handler.js`) currently enforces:
 - required fields: `pubkey`, `address`, `alias`
-- debounce: 10s per peer (except `GOSSIP`/`BOOTSTRAP` sources)
+- debounce: 1 hour (`RELAY_DEBOUNCE`) per peer (except `GOSSIP`/`BOOTSTRAP` sources)
 - self-beacon ignore by comparing `MY_MAXIMA_PK` (except `source === SELF` so the node can persist itself)
 - persistence into `DISCOVERED_PEERS` with `allow_non_contact_chats` and `extra_data`
 - promotion into stable `METACHAIN_USERS`
@@ -74,8 +74,10 @@ SW `handleBeacon` (`public/service-workers/handlers/beacon.handler.js`) currentl
 ### 4.3 Beacon relay chain (how discovery propagates)
 When a node receives a beacon from a P2P or MAXIMA source, it:
 1. Saves the peer to `DISCOVERED_PEERS`
-2. Calls `sendWelcomePackage(pubkey, alias, address)` — sends `peers_response` via **Maxima unicast** (`to:<address>` or `publickey:<0x...>`) to ensure target receives it even without a shared P2P neighbor.
-3. Calls `askPeers([pubkey])` — sends `get_peers` via Maxima to the new peer
+2. Calls `sendWelcomePackage(pubkey, alias, address)` — sends `peers_response` via **dual-layer transport** (see `resolveAndSend` in `maxima-sender.js`):
+   - **P2P broadcast** (`message data:`) — ensures direct P2P neighbors receive it.
+   - **Maxima unicast** (`to:<address>` AND `publickey:<0x...>`) — ensuring delivery to non-contacts via Dual-send.
+3. Calls `askPeers([pubkey])` — sends `get_peers` via Maxima to the new peer.
 
 This creates a **reactive multi-hop relay**: Node A broadcasts → Node X (MetaChain) receives → X broadcasts its catalog → Node B (MetaChain, neighbor of X) learns A's existence.
 
@@ -88,10 +90,10 @@ SW sends its own beacon every `GOSSIP_INTERVAL` (30s, hardcoded in `public/servi
 - `sendBackgroundBeacon()` — emits **own** beacon via `message data:` + saves self to DB
 - `startGossip()` — if `DISCOVERED_PEERS` is not empty, sends `get_peers` to top 5 peers via Maxima; if empty, falls back to `maxcontacts`
 
-> **Known Bug**: `src/routes/settings/discovery.tsx` exposes `discovery_interval` and `discovery_limit` controls that save values to keypair, but the Service Worker reads **hardcoded** `GOSSIP_INTERVAL`/`BEACON_INTERVAL` from `utils.js` and never reads these keypair values. The settings UI has no effect on the actual gossip frequency. Fix requires SW to read `discovery_interval` keypair value at startup and use it instead of the hardcoded constant. See section 17.
+> **Gossip Config**: The Service Worker dynamically reads `discovery_interval` and `discovery_limit` from the keypair (synced from `src/routes/settings/discovery.tsx`). It also implements an adaptive back-off: if `DISCOVERED_PEERS` > 50, the interval is doubled to reduce Maxima noise.
 
 ### 4.5 Discovery freshness and cleanup
-- SW cleanup TTL for `DISCOVERED_PEERS`: 10 minutes (`startCleanupTimer`)
+- SW cleanup TTL for `DISCOVERED_PEERS`: 1 hour (`TTL` in beacon handler)
 - Discovery UI online threshold (`src/services/discovery.service.ts`): 10 minutes
 Do not change one without evaluating the other.
 
@@ -120,19 +122,14 @@ If you touch MLS flows, preserve compatibility with this type.
 The app supports communication with peers not present in Maxima contacts.
 This depends on fallback routing and discovery cache quality.
 
-### 5.1 Send strategy (required fallback chain)
-For chat/contact sends, code paths use variants of:
-1. Try `maxima action:send publickey:<0x...>`
-2. If “No Contact found”, resolve `Mx...` from `DISCOVERED_PEERS.ADDRESS`
-3. Retry `maxima action:send to:<Mx...>`
+### 5.1 Send strategy (Lightweight vs Dual-send)
+For chat/contact/sync/profile sends, the behavior is controlled by the `STRICT_SERIAL_PROTOCOL` toggle:
+1. **Serial Fallback (New Default)**: Send to `publickey` first. If it fails with "No Contact found", fallback to `to: Mx...` address. This reduces node bridge saturation.
+2. **Concurrent Dual-send (Legacy/Toggleable)**: Send to both `publickey:<0x...>` AND `to:<Mx...>` simultaneously for a "Race to Success".
+3. If only one identifier is known, fallback to resolution via `DISCOVERED_PEERS`.
+4. **Exclusive Send Optimization**: For large payloads (history sync, welcome packages), prefer a single transport (Address OR PK) via `exclusive=true` to save bandwidth.
 
-Relevant files:
-- `public/service-workers/utils/maxima-sender.js`
-- `src/services/messaging.service.ts`
-- `src/services/contact-requests.service.ts`
-- `src/services/minima.service.ts` (smart sync/history paths)
-
-Never remove fallback-to-address logic unless replacing it with an equivalent robust path.
+Never remove the fallback-to-address logic or the toggleability of these strategies.
 
 ### 5.2 Contact systems are intentionally dual
 Two parallel protocols:
@@ -185,7 +182,7 @@ Bridge caveat:
 ### 6.3 History/sync ownership
 SW handles:
 - `chat_history_request`
-- `chat_history_response` DB merge
+- `chat_history_response` DB merge (parallel insertion logic)
 - gap detection by `sender_seq`
 - `sync_status_check` / `sync_status_report`
 - group/channel history request fanout and `*_SYNC_START`/`*_SYNC_END` signaling, including immediate `*_SYNC_END` when there are no remote peers (or only self)
@@ -193,6 +190,9 @@ SW handles:
 FE handles:
 - triggering sync requests from open chats
 - showing syncing UI and refresh requests
+
+History responses (`chat_history_response`) must be processed **sequentially** with a 50ms stagger to avoid bridge saturation.
+Sync triggers on reconnect/startup must be **staggered** (e.g. 500ms between groups) to prevent node floods.
 
 Do not create independent history merge algorithms in FE.
 
@@ -212,10 +212,11 @@ Do not create independent history merge algorithms in FE.
 ### 6.5 Single Owner Per Flow (Do Not Duplicate)
 1. Beacon ingestion and peer persistence: SW only.
 2. Gossip request/response protocol: SW only.
-3. Contact-request protocol state transitions: SW only.
-4. History merge, sequence gap recovery and sync reports: SW only.
-5. UI presentation, optimistic rendering and route-level UX: FE only.
-6. FE can trigger sends; SW owns canonical inbound persistence and reconciliation.
+3. Contact-request and Maxima contact-request persistence: SW only.
+4. Profile persistence and update: SW only.
+5. History merge, sequence gap recovery and sync reports: SW only.
+6. UI presentation, optimistic rendering and route-level UX: FE only.
+7. FE can trigger sends; SW owns canonical inbound persistence and reconciliation.
 
 ### 6.6 Handler Signature Contract (Critical)
 For SW message handlers, preserve argument order consistently between dispatcher and handler definitions.
@@ -235,7 +236,8 @@ Do not swap to `(fromKey, msg)` in dispatcher calls. This breaks sequence SQL ch
 
 ### 7.1 Message ordering invariants
 Use this mental model:
-- Primary order: `COALESCE(original_timestamp, date)`
+- Primary order: `date` (Index-friendly)
+- Secondary order: `original_timestamp` (Sender time)
 - Sequence order: `sender_seq` for same sender
 - Pending (`sender_seq=0`) should be placed after confirmed same-sender messages
 
@@ -267,9 +269,10 @@ Confirmation/recovery logic depends on that coupling.
 Never add a new column in only one runtime.
 
 6. Schema parity for shared tables must keep minimum compatible columns across both runtimes:
-- `DISCOVERED_PEERS`: `publickey`, `address`, `alias`, `last_seen`, `source`, `allow_non_contact_chats`
+- `DISCOVERED_PEERS`: `publickey`, `address`, `alias`, `last_seen`, `source`, `allow_non_contact_chats`, `allow_non_contact_chats_source`
 - `METACHAIN_USERS`: `publickey`, `alias` (plus SW registry fields used by discovery merge)
 - `MESSAGE_COUNTERS`: `publickey`, `next_seq`
+- `TRANSACTIONS`: `id`, `txpowid`, `type`, `publickey`, `message_timestamp`, `status`, `created_at`, `updated_at`, `pendinguid`
 
 If one runtime extends a shared table, add backward-compatible `ALTER TABLE ... ADD COLUMN IF NOT EXISTS ...` in both runtimes.
 
@@ -305,10 +308,22 @@ When changing protocol code, log:
 7. Chat-permission state uses DB first with legacy keypair fallbacks. Adding new key names increases false allow/deny risk.
 8. Group invite payload member fields can arrive with uppercase DB-style keys (`PUBLICKEY`/`USERNAME`/`ROLE`) or protocol lowercase keys; invite send/receive paths must normalize both.
 9. Legacy/corrupt `GROUP_MEMBERS` rows with blank `publickey` can break Maxima sends (`BLANK param not allowed : publickey`); sender/sync loops must skip and cleanup blank keys.
-10. **`discovery_interval` / `discovery_limit` UI controls are disconnected from the SW** (`src/routes/settings/discovery.tsx` saves to keypair but SW uses hardcoded `GOSSIP_INTERVAL`/`BEACON_INTERVAL` in `utils.js`). These settings have zero effect until the SW is updated to read them. See section 4.4.
-11. **Discovery relies on periodic bootstrap for recovery**. If `DISCOVERED_PEERS` is empty (except for `SELF`), `startGossip` triggers `bootstrapFromMLS()`. The node also re-bootstraps on `RECONNECTED` signals to ensure network visibility after long offline periods.
+10. **`discovery_interval` / `discovery_limit` UI controls are synced with the SW**. The SW reads these values periodically. If missing, it defaults to 30s/5 peers.
+11. **Ping/Pong loop protection**. Standard pings are throttled in the `messaging.service` (10s debounce + 30s online-skip) to prevent Maxima queue saturation.
+12. **Discovery relies on periodic bootstrap for recovery**. If `DISCOVERED_PEERS` is empty (except for `SELF`), `startGossip` triggers `bootstrapFromMLS()`. The node also re-bootstraps on `RECONNECTED` signals to ensure network visibility after long offline periods.
 12. **Beacon merging is timestamp-aware**. Older gossip beacons (lower `timestamp` in payload) will only update `last_seen` but will NOT overwrite newer profile bio/alias data.
-13. **Beacon transport is dual-layer**. Initial discovery is P2P-only (`MSG_GENMESSAGE`), but subsequent relay via MLS hub uses Maxima unicast (`to:<address>`) to bridge nodes that share no P2P MetaChain neighbors.
+13. **Beacon transport is dual-layer**. Initial discovery is P2P-only (`MSG_GENMESSAGE`), but subsequent relay via MLS hub uses Maxima unicast (`to:<address>` AND `publickey:`) to bridge nodes.
+14. **Public Key Normalization is Mandatory**. All public keys in the database and service-level parameters (including `DISCOVERED_PEERS`, `CHAT_MESSAGES`, `GROUPS`, etc.) must be normalized to **LOWERCASE** before any lookups, insertions, or Maxima commands. This prevents redundant processing and message duplication caused by casing drift between P2P and Maxima sources.
+15. **Authoritative Permission Sources**. `allow_non_contact_chats` is only trusted if the source is `PROFILE` or `MESSAGE`. Gossip or Beacon discovered peers default to a "Pending" (blocked) state to avoid permission race conditions where a stale "Default TRUE" can precede a definitive "FALSE" from a profile response.
+16. **History Sync Cooldown and Timing**.
+    - The Service Worker and Frontend implement a 30-second cooldown per peer for history requests to prevent "sync storms" during reconnection or busy message flows.
+    - **Frontend `chat/$address.tsx` uses a 200ms debounce** for database reloads to batch incoming bursts (receipts, history) and prevent UI lockup.
+    - **Frontend `minima.service.ts` avoids static delays**. It uses a 50ms reactive debounce for UI refreshes after history responses, while triggering a `history_sync` notification immediately to bypass caching.
+17. **UI Notification Debounce**. Frontend `minima.service.ts` uses a 50ms debounce before UI refreshes on history response to ensure the Service Worker has finished parallel DB operations.
+18. **Database Initialization Performance**. 
+    - The 'Normalization Migration' in `db-init.js` is gated by a version flag in `MDS.keypair` to prevent it from blocking the SQL engine on every app startup.
+    - `CHAT_MESSAGES` has indexes on `publickey`, `date`, and a composite index `(publickey, date)` for O(1) retrieval.
+19. **Sequential Processing Guarantee**. The Service Worker handles history responses sequentially. Artificial delays (staggers) within the Service Worker loop have been removed in favor of contiguous batch processing while maintaining sequential integrity.
 
 ## 12) Pre-merge Checklist (Mandatory for protocol/state changes)
 
@@ -319,6 +334,7 @@ When changing protocol code, log:
 - maxima contact request accept/decline
 - non-contact message send via fallback address
 - discovery refresh from beacon/gossip
+- profile request deduplication (verify only one request is sent when multiple UI components ask for the same profile)
 - history sync after reconnect
 - token/charm pending -> confirmed
 4. Validate both runtimes touched as needed:
@@ -346,6 +362,8 @@ Expected: reconnect signal triggers sync path; missing messages are recovered th
 Expected: `TRANSACTIONS.status` and `CHAT_MESSAGES.state` converge; `txpowid` remains linked in both tables.
 8. Action: Toggle `allow_non_contact_chats` and retry stranger chat.
 Expected: permission gate behavior changes accordingly and beacon updates propagate the new flag.
+9. Action: Use the **Zap (⚡️)** button in a chat to send a simple flux test.
+Expected: command correctly falls back if PK is missing/invalid and message arrives successfully as `⚡️ SIMPLE FLUX TEST`.
 
 ## 14) Files You Should Read First for Networking Features
 
@@ -381,5 +399,12 @@ Expected: permission gate behavior changes accordingly and beacon updates propag
 
 | # | Component | Description | Severity |
 |---|---|---|---|
-| 1 | `src/routes/settings/discovery.tsx` + `public/service-workers/utils.js` | `discovery_interval` and `discovery_limit` keypair values saved by UI are never read by SW. SW uses hardcoded `GOSSIP_INTERVAL=30000` and `BEACON_INTERVAL=60000`. Fix: SW must read keypair values at init (and on NEWBLOCK) and apply them dynamically. | Medium |
+| 1 | `src/routes/settings/discovery.tsx` + `public/service-workers/utils.js` | `discovery_interval` and `discovery_limit` keypair values saved by UI are respect by SW via periodic sync and adaptive back-off. | Resolved (Dynamic Sync) |
 | 2 | Discovery / mainnet | Two MetaChain nodes with no shared MetaChain P2P neighbor can now discover each other as long as both connect to a MetaChain-running MLS server. The MLS acts as a Maxima relay, providing `peers_response` via unicast. | Resolved (MLS Hub) |
+| 3 | Messaging / DB | Duplicate chat entries and "4 new chats" issues caused by public key casing drift between Frontend and Service Worker. | Resolved (Global Normalization) |
+| 4 | Messaging | Ping/Pong loop surcharge when opening chats generates redundant Maxima traffic and saturates the message queue. | Resolved (Service Throttling) |
+| 5 | Messaging / Permission | Permission race condition where stale "Default TRUE" from Gossip precedes definitive "FALSE" from Profile response. | Resolved (Source Gating) |
+| 6 | Sync / UI | Perceived delay when receiving messages or history due to static timeouts and redundant FE processing. | Resolved (Flux Optimization) |
+| 7 | Messaging / Queue | Message Echo ("Double Processing") bug where reconnected signals triggered redundant retries with new IDs. | Resolved (UUID Persistence) |
+| 8 | Messaging / UX | 30-second hang when sending to non-contacts via dual-send transport layers. | Resolved (Serial Fallback) |
+| 9 | Messaging / DB | 20-second delay in delivery (Message 6) caused by DB lock contention from redundant FE SQL writes. | Resolved (SW Authority Persistence) |

@@ -28,6 +28,7 @@ var NEWBLOCK_COUNT = 0;
 
 // Connection state tracking for reconnection sync
 var LAST_MAXIMA_EVENT_TIME = 0;
+var GROUP_SYNC_DELAY = 5000; // Increased to 5s to allow node to settle (was 3s in legacy, then 15s)
 var CONNECTION_TIMEOUT_MS = 120000; // 2 minutes - if no MAXIMA events, consider offline
 var WAS_OFFLINE = false;
 
@@ -40,6 +41,7 @@ MDS.init(function (msg) {
     initDatabase();
     MDS.cmd("timer 2000", function () {
       ensureStaticMLS();
+      syncDiscoverySettings();
     });
   }
 
@@ -54,12 +56,18 @@ MDS.init(function (msg) {
     if (!INITIAL_CLEANUP_DONE) {
       INITIAL_CLEANUP_DONE = true;
       cleanupOrphanedChatMessages();
-      // Delay group sync slightly to let DB settle
-      MDS.cmd("timer 3000", function () {
+      // Delay group/channel sync significantly to let real-time messages through first.
+      // At 3s the sync queue blocked incoming messages; 15s gives the node time to settle.
+      MDS.cmd("timer 15000", function () {
         if (typeof requestAllGroupsHistory === "function") {
           requestAllGroupsHistory();
-          requestAllChannelsHistory();
-          GROUP_STARTUP_SYNC_DONE = true;
+          // Stagger channels to start 2s after groups (17s total)
+          MDS.cmd("timer 2000", function () {
+            if (typeof requestAllChannelsHistory === "function") {
+              requestAllChannelsHistory();
+            }
+            GROUP_STARTUP_SYNC_DONE = true;
+          });
         }
       });
     }
@@ -101,6 +109,11 @@ MDS.init(function (msg) {
       sendGroupAddressBeacon(); // Keep group member addresses fresh in DISCOVERED_PEERS
       checkPendingTransactions(); // Check for zombie transactions
       checkSentTransactions(); // Check for confirmations (sent -> confirmed)
+      
+      // Periodically sync discovery settings to pick up UI changes (every 10 cycles/blocks)
+      if (NEWBLOCK_COUNT % 10 === 0) {
+        syncDiscoverySettings();
+      }
     }
   }
 
@@ -148,16 +161,24 @@ MDS.init(function (msg) {
       if (typeof requestHistoryFromRecentContacts === "function") {
         requestHistoryFromRecentContacts();
       }
-      // Also sync all group histories
-      if (typeof requestAllGroupsHistory === "function") {
-        requestAllGroupsHistory();
-      }
-      if (typeof requestAllChannelsHistory === "function") {
-        requestAllChannelsHistory();
-      }
-      // Re-bootstrap from MLS to refresh DISCOVERED_PEERS
+      
+      // Also sync all group histories (Staggered to start 2s after contacts)
+      MDS.cmd("timer 2000", function () {
+        if (typeof requestAllGroupsHistory === "function") {
+          requestAllGroupsHistory();
+        }
+      });
+      
+      // Also sync all channel histories (Staggered to start 4s after contacts)
+      MDS.cmd("timer 4000", function () {
+        if (typeof requestAllChannelsHistory === "function") {
+          requestAllChannelsHistory();
+        }
+      });
+
+      // Re-bootstrap from MLS to refresh DISCOVERED_PEERS (Staggered to 6s)
       if (typeof bootstrapFromMLS === "function") {
-        MDS.cmd("timer 2000", function () {
+        MDS.cmd("timer 6000", function () {
           bootstrapFromMLS();
         });
       }
@@ -186,7 +207,7 @@ MDS.init(function (msg) {
         msg.data.application.toLowerCase() == "metachain-channel")
     ) {
       var app = msg.data.application.toLowerCase();
-      var pubkey = msg.data.from;
+      var pubkey = (msg.data.from || "").toLowerCase();
       var jsonstr = "";
       if (msg.data.data.startsWith("0x")) {
         var datastr = msg.data.data.substring(2);
@@ -583,7 +604,8 @@ MDS.init(function (msg) {
             beacon.app === "metachain" &&
             (beacon.type === "BEACON" || beacon.type === "register")
           ) {
-            if (MY_MAXIMA_PK && beacon.pubkey === MY_MAXIMA_PK) {
+            var bPK = (beacon.pubkey || "").toLowerCase();
+            if (MY_MAXIMA_PK && bPK === MY_MAXIMA_PK.toLowerCase()) {
               return; // Ignore self
             }
             MDS.log("📡 [P2P] Beacon: " + beacon.alias);

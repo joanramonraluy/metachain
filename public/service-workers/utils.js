@@ -11,8 +11,58 @@ var LAST_GOSSIP = 0;
 var BEACON_INTERVAL = 60000; // 1 minute
 var MY_MAXIMA_PK = "";
 var BEACON_CACHE = {};
-var GOSSIP_INTERVAL = 30000; // 30 seconds
+var GOSSIP_INTERVAL = 60000; // 60 seconds default (Increased from 30s to reduce saturation)
+var GOSSIP_LIMIT = 5; // 5 peers default
 var LAST_BEACON_TIME = 0;
+
+/**
+ * Sync discovery settings from MDS keypair
+ * Allows the Service Worker to respect UI settings for interval and limit
+ * Includes adaptive back-off for high-peer environments
+ */
+function syncDiscoverySettings() {
+    // 1. Fetch Interval
+    MDS.keypair.get("discovery_interval", function (res) {
+        if (res && res.status && res.value) {
+            var val = parseInt(res.value) * 1000; // convert to ms
+            if (val >= 30000) {
+                GOSSIP_INTERVAL = val;
+                MDS.log("⚙️ [GOSSIP-CONFIG] Interval updated from Keypair: " + (val / 1000) + "s");
+            } else {
+                MDS.log("⚙️ [GOSSIP-CONFIG] Using Default Interval: " + (GOSSIP_INTERVAL / 1000) + "s (Keypair value " + res.value + "s is too low)");
+            }
+        } else {
+            MDS.log("⚙️ [GOSSIP-CONFIG] Using Default Interval: " + (GOSSIP_INTERVAL / 1000) + "s");
+        }
+
+        // 2. Fetch Limit
+        MDS.keypair.get("discovery_limit", function (resLimit) {
+            if (resLimit && resLimit.status && resLimit.value) {
+                var lim = parseInt(resLimit.value);
+                if (lim >= 1 && lim <= 50) {
+                    GOSSIP_LIMIT = lim;
+                    MDS.log("⚙️ [GOSSIP-CONFIG] Limit updated from Keypair: " + lim + " nodes");
+                }
+            } else {
+                MDS.log("⚙️ [GOSSIP-CONFIG] Using Default Limit: " + GOSSIP_LIMIT + " nodes");
+            }
+
+            // 3. Adaptive Back-off: If we have many peers, slow down to reduce Maxima noise
+            MDS.sql("SELECT COUNT(*) as cnt FROM DISCOVERED_PEERS", function (sqlRes) {
+                if (sqlRes.status && sqlRes.rows && sqlRes.rows.length > 0) {
+                    var count = parseInt(sqlRes.rows[0].CNT || 0);
+                    if (count > 50) {
+                        // Double the interval if we have > 50 peers
+                        var original = GOSSIP_INTERVAL;
+                        GOSSIP_INTERVAL = GOSSIP_INTERVAL * 2;
+                        MDS.log("📈 [GOSSIP-LIMIT] Adaptive back-off active (" + count + " peers). Interval increased: " + (original / 1000) + "s -> " + (GOSSIP_INTERVAL / 1000) + "s");
+                    }
+                }
+                MDS.log("⚙️ [GOSSIP-CONFIG] Sync complete. Interval: " + (GOSSIP_INTERVAL / 1000) + "s, Limit: " + GOSSIP_LIMIT);
+            });
+        });
+    });
+}
 
 // ============================================================================
 // HEX/UTF8 CONVERSION UTILITIES

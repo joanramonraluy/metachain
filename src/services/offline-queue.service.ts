@@ -14,6 +14,7 @@ interface ChatMessageData {
   targetApplication: string;
   txpowid?: string;
   overrideSeq?: number;
+  customid?: string;
 }
 
 interface GroupMessageData {

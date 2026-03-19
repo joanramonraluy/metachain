@@ -1,9 +1,8 @@
-/**
- * MetaChain Service Worker - Chat Message Handler
- * Handles chat messages, read receipts, pings, pongs
- */
+var SYNC_COOLDOWN = {}; // pubkey -> timestamp
+var PROCESSING_MESSAGES = new Set(); // lockKey -> timestamp
 
 function handleChatMessage(pubkey, maxjson) {
+    MDS.log("💬 [CHAT-IN] Received " + (maxjson.type || "text") + " from " + pubkey.substring(0, 10));
     MDS.log("💬 [CHAT-DEBUG] RAW INCOMING from " + pubkey + ": " + JSON.stringify(maxjson));
     MDS.log("💬 [CHAT] From: " + pubkey + " - " + (maxjson.message || "").substring(0, 30));
 
@@ -19,22 +18,44 @@ function handleChatMessage(pubkey, maxjson) {
     var replyTo = maxjson.reply_to ? escapeSql(maxjson.reply_to) : null;
     var replyToVal = replyTo ? "'" + replyTo + "'" : "NULL";
 
+    var customid = maxjson.customid ? escapeSql(maxjson.customid) : "0x00";
+    var txpowid = maxjson.txpowid ? escapeSql(maxjson.txpowid) : null;
+    var originalTimestamp = maxjson.timestamp ? maxjson.timestamp : 0;
+
+    // 0. PROCESSING GUARD (Race Condition Fix)
+    // Create a stable lockKey based on customid or content hash
+    var lockKey = (customid !== "0x00") ? customid : (pubkey + "_" + originalTimestamp + "_" + safeMessage.substring(0, 50));
+    
+    if (PROCESSING_MESSAGES.has(lockKey)) {
+        MDS.log("♻️ [CHAT] Ignoring message " + lockKey.substring(0, 10) + "... (already being processed)");
+        return;
+    }
+    PROCESSING_MESSAGES.add(lockKey);
+
+    // Helper to release lock on exit
+    var releaseLock = function() {
+        PROCESSING_MESSAGES.delete(lockKey);
+    };
+
     // 1. COMBINED PRE-CHECK (Block, Seq, Dup)
     // We combine three serial queries into one to reduce latency from 3 round-trips to 1.
     var dedupConditions = [];
-    var txpowid = maxjson.txpowid ? escapeSql(maxjson.txpowid) : null;
-    var originalTimestamp = maxjson.timestamp ? maxjson.timestamp : 0;
     
-    // Dedup logic (same as before)
-    if (txpowid) {
+    // 1. DEDUPLICATION LOGIC
+    // We prioritize explicit IDs (customid, txpowid) for exact matching.
+    // Fuzzy content-based deduplication is only used as a fallback if no IDs are present.
+    if (customid && customid !== "0x00") {
+        dedupConditions.push("customid='" + customid + "'");
+    } else if (txpowid) {
         dedupConditions.push("txpowid='" + txpowid + "'");
+    } else {
+        var minTime = originalTimestamp - 60000;
+        var maxTime = originalTimestamp + 60000;
+        var timeCondition = "message='" + safeMessage + "' AND (" +
+            "(original_timestamp >= " + minTime + " AND original_timestamp <= " + maxTime + ") OR " +
+            "(date >= " + minTime + " AND date <= " + maxTime + "))";
+        dedupConditions.push("(" + timeCondition + ")");
     }
-    var minTime = originalTimestamp - 60000;
-    var maxTime = originalTimestamp + 60000;
-    var timeCondition = "message='" + safeMessage + "' AND (" +
-        "(original_timestamp >= " + minTime + " AND original_timestamp <= " + maxTime + ") OR " +
-        "(date >= " + minTime + " AND date <= " + maxTime + "))";
-    dedupConditions.push("(" + timeCondition + ")");
 
     var combinedSql = "SELECT " + 
         "(SELECT COUNT(*) FROM CHAT_STATUS WHERE publickey='" + safePubkey + "' AND blocked=1) as is_blocked, " +
@@ -50,6 +71,7 @@ function handleChatMessage(pubkey, maxjson) {
 
         if (!res.status) {
             MDS.log("❌ [SQL-OPT] Query failed: " + res.error);
+            releaseLock();
             return;
         }
 
@@ -61,6 +83,7 @@ function handleChatMessage(pubkey, maxjson) {
         // A. BLOCK CHECK
         if (isBlocked) {
             MDS.log("🚫 [CHAT] Message BLOCKED from: " + safeUsername + " (" + safePubkey + ")");
+            releaseLock();
             return;
         }
 
@@ -83,20 +106,20 @@ function handleChatMessage(pubkey, maxjson) {
                     " AND (sender_seq IS NULL OR sender_seq = 0)";
                 MDS.sql(updateSeqSql);
             }
+            releaseLock();
             return;
         }
 
         MDS.log("✨ [CHAT-DEBUG] Checks passed. Proceeding to INSERT...");
 
-        var txpowidVal = txpowid ? "'" + txpowid + "'" : "NULL";
         var initialState = txpowid ? 'sent' : 'received';
-        var customid = maxjson.customid ? escapeSql(maxjson.customid) : "0x00";
         var forwardedVal = forwarded ? 1 : 0;
 
         var insertSql = "INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, txpowid, original_timestamp, sender_seq, customid, forwarded, reply_to) "
             + "VALUES ('', '" + safePubkey + "', '" + safeUsername + "', '" + msgType + "', '" + safeMessage + "', '" + safeFiledata + "', '" + initialState + "', " + amount + ", " + (originalTimestamp || now) + ", " + txpowidVal + ", " + originalTimestamp + ", " + senderSeq + ", '" + customid + "', " + forwardedVal + ", " + replyToVal + ")";
 
         MDS.sql(insertSql, function (res) {
+            releaseLock();
             if (res.status) {
                 MDS.log("✅ [CHAT] Message saved from " + safeUsername);
 
@@ -110,8 +133,8 @@ function handleChatMessage(pubkey, maxjson) {
                     var safeAvatar = escapeSql(maxjson.avatar || "");
                     var safeAddress = escapeSql(maxjson.from_address || "");
 
-                    var upsertPeer = "MERGE INTO DISCOVERED_PEERS (publickey, alias, avatar, address, last_seen, source, allow_non_contact_chats) KEY(publickey) " +
-                        "VALUES ('" + safePubkey + "', '" + safeUsername + "', '" + safeAvatar + "', '" + safeAddress + "', " + now + ", 'MSG', 1)";
+                    var upsertPeer = "MERGE INTO DISCOVERED_PEERS (publickey, alias, avatar, address, last_seen, source, allow_non_contact_chats, allow_non_contact_chats_source) KEY(publickey) " +
+                        "VALUES ('" + safePubkey + "', '" + safeUsername + "', '" + safeAvatar + "', '" + safeAddress + "', " + now + ", 'MSG', 1, 'MESSAGE')";
                     MDS.sql(upsertPeer, function (pRes) {
                         MDS.log("👤 [CHAT] Auto-discovered peer: " + safeUsername);
                     });
@@ -193,42 +216,8 @@ function handlePing(pubkey) {
     var jsonStr = JSON.stringify(payload);
     var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
 
-    // Smart Address Resolution for Non-Contacts
-    if (pubkey.startsWith('0x')) {
-        var safeKey = pubkey.replace(/'/g, "''");
-        var peerSql = "SELECT ADDRESS FROM DISCOVERED_PEERS WHERE PUBLICKEY='" + safeKey + "' AND ADDRESS IS NOT NULL LIMIT 1";
-
-        MDS.sql(peerSql, function (peerRes) {
-            var sendCmd;
-            if (peerRes && peerRes.status && peerRes.count > 0) {
-                var rawMx = peerRes.rows[0].ADDRESS;
-                // Remove all whitespace and invalid characters
-                var mxAddress = rawMx ? rawMx.replace(/\s+/g, "").replace(/[^a-zA-Z0-9@:._-]/g, "").trim() : null;
-
-                if (mxAddress && (mxAddress.startsWith('Mx') || mxAddress.startsWith('MX'))) {
-                    sendCmd = 'maxima action:send to:' + mxAddress + ' application:metachain data:' + hexData + ' poll:false';
-                } else {
-                    sendCmd = "maxima action:send publickey:" + pubkey + " application:metachain data:" + hexData + " poll:false";
-                }
-            } else {
-                sendCmd = "maxima action:send publickey:" + pubkey + " application:metachain data:" + hexData + " poll:false";
-            }
-
-            MDS.cmd(sendCmd, function () {
-                MDS.log("✅ [PONG] Sent to " + pubkey.substring(0, 15) + "...");
-            });
-        });
-    } else {
-        var sendCmd;
-        if (pubkey.startsWith('Mx') || pubkey.startsWith('MX')) {
-            sendCmd = 'maxima action:send to:' + pubkey.trim() + ' application:metachain data:' + hexData + ' poll:false';
-        } else {
-            sendCmd = "maxima action:send publickey:" + pubkey + " application:metachain data:" + hexData + " poll:false";
-        }
-        MDS.cmd(sendCmd, function () {
-            MDS.log("✅ [PONG] Sent to " + pubkey.substring(0, 15) + "...");
-        });
-    }
+    // Smart Address Resolution for Non-Contacts via unified helper
+    resolveAndSend(pubkey, hexData, "PONG", false);
 }
 
 function handlePong(pubkey) {
@@ -314,8 +303,10 @@ function sendChatHistoryResponse(toPubkey, messages) {
     // Log the size
     MDS.log("🔄 [HISTORY-RESP] Sending response size: " + hexData.length + " chars to " + toPubkey.substring(0, 10));
 
-    // Smart Address Resolution with Fallback
-    resolveAndSend(toPubkey, hexData, "HISTORY-RESP", true);
+    // Smart Address Resolution with Fallback (Background Polling + Exclusive Send)
+    // Background polling prevents blocking the main Minima command loop (no synchronous PoW wait).
+    // Exclusive send prevents packet duplication (Address AND PK) for large history payloads.
+    resolveAndSend(toPubkey, hexData, "HISTORY-RESP", false, true);
 }
 
 function handleChatHistoryResponse(pubkey, maxjson) {
@@ -372,8 +363,11 @@ function handleChatHistoryResponse(pubkey, maxjson) {
 }
 
 function processHistoryMessage(safePubkey, messages, index, resolvedAlias, existingMap) {
-    if (index >= messages.length) {
-        MDS.log("✅ [HISTORY-RESP] Completed processing batch of " + messages.length);
+    var total = messages.length;
+    
+    // Use the index directly for recursion instead of ignoredIndex/forEach
+    if (index >= total) {
+        MDS.log("✅ [HISTORY-RESP] Completed sequential processing of " + total + " messages");
         MDS.comms.solo("CHAT_LIST_UPDATE", function () {
             MDS.log("📤 [HISTORY-SYNC] Notification sent to frontend");
         });
@@ -390,7 +384,25 @@ function processHistoryMessage(safePubkey, messages, index, resolvedAlias, exist
     var isIncoming = (msg.username === 'Me');
     var finalUsername = isIncoming ? resolvedAlias : "Me";
 
-    var tryInsert = function () {
+    // 0. PROCESSING GUARD (Shared with live handler)
+    var customid = msg.customid ? escapeSql(msg.customid) : "0x00";
+    var lockKey = (customid !== "0x00") ? customid : (safePubkey + "_" + (msg.original_timestamp || timestamp) + "_" + content.substring(0, 50));
+    
+    if (PROCESSING_MESSAGES.has(lockKey)) {
+        MDS.log("♻️ [HISTORY] Skipping message " + lockKey.substring(0, 10) + "... (already being processed)");
+        // Stagger next message processing removed to allow bridge to breathe normally
+        processHistoryMessage(safePubkey, messages, index + 1, resolvedAlias, existingMap);
+        return;
+    }
+    PROCESSING_MESSAGES.add(lockKey);
+
+    var releaseLockAndNext = function() {
+        PROCESSING_MESSAGES.delete(lockKey);
+        // Stagger next message processing (50ms) removed to prioritize real-time traffic
+        processHistoryMessage(safePubkey, messages, index + 1, resolvedAlias, existingMap);
+    };
+
+    var doInsert = function() {
         var safeFiledata = escapeSql(msg.filedata || "");
         var amount = msg.amount || 0;
         var txpowidVal = msg.txpowid ? "'" + escapeSql(msg.txpowid) + "'" : "NULL";
@@ -401,17 +413,14 @@ function processHistoryMessage(safePubkey, messages, index, resolvedAlias, exist
         var insertSql = "INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, txpowid, original_timestamp, customid, sender_seq, forwarded, reply_to) "
             + "VALUES ('', '" + safePubkey + "', '" + finalUsername + "', '" + type + "', '" + content + "', '" + safeFiledata + "', '" + state + "', " + amount + ", " + timestamp + ", " + txpowidVal + ", " + (msg.original_timestamp || timestamp) + ", '" + safeCustomId + "', " + senderSeq + ", " + forwardedVal + ", " + replyToVal + ")";
 
-        MDS.sql(insertSql, function (insRes) {
-            if (insRes.status) {
-                MDS.log("✅ [HISTORY-SYNC] Recovered: " + (content.substring(0, 20)));
-            }
-            processHistoryMessage(safePubkey, messages, index + 1, resolvedAlias, existingMap);
+        MDS.sql(insertSql, function() {
+            releaseLockAndNext();
         });
     };
 
-    var tryUpdate = function (existingId) {
+    var doUpdate = function(existingId) {
         if (!msg.txpowid && !msg.state) {
-            processHistoryMessage(safePubkey, messages, index + 1, resolvedAlias, existingMap);
+            releaseLockAndNext();
             return;
         }
         var newState = msg.state || "read";
@@ -419,20 +428,20 @@ function processHistoryMessage(safePubkey, messages, index, resolvedAlias, exist
         if (msg.txpowid) updateSql += ", txpowid='" + escapeSql(msg.txpowid) + "'";
         updateSql += " WHERE id=" + existingId;
 
-        MDS.sql(updateSql, function (updRes) {
-            processHistoryMessage(safePubkey, messages, index + 1, resolvedAlias, existingMap);
+        MDS.sql(updateSql, function() {
+            releaseLockAndNext();
         });
     };
 
-    // Use the Batch Map for primary deduplication
+    // 1. Deduplication check via Map (Bulk resolved in handleChatHistoryResponse)
     var existingId = null;
     if (msg.customid && existingMap.custom[msg.customid]) existingId = existingMap.custom[msg.customid];
     else if (msg.txpowid && existingMap.txpow[msg.txpowid]) existingId = existingMap.txpow[msg.txpowid];
 
     if (existingId) {
-        tryUpdate(existingId);
+        doUpdate(existingId);
     } else {
-        // Only if not in map, fallback to content/time check
+        // 2. Fallback check via content/time (Slowest path, only used for non-ID messages)
         var checkTime = msg.original_timestamp || timestamp;
         var minTime = checkTime - 60000;
         var maxTime = checkTime + 60000;
@@ -440,11 +449,11 @@ function processHistoryMessage(safePubkey, messages, index, resolvedAlias, exist
             "AND (original_timestamp BETWEEN " + minTime + " AND " + maxTime + " OR date BETWEEN " + minTime + " AND " + maxTime + ") " +
             "AND message='" + content + "' LIMIT 1";
 
-        MDS.sql(checkSql, function (res) {
+        MDS.sql(checkSql, function(res) {
             if (res.status && res.rows && res.rows.length > 0) {
-                tryUpdate(res.rows[0].ID || res.rows[0].id);
+                doUpdate(res.rows[0].ID || res.rows[0].id);
             } else {
-                tryInsert();
+                doInsert();
             }
         });
     }
@@ -464,11 +473,22 @@ function requestHistoryFromRecentContacts() {
                 return;
             }
             MDS.log("🔄 [HISTORY-SYNC] Syncing with " + res.rows.length + " recent contacts");
-            res.rows.forEach(function (row) {
-                MDS.log("🔄 [HISTORY-SYNC] Requesting history from: " + row.PUBLICKEY.substring(0, 20) + "...");
-                // Pass both publickey and address to increase success rate
-                requestChatHistory(row.PUBLICKEY, row.ADDRESS);
-            });
+            MDS.log("🔄 [HISTORY-SYNC] Syncing with " + res.rows.length + " recent contacts (STAGGERED)");
+            
+            var index = 0;
+            function nextSync() {
+                if (index < res.rows.length) {
+                    var row = res.rows[index];
+                    MDS.log("🔄 [HISTORY-SYNC] Staggered request (" + (index + 1) + "/" + res.rows.length + ") to: " + row.PUBLICKEY.substring(0, 10));
+                    requestChatHistory(row.PUBLICKEY, row.ADDRESS);
+                    index++;
+                    // Stagger by 200ms to avoid saturating Maxima queue
+                    MDS.cmd("timer 200", nextSync);
+                } else {
+                    MDS.log("✅ [HISTORY-SYNC] All staggered requests sent");
+                }
+            }
+            nextSync();
         } else {
             MDS.log("❌ [HISTORY-SYNC] SQL query failed: " + (res.error || "Unknown error"));
         }
@@ -476,6 +496,16 @@ function requestHistoryFromRecentContacts() {
 }
 
 function requestChatHistory(toPublicKey, toAddress) {
+    var now = Date.now();
+    var safeKey = (toPublicKey || "").toLowerCase();
+    
+    // 30-second cooldown per peer to prevent "sync storms" during reconnect/startup
+    if (SYNC_COOLDOWN[safeKey] && (now - SYNC_COOLDOWN[safeKey] < 30000)) {
+        MDS.log("⏭️ [HISTORY-SYNC] Throttling redundant request to " + safeKey.substring(0, 10));
+        return;
+    }
+    SYNC_COOLDOWN[safeKey] = now;
+
     var payload = {
         message: "",
         type: "chat_history_request",
@@ -487,70 +517,12 @@ function requestChatHistory(toPublicKey, toAddress) {
     var jsonStr = JSON.stringify(payload);
     var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
 
-    // Use specific address if known, otherwise fall back to resolution logic
-    if (toAddress && (toAddress.startsWith('Mx') || toAddress.startsWith('MX'))) {
-        // Use new robust cleaner
-        var cleanAddress = cleanMaximaAddress(toAddress);
-
-        // EXTRA DEBUG: Log address transformation
-        MDS.log("🔍 [ADDR-DEBUG] Raw: '" + toAddress + "' -> Clean: '" + cleanAddress + "'");
-
-        var sendCmd = 'maxima action:send to:' + cleanAddress + ' application:metachain data:' + hexData + ' poll:false';
-
-        // DEBUG: Print EXACT command to see what Minima receives
-        MDS.log("🔍 [CMD-DEBUG-V3] " + sendCmd);
-
-        MDS.cmd(sendCmd, function (res) {
-            if (!res.status) {
-                MDS.log("⚠️ [HISTORY-SYNC] Failed to ask via address " + cleanAddress.substring(0, 10) + " Err: " + res.error);
-            }
-        });
-    } else {
-        // Fallback to resolving via DB or publickey
-        resolveAndSend(toPublicKey, hexData, "HISTORY-SYNC", false);
-    }
+    // Use resolveAndSend in exclusive mode: prioritizes address if available,
+    // falls back to publickey lookup. Avoids double-send (was: direct send + resolveAndSend).
+    resolveAndSend(toPublicKey, hexData, "HISTORY-SYNC", false, true);
 }
 
-// Helper for Robust Sending (Resolves Address)
-function resolveAndSend(pubkey, hexData, logTag, usePoll) {
-    var pollStr = usePoll ? " poll:true" : " poll:false";
-    var startTime = Date.now();
-
-    // Clean key
-    var safeKey = pubkey.replace(/'/g, "''");
-
-    var peerSql = "SELECT ADDRESS FROM DISCOVERED_PEERS WHERE PUBLICKEY='" + safeKey + "' AND ADDRESS IS NOT NULL LIMIT 1";
-
-    try {
-        MDS.sql(peerSql, function (peerRes) {
-            var sqlTime = Date.now();
-            var sendCmd;
-            if (peerRes && peerRes.status && peerRes.count > 0) {
-                var rawMx = peerRes.rows[0].ADDRESS;
-                var mxAddress = rawMx ? cleanMaximaAddress(rawMx) : null;
-
-                if (mxAddress && (mxAddress.startsWith('Mx') || mxAddress.startsWith('MX'))) {
-                    sendCmd = 'maxima action:send to:' + mxAddress + ' application:metachain data:' + hexData + pollStr;
-                } else {
-                    sendCmd = "maxima action:send publickey:" + pubkey + " application:metachain data:" + hexData + pollStr;
-                }
-            } else {
-                sendCmd = "maxima action:send publickey:" + pubkey + " application:metachain data:" + hexData + pollStr;
-            }
-
-            MDS.cmd(sendCmd, function (res) {
-                var endTime = Date.now();
-                if (res.status) {
-                    MDS.log("✅ [" + logTag + "] Sent to " + pubkey.substring(0, 10) + " (SQL: " + (sqlTime - startTime) + "ms, CMD: " + (endTime - sqlTime) + "ms)");
-                } else {
-                    MDS.log("⚠️ [" + logTag + "] Failed send to " + pubkey.substring(0, 10) + ": " + res.error + " (Total: " + (endTime - startTime) + "ms)");
-                }
-            });
-        });
-    } catch (err) {
-        MDS.log("❌ [" + logTag + "] Critical error in resolveAndSend: " + err);
-    }
-}
+// resolveAndSend moved to utils/maxima-sender.js
 
 // --------------------------------------------------------------------------
 // SMART SYNC PROTOCOL (BIDIRECTIONAL)
@@ -606,10 +578,10 @@ function handleSyncStatusCheck(msg, fromKey) {
                     } : null
                 };
 
-                // Send report back via Maxima
-                MDS.cmd("maxima action:send publickey:" + fromKey + " application:metachain data:" + JSON.stringify(reportPayload) + " poll:false", function (sendRes) {
-                    if (sendRes.status) MDS.log("✅ [SMART-SYNC] Sent status report to " + fromKey.substring(0, 10));
-                });
+                // Send report back via Maxima (using Dual-send helper)
+                var jsonStr = JSON.stringify(reportPayload);
+                var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
+                resolveAndSend(fromKey, hexData, "SMART-SYNC", false, true);
             });
 
         } else {

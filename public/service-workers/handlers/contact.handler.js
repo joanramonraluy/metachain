@@ -38,10 +38,10 @@ function handleContactRequest(pubkey, maxjson) {
         }
     });
 
-    // Send delivery confirmation
+    // Send delivery confirmation via unified Dual-send helper (exclusive mode)
     var confirmPayload = { type: "contact_request_received", timestamp: now };
     var confirmHex = "0x" + utf8ToHex(JSON.stringify(confirmPayload)).toUpperCase();
-    MDS.cmd("maxima action:send publickey:" + pubkey + " application:metachain data:" + confirmHex + " poll:false");
+    resolveAndSend(pubkey, confirmHex, "CONTACT-CONFIRM", false, true);
 }
 
 function handleContactDeclined(pubkey) {

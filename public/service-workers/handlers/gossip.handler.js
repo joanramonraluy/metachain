@@ -3,7 +3,11 @@
  * Handles peer exchange (gossip) protocol
  */
 
+var GOSSIP_COOLDOWN = {}; // Per-peer cooldown map (pubkey -> timestamp)
+var STRICT_SERIAL_PROTOCOL = true; // [TOGGLE] Set to false to re-enable Concurrent Dual-send
+
 function handleGetPeers(pubkey, maxjson) {
+  pubkey = (pubkey || "").toLowerCase();
   MDS.log(
     "🗣️ [GOSSIP] Peer request from " +
       (maxjson.alias || pubkey.substring(0, 10)),
@@ -39,81 +43,37 @@ function handleGetPeers(pubkey, maxjson) {
           alias: row.ALIAS,
           bio: bio,
           address: row.ADDRESS,
-          allowNonContactChats:
-            row.ALLOW_NON_CONTACT_CHATS === 1 ||
-            row.ALLOW_NON_CONTACT_CHATS === true,
+          allowNonContactChats: (function(r) {
+            var val = r.ALLOW_NON_CONTACT_CHATS || r.allow_non_contact_chats;
+            return val === 1 || val === true || val === "true" || val === "1";
+          })(row),
           avatar: avatar,
           country: country,
           languages: languages,
         });
       }
 
-      // Send response (prefer address when provided to avoid contact requirement)
       var replyPayload = {
         app: "metachain",
         type: "peers_response",
         peers: peers,
       };
-      var replyHex =
-        "0x" + utf8ToHex(JSON.stringify(replyPayload)).toUpperCase();
-      var targetAddress = maxjson && maxjson.address ? maxjson.address : "";
-      var sendCmd = targetAddress
-        ? "maxima action:send to:" +
-          targetAddress +
-          " application:metachain data:" +
-          replyHex +
-          " poll:false"
-        : "maxima action:send publickey:" +
-          pubkey +
-          " application:metachain data:" +
-          replyHex +
-          " poll:false";
 
-      var fallbackCmd =
-        "maxima action:send publickey:" +
-        pubkey +
-        " application:metachain data:" +
-        replyHex +
-        " poll:false";
+      var replyHex = "0x" + utf8ToHex(JSON.stringify(replyPayload)).toUpperCase();
 
-      MDS.cmd(sendCmd, function (sendRes) {
-        var targetLabel = targetAddress
-          ? "to " + targetAddress
-          : "publickey " + pubkey.substring(0, 10);
-
-        if (sendRes && sendRes.status === false) {
-          MDS.log(
-            "⚠️ [GOSSIP] Failed to send peers " +
-              targetLabel +
-              ": " +
-              (sendRes.error || "unknown error"),
-          );
-        } else {
-          MDS.log("✅ [GOSSIP] Sent " + peers.length + " peers " + targetLabel);
-        }
-
-        // Always also send via publickey to avoid stale/ephemeral addresses
-        if (targetAddress) {
-          MDS.cmd(fallbackCmd, function (fallbackRes) {
-            var pkLabel = "publickey " + pubkey.substring(0, 10);
-            if (fallbackRes && fallbackRes.status === false) {
-              MDS.log(
-                "⚠️ [GOSSIP] Failed to send peers to " +
-                  pkLabel +
-                  ": " +
-                  (fallbackRes.error || "unknown error"),
-              );
-            } else {
-              MDS.log("✅ [GOSSIP] Sent " + peers.length + " peers " + pkLabel);
-            }
-          });
-        }
-      });
+      // Use resolveAndSend in exclusive mode to avoid double-sending large peer lists
+      // but ensuring the best path (Address or PK) is used.
+      if (STRICT_SERIAL_PROTOCOL) {
+        MDS.cmd("maxima action:send publickey:" + pubkey + " application:metachain data:" + replyHex + " poll:false");
+      } else {
+        resolveAndSend(pubkey, replyHex, "GOSSIP-RESP", false, true);
+      }
     }
   });
 }
 
 function handlePeersResponse(pubkey, maxjson) {
+  pubkey = (pubkey || "").toLowerCase();
   var peerCount = maxjson.peers ? maxjson.peers.length : 0;
   var senderAlias = pubkey ? pubkey.substring(0, 10) : "P2P-broadcast";
 
@@ -173,7 +133,7 @@ function startGossip() {
 
   // Try discovered peers first
   MDS.sql(
-    "SELECT * FROM DISCOVERED_PEERS ORDER BY last_seen DESC LIMIT 5",
+    "SELECT * FROM DISCOVERED_PEERS ORDER BY last_seen DESC LIMIT " + GOSSIP_LIMIT,
     function (res) {
       if (res.status && res.rows && res.rows.length > 0) {
         MDS.log(
@@ -206,7 +166,7 @@ function startGossip() {
             var targets = [];
             for (
               var i = 0;
-              i < Math.min(5, contactRes.response.contacts.length);
+              i < Math.min(GOSSIP_LIMIT, contactRes.response.contacts.length);
               i++
             ) {
               targets.push(contactRes.response.contacts[i].publickey);
@@ -248,18 +208,32 @@ function askPeers(pubkeys) {
       var pk = pubkeys[i];
       if (MY_MAXIMA_PK && pk === MY_MAXIMA_PK) continue;
 
-      MDS.cmd(
-        "maxima action:send publickey:" +
-          pk +
-          " application:metachain data:" +
-          hexData +
-          " poll:false",
-      );
+      // THROTTLING: Skip if we've asked this peer recently
+      var now = Date.now();
+      var lastAsked = GOSSIP_COOLDOWN[pk] || 0;
+      var interval = GOSSIP_INTERVAL || 60000;
+      var cooldownMs = interval * 2; // Default cooldown is 2x the gossip interval
+
+      if (now - lastAsked < cooldownMs) {
+        // MDS.log("⏳ [GOSSIP] Skipping " + pk.substring(0, 10) + " (cooldown active)");
+        continue;
+      }
+
+      GOSSIP_COOLDOWN[pk] = now;
+      MDS.log("🗣️ [GOSSIP-ASK] Requesting peers from " + pk.substring(0, 10));
+
+      // Concurrent Dual-send for peer request (exclusive mode to save bandwidth if address is known)
+      if (STRICT_SERIAL_PROTOCOL) {
+        MDS.cmd("maxima action:send publickey:" + pk + " application:metachain data:" + hexData + " poll:false");
+      } else {
+        resolveAndSend(pk, hexData, "GOSSIP-ASK", false, true);
+      }
     }
   });
 }
 
 function sendWelcomePackage(targetPubkey, targetAlias, targetAddress) {
+  targetPubkey = (targetPubkey || "").toLowerCase();
   if (MY_MAXIMA_PK && targetPubkey === MY_MAXIMA_PK) return;
 
   MDS.log("🎁 [GOSSIP] Sending Welcome Package to " + targetAlias);
@@ -292,9 +266,10 @@ function sendWelcomePackage(targetPubkey, targetAlias, targetAddress) {
           alias: row.ALIAS,
           bio: bio,
           address: row.ADDRESS,
-          allowNonContactChats:
-            row.ALLOW_NON_CONTACT_CHATS === 1 ||
-            row.ALLOW_NON_CONTACT_CHATS === true,
+          allowNonContactChats: (function(r) {
+            var val = r.ALLOW_NON_CONTACT_CHATS || r.allow_non_contact_chats;
+            return val === 1 || val === true || val === "true" || val === "1";
+          })(row),
           avatar: avatar,
           country: country,
           languages: languages,
@@ -310,32 +285,19 @@ function sendWelcomePackage(targetPubkey, targetAlias, targetAddress) {
       var hexData =
         "0x" + utf8ToHex(JSON.stringify(responsePayload)).toUpperCase();
 
-      // Send via Maxima unicast directly to the target
-      // Prioritize to:address (no contact required), fallback to publickey
-      var sendCmd = targetAddress
-        ? "maxima action:send to:" +
-          targetAddress +
-          " application:metachain data:" +
-          hexData +
-          " poll:false"
-        : "maxima action:send publickey:" +
-          targetPubkey +
-          " application:metachain data:" +
-          hexData +
-          " poll:false";
-
-      MDS.cmd(sendCmd, function (sendRes) {
-        if (sendRes && sendRes.status === false) {
-          MDS.log(
-            "⚠️ [GOSSIP] Failed to send Welcome Package to " +
-              targetAlias +
-              ": " +
-              (sendRes.error || "unknown error"),
-          );
-        } else {
-          MDS.log("✅ [GOSSIP] Welcome Package sent to " + targetAlias);
-        }
+      // Step 1: P2P broadcast — ensures direct neighbors (local/no-MLS) receive the package.
+      // This mirrors sendBackgroundBeacon's dual-layer approach.
+      MDS.cmd("message data:" + hexData, function () {
+        MDS.log("📡 [GOSSIP] Welcome Package P2P broadcast sent");
       });
+
+      // Step 2: Maxima unicast (using Dual-send helper in exclusive mode)
+      // Prevents 3x amplification by preferring Address OR PK, but not both.
+      if (!STRICT_SERIAL_PROTOCOL) {
+        resolveAndSend(targetPubkey, hexData, "GOSSIP-WELCOME", false, true);
+      } else {
+        MDS.log("📡 [GOSSIP] Skipping Welcome Package Maxima unicast (using P2P only)");
+      }
     }
   });
 }

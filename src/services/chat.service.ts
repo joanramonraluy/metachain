@@ -115,7 +115,8 @@ class ChatService {
   /* ----------------------------------------------------------------------------
       CHAT STATUS (Archive, Favorite, Mute)
     ---------------------------------------------------------------------------- */
-  archiveChat(publickey: string): Promise<void> {
+  archiveChat(pubkey: string): Promise<void> {
+    const publickey = (pubkey || "").toLowerCase();
     return new Promise((resolve, reject) => {
       const sql = `
                 MERGE INTO CHAT_STATUS (publickey, archived, archived_date)
@@ -136,7 +137,8 @@ class ChatService {
     });
   }
 
-  unarchiveChat(publickey: string): Promise<void> {
+  unarchiveChat(pubkey: string): Promise<void> {
+    const publickey = (pubkey || "").toLowerCase();
     return new Promise((resolve, reject) => {
       const sql = `UPDATE CHAT_STATUS SET archived=FALSE WHERE publickey='${publickey}'`;
       console.log("💾 [SQL] Unarchiving chat:", publickey);
@@ -153,7 +155,8 @@ class ChatService {
     });
   }
 
-  markChatAsOpened(publickey: string): Promise<void> {
+  markChatAsOpened(pubkey: string): Promise<void> {
+    const publickey = (pubkey || "").toLowerCase();
     return new Promise((resolve) => {
       const sql = `
                 MERGE INTO CHAT_STATUS (publickey, last_opened)
@@ -180,7 +183,8 @@ class ChatService {
     });
   }
 
-  setAppInstalled(publickey: string): Promise<void> {
+  setAppInstalled(pubkey: string): Promise<void> {
+    const publickey = (pubkey || "").toLowerCase();
     return new Promise((resolve) => {
       const sql = `
                 MERGE INTO CHAT_STATUS (publickey, app_installed)
@@ -201,7 +205,8 @@ class ChatService {
     });
   }
 
-  isAppInstalled(publickey: string): Promise<boolean> {
+  isAppInstalled(pubkey: string): Promise<boolean> {
+    const publickey = (pubkey || "").toLowerCase();
     return new Promise((resolve) => {
       const sql = `SELECT app_installed FROM CHAT_STATUS WHERE publickey='${publickey}'`;
       MDS.sql(sql, (res: any) => {
@@ -215,7 +220,8 @@ class ChatService {
     });
   }
 
-  muteContact(publickey: string): Promise<void> {
+  muteContact(pubkey: string): Promise<void> {
+    const publickey = (pubkey || "").toLowerCase();
     return new Promise((resolve) => {
       const sql = `
                 MERGE INTO CHAT_STATUS (publickey, muted)
@@ -234,7 +240,8 @@ class ChatService {
     });
   }
 
-  unmuteContact(publickey: string): Promise<void> {
+  unmuteContact(pubkey: string): Promise<void> {
+    const publickey = (pubkey || "").toLowerCase();
     return new Promise((resolve) => {
       const sql = `UPDATE CHAT_STATUS SET muted=FALSE WHERE publickey='${publickey}'`;
       MDS.sql(sql, (res: any) => {
@@ -249,7 +256,8 @@ class ChatService {
     });
   }
 
-  isContactMuted(publickey: string): Promise<boolean> {
+  isContactMuted(pubkey: string): Promise<boolean> {
+    const publickey = (pubkey || "").toLowerCase();
     return new Promise((resolve) => {
       const sql = `SELECT muted FROM CHAT_STATUS WHERE publickey='${publickey}'`;
       MDS.sql(sql, (res: any) => {
@@ -265,7 +273,8 @@ class ChatService {
     });
   }
 
-  markChatAsFavorite(publickey: string): Promise<void> {
+  markChatAsFavorite(pubkey: string): Promise<void> {
+    const publickey = (pubkey || "").toLowerCase();
     return new Promise((resolve) => {
       const sql = `
                 MERGE INTO CHAT_STATUS (publickey, favorite)
@@ -284,7 +293,8 @@ class ChatService {
     });
   }
 
-  unmarkChatAsFavorite(publickey: string): Promise<void> {
+  unmarkChatAsFavorite(pubkey: string): Promise<void> {
+    const publickey = (pubkey || "").toLowerCase();
     return new Promise((resolve) => {
       const sql = `UPDATE CHAT_STATUS SET favorite=FALSE WHERE publickey='${publickey}'`;
       MDS.sql(sql, (res: any) => {
@@ -302,7 +312,8 @@ class ChatService {
     });
   }
 
-  isChatFavorite(publickey: string): Promise<boolean> {
+  isChatFavorite(pubkey: string): Promise<boolean> {
+    const publickey = (pubkey || "").toLowerCase();
     return new Promise((resolve) => {
       const sql = `SELECT favorite FROM CHAT_STATUS WHERE publickey='${publickey}'`;
       MDS.sql(sql, (res: any) => {
@@ -318,7 +329,8 @@ class ChatService {
     });
   }
 
-  blockContact(publickey: string): Promise<void> {
+  blockContact(pubkey: string): Promise<void> {
+    const publickey = (pubkey || "").toLowerCase();
     return new Promise((resolve) => {
       const sql = `
                 MERGE INTO CHAT_STATUS (publickey, blocked)
@@ -339,7 +351,8 @@ class ChatService {
     });
   }
 
-  unblockContact(publickey: string): Promise<void> {
+  unblockContact(pubkey: string): Promise<void> {
+    const publickey = (pubkey || "").toLowerCase();
     return new Promise((resolve) => {
       const sql = `UPDATE CHAT_STATUS SET blocked=FALSE WHERE publickey='${publickey}'`;
       MDS.sql(sql, (res: any) => {
@@ -353,13 +366,14 @@ class ChatService {
     });
   }
 
-  getChatStatus(publickey: string): Promise<{
+  getChatStatus(pubkey: string): Promise<{
     archived: boolean;
     lastOpened: number | null;
     favorite: boolean;
     blocked: boolean;
     blockedByThem: boolean;
   }> {
+    const publickey = (pubkey || "").toLowerCase();
     return new Promise((resolve) => {
       const sql = `SELECT * FROM CHAT_STATUS WHERE publickey='${publickey}'`;
       MDS.sql(sql, (res: any) => {
@@ -462,19 +476,19 @@ class ChatService {
   }
 
   updateMessageState(
-    publickey: string,
+    pubkey: string,
     date: number,
     state: string,
     txpowid?: string,
     sender_seq?: number,
   ): Promise<void> {
+    const publickey = (pubkey || "").toLowerCase();
     return new Promise((resolve) => {
       const safeKey = publickey.replace(/'/g, "''");
       let sql = `UPDATE CHAT_MESSAGES SET state='${state}'`;
       if (txpowid) sql += `, txpowid='${txpowid.replace(/'/g, "''")}'`;
       if (sender_seq !== undefined) sql += `, sender_seq=${sender_seq}`;
 
-      // Where clause
       // We use date (timestamp) as the primary identifier along with publickey for now
       sql += ` WHERE publickey='${safeKey}' AND date=${date}`;
 
@@ -486,13 +500,14 @@ class ChatService {
     });
   }
 
-  getMessages(publickey: string): Promise<ChatMessage[]> {
+  getMessages(pubkey: string): Promise<ChatMessage[]> {
+    const publickey = (pubkey || "").toLowerCase();
     return new Promise((resolve) => {
       const safePublickey = escapeSql(publickey);
       const sql = `
                 SELECT * FROM CHAT_MESSAGES
                 WHERE publickey='${safePublickey}'
-                ORDER BY COALESCE(original_timestamp, date) ASC, sender_seq ASC, id ASC
+                ORDER BY date ASC, id ASC
             `;
       MDS.sql(sql, (res: any) => {
         if (!res.status || !res.rows) {
@@ -508,7 +523,8 @@ class ChatService {
     });
   }
 
-  getLastMessageTimestamp(publickey: string): Promise<number> {
+  getLastMessageTimestamp(pubkey: string): Promise<number> {
+    const publickey = (pubkey || "").toLowerCase();
     return new Promise((resolve) => {
       const safePublickey = escapeSql(publickey);
       const sql = `
@@ -530,7 +546,8 @@ class ChatService {
     });
   }
 
-  deleteAllMessages(publickey: string): Promise<void> {
+  deleteAllMessages(pubkey: string): Promise<void> {
+    const publickey = (pubkey || "").toLowerCase();
     return new Promise((resolve, reject) => {
       const safePublickey = escapeSql(publickey);
       const sql = `DELETE FROM CHAT_MESSAGES WHERE publickey='${safePublickey}'`;

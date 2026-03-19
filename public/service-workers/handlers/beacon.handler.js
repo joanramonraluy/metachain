@@ -5,6 +5,10 @@
 
 function handleBeacon(beacon, source) {
   try {
+    // Normalize public key early to prevent casing drift (P2P vs Maxima)
+    if (beacon.pubkey) {
+      beacon.pubkey = beacon.pubkey.toLowerCase();
+    }
     // Validation logging
     if (!beacon.pubkey || !beacon.address || !beacon.alias) {
       MDS.log(
@@ -123,19 +127,23 @@ function saveBeaconWithBio(
 
   // Check stored beacon timestamp to avoid overwriting newer profile data with old gossip
   MDS.sql(
-    "SELECT extra_data FROM DISCOVERED_PEERS WHERE publickey='" + beacon.pubkey + "'",
+    "SELECT extra_data, allow_non_contact_chats_source FROM DISCOVERED_PEERS WHERE publickey='" + beacon.pubkey + "'",
     function (existingRes) {
       var storedTimestamp = 0;
+      var storedSource = null;
       if (
         existingRes.status &&
         existingRes.rows &&
-        existingRes.rows.length > 0 &&
-        existingRes.rows[0].EXTRA_DATA
+        existingRes.rows.length > 0
       ) {
-        try {
-          var stored = JSON.parse(existingRes.rows[0].EXTRA_DATA);
-          storedTimestamp = stored.timestamp || 0;
-        } catch (e) {}
+        var row = existingRes.rows[0];
+        storedSource = row.allow_non_contact_chats_source || row.ALLOW_NON_CONTACT_CHATS_SOURCE;
+        if (row.EXTRA_DATA || row.extra_data) {
+          try {
+            var stored = JSON.parse(row.EXTRA_DATA || row.extra_data);
+            storedTimestamp = stored.timestamp || 0;
+          } catch (e) {}
+        }
       }
 
       // If the incoming beacon is older than what we have stored, only touch last_seen
@@ -165,8 +173,17 @@ function saveBeaconWithBio(
       }
 
       // Proceed with full profile MERGE
+      // CRITICAL: Protect 'PROFILE' source from being overwritten by 'BEACON'
+      var permissionSql = "";
+      if (storedSource === 'PROFILE' || storedSource === 'MESSAGE') {
+          // If we have a definitive source, skip updating the permission flag from a beacon
+          permissionSql = ""; 
+      } else {
+          permissionSql = ", allow_non_contact_chats=" + allowNonContactChats + ", allow_non_contact_chats_source='BEACON'";
+      }
+
       var discoverySql =
-        "MERGE INTO DISCOVERED_PEERS (publickey, alias, bio, address, last_seen, source, allow_non_contact_chats, extra_data) " +
+        "MERGE INTO DISCOVERED_PEERS (publickey, alias, bio, address, last_seen, source, extra_data" + (permissionSql ? ", allow_non_contact_chats, allow_non_contact_chats_source" : "") + ") " +
         "KEY (publickey) " +
         "VALUES ('" +
         beacon.pubkey +
@@ -180,19 +197,20 @@ function saveBeaconWithBio(
         now +
         ", '" +
         source +
-        "', " +
-        allowNonContactChats +
-        ", '" +
+        "', '" +
         extraData +
-        "')";
+        "'" + (permissionSql ? ", " + allowNonContactChats + ", 'BEACON'" : "") + ")";
 
       MDS.sql(discoverySql, function (res) {
         if (res.status) {
           MDS.log("✅ [BEACON] Saved: " + beacon.alias);
           promoteToUserRegistry(beacon, now);
 
-          // Reactive gossip
-          if (source === "P2P" || source === "MAXIMA") {
+          // Reactive gossip - Throttled relay (1h debounce per peer)
+          // Prevents the "discovery loop" when receiving beacons from neighbors.
+          // We only relay if it's been more than 1 hour since we last greeted this peer.
+          var RELAY_DEBOUNCE = 3600000;
+          if ((source === "P2P" || source === "MAXIMA") && (now - storedTimestamp > RELAY_DEBOUNCE)) {
             sendWelcomePackage(beacon.pubkey, beacon.alias, cleanAddress);
             askPeers([beacon.pubkey]);
           }
@@ -412,7 +430,7 @@ function sendBeaconToMLS(maxInfoResponse, hexData) {
 
 function startCleanupTimer() {
   var now = Date.now();
-  var TTL = 600000; // 10 minutes
+  var TTL = 3600000; // 1 hour (Increased from 10m to reduce discovery cycle frequency)
 
   var cleanupSql =
     "DELETE FROM DISCOVERED_PEERS WHERE last_seen < " +

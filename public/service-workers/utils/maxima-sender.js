@@ -6,6 +6,161 @@
  * NOTE: Uses callbacks instead of async/await (MDS doesn't support async/await)
  */
 
+var STRICT_SERIAL_PROTOCOL = true; // [TOGGLE] Set to false to re-enable Concurrent Dual-send
+
+/**
+ * Standardized Sending Helper (Available to all handlers)
+ * Default: Dual-send (PublicKey AND Maxima Address) for maximum reliability.
+ * Optional: exclusive=true sends to Address (if found) OR PK, but not both.
+ */
+function resolveAndSend(pubkey, hexData, logTag, usePoll, exclusive, callback) {
+    var pollStr = usePoll ? " poll:true" : " poll:false";
+    var startTime = Date.now();
+
+    // Clean key (lowercase for casing drift)
+    var safeKey = (pubkey || "").toLowerCase();
+    var sqlKey = safeKey.replace(/'/g, "''");
+
+    var peerSql = "SELECT ADDRESS FROM DISCOVERED_PEERS WHERE PUBLICKEY='" + sqlKey + "' AND ADDRESS IS NOT NULL LIMIT 1";
+
+    try {
+        MDS.sql(peerSql, function (peerRes) {
+            var sqlTime = Date.now();
+            var mxAddress = null;
+
+            if (peerRes && peerRes.status && peerRes.rows && peerRes.rows.length > 0) {
+                var rawMx = peerRes.rows[0].ADDRESS || peerRes.rows[0].address;
+                mxAddress = rawMx ? cleanMaximaAddress(rawMx) : null;
+            }
+
+            var hasMx = !!(mxAddress && (mxAddress.startsWith('Mx') || mxAddress.startsWith('MX')));
+
+            // SAFETY CHECK: If payload is large, force exclusive mode (no dual-send)
+            // 100,000 chars is ~50KB. Large enough for profile/chat, small enough for history/files.
+            var isPayloadLarge = hexData.length > 100000;
+            var forceExclusive = exclusive || isPayloadLarge;
+
+            if (isPayloadLarge) {
+                MDS.log("⚠️ [" + logTag + "] Payload large (" + hexData.length + " chars). Forcing exclusive transport.");
+            }
+
+            // --- STRICT SERIAL PROTOCOL PATH ---
+            if (STRICT_SERIAL_PROTOCOL) {
+                var bestCmd = null;
+                var fallbackCmd = null;
+
+                if (hasMx) {
+                    bestCmd = 'maxima action:send to:' + mxAddress + ' application:metachain data:' + hexData + pollStr;
+                    fallbackCmd = "maxima action:send publickey:" + safeKey + " application:metachain data:" + hexData + pollStr;
+                } else {
+                    bestCmd = "maxima action:send publickey:" + safeKey + " application:metachain data:" + hexData + pollStr;
+                }
+
+                MDS.log("📡 [" + logTag + "-SERIAL] Attempting best transport...");
+                MDS.cmd(bestCmd, function (res) {
+                    if (res.status) {
+                        MDS.log("✅ [" + logTag + "-SERIAL] Success.");
+                        if (callback) callback(null, res);
+                    } else if (res.error && res.error.indexOf("No Contact found") !== -1 && fallbackCmd) {
+                        MDS.log("⚠️ [" + logTag + "-SERIAL] No Contact found. Attempting fallback...");
+                        MDS.cmd(fallbackCmd, function (fallbackRes) {
+                            if (fallbackRes.status) {
+                                MDS.log("✅ [" + logTag + "-SERIAL] Fallback success.");
+                                if (callback) callback(null, fallbackRes);
+                            } else {
+                                MDS.log("❌ [" + logTag + "-SERIAL] Fallback failed: " + (fallbackRes.error || "unknown"));
+                                if (callback) callback(fallbackRes.error || "fallback failed");
+                            }
+                        });
+                    } else {
+                        MDS.log("❌ [" + logTag + "-SERIAL] Failed: " + (res.error || "unknown"));
+                        if (callback) callback(res.error || "serial send failed");
+                    }
+                });
+                return;
+            }
+
+            // --- LEGACY CONCURRENT DUAL-SEND PATH ---
+            // If exclusive and we have Mx, only send to Mx
+            if (forceExclusive && hasMx) {
+                var mxCmd = 'maxima action:send to:' + mxAddress + ' application:metachain data:' + hexData + pollStr;
+                MDS.cmd(mxCmd, function (mxRes) {
+                   if (mxRes.status) {
+                       MDS.log("✅ [" + logTag + "-EXCL] Sent to Mx " + mxAddress.substring(0, 15) + "...");
+                       if (callback) callback(null, mxRes);
+                   } else {
+                       MDS.log("⚠️ [" + logTag + "-EXCL] Failed Mx send to " + mxAddress.substring(0, 15) + "... : " + (mxRes.error || "unknown"));
+                       if (callback) callback(mxRes.error || "exclusive mx failed");
+                   }
+                });
+                return;
+            }
+
+            // Normal Dual-send (Standard path)
+            var pkCmd = "maxima action:send publickey:" + safeKey + " application:metachain data:" + hexData + pollStr;
+            var mxCmd = hasMx ? ('maxima action:send to:' + mxAddress + ' application:metachain data:' + hexData + pollStr) : null;
+
+            var pkFinished = false;
+            var mxFinished = !hasMx;
+            var finalRes = null;
+            var finalErr = null;
+
+            var checkDone = function(err, res, type) {
+                if (!err && res && res.status) {
+                    if (!finalRes) {
+                        finalRes = res;
+                        if (callback) {
+                            var cb = callback;
+                            callback = null; // Prevent double callback
+                            cb(null, res);
+                        }
+                    }
+                } else {
+                    finalErr = err || (res ? res.error : "unknown error");
+                }
+
+                if (type === 'PK') pkFinished = true;
+                if (type === 'MX') mxFinished = true;
+
+                if (pkFinished && mxFinished && !finalRes) {
+                    if (callback) {
+                        var cb = callback;
+                        callback = null;
+                        cb(finalErr, null);
+                    }
+                }
+            };
+
+            MDS.cmd(pkCmd, function (pkRes) {
+                var endTime = Date.now();
+                if (pkRes.status) {
+                    MDS.log("✅ [" + logTag + "] Sent to PK " + safeKey.substring(0, 10) + " (SQL: " + (sqlTime - startTime) + "ms, total: " + (endTime - startTime) + "ms)");
+                    checkDone(null, pkRes, 'PK');
+                } else {
+                    MDS.log("⚠️ [" + logTag + "] Failed PK send to " + safeKey.substring(0, 10) + ": " + (pkRes.error || "no contact") + " (Total: " + (endTime - startTime) + "ms)");
+                    checkDone(pkRes.error, pkRes, 'PK');
+                }
+            });
+
+            if (hasMx) {
+                MDS.cmd(mxCmd, function (mxRes) {
+                   if (mxRes.status) {
+                       MDS.log("✅ [" + logTag + "] Sent to Mx " + mxAddress.substring(0, 15) + "...");
+                       checkDone(null, mxRes, 'MX');
+                   } else {
+                       MDS.log("⚠️ [" + logTag + "] Failed Mx send to " + mxAddress.substring(0, 15) + "... : " + (mxRes.error || "unknown"));
+                       checkDone(mxRes.error, mxRes, 'MX');
+                   }
+                });
+            }
+        });
+    } catch (err) {
+        MDS.log("❌ [" + logTag + "] Critical error in resolveAndSend: " + err);
+        if (callback) callback(err);
+    }
+}
+
+
 /**
  * Send a Maxima message
  * @param {string} toPublicKey - Recipient's public key (0x...) or Maxima address (Mx...)
@@ -67,54 +222,15 @@ function sendMaximaMessage(toPublicKey, type, messageData, context, callback) {
 
                 MDS.log("📦 [SW-MAXIMA] Payload: " + jsonStr.substring(0, 100) + "...");
 
-                // Determine send method (publickey vs address)
-                var sendMessage = function (sendCmd) {
-                    MDS.log("📡 [SW-MAXIMA] Sending via: " + sendCmd.substring(0, 80) + "...");
-                    MDS.cmd(sendCmd, function (response) {
-                        if (!response.status) {
-                            // Check if it's a "No Contact found" error - try address resolution
-                            if (response.error && response.error.indexOf("No Contact found") !== -1) {
-                                MDS.log("⚠️ [SW-MAXIMA] Not in contacts, trying address resolution...");
-                                resolveMaximaAddress(toPublicKey, function (err, mxAddress) {
-                                    if (!err && mxAddress) {
-                                        var retrySendCmd = "maxima action:send to:" + cleanMaximaAddress(mxAddress) + " application:metachain data:" + hexData + " poll:false";
-                                        MDS.cmd(retrySendCmd, function (retryResponse) {
-                                            if (!retryResponse.status) {
-                                                callback("Retry failed: " + retryResponse.error);
-                                            } else {
-                                                MDS.log("✅ [SW-MAXIMA] Message sent via Mx address (non-contact)");
-                                                callback(null, retryResponse);
-                                            }
-                                        });
-                                    } else {
-                                        callback("Could not resolve address for non-contact");
-                                    }
-                                });
-                            } else {
-                                callback(response.error || "Maxima send failed");
-                            }
-                        } else {
-                            MDS.log("✅ [SW-MAXIMA] Message sent successfully");
-                            callback(null, response);
-                        }
-                    });
-                };
-
-                if (toPublicKey.startsWith("Mx") || toPublicKey.startsWith("MX")) {
-                    sendMessage("maxima action:send to:" + cleanMaximaAddress(toPublicKey) + " application:metachain data:" + hexData + " poll:false");
-                } else if (toPublicKey.startsWith("0x")) {
-                    // Try to resolve to Maxima address first
-                    resolveMaximaAddress(toPublicKey, function (err, mxAddress) {
-                        if (!err && mxAddress) {
-                            MDS.log("🔍 [SW-MAXIMA] Resolved 0x to Mx address: " + mxAddress);
-                            sendMessage("maxima action:send to:" + cleanMaximaAddress(mxAddress) + " application:metachain data:" + hexData + " poll:false");
-                        } else {
-                            sendMessage("maxima action:send publickey:" + toPublicKey + " application:metachain data:" + hexData + " poll:false");
-                        }
-                    });
-                } else {
-                    callback("Invalid recipient identifier: " + toPublicKey);
-                }
+                // Unified Send Path: resolveAndSend handles concurrent dual-send (PK + Mx)
+                // This eliminates the "wait for PK failure" delay for non-contacts.
+                resolveAndSend(toPublicKey, hexData, "SW-MAXIMA", false, false, function(err, res) {
+                    if (err) {
+                        callback(err);
+                    } else {
+                        callback(null, res);
+                    }
+                });
             });
         });
 
@@ -137,10 +253,10 @@ function resolveMaximaAddress(publicKey, callback) {
 
     try {
         // Check DISCOVERED_PEERS table
-        var sql = "SELECT ADDRESS FROM DISCOVERED_PEERS WHERE PUBLICKEY='" + escapeSql(publicKey) + "' AND ADDRESS IS NOT NULL LIMIT 1";
+        var sql = "SELECT ADDRESS FROM DISCOVERED_PEERS WHERE PUBLICKEY='" + (publicKey || "").toLowerCase().replace(/'/g, "''") + "' AND ADDRESS IS NOT NULL LIMIT 1";
         MDS.sql(sql, function (result) {
             if (result.status && result.rows && result.rows.length > 0) {
-                var address = result.rows[0].ADDRESS;
+                var address = result.rows[0].ADDRESS || result.rows[0].address;
                 if (address) address = cleanMaximaAddress(address);
                 if (address && (address.startsWith('Mx') || address.startsWith('MX'))) {
                     callback(null, address);
@@ -195,7 +311,6 @@ function sendTokenMessage(toPublicKey, tokenData, context, callback) {
 
 /**
  * Helper to clean Maxima Address specifically for the port issue
- * Duplicated from chat.handler.js for robustness
  */
 function cleanMaximaAddress(addr) {
     if (!addr) return "";

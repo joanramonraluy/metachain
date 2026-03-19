@@ -95,36 +95,51 @@ export async function getChatPermission(): Promise<boolean> {
     }
 }
 
-export async function getContactChatPermission(contactPublicKey: string): Promise<boolean> {
+export async function getContactChatPermission(contactPubKey: string): Promise<boolean> {
+    const contactPublicKey = (contactPubKey || "").toLowerCase();
     try {
         console.log(`🔍 [CHAT-PERM] Checking permission for contact: ${contactPublicKey.substring(0, 10)}...`);
 
         const safeKey = escapeSql(contactPublicKey);
-        const sql = `SELECT allow_non_contact_chats FROM DISCOVERED_PEERS WHERE publickey='${safeKey}'`;
+        // We now query both the permission flag and the source of that flag
+        const sql = `SELECT allow_non_contact_chats, allow_non_contact_chats_source FROM DISCOVERED_PEERS WHERE publickey='${safeKey}'`;
 
         const res = await runSQL(sql);
-        console.log(`📊 [CHAT-PERM] Query result:`, res);
+        console.log(`📊 [CHAT-PERM] Query result for ${contactPublicKey.substring(0, 10)}...`, res);
 
         if (res && res.rows && res.rows.length > 0) {
             const row = res.rows[0];
-            const allowNonContactChats = row.ALLOW_NON_CONTACT_CHATS;
+            const allowNonContactChats = row.ALLOW_NON_CONTACT_CHATS ?? row.allow_non_contact_chats;
+            const source = (row.ALLOW_NON_CONTACT_CHATS_SOURCE || row.allow_non_contact_chats_source || "").toUpperCase();
 
-            const permissionGranted = (
+            // AUTHORITATIVE SOURCES: PROFILE response or direct MESSAGE exchange
+            const isAuthoritative = source === 'PROFILE' || source === 'MESSAGE' || source === 'PROFILE_RESPONSE';
+            
+            const permissionValue = (
                 allowNonContactChats === true ||
                 allowNonContactChats === 1 ||
                 allowNonContactChats === 'true' ||
                 allowNonContactChats === '1'
             );
 
-            console.log(`✅ [CHAT-PERM] Contact ${contactPublicKey.substring(0, 10)}... allowNonContactChats: ${permissionGranted}`);
-            return permissionGranted;
+            // Gating Logic: 
+            // 1. Must have explicit ALLOW from peer
+            // 2. That ALLOW must come from a trusted source (not Gossip/Beacon)
+            if (permissionValue && isAuthoritative) {
+                console.log(`✅ [CHAT-PERM] Permission GRANTED (Source: ${source})`);
+                return true;
+            }
+
+            console.log(`🚫 [CHAT-PERM] Permission PENDING/DENIED (Value: ${permissionValue}, Source: ${source || 'NULL'})`);
+            return false;
         } else {
-            console.log(`⚠️ [CHAT-PERM] Contact not found in DISCOVERED_PEERS, defaulting to TRUE`);
-            return true;
+            // NEW POLICY: Unknown peers are NOT allowed until we get a profile response
+            console.log(`⚠️ [CHAT-PERM] Contact not found in DISCOVERED_PEERS, defaulting to FALSE (Pending Profile)`);
+            return false;
         }
     } catch (err) {
         console.error("❌ [CHAT-PERM] Error getting contact permission:", err);
-        return true;
+        return false; // Fail safe (Pending)
     }
 }
 
@@ -132,7 +147,8 @@ export async function getContactChatPermission(contactPublicKey: string): Promis
    CHAT REQUESTS (MetaChain)
 ---------------------------------------------------------------------------- */
 
-export async function sendChatRequest(toAddress: string, myName: string, myAvatar: string, toPublicKey?: string): Promise<void> {
+export async function sendChatRequest(toAddress: string, myName: string, myAvatar: string, toPubKey?: string): Promise<void> {
+    const toPublicKey = (toPubKey || "").toLowerCase();
     try {
         console.log(`📤 [Contact Request] Sending request to ${toAddress} (pk: ${toPublicKey || 'auto-resolve'})`);
 
@@ -203,61 +219,11 @@ export async function sendChatRequest(toAddress: string, myName: string, myAvata
     }
 }
 
-export async function saveChatRequest(fromPublicKey: string, fromName: string, fromAvatar: string, _toPublicKey: string, fromAddress?: string): Promise<void> {
-    try {
-        const now = Date.now();
+// Redundant saveChatRequest removed (SW handles incoming)
 
-        const toPublicKey = await getMyPublicKey();
 
-        console.log("💾 [Contact Request] Saving request:");
-        console.log("  from:", fromPublicKey);
-        console.log("  to:", toPublicKey);
-        console.log("  name:", fromName);
-
-        const safeFromPublicKey = escapeSql(fromPublicKey);
-        const safeFromName = escapeSql(fromName);
-        const safeFromAvatar = escapeSql(fromAvatar);
-        const safeToPublicKey = escapeSql(toPublicKey);
-        const safeFromAddress = fromAddress ? escapeSql(fromAddress) : '';
-
-        // Delete any existing request for this pair
-        const deleteSql = `DELETE FROM CONTACT_REQUESTS WHERE from_publickey='${safeFromPublicKey}' AND to_publickey='${safeToPublicKey}'`;
-        await runSQL(deleteSql);
-
-        console.log("✅ [Contact Request] Inserting fresh request");
-        await runSQL(`
-            INSERT INTO CONTACT_REQUESTS (from_publickey, from_name, from_avatar, to_publickey, from_address, status, created_at, updated_at)
-            VALUES ('${safeFromPublicKey}', '${safeFromName}', '${safeFromAvatar}', '${safeToPublicKey}', '${safeFromAddress}', 'pending', ${now}, ${now})
-        `);
-        console.log("✅ [Contact Request] Saved to database");
-
-        // Send delivery confirmation back to sender
-        const confirmPayload = {
-            type: "contact_request_received",
-            timestamp: Date.now()
-        };
-
-        const confirmJsonStr = JSON.stringify(confirmPayload);
-        const confirmHexData = "0x" + utf8ToHex(confirmJsonStr).toUpperCase();
-
-        await MDS.cmd.maxima({
-            params: {
-                action: "send",
-                publickey: safeFromPublicKey,
-                application: "metachain",
-                data: confirmHexData,
-                poll: true
-            } as any
-        });
-        console.log("✅ [Contact Request] Delivery confirmation sent");
-
-    } catch (err) {
-        console.error("❌ [Contact Request] Error saving request:", err);
-        throw err;
-    }
-}
-
-export async function checkPendingChatRequest(publickey: string): Promise<boolean> {
+export async function checkPendingChatRequest(pubkey: string): Promise<boolean> {
+    const publickey = (pubkey || "").toLowerCase();
     try {
         contactReqLog(`🔍 [checkPendingContactRequest] Checking for identifier: ${publickey}`);
 
@@ -297,7 +263,8 @@ export async function checkPendingChatRequest(publickey: string): Promise<boolea
     }
 }
 
-export async function checkIncomingChatRequest(fromPublickey: string): Promise<boolean> {
+export async function checkIncomingChatRequest(fromPubKey: string): Promise<boolean> {
+    const fromPublickey = (fromPubKey || "").toLowerCase();
     try {
         contactReqLog(`🔍 [checkIncomingContactRequest] Checking for incoming request from: ${fromPublickey}`);
         const safeFromPublicKey = escapeSql(fromPublickey);
@@ -339,7 +306,8 @@ export async function getChatRequests(myPublicKey: string): Promise<any[]> {
 }
 
 // Helper to update status immediately (for optimistic UI support)
-export async function updateLocalRequestStatus(publickey: string, status: string): Promise<void> {
+export async function updateLocalRequestStatus(pubkey: string, status: string): Promise<void> {
+    const publickey = (pubkey || "").toLowerCase();
     const safePk = escapeSql(publickey);
     const now = Date.now();
     // Using simple concatenation because Minima SQL support for stored procedures/prepared statements var is limited/unknown
@@ -355,7 +323,8 @@ function getStatusDescription(status: string) {
     return status.replace(/[^a-z]/g, '');
 }
 
-export async function acceptChatRequest(fromPublicKey: string, fromAddress: string, options?: { skipMessageInsert?: boolean }): Promise<void> {
+export async function acceptChatRequest(fromPubKey: string, fromAddress: string, options?: { skipMessageInsert?: boolean }): Promise<void> {
+    const fromPublicKey = (fromPubKey || "").toLowerCase();
     try {
         console.log(`✅ [Contact Request] Accepting request from ${fromPublicKey}`);
 
@@ -424,7 +393,8 @@ export async function acceptChatRequest(fromPublicKey: string, fromAddress: stri
     }
 }
 
-export async function declineChatRequest(fromPublicKey: string, options?: { skipMessageInsert?: boolean }): Promise<void> {
+export async function declineChatRequest(fromPubKey: string, options?: { skipMessageInsert?: boolean }): Promise<void> {
+    const fromPublicKey = (fromPubKey || "").toLowerCase();
     try {
         const now = Date.now();
         const safeFromPublicKey = escapeSql(fromPublicKey);
@@ -474,7 +444,8 @@ export async function declineChatRequest(fromPublicKey: string, options?: { skip
     }
 }
 
-export async function cancelChatRequest(toPublicKey: string): Promise<void> {
+export async function cancelChatRequest(toPubKey: string): Promise<void> {
+    const toPublicKey = (toPubKey || "").toLowerCase();
     try {
         const now = Date.now();
 
@@ -558,7 +529,8 @@ export async function cancelChatRequest(toPublicKey: string): Promise<void> {
    MAXIMA CONTACT REQUESTS
 ---------------------------------------------------------------------------- */
 
-export async function sendMaximaContactRequest(toAddress: string, toPublicKey?: string): Promise<void> {
+export async function sendMaximaContactRequest(toAddress: string, toPubKey?: string): Promise<void> {
+    const toPublicKey = (toPubKey || "").toLowerCase();
     try {
         console.log(`📤 [Maxima Contact] Sending request to ${toAddress}`);
 
@@ -634,7 +606,8 @@ export async function sendMaximaContactRequest(toAddress: string, toPublicKey?: 
     }
 }
 
-export async function acceptMaximaContactRequest(fromPublicKey: string, fromAddress: string, options?: { skipMessageInsert?: boolean }): Promise<void> {
+export async function acceptMaximaContactRequest(fromPubKey: string, fromAddress: string, options?: { skipMessageInsert?: boolean }): Promise<void> {
+    const fromPublicKey = (fromPubKey || "").toLowerCase();
     try {
         console.log(`✅ [Maxima Contact] Accepting request from ${fromPublicKey}`);
 
@@ -695,7 +668,8 @@ export async function acceptMaximaContactRequest(fromPublicKey: string, fromAddr
     }
 }
 
-export async function declineMaximaContactRequest(fromPublicKey: string, _fromAddress: string, options?: { skipMessageInsert?: boolean }): Promise<void> {
+export async function declineMaximaContactRequest(fromPubKey: string, _fromAddress: string, options?: { skipMessageInsert?: boolean }): Promise<void> {
+    const fromPublicKey = (fromPubKey || "").toLowerCase();
     try {
         console.log(`🚫 [Maxima Contact] Declining request from ${fromPublicKey}`);
 
@@ -745,7 +719,8 @@ export async function declineMaximaContactRequest(fromPublicKey: string, _fromAd
     }
 }
 
-export async function cancelMaximaContactRequest(toPublicKey: string): Promise<void> {
+export async function cancelMaximaContactRequest(toPubKey: string): Promise<void> {
+    const toPublicKey = (toPubKey || "").toLowerCase();
     try {
         console.log(`🔍 [CANCEL MAXIMA] Input PublicKey: ${toPublicKey}`);
 
@@ -837,32 +812,8 @@ export async function getMaximaContactRequests(myPublicKey: string): Promise<any
     }
 }
 
-export async function saveMaximaContactRequest(fromPublicKey: string, fromName: string): Promise<void> {
-    try {
-        console.log("💾 [Maxima Contact] Saving request from:", fromPublicKey);
+// Redundant saveMaximaContactRequest removed (SW handles incoming)
 
-        const myPublicKey = await getMyPublicKey();
-
-        const now = Date.now();
-        const safeFromPk = escapeSql(fromPublicKey);
-        const safeFromName = escapeSql(fromName);
-        const safeMyPk = escapeSql(myPublicKey);
-
-        const deleteSql = `DELETE FROM MAXIMA_CONTACT_REQUESTS WHERE from_publickey='${safeFromPk}' AND to_publickey='${safeMyPk}'`;
-        await runSQL(deleteSql);
-
-        const insertSql = `
-            INSERT INTO MAXIMA_CONTACT_REQUESTS (from_publickey, from_name, to_publickey, status, created_at, updated_at)
-            VALUES ('${safeFromPk}', '${safeFromName}', '${safeMyPk}', 'pending', ${now}, ${now})
-        `;
-        await runSQL(insertSql);
-
-        console.log("✅ [Maxima Contact] Request saved");
-    } catch (err) {
-        console.error("❌ [Maxima Contact] Error saving request:", err);
-        throw err;
-    }
-}
 
 /* ----------------------------------------------------------------------------
    EXPORT SERVICE SINGLETON
@@ -875,7 +826,6 @@ export const contactRequestsService = {
 
     // Chat requests (MetaChain)
     sendChatRequest,
-    saveChatRequest,
     checkPendingChatRequest,
     checkIncomingChatRequest,
     getChatRequests,
@@ -888,6 +838,5 @@ export const contactRequestsService = {
     acceptMaximaContactRequest,
     declineMaximaContactRequest,
     cancelMaximaContactRequest,
-    getMaximaContactRequests,
-    saveMaximaContactRequest
+    getMaximaContactRequests
 };

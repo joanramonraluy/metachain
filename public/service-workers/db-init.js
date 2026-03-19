@@ -21,8 +21,8 @@ function initDatabase() {
 
   // Get our own Maxima info
   MDS.cmd("maxima action:info", function (maxInfo) {
-    if (maxInfo.status) {
-      MY_MAXIMA_PK = maxInfo.response.publickey;
+    if (maxInfo.status && maxInfo.response.publickey) {
+      MY_MAXIMA_PK = maxInfo.response.publickey.toLowerCase();
       MDS.log("🔑 [SW] My Public Key: " + MY_MAXIMA_PK);
     }
   });
@@ -45,7 +45,9 @@ function initDatabase() {
       "  amount VARCHAR(64) NOT NULL, " +
       "  tokenid VARCHAR(128) NOT NULL, " +
       "  message VARCHAR(255), " +
-      "  status VARCHAR(32) DEFAULT 'pending' " +
+      "  status VARCHAR(32) DEFAULT 'pending', " +
+      "  created_at BIGINT, " +
+      "  updated_at BIGINT " +
       " )";
     return runSQL(sql).then(function (res) {
       MDS.log(
@@ -72,6 +74,8 @@ function initDatabase() {
         ),
         // FORCE ADD DATE COLUMN IF MISSING (Fix for 'Column DATE not found')
         runSQL("ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS date BIGINT"),
+        runSQL("ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS created_at BIGINT"),
+        runSQL("ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS updated_at BIGINT"),
         runSQL("ALTER TABLE TRANSACTIONS ALTER COLUMN date SET NOT NULL"), // Enforce not null if possible, or ignore
       ]);
     });
@@ -121,6 +125,15 @@ function initDatabase() {
         ),
         runSQL(
           "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS reply_to VARCHAR(128)",
+        ),
+        runSQL(
+          "CREATE INDEX IF NOT EXISTS idx_chat_messages_pk ON CHAT_MESSAGES(publickey)",
+        ),
+        runSQL(
+          "CREATE INDEX IF NOT EXISTS idx_chat_messages_date ON CHAT_MESSAGES(date)",
+        ),
+        runSQL(
+          "CREATE INDEX IF NOT EXISTS idx_chat_messages_pk_date ON CHAT_MESSAGES(publickey, date)",
         ),
       ]);
     });
@@ -404,6 +417,9 @@ function initDatabase() {
         runSQL(
           "ALTER TABLE DISCOVERED_PEERS ADD COLUMN source VARCHAR(20) DEFAULT 'P2P'",
         ),
+        runSQL(
+          "ALTER TABLE DISCOVERED_PEERS ADD COLUMN allow_non_contact_chats_source VARCHAR(20) DEFAULT NULL",
+        ),
       ]);
     });
   });
@@ -600,5 +616,89 @@ function initDatabase() {
     // Set flag to run coin discovery on first NEWBLOCK (when node is fully synced)
     COIN_DISCOVERY_PENDING = true;
     MDS.log("📦 [INIT] Coin discovery scheduled for first NEWBLOCK event");
+
+
+    // Run Global Pubkey Normalization Migration ONLY ONCE
+    // to avoid blocking the DB on every startup.
+    var MIGRATION_VERSION = "1.0"; 
+    MDS.keypair.get("normalization_version", function(val) {
+        if (val !== MIGRATION_VERSION) {
+            runNormalizationMigrations();
+            MDS.keypair.set("normalization_version", MIGRATION_VERSION);
+        } else {
+            MDS.log("⏭️ [DB] Normalization migration already completed (v" + MIGRATION_VERSION + "). Skipping.");
+        }
+    });
+  });
+}
+
+/**
+ * Global Public Key Normalization Migration
+ * Ensures all public keys in the DB are lowercase to prevent identification drift and duplicate chats.
+ */
+function runNormalizationMigrations() {
+  MDS.log("🔄 [DB] Running Global Pubkey Normalization Migration...");
+
+  var targets = [
+    { table: 'CHAT_MESSAGES', columns: ['publickey'] },
+    { table: 'CHAT_STATUS', columns: ['publickey'], pk: true },
+    { table: 'DISCOVERED_PEERS', columns: ['publickey'], pk: true },
+    { table: 'METACHAIN_USERS', columns: ['publickey', 'user_id'], pk: true },
+    { table: 'MESSAGE_COUNTERS', columns: ['publickey'], pk: true },
+    { table: 'CONTACT_REQUESTS', columns: ['from_publickey', 'to_publickey'] },
+    { table: 'MAXIMA_CONTACT_REQUESTS', columns: ['from_publickey', 'to_publickey'] },
+    { table: 'GROUPS', columns: ['creator_publickey'] },
+    { table: 'GROUP_MEMBERS', columns: ['publickey'] },
+    { table: 'GROUP_MESSAGES', columns: ['sender_publickey'] },
+    { table: 'GROUP_BANS', columns: ['publickey', 'banned_by'] },
+    { table: 'GROUP_JOIN_REQUESTS', columns: ['publickey'] },
+    { table: 'CHANNELS', columns: ['admin_publickey'] },
+    { table: 'CHANNEL_SUBSCRIBERS', columns: ['publickey'] },
+    { table: 'CHANNEL_MESSAGES', columns: ['sender_publickey'] },
+    { table: 'CHANNEL_MSG_COUNTERS', columns: ['sender_publickey'] },
+    { table: 'PERSONAL_CONTACTS', columns: ['publickey'], pk: true }
+  ];
+
+  var chain = Promise.resolve();
+
+  targets.forEach(function (t) {
+    chain = chain.then(function () {
+      // Helper to run SQL
+      var runSQL = function (query) {
+        return new Promise(function (resolve) {
+          MDS.sql(query, function (res) {
+            resolve(res);
+          });
+        });
+      };
+
+      if (t.pk) {
+        // DEDUPLICATE first for Primary Key tables
+        // Delete rows where key is NOT lowercase IF a lowercase version already exists
+        return runSQL("DELETE FROM " + t.table + " WHERE publickey != LOWER(publickey) AND LOWER(publickey) IN (SELECT publickey FROM " + t.table + " WHERE publickey = LOWER(publickey))")
+          .then(function () {
+            // Now update the rest to lowercase
+            return runSQL("UPDATE " + t.table + " SET publickey = LOWER(publickey)");
+          })
+          .then(function () {
+            // Special case for METACHAIN_USERS user_id
+            if (t.table === 'METACHAIN_USERS') {
+              return runSQL("UPDATE METACHAIN_USERS SET user_id = LOWER(user_id)");
+            }
+          });
+      } else {
+        // Simple update for non-PK columns
+        var updates = t.columns.map(function (col) {
+          return runSQL("UPDATE " + t.table + " SET " + col + " = LOWER(" + col + ")");
+        });
+        return Promise.all(updates);
+      }
+    });
+  });
+
+  chain.then(function () {
+    MDS.log("✅ [DB] Global Pubkey Normalization Migration complete.");
+  }).catch(function (err) {
+    MDS.log("❌ [DB] Error during Pubkey Normalization Migration: " + err);
   });
 }

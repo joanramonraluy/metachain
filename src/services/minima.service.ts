@@ -22,6 +22,7 @@ import { offlineQueueService } from "./offline-queue.service";
 class MinimaService {
   private initialized = false;
   private processedMsgIds = new Set<string>();
+  private historyRefreshTimeout: any = null;
   private instanceId = Math.floor(Math.random() * 10000);
 
   // Event system for light-weight UI updates (bypassing React Context complexity)
@@ -291,7 +292,7 @@ SELECT * FROM TRANSACTIONS
     // Check if the message is for our application (case-insensitive)
     const app = maximaData.application.toLowerCase();
     if (app === "metachain" || app === "metachain-group" || app === "metachain-channel") {
-      const from = maximaData.from; // This is the Public Key
+      const from = (maximaData.from || "").toLowerCase(); // Normalize Public Key
       let datastr = ""; // Initialize datastr here
 
       if (maximaData.data.startsWith("0x")) {
@@ -372,44 +373,18 @@ SELECT * FROM TRANSACTIONS
         if (json.type === "peers_response") {
           console.log("🗣 [GOSSIP] Received peer list from", from);
           if (json.peers && Array.isArray(json.peers)) {
-            console.log(`🗣[GOSSIP] Processing ${json.peers.length} peers...`);
+            const peers = json.peers.filter((p: any) => !!p.pubkey).map((p: any) => ({
+              ...p,
+              pubkey: p.pubkey.toLowerCase()
+            }));
 
-            // Save each peer to Frontend's DISCOVERED_PEERS table
-            json.peers.forEach((peer: any) => {
-              if (!peer.pubkey) return;
+            if (peers.length === 0) return;
 
-              const now = Date.now();
-              const escapedAlias = (peer.alias || "Anonymous").replace(
-                /'/g,
-                "''",
-              );
-              const escapedBio = (peer.bio || "").replace(/'/g, "''");
-              const allowChats =
-                peer.allowNonContactChats !== undefined &&
-                  peer.allowNonContactChats !== null
-                  ? peer.allowNonContactChats
-                    ? 1
-                    : 0
-                  : 1;
+            console.log(`🗣[GOSSIP] Processing ${peers.length} peers (Persistence handled by SW)`);
 
-              const sql = `MERGE INTO DISCOVERED_PEERS(publickey, alias, bio, address, last_seen, source, allow_non_contact_chats)
-KEY(publickey)
-VALUES('${peer.pubkey}', '${escapedAlias}', '${escapedBio}', '${peer.address}', ${now}, 'GOSSIP', ${allowChats})`;
-
-              MDS.sql(sql, (res: any) => {
-                if (res.status) {
-                  console.log(`✅[GOSSIP] Saved peer: ${peer.alias} `);
-                } else {
-                  console.error(
-                    `❌[GOSSIP] Failed to save ${peer.alias}: `,
-                    res.error,
-                  );
-                }
-              });
-            });
-
-            // Trigger UI refresh
+            // Trigger UI refresh - we just notify that discovery data might have changed
             window.dispatchEvent(new CustomEvent("DISCOVERY_UPDATE"));
+
           }
           return;
         }
@@ -418,43 +393,13 @@ VALUES('${peer.pubkey}', '${escapedAlias}', '${escapedBio}', '${peer.address}', 
 
         // Handle Internal Sync - Peer Discovered from Beacon
         if (json.type === "peer_discovered") {
-          console.log(
-            "📡 [SYNC] Peer discovered notification from SW:",
-            json.peer?.alias,
-          );
-          if (json.peer) {
-            const peer = json.peer;
-            const now = Date.now();
-            const escapedAlias = (peer.alias || "Anonymous").replace(
-              /'/g,
-              "''",
-            );
-            const escapedBio = (peer.bio || "").replace(/'/g, "''");
-            const allowChats =
-              peer.allowNonContactChats !== undefined &&
-                peer.allowNonContactChats !== null
-                ? peer.allowNonContactChats
-                  ? 1
-                  : 0
-                : 1;
+          const peer = json.peer;
+          if (!peer || !peer.pubkey) return;
 
-            const sql = `MERGE INTO DISCOVERED_PEERS(publickey, alias, bio, address, last_seen, source, allow_non_contact_chats)
-KEY(publickey)
-VALUES('${peer.pubkey}', '${escapedAlias}', '${escapedBio}', '${peer.address}', ${now}, 'P2P', ${allowChats})`;
+          console.log("📡 [SYNC] Peer discovered notification from SW:", peer.alias);
 
-            MDS.sql(sql, (res: any) => {
-              if (res.status) {
-                console.log(`✅[SYNC] Peer saved to Frontend: ${peer.alias} `);
-                // Trigger UI refresh
-                window.dispatchEvent(new CustomEvent("DISCOVERY_UPDATE"));
-              } else {
-                console.error(
-                  `❌[SYNC] Failed to save ${peer.alias}: `,
-                  res.error,
-                );
-              }
-            });
-          }
+          // Notify UI via event so discovery list refreshes
+          window.dispatchEvent(new CustomEvent("DISCOVERY_UPDATE"));
           return;
         }
 
@@ -501,6 +446,8 @@ VALUES('${peer.pubkey}', '${escapedAlias}', '${escapedBio}', '${peer.address}', 
 
         if (json.type === "pong") {
           console.log("📡 [PING] Pong received from", from);
+          messagingService.updatePongStatus(from);
+          chatService.notifyNewMessage({ ...json, type: "pong" });
 
           // Update last_seen timestamp in database
           const now = Date.now();
@@ -530,56 +477,26 @@ VALUES('${peer.pubkey}', '${escapedAlias}', '${escapedBio}', '${peer.address}', 
 
         if (json.type === "profile_response") {
           console.log(
-            `👤 [PROFILE] Response received from ${from} - saving to Discovery DB`,
+            `👤 [PROFILE] Response received from ${from} (Persistence handled by SW)`,
           );
 
-          // SAVE TO DISCOVERED_PEERS (Fix for "Unknown User")
-          const now = Date.now();
-          const escapedAlias = (json.name || "Unknown").replace(/'/g, "''");
-          const escapedBio = (json.bio || "").replace(/'/g, "''");
-          // Use a safe default for allowChats if missing
-          const allowChats =
-            json.allowNonContactChats !== undefined &&
-              json.allowNonContactChats !== null
-              ? json.allowNonContactChats
-                ? 1
-                : 0
-              : 1;
-
-          // Parse potential avatar? (Not currently supported in DISCOVERED_PEERS schema, but name/bio are)
-          const extraData = JSON.stringify(json);
-          const escapedExtraData = extraData.replace(/'/g, "''");
-
-          // CRITICAL: We MUST save the 'extra_data' column because that's where 'minimaaddress' lives!
-          const updateProfileSql = `MERGE INTO DISCOVERED_PEERS(publickey, alias, bio, extra_data, last_seen, source, allow_non_contact_chats)
-                                              KEY(publickey)
-                                              VALUES('${from}', '${escapedAlias}', '${escapedBio}', '${escapedExtraData}', ${now}, 'PROFILE_RESPONSE', ${allowChats})`;
-
-          try {
-            await this.runSQL(updateProfileSql);
-            console.log(`✅ [PROFILE] Saved ${json.name} to Discovery DB`);
-
-            // Notify UI via event so ChatPage can update immediately without waiting for timeout
-            // Re-using 'peer_updated' event which ChatPage might listen to or we can add listener
-            window.dispatchEvent(
-              new CustomEvent("peer_updated", {
-                detail: { ...json, publickey: from, alias: json.name },
-              }),
-            );
-          } catch (err) {
-            console.error("❌ [PROFILE] Failed to save profile to DB:", err);
-          }
+          // Notify UI via event so ChatPage can update immediately without waiting for timeout
+          window.dispatchEvent(
+            new CustomEvent("peer_updated", {
+              detail: { ...json, publickey: from, alias: json.name },
+            }),
+          );
 
           console.log(`👤 [PROFILE] Forwarding to ProfileService`);
           // Use static service instance
           profileService.handleProfileResponse(from, json);
+
           return;
         }
 
         if (json.type === "contact_request") {
           console.log("📨 [CONTACTS] Request received from", from);
           // Persistence is owned by Service Worker (contact.handler.js).
-          // Frontend only notifies UI to refresh state.
           chatService.notifyNewMessage({
             ...json,
             type: "contact_request",
@@ -588,74 +505,21 @@ VALUES('${peer.pubkey}', '${escapedAlias}', '${escapedBio}', '${peer.address}', 
           return;
         }
 
-        // Handle Contact Accepted
         if (json.type === "contact_accepted") {
           console.log("✅ [CONTACTS] Request accepted by", from);
 
           // MIGRATION LOGIC: Check if we have a chat/request with their Maxima Address (Mx...)
           // and migrate it to their Hex Public Key (0x...) to avoid duplicate chats.
-          const fromAddress = json.from_address; // New field we added
-
-          if (
-            fromAddress &&
-            (fromAddress.startsWith("Mx") || fromAddress.startsWith("MX"))
-          ) {
-            console.log(
-              `🔄[MIGRATION] Checking for chats with address ${fromAddress} to migrate to ${from} `,
-            );
-
-            // Migrate CHAT_MESSAGES
-            const migrateChatSql = `UPDATE CHAT_MESSAGES SET publickey = '${from}' WHERE publickey = '${fromAddress}'`;
-            await this.runSQL(migrateChatSql);
-
-            // Migrate CONTACT_REQUESTS (outgoing from us to them)
-            const migrateReqSql = `UPDATE CONTACT_REQUESTS SET to_publickey = '${from}' WHERE to_publickey = '${fromAddress}'`;
-            await this.runSQL(migrateReqSql);
-
-            console.log(`✅[MIGRATION] Complete for ${fromAddress}`);
+          // TODO: Move this migration logic to the Service Worker.
+          const fromAddress = json.from_address;
+          if (fromAddress && (fromAddress.startsWith("Mx") || fromAddress.startsWith("MX"))) {
+            console.log(`🔄[MIGRATION] Migrating address ${fromAddress} to ${from} `);
+            this.runSQL(`UPDATE CHAT_MESSAGES SET publickey = '${from}' WHERE publickey = '${fromAddress}'`);
+            this.runSQL(`UPDATE CONTACT_REQUESTS SET to_publickey = '${from}' WHERE to_publickey = '${fromAddress}'`);
           }
 
-          // They accepted our request.
-          // We DO NOT add them to contacts automatically anymore.
-          // This must be a manual user action.
-          console.log(
-            "✅ [CONTACTS] Received acceptance - chat is now open (not added to Maxima contacts)",
-          );
-
-          // Also update any pending outgoing request we had to 'accepted'
-          const escapeSql = (str: string) => str.replace(/'/g, "''");
-          const safeFrom = escapeSql(from);
-
-          // Get my public key to identify the request
-          const myInfo = await MDS.cmd.maxima({ params: { action: "info" } });
-          const myPublicKey = (myInfo.response as any).publickey;
-          const safeMyKey = escapeSql(myPublicKey);
-
-          const updateReqSql = `UPDATE CONTACT_REQUESTS SET status = 'accepted', updated_at = ${Date.now()}
-                                          WHERE (from_publickey = '${safeMyKey}' AND to_publickey = '${safeFrom}')
-                                             OR (from_publickey = '${safeFrom}' AND to_publickey = '${safeMyKey}')`;
-
-          const checkRes = await this.runSQL(
-            `SELECT count(*) as count FROM CONTACT_REQUESTS WHERE (from_publickey = '${safeMyKey}' AND to_publickey = '${safeFrom}') OR (from_publickey = '${safeFrom}' AND to_publickey = '${safeMyKey}')`,
-          );
-          const count =
-            checkRes && checkRes.rows && checkRes.rows[0]
-              ? checkRes.rows[0].COUNT
-              : 0;
-
-          if (count > 0) {
-            await this.runSQL(updateReqSql);
-          } else {
-            // Insert new accepted record if none exists
-            console.log(
-              "⚠️ [CONTACTS] No pending request found - Creating new ACCEPTED record",
-            );
-            const insertReqSql = `INSERT INTO CONTACT_REQUESTS (from_publickey, to_publickey, status, created_at, updated_at)
-                                              VALUES ('${safeMyKey}', '${safeFrom}', 'accepted', ${Date.now()}, ${Date.now()})`;
-            await this.runSQL(insertReqSql);
-          }
-
-          // Notify UI (Frontend only listens now)
+          // Persistence is owned by Service Worker (contact.handler.js).
+          // Notify UI
           chatService.notifyNewMessage({
             ...json,
             type: "contact_accepted",
@@ -666,38 +530,7 @@ VALUES('${peer.pubkey}', '${escapedAlias}', '${escapedBio}', '${peer.address}', 
 
         if (json.type === "contact_declined") {
           console.log("🚫 [CONTACTS] Request declined by", from);
-
-          const escapeSql = (str: string) => str.replace(/'/g, "''");
-          const safeFrom = escapeSql(from);
-
-          // ROBUST FIX: Attempt to resolve Maxima Address from Public Key
-          // to ensure we update the request regardless of how it was sent (Hex vs Mx Address).
-          let addressClause = `to_publickey = '${safeFrom}'`;
-
-          try {
-            const discoverySql = `SELECT ADDRESS FROM DISCOVERED_PEERS WHERE PUBLICKEY = '${safeFrom}' LIMIT 1`;
-            const discoveryRes = await this.runSQL(discoverySql);
-            if (discoveryRes.rows && discoveryRes.rows.length > 0) {
-              const mxAddress = discoveryRes.rows[0].ADDRESS;
-              console.log(
-                `🔍[CONTACTS] Resolved decline sender to Maxima Address: ${mxAddress} `,
-              );
-              addressClause += ` OR to_publickey = '${escapeSql(mxAddress)}'`;
-            }
-          } catch (e) {
-            console.warn(
-              "⚠️ [CONTACTS] Failed to resolve address for decline check:",
-              e,
-            );
-          }
-
-          // Update local DB immediately with robust check
-          const updateReqSql = `UPDATE CONTACT_REQUESTS SET status = 'declined', updated_at = ${Date.now()}
-WHERE(${addressClause}) AND status = 'pending'`;
-
-          await this.runSQL(updateReqSql);
-          console.log("✅ [CONTACTS] Local request status updated to declined");
-
+          // Persistence is owned by Service Worker (contact.handler.js).
           // Notify UI
           chatService.notifyNewMessage({
             ...json,
@@ -710,8 +543,7 @@ WHERE(${addressClause}) AND status = 'pending'`;
         // Maxima Contact Request handlers
         if (json.type === "maxima_contact_request") {
           console.log("📨 [MAXIMA CONTACT] Request received from", from);
-          const fromName = json.name || "Unknown";
-          await this.saveMaximaContactRequest(from, fromName);
+          // Persistence is owned by Service Worker (contact.handler.js).
           chatService.notifyNewMessage({
             ...json,
             type: "maxima_contact_request",
@@ -722,28 +554,7 @@ WHERE(${addressClause}) AND status = 'pending'`;
 
         if (json.type === "maxima_contact_accepted") {
           console.log("✅ [MAXIMA CONTACT] Request accepted by", from);
-
-          MDS.cmd.maxcontacts({ action: "list" } as any).then((res: any) => {
-            const contacts = res.response?.contacts || [];
-            const contact = contacts.find((c: any) => c.publickey === from);
-            if (contact?.currentaddress) {
-              MDS.cmd.maxcontacts({
-                action: "add",
-                contact: contact.currentaddress,
-              } as any);
-            }
-          });
-
-          const escapeSql = (str: string) => str.replace(/'/g, "''");
-          const safeFrom = escapeSql(from);
-          const myInfo = await MDS.cmd.maxima({ params: { action: "info" } });
-          const myPublicKey = (myInfo.response as any).publickey;
-          const safeMyKey = escapeSql(myPublicKey);
-
-          const updateReqSql = `UPDATE MAXIMA_CONTACT_REQUESTS SET status = 'accepted', updated_at = ${Date.now()}
-                                          WHERE from_publickey = '${safeMyKey}' AND to_publickey = '${safeFrom}'`;
-          await this.runSQL(updateReqSql);
-
+          // Persistence is owned by Service Worker (contact.handler.js).
           chatService.notifyNewMessage({
             ...json,
             type: "maxima_contact_accepted",
@@ -754,14 +565,7 @@ WHERE(${addressClause}) AND status = 'pending'`;
 
         if (json.type === "maxima_contact_declined") {
           console.log("🚫 [MAXIMA CONTACT] Request declined by", from);
-
-          const escapeSql = (str: string) => str.replace(/'/g, "''");
-          const safeFrom = escapeSql(from);
-
-          const updateReqSql = `UPDATE MAXIMA_CONTACT_REQUESTS SET status = 'declined', updated_at = ${Date.now()}
-                                          WHERE to_publickey = '${safeFrom}' AND status = 'pending'`;
-          await this.runSQL(updateReqSql);
-
+          // Persistence is owned by Service Worker (contact.handler.js).
           chatService.notifyNewMessage({
             ...json,
             type: "maxima_contact_declined",
@@ -772,12 +576,7 @@ WHERE(${addressClause}) AND status = 'pending'`;
 
         if (json.type === "contact_blocked") {
           console.log("🚫 [CONTACTS] Blocked by", from);
-          // Update local DB
-          const escapeSql = (str: string) => str.replace(/'/g, "''");
-          const safeFrom = escapeSql(from);
-          const updateSql = `MERGE INTO CHAT_STATUS (publickey, blocked_by_them) KEY(publickey) VALUES('${safeFrom}', TRUE)`;
-          await this.runSQL(updateSql);
-
+          // Persistence is owned by Service Worker (contact.handler.js).
           // Notify UI
           chatService.notifyNewMessage({
             ...json,
@@ -789,46 +588,7 @@ WHERE(${addressClause}) AND status = 'pending'`;
 
         if (json.type === "contact_unblocked") {
           console.log("🔓 [CONTACTS] Unblocked by", from);
-          // Update local DB
-          const escapeSql = (str: string) => str.replace(/'/g, "''");
-          const safeFrom = escapeSql(from);
-          const updateSql = `UPDATE CHAT_STATUS SET blocked_by_them=FALSE WHERE publickey='${safeFrom}'`;
-          await this.runSQL(updateSql);
-
-          // Notify UI
-          chatService.notifyNewMessage({
-            ...json,
-            type: "contact_unblocked",
-            from,
-          });
-          return;
-        }
-
-        if (json.type === "contact_blocked") {
-          console.log("🚫 [CONTACTS] Blocked by", from);
-          // Update local DB
-          const escapeSql = (str: string) => str.replace(/'/g, "''");
-          const safeFrom = escapeSql(from);
-          const updateSql = `MERGE INTO CHAT_STATUS (publickey, blocked_by_them) KEY(publickey) VALUES('${safeFrom}', TRUE)`;
-          await this.runSQL(updateSql);
-
-          // Notify UI
-          chatService.notifyNewMessage({
-            ...json,
-            type: "contact_blocked",
-            from,
-          });
-          return;
-        }
-
-        if (json.type === "contact_unblocked") {
-          console.log("🔓 [CONTACTS] Unblocked by", from);
-          // Update local DB
-          const escapeSql = (str: string) => str.replace(/'/g, "''");
-          const safeFrom = escapeSql(from);
-          const updateSql = `UPDATE CHAT_STATUS SET blocked_by_them=FALSE WHERE publickey='${safeFrom}'`;
-          await this.runSQL(updateSql);
-
+          // Persistence is owned by Service Worker (contact.handler.js).
           // Notify UI
           chatService.notifyNewMessage({
             ...json,
@@ -889,14 +649,29 @@ WHERE(${addressClause}) AND status = 'pending'`;
           console.log(
             "🔄 [HISTORY] Received history sync response, triggering UI refresh...",
           );
-          setTimeout(() => {
-            console.log("🔄 [HISTORY] Triggering UI update now.");
+
+          if (json.messages && json.messages.length > 0) {
+            // 1. SIGNAL IMMEDIATELY (Reactive feel)
             chatService.notifyNewMessage({
-              ...json,
-              type: "history_sync", // Special type to trigger broad refresh
-              from,
+              type: "history_sync",
+              messages: json.messages,
+              from: from,
             });
-          }, 500);
+
+            // 2. DEBOUNCE REFRESH (50ms)
+            if (this.historyRefreshTimeout) clearTimeout(this.historyRefreshTimeout);
+            this.historyRefreshTimeout = setTimeout(() => {
+              console.log("🔄 [HISTORY] Triggering UI list refresh now.");
+              this.notifyChatListUpdate();
+            }, 50);
+          } else {
+            // No messages, but still notify to turn off syncing indicator
+            chatService.notifyNewMessage({
+              type: "history_sync",
+              messages: [],
+              from: from,
+            });
+          }
           return;
         }
 
@@ -961,7 +736,8 @@ WHERE(${addressClause}) AND status = 'pending'`;
     txpowid?: string,
     overrideSeq?: number,
     forwarded: boolean = false,
-    replyTo?: string
+    replyTo?: string,
+    customid?: string
   ) {
     if (!this.initialized) await this.init();
     return messagingService.sendMessage(
@@ -978,7 +754,8 @@ WHERE(${addressClause}) AND status = 'pending'`;
       txpowid,
       overrideSeq,
       forwarded,
-      replyTo
+      replyTo,
+      customid
     );
   }
 
@@ -1795,18 +1572,30 @@ WHERE(${addressClause}) AND status = 'pending'`;
     }
 
     // Handle MAXIMA events
-    // Handle MAXIMA events
     if (event.event === "MAXIMA") {
       const startTime = performance.now();
-      // Deduplicate events by msgid
-      if (event.data && event.data.msgid) {
-        if (this.processedMsgIds.has(event.data.msgid)) {
-          console.warn(
-            `⚠️[MDS] Duplicate MAXIMA event ignored: ${event.data.msgid} `,
-          );
+
+      // Get a deduplication ID: use msgid if available, fallback to content hash
+      let dedupId = event.data?.msgid;
+      if (!dedupId && event.data?.from && event.data?.data) {
+        // Create a simple content-based dedup ID for protocol messages without msgid
+        // We use 'from' (normalized) + a slice of the hex data (which contains the msg type and timestamp)
+        const normalizedFrom = event.data.from.toLowerCase();
+        const contentSlice = event.data.data.substring(0, 100);
+        dedupId = `hash:${normalizedFrom}:${contentSlice}`;
+      }
+
+      if (dedupId) {
+        if (this.processedMsgIds.has(dedupId)) {
+          // Only log duplicate warnings for real msgids or if it's been some time
+          // Protocol messages (hash:) are expected to be duplicates in Dual-send
+          if (!dedupId.startsWith('hash:')) {
+            console.warn(`⚠️[MDS] Duplicate MAXIMA event ignored: ${dedupId}`);
+          }
           return;
         }
-        this.processedMsgIds.add(event.data.msgid);
+
+        this.processedMsgIds.add(dedupId);
         // Keep set size manageable (e.g. last 1000 IDs)
         if (this.processedMsgIds.size > 1000) {
           const firstIt = this.processedMsgIds.values().next();
@@ -1815,9 +1604,13 @@ WHERE(${addressClause}) AND status = 'pending'`;
           }
         }
       }
+
       console.log(
         `✉️ [MDS] MAXIMA event detected from ${event.data?.from?.substring(0, 10)}...`,
       );
+      if (event.data?.from) {
+        messagingService.recordActivity(event.data.from);
+      }
       this.processIncomingMessage(event);
       const duration = performance.now() - startTime;
       if (duration > 100) {
@@ -1917,9 +1710,6 @@ WHERE(${addressClause}) AND status = 'pending'`;
       // Helper to try sending
       const trySend = async (addressOrKey: string, isAddress: boolean) => {
         // Convert params to string for runCommand
-        // maxcontacts action:add publickey:0x... OR maxcontacts action:add contact:Mx...
-        // Wait, this is 'maxima action:send ...'
-
         let cmd = `maxima action:send application:metachain poll:true data:0x${dataHex}`;
 
         if (isAddress) {
@@ -1930,57 +1720,42 @@ WHERE(${addressClause}) AND status = 'pending'`;
 
         return this.runCommand(cmd);
       };
-
-      // Attempt 1: Send via Public Key (Standard for Contacts)
-      trySend(publickey, false).then(async (resp: any) => {
-        if (resp.status) {
-          console.log("✅ [SMART-SYNC] Check sent (via Public Key).");
-        } else {
-          // ERROR HANDLING: "No Contact found" usually means we need to use their Address
-          if (
-            resp.error &&
-            (resp.error.includes("No Contact found") ||
-              resp.error.includes("not in contacts"))
-          ) {
-            console.log(
-              "⚠️ [SMART-SYNC] Not a contact. Attempting to resolve address from DISCOVERED_PEERS...",
-            );
-
-            // Attempt 2: Resolve Address locally
-            const peerSql = `SELECT address FROM DISCOVERED_PEERS WHERE publickey='${publickey}' LIMIT 1`;
-            const peerRes = await this.runSQL(peerSql);
-
-            if (
-              peerRes.rows &&
-              peerRes.rows.length > 0 &&
-              peerRes.rows[0].ADDRESS
-            ) {
-              const address = peerRes.rows[0].ADDRESS;
-              console.log(
-                `🔄 [SMART-SYNC] Found address: ${address}. Retrying send...`,
-              );
-
-              const retryResp = await trySend(address, true);
-              if (retryResp.status) {
-                console.log(
-                  "✅ [SMART-SYNC] Check sent (via Resolved Address).",
-                );
-              } else {
-                console.warn(
-                  "⚠️ [SMART-SYNC] Failed to send to address:",
-                  retryResp.error,
-                );
-              }
-            } else {
-              console.warn(
-                "⚠️ [SMART-SYNC] Peer address not found in DB. Cannot send non-contact message.",
-              );
-            }
-          } else {
-            console.warn("⚠️ [SMART-SYNC] Failed to send check:", resp.error);
-          }
+      // Attempt to resolve address from DISCOVERED_PEERS for Dual-send
+      let resolvedAddress: string | null = null;
+      try {
+        const peerSql = `SELECT address FROM DISCOVERED_PEERS WHERE publickey='${publickey}' LIMIT 1`;
+        const peerRes = await this.runSQL(peerSql);
+        if (peerRes.rows && peerRes.rows.length > 0 && peerRes.rows[0].ADDRESS) {
+          resolvedAddress = peerRes.rows[0].ADDRESS;
         }
-      });
+      } catch (e) {
+        // Ignore resolution errors, fallback to PK only
+      }
+
+      const promises: Promise<any>[] = [];
+
+      // 1. Send via Public Key
+      promises.push(trySend(publickey, false));
+
+      // 2. Send via Address if resolved
+      if (resolvedAddress) {
+        console.log(`🔄 [SMART-SYNC] Dual-sending to PK and Mx: ${resolvedAddress.substring(0, 15)}...`);
+        promises.push(trySend(resolvedAddress, true));
+      }
+
+      try {
+        const results = await Promise.allSettled(promises);
+        const isOk = results.some(r => r.status === 'fulfilled' && (r as PromiseFulfilledResult<any>).value.status);
+
+        if (isOk) {
+          console.log(`✅ [SMART-SYNC] Check sent${resolvedAddress ? " (via Dual-send)" : " (via Public Key)"}.`);
+        } else {
+          // If all failed, log details
+          console.warn("⚠️ [SMART-SYNC] Failed to send status check:", results);
+        }
+      } catch (err) {
+        console.error("❌ [SMART-SYNC] Error in Dual-send:", err);
+      }
     } catch (err) {
       console.error("❌ [SMART-SYNC] Error preparing check:", err);
     }
@@ -2194,21 +1969,8 @@ WHERE(${addressClause}) AND status = 'pending'`;
   /**
    * Save incoming contact request to database
    */
-  async saveChatRequest(
-    fromPublicKey: string,
-    fromName: string,
-    fromAvatar: string,
-    _toPublicKey: string,
-    fromAddress?: string,
-  ): Promise<void> {
-    return contactRequestsService.saveChatRequest(
-      fromPublicKey,
-      fromName,
-      fromAvatar,
-      _toPublicKey,
-      fromAddress,
-    );
-  }
+  // Redundant saveChatRequest wrapper removed (SW handles incoming)
+
 
   /**
    * Check if there's a pending contact request from me to this user
@@ -2370,15 +2132,8 @@ WHERE(${addressClause}) AND status = 'pending'`;
     return contactRequestsService.getMaximaContactRequests(myPublicKey);
   }
 
-  async saveMaximaContactRequest(
-    fromPublicKey: string,
-    fromName: string,
-  ): Promise<void> {
-    return contactRequestsService.saveMaximaContactRequest(
-      fromPublicKey,
-      fromName,
-    );
-  }
+  // Redundant saveMaximaContactRequest wrapper removed (SW handles incoming)
+
   // ============================================================================
   // BACKWARD COMPATIBILITY ALIASES (Refactoring Contact -> Chat Requests)
   // ============================================================================
@@ -2392,22 +2147,8 @@ WHERE(${addressClause}) AND status = 'pending'`;
     return this.sendChatRequest(toAddress, myName, myAvatar);
   }
 
-  /** @deprecated Use saveChatRequest */
-  async saveContactRequest(
-    fromPublicKey: string,
-    fromName: string,
-    fromAvatar: string,
-    _toPublicKey: string,
-    fromAddress?: string,
-  ): Promise<void> {
-    return this.saveChatRequest(
-      fromPublicKey,
-      fromName,
-      fromAvatar,
-      _toPublicKey,
-      fromAddress,
-    );
-  }
+  // Redundant saveContactRequest wrapper removed (SW handles incoming)
+
 
   /** @deprecated Use checkPendingChatRequest */
   async checkPendingContactRequest(publickey: string): Promise<boolean> {

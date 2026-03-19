@@ -210,10 +210,22 @@ function requestAllGroupsHistory() {
   MDS.log("🔄 [GROUP-SYNC] Startup sync for all groups...");
   MDS.sql("SELECT group_id FROM GROUPS", function (res) {
     if (!res.status || !res.rows || res.rows.length === 0) return;
-    MDS.log("🔄 [GROUP-SYNC] Syncing " + res.rows.length + " group(s)...");
-    for (var i = 0; i < res.rows.length; i++) {
-      requestGroupHistoryFromSW(res.rows[i].GROUP_ID || res.rows[i].group_id);
-    }
+
+    var processNext = function (index) {
+      if (index >= res.rows.length) {
+        MDS.log("✅ [GROUP-SYNC] All group history requests launched.");
+        return;
+      }
+      var groupId = res.rows[index].GROUP_ID || res.rows[index].group_id;
+      requestGroupHistoryFromSW(groupId);
+
+      // 500ms stagger between different groups
+      MDS.cmd("timer 500", function () {
+        processNext(index + 1);
+      });
+    };
+
+    processNext(0);
   });
 }
 

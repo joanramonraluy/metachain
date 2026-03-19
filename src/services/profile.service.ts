@@ -36,6 +36,9 @@ const pendingRequests = new Map<string, {
     timeout: NodeJS.Timeout;
 }>();
 
+// Deduplication pool for active requests
+const requestPool = new Map<string, Promise<ExtendedProfile>>();
+
 /**
  * Request extended profile from a discovered peer
  * @param peerAddress - The full Maxima address of the peer
@@ -58,9 +61,18 @@ export async function requestProfile(
     peerPublicKey: string,  // Add publickey parameter
     timeout: number = 30000 // Increased to 30s for better reliability
 ): Promise<ExtendedProfile> {
-    console.log(`[ProfileService] Requesting profile from ${peerAddress.substring(0, 20)}...`);
+    const normalizedKey = normalizeKey(peerPublicKey);
 
-    return new Promise((resolve, reject) => {
+    // 1. Deduplication: If a request for this peer is already in progress, return the existing promise
+    const existing = requestPool.get(normalizedKey);
+    if (existing) {
+        console.log(`[ProfileService] Deduplicating request for ${normalizedKey.substring(0, 10)}`);
+        return existing;
+    }
+
+    console.log(`[ProfileService] Requesting profile from ${peerAddress.substring(0, 30)}...`);
+
+    const promise = new Promise<ExtendedProfile>((resolve, reject) => {
         // Get my Maxima info
         MDS.cmd.maxima({ params: { action: 'info' } }, (infoRes: any) => {
             if (!infoRes.status) {
@@ -121,6 +133,15 @@ export async function requestProfile(
             });
         });
     });
+
+    // 2. Track the promise in the pool and clean up when it settles
+    requestPool.set(normalizedKey, promise);
+    promise.finally(() => {
+        requestPool.set(normalizedKey, promise); // Re-assurance of key (optional)
+        requestPool.delete(normalizedKey);
+    });
+
+    return promise;
 }
 
 // Debug module init

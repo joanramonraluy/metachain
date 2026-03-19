@@ -171,9 +171,10 @@ class ChannelService {
   }
 
   private async sendMaximaMessage(
-    toPublicKey: string,
+    toPubKey: string,
     message: ChannelMaximaMessage,
   ): Promise<void> {
+    const toPublicKey = (toPubKey || "").toLowerCase();
     const jsonStr = JSON.stringify(message);
     const hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
 
@@ -223,10 +224,11 @@ class ChannelService {
   async createChannel(
     name: string,
     description: string,
-    myPublicKey: string,
+    myPubKey: string,
     myUsername: string,
     avatar: string = "",
   ): Promise<string> {
+    const myPublicKey = (myPubKey || "").toLowerCase();
     const channelId = this.generateChannelId();
     const now = Date.now();
 
@@ -246,7 +248,8 @@ class ChannelService {
     return channelId;
   }
 
-  async getMyChannels(myPublicKey: string): Promise<Channel[]> {
+  async getMyChannels(myPubKey: string): Promise<Channel[]> {
+    const myPublicKey = (myPubKey || "").toLowerCase();
     try {
       const res = await this.runSQL(`
                 SELECT DISTINCT c.*
@@ -333,7 +336,8 @@ class ChannelService {
     }
   }
 
-  async isAdmin(channelId: string, myPublicKey: string): Promise<boolean> {
+  async isAdmin(channelId: string, myPubKey: string): Promise<boolean> {
+    const myPublicKey = (myPubKey || "").toLowerCase();
     try {
       const res = await this.runSQL(
         `SELECT role FROM CHANNEL_SUBSCRIBERS WHERE channel_id='${channelId}' AND UPPER(publickey)=UPPER('${myPublicKey}')`,
@@ -367,11 +371,13 @@ class ChannelService {
 
   async inviteSubscriber(
     channelId: string,
-    subscriberPublicKey: string,
+    subscriberPubKey: string,
     subscriberUsername: string,
-    myPublicKey: string,
+    myPubKey: string,
     myUsername: string,
   ): Promise<void> {
+    const subscriberPublicKey = (subscriberPubKey || "").toLowerCase();
+    const myPublicKey = (myPubKey || "").toLowerCase();
     const now = Date.now();
     const channel = await this.getChannelInfo(channelId);
     if (!channel) throw new Error("Channel not found");
@@ -431,10 +437,12 @@ class ChannelService {
 
   async removeSubscriber(
     channelId: string,
-    subscriberPublicKey: string,
-    myPublicKey: string,
+    subscriberPubKey: string,
+    myPubKey: string,
     myUsername: string,
   ): Promise<void> {
+    const subscriberPublicKey = (subscriberPubKey || "").toLowerCase();
+    const myPublicKey = (myPubKey || "").toLowerCase();
     const channel = await this.getChannelInfo(channelId);
     if (!channel) throw new Error("Channel not found");
     const safeChannel = channel as any;
@@ -475,12 +483,13 @@ class ChannelService {
     channelId: string,
     message: string,
     type: string,
-    myPublicKey: string,
+    myPubKey: string,
     myUsername: string,
     filedata: string = "",
     forwarded: boolean = false,
     reply_to?: string
   ): Promise<void> {
+    const myPublicKey = (myPubKey || "").toLowerCase();
     const channel = await this.getChannelInfo(channelId);
     if (!channel) throw new Error("Channel not found");
     const safeChannel = channel as any;
@@ -661,10 +670,12 @@ class ChannelService {
 
   async updateSubscriberRole(
     channelId: string,
-    subscriberPubkey: string,
+    subscriberPubKey: string,
     newRole: "admin" | "subscriber",
-    myPublicKey: string,
+    myPubKey: string,
   ): Promise<void> {
+    const subscriberPubkey = (subscriberPubKey || "").toLowerCase();
+    const myPublicKey = (myPubKey || "").toLowerCase();
     try {
       // Optimistic update locally
       const sql = `UPDATE CHANNEL_SUBSCRIBERS SET role = '${newRole}' WHERE channel_id = '${channelId}' AND publickey = '${subscriberPubkey}'`;
@@ -707,8 +718,9 @@ class ChannelService {
     newName: string | null,
     newDescription: string | null,
     avatar: string | null,
-    myPublicKey: string,
+    myPubKey: string,
   ): Promise<void> {
+    const myPublicKey = (myPubKey || "").toLowerCase();
     try {
       // Update local DB
       if (newName) {

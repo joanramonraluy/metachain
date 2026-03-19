@@ -5,6 +5,8 @@
  */
 
 function handleProfileRequest(pubkey, maxjson) {
+    // Normalize pubkey early
+    pubkey = (pubkey || "").toLowerCase();
     MDS.log("🕵️ [PROFILE] Request received from: " + pubkey.substring(0, 20) + "...");
 
     try {
@@ -164,33 +166,16 @@ function handleProfileRequest(pubkey, maxjson) {
                                 var jsonStr = JSON.stringify(responsePayload);
                                 var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
 
-                                // Step 7: Prepare target address
-                                var targetAddress = null;
+                                // Step 7: Update their address in DB if provided (ensures resolveAndSend finds it)
                                 if (maxjson.requesterAddress) {
-                                    var rawAddr = maxjson.requesterAddress + "";
-                                    var parts = rawAddr.split(":");
-                                    if (parts.length >= 2) {
-                                        var part1 = parts[0].replace(/[^a-zA-Z0-9@.-]/g, "").trim();
-                                        var part2 = parts[1].replace(/[^0-9]/g, "").trim();
-                                        targetAddress = part1 + ":" + part2;
-                                    } else {
-                                        targetAddress = rawAddr.replace(/[^a-zA-Z0-9@.:-]/g, "");
+                                    var cleanAddr = cleanMaximaAddress(maxjson.requesterAddress);
+                                    if (cleanAddr && (cleanAddr.startsWith("Mx") || cleanAddr.startsWith("MX"))) {
+                                        MDS.sql("UPDATE DISCOVERED_PEERS SET address='" + escapeSql(cleanAddr) + "' WHERE publickey='" + pubkey + "'");
                                     }
                                 }
 
-                                var sendCommand = "";
-                                if (targetAddress && (targetAddress.startsWith("Mx") || targetAddress.startsWith("MX"))) {
-                                    MDS.log("📤 [PROFILE] Sending filtered response to address: " + targetAddress);
-                                    sendCommand = "maxima action:send to:" + targetAddress + " application:metachain data:" + hexData + " poll:false";
-                                } else {
-                                    MDS.log("📤 [PROFILE] Sending filtered response to pubkey: " + pubkey.substring(0, 10) + "...");
-                                    sendCommand = "maxima action:send publickey:" + pubkey + " application:metachain data:" + hexData + " poll:false";
-                                }
-
-                                // Step 8: Send Response
-                                MDS.cmd(sendCommand, function (sendRes) {
-                                    MDS.log("✅ [PROFILE] Response Sent. Status: " + sendRes.status);
-                                });
+                                // Step 8: Send Response (using Dual-send helper in exclusive mode)
+                                resolveAndSend(pubkey, hexData, "PROFILE", false, true);
                             });
                         });
                     });
@@ -203,6 +188,8 @@ function handleProfileRequest(pubkey, maxjson) {
 }
 
 function handleProfileResponse(pubkey, maxjson) {
+    // Normalize pubkey early
+    pubkey = (pubkey || "").toLowerCase();
     MDS.log("📝 [PROFILE] Response received from: " + pubkey.substring(0, 20) + "...");
 
     // Update DISCOVERED_PEERS with extended profile data
@@ -222,7 +209,7 @@ function handleProfileResponse(pubkey, maxjson) {
     var minimaAddress = escapeSql(maxjson.minimaaddress || "");
 
     // Update bio, extra_data, minimaaddress, AND allow_non_contact_chats
-    var updateSql = "UPDATE DISCOVERED_PEERS SET bio='" + escapeSql(maxjson.bio || "") + "', extra_data='" + extraData + "', minimaaddress='" + minimaAddress + "', allow_non_contact_chats=" + allowNonContactChats + ", last_seen=" + now + " WHERE publickey='" + safePubkey + "'";
+    var updateSql = "UPDATE DISCOVERED_PEERS SET bio='" + escapeSql(maxjson.bio || "") + "', extra_data='" + extraData + "', minimaaddress='" + minimaAddress + "', allow_non_contact_chats=" + allowNonContactChats + ", allow_non_contact_chats_source='PROFILE', last_seen=" + now + " WHERE publickey='" + safePubkey + "'";
 
     MDS.sql(updateSql, function (res) {
         if (res.status) {

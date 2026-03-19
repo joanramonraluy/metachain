@@ -17,7 +17,7 @@ interface MessageBubbleProps {
   amount?: number | null;
   // Ensure timestamp is treated as number (it comes from DB as number)
   timestamp?: number;
-  status?: 'pending' | 'sent' | 'delivered' | 'read' | 'failed' | 'zombie' | 'confirmed';
+  status?: "pending" | "sent" | "delivered" | "read" | "failed" | "zombie" | "received" | "confirmed";
   tokenAmount?: { amount: string; tokenName: string };
   senderName?: string;
   senderImage?: string; // Base64 or URL
@@ -126,8 +126,14 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
       setShowCelebration(true);
       setTimeout(() => setShowCelebration(false), 1500);
     }
+
+    // UX-TIMING: Log when the sender sees the confirmation tick
+    if (fromMe && prevStatus === 'pending' && status !== 'pending' && status !== 'failed') {
+      console.log(`[UX-TIMING-CONFIRMED] ${Date.now()} - Message confirmed in sender UI (tick appeared)`);
+    }
+
     setPrevStatus(status);
-  }, [status, isTokenTransfer, isCharm, prevStatus]);
+  }, [status, isTokenTransfer, isCharm, prevStatus, fromMe]);
 
   // Use status directly - no fake pending needed
   // Enhanced status logic:

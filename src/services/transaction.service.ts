@@ -79,8 +79,8 @@ export async function insertTransaction(
 
     // Ensure we handle the case where we might be re-inserting if using pendingID
     const sql = `
-        INSERT INTO TRANSACTIONS (txpowid, type, publickey, message_timestamp, status, date, metadata, pendinguid, amount, tokenid)
-        VALUES (${txpowidVal}, '${type}', '${publickey}', ${messageTimestamp}, 'pending', ${now}, '${metadataStr}', ${pendinguidVal}, ${amountVal}, ${tokenidVal})
+        INSERT INTO TRANSACTIONS (txpowid, type, publickey, message_timestamp, status, date, created_at, updated_at, metadata, pendinguid, amount, tokenid)
+        VALUES (${txpowidVal}, '${type}', '${publickey}', ${messageTimestamp}, 'pending', ${now}, ${now}, ${now}, '${metadataStr}', ${pendinguidVal}, ${amountVal}, ${tokenidVal})
     `;
 
     console.log(`💾 [TX] Inserting transaction: ${effectiveTxPoWID} (${type})`);

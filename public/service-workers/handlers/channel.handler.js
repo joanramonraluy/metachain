@@ -107,8 +107,11 @@ function handleChannelInvite(pubkey, maxjson) {
 // channel_message
 // ---------------------------------------------------------------------------
 
-function handleChannelMessage(senderPublickey, maxjson, skipNotify) {
-  if (!maxjson) return;
+function handleChannelMessage(senderPublickey, maxjson, skipNotify, callback) {
+  if (!maxjson) {
+    if (callback) callback();
+    return;
+  }
   var channelId = maxjson.channelId;
   var type = (maxjson.messageContentType || "text").replace(/'/g, "''");
   var message = (maxjson.message || "").replace(/'/g, "''");
@@ -126,6 +129,7 @@ function handleChannelMessage(senderPublickey, maxjson, skipNotify) {
 
   if (!channelId) {
     MDS.log("❌ [CHANNEL] channel_message missing channelId");
+    if (callback) callback();
     return;
   }
 
@@ -139,6 +143,7 @@ function handleChannelMessage(senderPublickey, maxjson, skipNotify) {
           channelId +
           ". Ignoring.",
         );
+        if (callback) callback();
         return;
       }
 
@@ -158,6 +163,7 @@ function handleChannelMessage(senderPublickey, maxjson, skipNotify) {
       MDS.sql(checkSql, function (checkRes) {
         if (checkRes.status && checkRes.rows && checkRes.rows.length > 0) {
           MDS.log("ℹ️ [CHANNEL-MSG] Duplicate message detected. Ignoring.");
+          if (callback) callback();
           return;
         }
 
@@ -246,6 +252,7 @@ function handleChannelMessage(senderPublickey, maxjson, skipNotify) {
             } else {
               MDS.log("❌ [CHANNEL] Save failed: " + insRes.error);
             }
+            if (callback) callback();
           });
         });
       });
@@ -327,25 +334,40 @@ function handleChannelHistoryResponse(pubkey, maxjson) {
     channelId,
   );
 
-  // Save them using the regular handler logic (skip notify per message)
-  for (var i = 0; i < messages.length; i++) {
-    handleChannelMessage(messages[i].senderPublickey, messages[i], true);
-  }
+  var processNext = function (index) {
+    if (index >= messages.length) {
+      // Single notification at the end
+      MDS.comms.solo(
+        JSON.stringify({
+          type: "CHANNEL_NEW_MESSAGE",
+          channelId: channelId,
+        }),
+      );
+      // Signal sync end
+      MDS.comms.solo(
+        JSON.stringify({
+          type: "CHANNEL_SYNC_END",
+          channelId: channelId,
+        }),
+      );
+      return;
+    }
 
-  // Single notification at the end
-  MDS.comms.solo(
-    JSON.stringify({
-      type: "CHANNEL_NEW_MESSAGE",
-      channelId: channelId,
-    }),
-  );
-  // Signal sync end immediately
-  MDS.comms.solo(
-    JSON.stringify({
-      type: "CHANNEL_SYNC_END",
-      channelId: channelId,
-    }),
-  );
+    // Process using the modified handleChannelMessage with callback
+    handleChannelMessage(
+      messages[index].senderPublickey,
+      messages[index],
+      true,
+      function () {
+        // Stagger next message processing (50ms) to prioritize real-time traffic
+        MDS.cmd("timer 50", function () {
+          processNext(index + 1);
+        });
+      },
+    );
+  };
+
+  processNext(0);
 }
 
 function requestChannelHistoryFromSW(channelId) {
@@ -447,11 +469,22 @@ function requestAllChannelsHistory() {
   MDS.log("🔄 [CHANNEL-SYNC] Startup sync for all channels...");
   MDS.sql("SELECT channel_id FROM CHANNELS", function (res) {
     if (!res.status || !res.rows || res.rows.length === 0) return;
-    for (var i = 0; i < res.rows.length; i++) {
-      requestChannelHistoryFromSW(
-        res.rows[i].CHANNEL_ID || res.rows[i].channel_id,
-      );
-    }
+
+    var processNext = function (index) {
+      if (index >= res.rows.length) {
+        MDS.log("✅ [CHANNEL-SYNC] All channel history requests launched.");
+        return;
+      }
+      var channelId = res.rows[index].CHANNEL_ID || res.rows[index].channel_id;
+      requestChannelHistoryFromSW(channelId);
+
+      // 500ms stagger between different channels
+      MDS.cmd("timer 500", function () {
+        processNext(index + 1);
+      });
+    };
+
+    processNext(0);
   });
 }
 
