@@ -64,6 +64,7 @@ function ContactInfoPage() {
     // Tab State
     const [activeTab, setActiveTab] = useState<ContactTab>('profile');
     const [showConfirmDelete, setShowConfirmDelete] = useState(false);
+    const [isCheckingProfile, setIsCheckingProfile] = useState(false);
 
     // Sync active tab with search params
     useEffect(() => {
@@ -415,6 +416,7 @@ function ContactInfoPage() {
         }
 
         setProfileError(null);
+        setIsCheckingProfile(true);
 
         try {
             console.log("🔄 [PROFILE] Requesting extended profile...");
@@ -448,6 +450,8 @@ function ContactInfoPage() {
 
             setProfileLoaded(true); // Mark as "loaded" (even if empty) so UI unlocks
             setProfileError(null);  // Don't show error to user
+        } finally {
+            setIsCheckingProfile(false);
         }
     };
 
@@ -1095,6 +1099,7 @@ function ContactInfoPage() {
                                 sendingMaximaRequest={sendingMaximaRequest}
                                 addingContact={addingContact}
                                 isBlocked={isBlocked}
+                                isCheckingProfile={isCheckingProfile}
                                 onToggleBlock={handleToggleBlock}
                                 onNavigateChat={() => {
                                     if (!contact?.publickey) return;

@@ -19,6 +19,7 @@ interface ContactActionsProps {
     onToggleBlock: () => void;
     onRemoveContact?: () => void;
     removingContact?: boolean;
+    isCheckingProfile?: boolean;
 }
 
 const ContactActions: React.FC<ContactActionsProps> = ({
@@ -38,8 +39,28 @@ const ContactActions: React.FC<ContactActionsProps> = ({
     isBlocked,
     onToggleBlock,
     onRemoveContact,
-    removingContact = false
+    removingContact = false,
+    isCheckingProfile = false
 }) => {
+    if (isCheckingProfile) {
+        return (
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden transition-colors animate-pulse">
+                <div className="p-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/50">
+                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 uppercase tracking-wider">Verifying Permissions</h3>
+                </div>
+                <div className="p-12 flex flex-col items-center justify-center text-center">
+                    <div className="animate-spin h-8 w-8 border-4 border-primary-500 border-t-transparent rounded-full mb-4" />
+                    <p className="text-sm font-medium text-gray-900 dark:text-white mb-1">
+                        Loading information...
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                        Checking latest profile and chat permissions
+                    </p>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden transition-colors">
             <div className="p-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/50">

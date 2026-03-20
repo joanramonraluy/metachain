@@ -442,55 +442,17 @@ function ChatPage() {
         );
 
         if (c) {
-          if (!c.publickey && resolvedPublicKey.startsWith("0x")) {
-            c.publickey = resolvedPublicKey;
+          console.log("✅ [CHAT] User found in Contact cache");
+          setContact(c);
+          // Preserve icon if we have one in cache AND we are offline/slow
+          if (c.extradata?.icon) {
+            console.log("🖼️ [CHAT] Preserving avatar from cache.");
           }
-
-          if (c.publickey) {
-            const safeKey = c.publickey.replace(/'/g, "''");
-            const discSql = `SELECT * FROM DISCOVERED_PEERS WHERE publickey='${safeKey}'`;
-            const discRes: any = await withTimeout(
-              MDS.sql(discSql),
-              2000,
-            ).catch(() => ({ status: false }));
-
-            if (discRes.status && discRes.rows && discRes.rows.length > 0) {
-              const peer = discRes.rows[0];
-              let parsedExtra: any = {};
-              try {
-                if (peer.EXTRA_DATA) {
-                  parsedExtra =
-                    typeof peer.EXTRA_DATA === "string"
-                      ? JSON.parse(peer.EXTRA_DATA)
-                      : peer.EXTRA_DATA;
-                }
-              } catch (e) {
-                console.warn("Error parsing extra", e);
-              }
-
-              if (!c.extradata) c.extradata = {};
-
-              if (peer.MINIMAADDRESS) {
-                c.extradata.minimaaddress = peer.MINIMAADDRESS;
-              } else if (parsedExtra.minimaaddress) {
-                c.extradata.minimaaddress = parsedExtra.minimaaddress;
-              }
-
-              if (!c.extradata.icon && peer.ICON) c.extradata.icon = peer.ICON;
-            }
+          // Profile Discovery Logic
+          if (c.publickey && c.currentaddress) {
+            console.log("🔄 [CHAT] Auto-requesting profile refresh...");
+            requestProfile(c.currentaddress, c.publickey);
           }
-
-          if (
-            c.extradata?.minimaaddress &&
-            c.extradata.minimaaddress.includes("@")
-          ) {
-            console.warn(
-              "⚠️ [CHAT] Found contact with INVALID minimaaddress (Maxima ID detected), clearing it.",
-            );
-            if (c.extradata) c.extradata.minimaaddress = "";
-          }
-
-          contactToSet = c;
         } else {
           // 2. If not found, try DISCOVERED_PEERS (using the RESOLVED key)
           console.log(
@@ -658,19 +620,38 @@ function ChatPage() {
           // Update cache
           localStorage.setItem(cacheKey, JSON.stringify(contactToSet));
 
+          // Check if we need a fresh profile (non-contacts or unknown name)
+          let needsProfile = false;
+          try {
+            const res = await MDS.cmd.maxcontacts();
+            const contactsList: any[] = (res as any)?.response?.contacts || [];
+            const isMaximaContact = contactsList.some(
+              (c: any) => c.publickey === contactToSet.publickey,
+            );
+            if (!isMaximaContact) {
+              needsProfile = true;
+            }
+          } catch (e) {
+            needsProfile = true; // Fallback to safe check
+          }
+
           const isUnknown =
             contactToSet.extradata?.name === "Unknown User" ||
             !contactToSet.extradata?.name;
           const isMissingAddress = !contactToSet.extradata?.minimaaddress;
 
-          if ((isUnknown || isMissingAddress) && contactToSet.publickey) {
-            // Non-critical, just warning log if fails
-            requestProfile(
-              contactToSet.currentaddress || address,
-              contactToSet.publickey,
-            ).catch((err) =>
-              console.warn("⚠️ [CHAT] Profile request failed:", err),
-            );
+          if (needsProfile || isUnknown || isMissingAddress) {
+            if (contactToSet.publickey) {
+              console.log(
+                "🔄 [CHAT] Non-contact or incomplete profile, requesting fresh profile...",
+              );
+              requestProfile(
+                contactToSet.currentaddress || address,
+                contactToSet.publickey,
+              ).catch((err) => {
+                console.warn("⚠️ [CHAT] Profile request failed:", err);
+              });
+            }
           }
         }
       } catch (err) {
@@ -818,17 +799,12 @@ function ChatPage() {
       setBlockReason("none");
     } else if (hasPendingIncoming || hasMaximaRequest) {
       // They sent ME a request - I should be able to REPLY to them IF they allow it
-      // My allowNonContactChats only affects who can send TO me, not who I can send TO
-      // Check if THEY allow non-contact chats (so I can send to them)
       if (recipientAllowsNonContacts) {
         setBlockReason("none");
         console.log(
           "🔓 [CHAT] Allowing reply to incoming request (recipient allows non-contact chats)",
         );
       } else {
-        // They don't allow non-contact chats, so I can't send to them
-        // But they can send to me (they already did - the request)
-        // I must ACCEPT the request first to unlock the chat
         setBlockReason("recipient_restricted");
         console.log(
           "🔒 [CHAT] Blocking reply (recipient doesn't allow non-contact chats). Must Accept Request first.",
@@ -836,9 +812,6 @@ function ChatPage() {
       }
     } else if (hasPendingOutgoing) {
       // I sent THEM a request - check THEIR permission
-      // NEW LOGIC: If recipient allows non-contact chats, I can still send!
-      // The request was sent because at some point we thought they didn't allow it,
-      // but we should respect their current setting.
       if (recipientAllowsNonContacts) {
         console.log(
           "🔓 [CHAT] Allowing (pending request but recipient allows non-contact chats)",
@@ -863,29 +836,22 @@ function ChatPage() {
       }
     }
 
-    // Check override logic (MOVED OUTSIDE ELSE)
     // Always check override logic (no condition to avoid stale state)
     if (myPublicKey && contact?.publickey) {
-      // DEBUG LOGS
-      console.log(
-        "🔍 [CHAT DEBUG] Override Check (Post-Block) - MyPK:",
-        myPublicKey,
-        "ContactPK:",
-        contact.publickey,
-      );
       try {
-        const sMy = myPublicKey.replace(/'/g, "''");
         const sPeer = contact.publickey.replace(/'/g, "''");
         const sql = `SELECT * FROM CONTACT_REQUESTS
-                   WHERE ((from_publickey='${sMy}' AND to_publickey='${sPeer}')
-                      OR (from_publickey='${sPeer}' AND to_publickey='${sMy}'))
+                   WHERE ((from_publickey='${myPublicKey.replace(
+                     /'/g,
+                     "''",
+                   )}' AND to_publickey='${sPeer}')
+                      OR (from_publickey='${sPeer}' AND to_publickey='${myPublicKey.replace(
+                        /'/g,
+                        "''",
+                      )}'))
                    AND status='accepted'`;
 
-        // console.log("🔍 [CHAT DEBUG] Override SQL:", sql);
-
         const res = await new Promise<any>((resolve) => MDS.sql(sql, resolve));
-
-        // console.log("🔍 [CHAT DEBUG] Override Res:", res);
 
         if (res.status && res.rows && res.rows.length > 0) {
           console.log(
@@ -893,9 +859,7 @@ function ChatPage() {
           );
           setBlockReason("none");
         } else {
-          // HISTORY OVERRIDE: If we have chatted before (sent/received messages), allow chat
-          // This covers the case where users were chatting in "Open" mode but then one switched to "Contacts Only"
-          // We don't want to break existing active chats.
+          // HISTORY OVERRIDE
           const historySql = `SELECT * FROM CHAT_MESSAGES WHERE publickey='${sPeer}' AND type!='system' LIMIT 1`;
           const histRes = await new Promise<any>((resolve) =>
             MDS.sql(historySql, resolve),
@@ -1363,7 +1327,6 @@ function ChatPage() {
           .catch(console.error);
 
         // SMART SYNC: Trigger Status Check (Phase 1/2)
-        // This ensures we catch any gaps even if we bypassed the Global Sync Check
         minimaService
           .sendSyncStatusCheck(contact.publickey)
           .catch((err) => console.warn("Sync Check Failed:", err));
@@ -1538,8 +1501,13 @@ function ChatPage() {
       }
 
       // Re-check permissions when peer info updates
-      if (payload.type === "peer_discovered") {
-        console.log("🔄 [CHAT] Peer info updated, re-checking permissions...");
+      if (
+        payload.type === "peer_discovered" ||
+        payload.type === "profile_response"
+      ) {
+        console.log(
+          `🔄 [CHAT] ${payload.type} received, re-checking permissions...`,
+        );
         checkPending();
         return;
       }
@@ -3424,7 +3392,11 @@ function ChatPage() {
             className={`flex-1 bg-transparent outline-none text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 text-[15px] max-h-32 py-1 disabled:opacity-100 disabled:cursor-not-allowed`}
             type="text"
             value={input}
-            disabled={isBlocked || blockedByThem || blockReason !== "none"}
+            disabled={
+              isBlocked ||
+              blockedByThem ||
+              (blockReason !== "none")
+            }
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
@@ -3434,7 +3406,7 @@ function ChatPage() {
             }}
             placeholder={
               isBlocked || blockedByThem
-                ? "Chat is blocked"
+                ? "This user is blocked"
                 : blockReason !== "none"
                   ? "Waiting for approval..."
                   : "Type a message..."
@@ -3444,7 +3416,7 @@ function ChatPage() {
 
         <button
           className={`p-2 rounded-full transition-all duration-200 shadow-sm
-            ${input.trim() && blockReason === "none" && !isBlocked
+            ${input.trim() && blockReason === "none" && !isBlocked && !blockedByThem
               ? "bg-primary-600 text-white hover:bg-primary-700 transform hover:scale-105"
               : "bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-default"
             }`}
