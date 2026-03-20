@@ -25,7 +25,7 @@ Thumbs.db
 .gemini
 
 # Examples folder
-examples/
+exemples/
 
 # Temporary development files
 grep_results.txt

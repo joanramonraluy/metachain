@@ -882,21 +882,16 @@ WHERE(${addressClause}) AND status = 'pending'`;
           });
           return;
         }
+
         // HANDLE HISTORY SYNC RESPONSE
         // The DB insertion is handled by the Service Worker (chat.handler.js)
-        // We just need to wait a moment for it to finish and then tell the UI to refresh.
+        // The SW also emits CHAT_LIST_UPDATE when finished.
+        // Redundant setTimeout removed to avoid duplicate UI refreshes and bridge saturation.
         if (json.type === "chat_history_response") {
           console.log(
-            "🔄 [HISTORY] Received history sync response, triggering UI refresh...",
+            `🔄 [HISTORY] History sync response received from ${from} (Processing handled by SW).`,
           );
-          setTimeout(() => {
-            console.log("🔄 [HISTORY] Triggering UI update now.");
-            chatService.notifyNewMessage({
-              ...json,
-              type: "history_sync", // Special type to trigger broad refresh
-              from,
-            });
-          }, 2000);
+          // We no longer trigger a delayed refresh here as the SW's CHAT_LIST_UPDATE is more reliable.
           return;
         }
 
@@ -913,6 +908,19 @@ WHERE(${addressClause}) AND status = 'pending'`;
           "sticker",
           "voice",
         ];
+
+        // Protocol / Management types handled by Service Worker should be ignored QUIETLY
+        const protocolTypes = [
+          "chat_history_request",
+          "chat_history_response",
+          "sync_status_check",
+          "sync_status_report",
+        ];
+
+        if (protocolTypes.includes(json.type)) {
+          return;
+        }
+
         if (!validChatTypes.includes(json.type)) {
           console.log(`ℹ️ [MAXIMA] Ignoring non-chat type: ${json.type}`);
           return;

@@ -17,7 +17,7 @@ function initDatabase() {
   }
 
   // Register for NEWBLOCK events
-  MDS.cmd("event on newblock", function (res) { });
+  MDS.cmd("event on newblock", function (res) {});
 
   // Get our own Maxima info
   MDS.cmd("maxima action:info", function (maxInfo) {
@@ -28,9 +28,12 @@ function initDatabase() {
   });
 
   // Register Maxima applications
-  MDS.cmd("maxima action:register application:metachain", function () { });
-  MDS.cmd("maxima action:register application:metachain-group", function () { });
-  MDS.cmd("maxima action:register application:metachain-channel", function () { });
+  MDS.cmd("maxima action:register application:metachain", function () {});
+  MDS.cmd("maxima action:register application:metachain-group", function () {});
+  MDS.cmd(
+    "maxima action:register application:metachain-channel",
+    function () {},
+  );
 
   // START SEQUENTIAL INIT
   var chain = Promise.resolve();
@@ -172,10 +175,18 @@ function initDatabase() {
           : "❌ [DB] GROUPS init failed: " + res.error,
       );
       return Promise.all([
-        runSQL("ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT FALSE"),
-        runSQL("ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS archived_date BIGINT"),
-        runSQL("ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS favorite BOOLEAN DEFAULT FALSE"),
-        runSQL("ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS auto_approve BOOLEAN DEFAULT FALSE")
+        runSQL(
+          "ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT FALSE",
+        ),
+        runSQL(
+          "ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS archived_date BIGINT",
+        ),
+        runSQL(
+          "ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS favorite BOOLEAN DEFAULT FALSE",
+        ),
+        runSQL(
+          "ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS auto_approve BOOLEAN DEFAULT FALSE",
+        ),
       ]);
     });
   });
@@ -318,9 +329,7 @@ function initDatabase() {
         runSQL("ALTER TABLE MY_PROFILE ADD COLUMN email TEXT"),
         runSQL("ALTER TABLE MY_PROFILE ADD COLUMN website TEXT"),
         runSQL("ALTER TABLE MY_PROFILE ADD COLUMN country TEXT"),
-        runSQL(
-          "ALTER TABLE MY_PROFILE ADD COLUMN languages TEXT",
-        ),
+        runSQL("ALTER TABLE MY_PROFILE ADD COLUMN languages TEXT"),
         runSQL(
           "ALTER TABLE MY_PROFILE ADD COLUMN allow_non_contact_chats BOOLEAN DEFAULT TRUE",
         ),
@@ -330,9 +339,7 @@ function initDatabase() {
         runSQL(
           "ALTER TABLE MY_PROFILE ADD COLUMN privacy_l3 VARCHAR(20) DEFAULT 'contacts'",
         ),
-        runSQL(
-          "ALTER TABLE MY_PROFILE ADD COLUMN minimaaddress TEXT",
-        ),
+        runSQL("ALTER TABLE MY_PROFILE ADD COLUMN minimaaddress TEXT"),
       ]);
     });
   });
@@ -380,18 +387,12 @@ function initDatabase() {
           : "❌ [DB] DISCOVERED_PEERS init failed: " + res.error,
       );
       return Promise.all([
-        runSQL(
-          "ALTER TABLE DISCOVERED_PEERS ADD COLUMN bio VARCHAR(512)",
-        ),
+        runSQL("ALTER TABLE DISCOVERED_PEERS ADD COLUMN bio VARCHAR(512)"),
         runSQL(
           "ALTER TABLE DISCOVERED_PEERS ADD COLUMN allow_non_contact_chats BOOLEAN DEFAULT TRUE",
         ),
-        runSQL(
-          "ALTER TABLE DISCOVERED_PEERS ADD COLUMN extra_data CLOB",
-        ),
-        runSQL(
-          "ALTER TABLE DISCOVERED_PEERS ADD COLUMN avatar TEXT",
-        ),
+        runSQL("ALTER TABLE DISCOVERED_PEERS ADD COLUMN extra_data CLOB"),
+        runSQL("ALTER TABLE DISCOVERED_PEERS ADD COLUMN avatar TEXT"),
         runSQL(
           "ALTER TABLE DISCOVERED_PEERS ADD COLUMN minimaaddress VARCHAR(512)",
         ),
@@ -443,12 +444,8 @@ function initDatabase() {
       );
       return Promise.all([
         // Schema parity with Frontend variant
-        runSQL(
-          "ALTER TABLE METACHAIN_USERS ADD COLUMN avatar TEXT",
-        ),
-        runSQL(
-          "ALTER TABLE METACHAIN_USERS ADD COLUMN last_seen BIGINT",
-        ),
+        runSQL("ALTER TABLE METACHAIN_USERS ADD COLUMN avatar TEXT"),
+        runSQL("ALTER TABLE METACHAIN_USERS ADD COLUMN last_seen BIGINT"),
       ]);
     });
   });
@@ -474,9 +471,15 @@ function initDatabase() {
           : "❌ [DB] CHANNELS init failed: " + res.error,
       );
       return Promise.all([
-        runSQL("ALTER TABLE CHANNELS ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT FALSE"),
-        runSQL("ALTER TABLE CHANNELS ADD COLUMN IF NOT EXISTS archived_date BIGINT"),
-        runSQL("ALTER TABLE CHANNELS ADD COLUMN IF NOT EXISTS favorite BOOLEAN DEFAULT FALSE")
+        runSQL(
+          "ALTER TABLE CHANNELS ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT FALSE",
+        ),
+        runSQL(
+          "ALTER TABLE CHANNELS ADD COLUMN IF NOT EXISTS archived_date BIGINT",
+        ),
+        runSQL(
+          "ALTER TABLE CHANNELS ADD COLUMN IF NOT EXISTS favorite BOOLEAN DEFAULT FALSE",
+        ),
       ]);
     });
   });
@@ -564,6 +567,14 @@ function initDatabase() {
     // Send initial beacon
     sendBackgroundBeacon();
     startGossip();
+
+    // Bootstrap discovery from MLS if DISCOVERED_PEERS is empty (e.g. after -clean)
+    // Wait 2s for Maxima connections to stabilize before contacting MLS
+    MDS.cmd("timer 2000", function () {
+      if (typeof bootstrapFromMLS === "function") {
+        bootstrapFromMLS();
+      }
+    });
 
     // Register for periodic tasks
     MDS.cmd("event on newblock", function () {

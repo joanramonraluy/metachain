@@ -1525,66 +1525,96 @@ function ChatPage() {
         return;
       }
 
-      // Reload messages for read/delivery receipts to update checkmarks
+      // Suppress reloads for read/delivery receipts (checkmarks)
+      // The Service Worker has already updated the DB.
       if (
         payload.type === "read_receipt" ||
         payload.type === "delivery_receipt"
       ) {
-        loadMessagesFromDB(); // Refresh UI to show updated message states
+        console.log(
+          `ℹ️ [CHAT] Receipt received (${payload.type}), suppressing reload.`,
+        );
         return;
       }
 
-      // Re-check permissions when peer info updates (Critical fix for dynamic blocking)
+      // Re-check permissions when peer info updates
       if (payload.type === "peer_discovered") {
         console.log("🔄 [CHAT] Peer info updated, re-checking permissions...");
         checkPending();
         return;
       }
 
-      // SMART SYNC: Handle Gap Report (Phase 2)
-      // If peer reports we are missing messages, trigger a fetch.
+      // SMART SYNC: Handle Gap Report
       if (payload.type === "sync_status_report") {
         console.log(
           `📊 [CHAT] Sync Report: Missing ${payload.missing_count} messages. Triggering fetch...`,
         );
-        // Show syncing indicator
         setIsSyncing(true);
-        // Auto-clear after 15 seconds if no response
         if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
         syncTimeoutRef.current = setTimeout(() => {
           setIsSyncing(false);
           syncTimeoutRef.current = null;
         }, 15000);
 
-        // Request history (Optimized: SW will handle range or full fetch)
         minimaService
           .requestChatHistory(contact.publickey)
           .catch(console.error);
         return;
       }
 
-      // Skip loading for ping - it doesn't affect messages
-      if (payload.type === "ping") {
+      // Skip loading for control types
+      const controlTypes = [
+        "ping",
+        "pong",
+        "sync_status_check",
+        "profile_request",
+        "profile_response",
+        "chat_history_request",
+        "chat_history_response",
+      ];
+      if (controlTypes.includes(payload.type)) {
         return;
       }
 
-      // Only reload for actual new messages (text, charm, token)
-      loadMessagesFromDB().then(() => {
-        // Send read receipt for new messages
-        if (contact.publickey) {
-          minimaService.sendReadReceipt(contact.publickey);
-          // Mark as opened so it doesn't show as unread if we are in the chat
-          minimaService.markChatAsOpened(contact.publickey);
-        }
-      });
-
-      // Turn off syncing indicator if this was a history sync response
-      if (payload.type === "history_sync") {
+      // Handle Sync Completion and Generic List Updates from SW
+      if (
+        payload.type === "CHAT_LIST_UPDATE" ||
+        payload.type === "history_sync"
+      ) {
+        console.log(
+          `🔄 [CHAT] Received ${payload.type} from SW. Refreshing UI...`,
+        );
         if (syncTimeoutRef.current) {
           clearTimeout(syncTimeoutRef.current);
           syncTimeoutRef.current = null;
         }
         setIsSyncing(false);
+        loadMessagesFromDB();
+        return;
+      }
+
+      // Only reload for actual new messages
+      const contentTypes = [
+        "text",
+        "image",
+        "video",
+        "audio",
+        "file",
+        "charm",
+        "token",
+        "gif",
+        "sticker",
+        "voice",
+      ];
+
+      if (contentTypes.includes(payload.type)) {
+        loadMessagesFromDB().then(() => {
+          if (contact.publickey) {
+            minimaService.sendReadReceipt(contact.publickey);
+            minimaService.markChatAsOpened(contact.publickey);
+          }
+        });
+        return;
       }
     };
 
