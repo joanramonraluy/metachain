@@ -1,6 +1,6 @@
-# AGENTS.md - MetaChain Engineering Guide
+1 # AGENTS.md - MetaChain Engineering Guide
 
-Last reviewed against codebase: 2026-03-20 (commit `09cd1d26` + MLS beacon hub response routing + SW static MLS auto-config + Chat Sync Optimizations)
+Last reviewed against codebase: 2026-03-21 (commit `uncommitted` + Beacon timestamp guard + CHANNEL_SUBSCRIBERS FE DB parity)
 Scope: `/home/joanramon/Minima/metachain`
 
 ## 1) Project Intent
@@ -67,6 +67,7 @@ SW `handleBeacon` (`public/service-workers/handlers/beacon.handler.js`) currentl
 - required fields: `pubkey`, `address`, `alias`
 - debounce: 10s per peer (except `GOSSIP`/`BOOTSTRAP` sources)
 - self-beacon ignore by comparing `MY_MAXIMA_PK` (except `source === SELF` so the node can persist itself)
+- profile overwrite protection: if incoming `timestamp` is missing and a profile already exists, only `last_seen` is updated
 - persistence into `DISCOVERED_PEERS` with `allow_non_contact_chats` and `extra_data`
 - promotion into stable `METACHAIN_USERS`
 - reactive relay: when source is `P2P` or `MAXIMA`, calls `sendWelcomePackage` + `askPeers`
@@ -176,6 +177,7 @@ Bridge caveat:
 - Reconnect handling is normalized in `minimaService.processEvent` (parses `RECONNECTED` from MDS event payloads) and calls `offlineQueueService.triggerImmediateRetry(...)`.
 - `offline-queue.service.ts` still keeps a `window.message` fallback listener for compatibility, but MDS event handling is canonical.
 - If you change SW comms payload shape, update all FE listeners in the same patch.
+- **Log Noise Suppression**: FE `minimaService.processEvent` must silently ignore internal protocol types (`chat_history_request`, `sync_status_check`, etc.) that are already handled by the Service Worker to keep console clean.
 
 ### 6.2 Message insertion ownership
 - SW inserts inbound messages/history and updates delivery/read where applicable.
@@ -230,7 +232,12 @@ Do not swap to `(fromKey, msg)` in dispatcher calls. This breaks sequence SQL ch
 - Canonical network message for group settings sync (including `auto_approve`) is `group_update_details`.
 - SW still accepts legacy `group_info_updated` for backward compatibility, but new sends should use `group_update_details`.
 - When a member is promoted to `admin`, the promoter's SW sends a settings snapshot (`group_update_details` with current `auto_approve`) directly to the promoted admin.
-
++
++### 6.8 Chat Synchronization and UI Optimizations (FE-side)
++1. **Lazy/Debounced Reloads**: Chat message list reloads in `$address.tsx` must be suppressed for "control" payloads (e.g., `ping`, `pong`, `read_receipt`, `delivery_receipt`) that do not change content visibility.
++2. **Discovery Loading UX**: When accessing a non-contact's profile, the **Actions** tab in `ContactInfoPage` uses `isCheckingProfile` to show a "Verifying Permissions" loading state while waiting for real-time permission confirmation (via `profile_response`). This prevents UI flashes of restricted states based on stale Discovery/Beacon cache.
++3. **Profile Discovery Trigger**: Chat view (`$address.tsx`) and Contact Info both trigger `requestProfile` if the cached peer is a non-contact or has incomplete data (missing alias/address).
++
 ## 7) Ordering, Dedup and Transaction Safety
 
 ### 7.1 Message ordering invariants
@@ -293,6 +300,8 @@ When changing protocol code, log:
 - sender (shortened)
 - DB action outcome
 - fallback path chosen (publickey vs Mx)
++
++**Silence Rule**: Explicitly ignore common internal protocol types in message-reception logs if they are handled by lower layers (e.g., Service Worker) to ensure application logs remain focused on content and state transitions.
 
 ## 11) Known Fragility Points
 

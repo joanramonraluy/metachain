@@ -354,10 +354,22 @@ export async function initDB(): Promise<void> {
                 );
               } else {
                 console.log("📂 [DB] GROUPS table initialized");
-                MDS.sql("ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT FALSE", () => { });
-                MDS.sql("ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS archived_date BIGINT", () => { });
-                MDS.sql("ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS favorite BOOLEAN DEFAULT FALSE", () => { });
-                MDS.sql("ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS auto_approve BOOLEAN DEFAULT FALSE", () => { });
+                MDS.sql(
+                  "ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT FALSE",
+                  () => {},
+                );
+                MDS.sql(
+                  "ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS archived_date BIGINT",
+                  () => {},
+                );
+                MDS.sql(
+                  "ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS favorite BOOLEAN DEFAULT FALSE",
+                  () => {},
+                );
+                MDS.sql(
+                  "ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS auto_approve BOOLEAN DEFAULT FALSE",
+                  () => {},
+                );
               }
 
               // Create GROUP_MEMBERS table
@@ -420,7 +432,9 @@ export async function initDB(): Promise<void> {
                       "ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS sender_seq INTEGER DEFAULT 0";
                     MDS.sql(alterSeqSql, (seqRes: any) => {
                       if (seqRes.status)
-                        console.log("📂 [DB] sender_seq column added/verified in GROUP_MESSAGES");
+                        console.log(
+                          "📂 [DB] sender_seq column added/verified in GROUP_MESSAGES",
+                        );
                     });
 
                     // Migration: Add customid column for deduplication (same as CHAT_MESSAGES)
@@ -428,7 +442,9 @@ export async function initDB(): Promise<void> {
                       "ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS customid VARCHAR(128)";
                     MDS.sql(alterCustomIdSql, (customRes: any) => {
                       if (customRes.status)
-                        console.log("📂 [DB] customid column added/verified in GROUP_MESSAGES");
+                        console.log(
+                          "📂 [DB] customid column added/verified in GROUP_MESSAGES",
+                        );
                     });
 
                     // Create GROUP_MSG_COUNTERS table for per-sender sequence tracking
@@ -442,7 +458,9 @@ export async function initDB(): Promise<void> {
                       )`;
                     MDS.sql(createCountersTable, (cRes: any) => {
                       if (cRes.status)
-                        console.log("📂 [DB] GROUP_MSG_COUNTERS table initialized");
+                        console.log(
+                          "📂 [DB] GROUP_MSG_COUNTERS table initialized",
+                        );
                     });
                   }
 
@@ -459,13 +477,16 @@ export async function initDB(): Promise<void> {
 
                   MDS.sql(createGroupBansTable, (res: any) => {
                     if (!res.status) {
-                      console.error("❌ [DB] Failed to create GROUP_BANS table:", res.error);
+                      console.error(
+                        "❌ [DB] Failed to create GROUP_BANS table:",
+                        res.error,
+                      );
                     } else {
                       console.log("📂 [DB] GROUP_BANS table initialized");
                       // Migration
                       MDS.sql(
                         "ALTER TABLE GROUP_BANS ADD COLUMN IF NOT EXISTS username VARCHAR(255) DEFAULT 'Unknown'",
-                        () => { },
+                        () => {},
                       );
                     }
                   });
@@ -559,14 +580,52 @@ export async function initDB(): Promise<void> {
 
                       MDS.sql(createChannelsTable, (cRes: any) => {
                         if (!cRes.status) {
-                          console.error("❌ [DB] Failed to create CHANNELS table:", cRes.error);
+                          console.error(
+                            "❌ [DB] Failed to create CHANNELS table:",
+                            cRes.error,
+                          );
                         } else {
                           console.log("📂 [DB] CHANNELS table initialized");
 
                           // Migration: Add columns
-                          MDS.sql("ALTER TABLE CHANNELS ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT FALSE", () => { });
-                          MDS.sql("ALTER TABLE CHANNELS ADD COLUMN IF NOT EXISTS archived_date BIGINT", () => { });
-                          MDS.sql("ALTER TABLE CHANNELS ADD COLUMN IF NOT EXISTS favorite BOOLEAN DEFAULT FALSE", () => { });
+                          MDS.sql(
+                            "ALTER TABLE CHANNELS ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT FALSE",
+                            () => {},
+                          );
+                          MDS.sql(
+                            "ALTER TABLE CHANNELS ADD COLUMN IF NOT EXISTS archived_date BIGINT",
+                            () => {},
+                          );
+                          MDS.sql(
+                            "ALTER TABLE CHANNELS ADD COLUMN IF NOT EXISTS favorite BOOLEAN DEFAULT FALSE",
+                            () => {},
+                          );
+
+                          // Create CHANNEL_SUBSCRIBERS
+                          const createChannelSubscribersTable = `
+                            CREATE TABLE IF NOT EXISTS CHANNEL_SUBSCRIBERS (
+                              channel_id VARCHAR(256) NOT NULL,
+                              publickey VARCHAR(512) NOT NULL,
+                              username VARCHAR(255) NOT NULL,
+                              joined_date BIGINT NOT NULL,
+                              role VARCHAR(32) DEFAULT 'subscriber',
+                              PRIMARY KEY (channel_id, publickey)
+                            )`;
+                          MDS.sql(
+                            createChannelSubscribersTable,
+                            (csRes: any) => {
+                              if (!csRes.status) {
+                                console.error(
+                                  "❌ [DB] Failed to create CHANNEL_SUBSCRIBERS table:",
+                                  csRes.error,
+                                );
+                              } else {
+                                console.log(
+                                  "📂 [DB] CHANNEL_SUBSCRIBERS table initialized",
+                                );
+                              }
+                            },
+                          );
 
                           // Create CHANNEL_MESSAGES if not exists (redundant but safe)
                           const createChannelMessagesTable = `
@@ -584,7 +643,10 @@ export async function initDB(): Promise<void> {
                             )`;
                           MDS.sql(createChannelMessagesTable, (cmRes: any) => {
                             if (cmRes.status) {
-                              MDS.sql("ALTER TABLE CHANNEL_MESSAGES ADD COLUMN IF NOT EXISTS sender_seq INT DEFAULT 0", () => { });
+                              MDS.sql(
+                                "ALTER TABLE CHANNEL_MESSAGES ADD COLUMN IF NOT EXISTS sender_seq INT DEFAULT 0",
+                                () => {},
+                              );
                             }
                           });
 
@@ -599,7 +661,9 @@ export async function initDB(): Promise<void> {
                             )`;
                           MDS.sql(createChannelCountersTable, (ccRes: any) => {
                             if (ccRes.status) {
-                              console.log("📂 [DB] CHANNEL_MSG_COUNTERS table initialized");
+                              console.log(
+                                "📂 [DB] CHANNEL_MSG_COUNTERS table initialized",
+                              );
                             }
                           });
                         }
@@ -681,19 +745,19 @@ export async function initDB(): Promise<void> {
                     // Schema parity with Service Worker variant
                     MDS.sql(
                       "ALTER TABLE METACHAIN_USERS ADD COLUMN IF NOT EXISTS user_id VARCHAR(512)",
-                      () => { },
+                      () => {},
                     );
                     MDS.sql(
                       "ALTER TABLE METACHAIN_USERS ADD COLUMN IF NOT EXISTS address VARCHAR(512)",
-                      () => { },
+                      () => {},
                     );
                     MDS.sql(
                       "ALTER TABLE METACHAIN_USERS ADD COLUMN IF NOT EXISTS first_seen BIGINT",
-                      () => { },
+                      () => {},
                     );
                     MDS.sql(
                       "ALTER TABLE METACHAIN_USERS ADD COLUMN IF NOT EXISTS last_updated BIGINT",
-                      () => { },
+                      () => {},
                     );
                   }
 
@@ -816,7 +880,7 @@ export function getAndIncrementSequenceNumber(
   // 3. Update the queue tail so the next request waits for US
   // catch() ensures failures don't block the queue forever
   seqQueues[publicKey] = myTask
-    .then(() => { })
+    .then(() => {})
     .catch((err) => {
       console.warn(`⚠️ [SEQ-MUTEX] Task failed, queue continuing:`, err);
     });
@@ -868,7 +932,7 @@ export function getAndIncrementChannelSequenceNumber(
     });
   });
 
-  seqQueues[queueKey] = myTask.then(() => { }).catch(() => { });
+  seqQueues[queueKey] = myTask.then(() => {}).catch(() => {});
   return myTask;
 }
 

@@ -5714,7 +5714,7 @@ function handleBeacon(beacon, source) {
         bioValue,
         cleanAddress,
         allowNonContactChats,
-        now,
+        now
       );
     } else {
       // Check DB for cached bio
@@ -5739,7 +5739,7 @@ function handleBeacon(beacon, source) {
             bioToSave,
             cleanAddress,
             allowNonContactChats,
-            now,
+            now
           );
         },
       );
@@ -5764,31 +5764,37 @@ function saveBeaconWithBio(
 
   // Check stored beacon timestamp to avoid overwriting newer profile data with old gossip
   MDS.sql(
-    "SELECT extra_data FROM DISCOVERED_PEERS WHERE publickey='" + beacon.pubkey + "'",
+    "SELECT extra_data FROM DISCOVERED_PEERS WHERE publickey='" +
+      beacon.pubkey +
+      "'",
     function (existingRes) {
       var storedTimestamp = 0;
+      var hasExisting = false;
       if (
         existingRes.status &&
         existingRes.rows &&
         existingRes.rows.length > 0 &&
         existingRes.rows[0].EXTRA_DATA
       ) {
+        hasExisting = true;
         try {
           var stored = JSON.parse(existingRes.rows[0].EXTRA_DATA);
           storedTimestamp = stored.timestamp || 0;
         } catch (e) {}
+      } else if (
+        existingRes.status &&
+        existingRes.rows &&
+        existingRes.rows.length > 0
+      ) {
+        hasExisting = true;
       }
 
-      // If the incoming beacon is older than what we have stored, only touch last_seen
-      if (incomingTimestamp > 0 && storedTimestamp > incomingTimestamp) {
+      // If incoming beacon has no timestamp and we already have a profile, only touch last_seen
+      if (incomingTimestamp <= 0 && hasExisting) {
         MDS.log(
-          "⏭️ [BEACON] Skipping profile overwrite for " +
+          "⏭️ [BEACON] Missing timestamp for " +
             beacon.alias +
-            " — stored beacon is newer (" +
-            storedTimestamp +
-            " > " +
-            incomingTimestamp +
-            "). Touching last_seen only."
+            " — preserving existing profile. Touching last_seen only.",
         );
         MDS.sql(
           "UPDATE DISCOVERED_PEERS SET last_seen=" +
@@ -5800,7 +5806,33 @@ function saveBeaconWithBio(
             if (updateRes.status) {
               MDS.log("✅ [BEACON] Touched last_seen for: " + beacon.alias);
             }
-          }
+          },
+        );
+        return;
+      }
+
+      // If the incoming beacon is older than what we have stored, only touch last_seen
+      if (incomingTimestamp > 0 && storedTimestamp > incomingTimestamp) {
+        MDS.log(
+          "⏭️ [BEACON] Skipping profile overwrite for " +
+            beacon.alias +
+            " — stored beacon is newer (" +
+            storedTimestamp +
+            " > " +
+            incomingTimestamp +
+            "). Touching last_seen only.",
+        );
+        MDS.sql(
+          "UPDATE DISCOVERED_PEERS SET last_seen=" +
+            now +
+            " WHERE publickey='" +
+            beacon.pubkey +
+            "'",
+          function (updateRes) {
+            if (updateRes.status) {
+              MDS.log("✅ [BEACON] Touched last_seen for: " + beacon.alias);
+            }
+          },
         );
         return;
       }
@@ -5841,7 +5873,7 @@ function saveBeaconWithBio(
           MDS.log("❌ [BEACON] Save failed: " + JSON.stringify(res));
         }
       });
-    }
+    },
   );
 }
 
