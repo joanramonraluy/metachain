@@ -165,7 +165,8 @@ function initDatabase() {
       "  description TEXT, " +
       "  archived BOOLEAN DEFAULT FALSE, " +
       "  archived_date BIGINT, " +
-      "  favorite BOOLEAN DEFAULT FALSE " +
+      "  favorite BOOLEAN DEFAULT FALSE, " +
+      "  is_public BOOLEAN DEFAULT FALSE " +
       " )";
 
     return runSQL(groupsSql).then(function (res) {
@@ -183,6 +184,9 @@ function initDatabase() {
         ),
         runSQL(
           "ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS favorite BOOLEAN DEFAULT FALSE",
+        ),
+        runSQL(
+          "ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS is_public BOOLEAN DEFAULT FALSE",
         ),
         runSQL(
           "ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS auto_approve BOOLEAN DEFAULT FALSE",
@@ -403,6 +407,35 @@ function initDatabase() {
     });
   });
 
+  // 6.1 DISCOVERED_LISTINGS (per-peer public listings cache)
+  chain = chain.then(function () {
+    var sql =
+      "CREATE TABLE IF NOT EXISTS DISCOVERED_LISTINGS ( " +
+      "  owner_publickey VARCHAR(512) PRIMARY KEY, " +
+      "  listings CLOB, " +
+      "  timestamp BIGINT, " +
+      "  last_seen BIGINT " +
+      " )";
+    return runSQL(sql).then(function (res) {
+      MDS.log(
+        res.status
+          ? "📂 [DB] DISCOVERED_LISTINGS checked/init"
+          : "❌ [DB] DISCOVERED_LISTINGS init failed: " + res.error,
+      );
+      return Promise.all([
+        runSQL(
+          "ALTER TABLE DISCOVERED_LISTINGS ADD COLUMN IF NOT EXISTS listings CLOB",
+        ),
+        runSQL(
+          "ALTER TABLE DISCOVERED_LISTINGS ADD COLUMN IF NOT EXISTS timestamp BIGINT",
+        ),
+        runSQL(
+          "ALTER TABLE DISCOVERED_LISTINGS ADD COLUMN IF NOT EXISTS last_seen BIGINT",
+        ),
+      ]);
+    });
+  });
+
   // 7. PERSONAL_CONTACTS
   chain = chain.then(function () {
     var sql =
@@ -462,7 +495,8 @@ function initDatabase() {
       "  avatar TEXT, " +
       "  archived BOOLEAN DEFAULT FALSE, " +
       "  archived_date BIGINT, " +
-      "  favorite BOOLEAN DEFAULT FALSE " +
+      "  favorite BOOLEAN DEFAULT FALSE, " +
+      "  is_public BOOLEAN DEFAULT FALSE " +
       " )";
     return runSQL(channelsSql).then(function (res) {
       MDS.log(
@@ -479,6 +513,9 @@ function initDatabase() {
         ),
         runSQL(
           "ALTER TABLE CHANNELS ADD COLUMN IF NOT EXISTS favorite BOOLEAN DEFAULT FALSE",
+        ),
+        runSQL(
+          "ALTER TABLE CHANNELS ADD COLUMN IF NOT EXISTS is_public BOOLEAN DEFAULT FALSE",
         ),
       ]);
     });

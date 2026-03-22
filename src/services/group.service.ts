@@ -15,6 +15,7 @@ export interface Group {
   my_role?: "creator" | "admin" | "member";
   favorite?: boolean;
   auto_approve?: boolean;
+  is_public?: boolean;
 }
 
 export interface GroupMember {
@@ -41,21 +42,21 @@ export interface GroupMessage {
 // MAXIMA message types for group communication
 export interface GroupMaximaMessage {
   messageType:
-  | "group_message"
-  | "group_invite"
-  | "group_member_added"
-  | "group_member_removed"
-  | "group_info_updated"
-  | "group_member_unbanned"
-  | "group_update_details"
-  | "history_request"
-  | "history_response"
-  | "group_join_request"
-  | "group_join_request_propagated"
-  | "group_join_request_resolved"
-  | "group_update_details"
-  | "group_role_update"
-  | "group_address_beacon";
+    | "group_message"
+    | "group_invite"
+    | "group_member_added"
+    | "group_member_removed"
+    | "group_info_updated"
+    | "group_member_unbanned"
+    | "group_update_details"
+    | "history_request"
+    | "history_response"
+    | "group_join_request"
+    | "group_join_request_propagated"
+    | "group_join_request_resolved"
+    | "group_update_details"
+    | "group_role_update"
+    | "group_address_beacon";
   groupId: string;
   groupName: string;
   senderPublickey: string;
@@ -123,7 +124,7 @@ class GroupService {
   private groupMessageCallbacks: GroupMessageCallback[] = [];
   private groupUpdateCallbacks: GroupUpdateCallback[] = [];
 
-  constructor() { }
+  constructor() {}
 
   /* ----------------------------------------------------------------------------
       UTILITY FUNCTIONS
@@ -153,6 +154,7 @@ class GroupService {
     memberPublicKeys: string[],
     myPublicKey: string,
     myUsername: string,
+    isPublic: boolean,
   ): Promise<string> {
     const groupId = this.generateGroupId();
     const now = Date.now();
@@ -160,8 +162,8 @@ class GroupService {
     try {
       // 1. Create group in database
       const createGroupSql = `
-                INSERT INTO GROUPS (group_id, name, creator_publickey, created_date, description)
-                VALUES ('${groupId}', '${name.replace(/'/g, "''")}', '${myPublicKey}', ${now}, '${description.replace(/'/g, "''")}')
+                INSERT INTO GROUPS (group_id, name, creator_publickey, created_date, description, is_public)
+                VALUES ('${groupId}', '${name.replace(/'/g, "''")}', '${myPublicKey}', ${now}, '${description.replace(/'/g, "''")}', ${isPublic ? 1 : 0})
             `;
       await this.runSQL(createGroupSql);
       console.log("✅ [GROUP-MGMT] Created:", groupId);
@@ -267,6 +269,11 @@ class GroupService {
           String(row.AUTO_APPROVE) === "1" ||
           String(row.auto_approve).toUpperCase() === "TRUE" ||
           String(row.auto_approve) === "1",
+        is_public:
+          String(row.IS_PUBLIC).toUpperCase() === "TRUE" ||
+          String(row.IS_PUBLIC) === "1" ||
+          String(row.is_public).toUpperCase() === "TRUE" ||
+          String(row.is_public) === "1",
       }));
     } catch (err) {
       console.error("❌ [GROUP-MGMT] Failed to get groups:", err);
@@ -303,6 +310,11 @@ class GroupService {
             String(row.AUTO_APPROVE) === "1" ||
             String(row.auto_approve).toUpperCase() === "TRUE" ||
             String(row.auto_approve) === "1",
+          is_public:
+            String(row.IS_PUBLIC).toUpperCase() === "TRUE" ||
+            String(row.IS_PUBLIC) === "1" ||
+            String(row.is_public).toUpperCase() === "TRUE" ||
+            String(row.is_public) === "1",
         };
       }
       return null;
@@ -626,6 +638,17 @@ class GroupService {
       this.notifyGroupUpdate();
     } catch (err) {
       console.error("❌ [GROUP-MGMT] Failed to update member role:", err);
+      throw err;
+    }
+  }
+
+  async updateGroupPublic(groupId: string, isPublic: boolean): Promise<void> {
+    try {
+      const sql = `UPDATE GROUPS SET is_public = ${isPublic ? 1 : 0} WHERE group_id = '${groupId}'`;
+      await this.runSQL(sql);
+      this.notifyGroupUpdate(groupId, { is_public: isPublic });
+    } catch (err) {
+      console.error("❌ [GROUP-MGMT] Failed to update public listing:", err);
       throw err;
     }
   }
@@ -997,7 +1020,8 @@ class GroupService {
     type: string,
     myPublicKey: string,
     myUsername: string,
-    filedata: string = "", forwarded: boolean = false,
+    filedata: string = "",
+    forwarded: boolean = false,
   ): Promise<void> {
     try {
       const now = Date.now();
@@ -1433,7 +1457,7 @@ class GroupService {
         type: "GROUP_SYNC_START",
         groupId: groupId,
       }),
-      () => { },
+      () => {},
     );
 
     // NEW: Direct dispatch for immediate UI feedback (MDS_SOLO from DApp doesn't reflect back)
@@ -1511,7 +1535,7 @@ class GroupService {
 
   private notifyGroupSyncEnd(groupId: string) {
     const detail = { type: "GROUP_SYNC_END", groupId: groupId };
-    MDS.comms.solo(JSON.stringify(detail), () => { });
+    MDS.comms.solo(JSON.stringify(detail), () => {});
     window.dispatchEvent(new CustomEvent("GROUP_UPDATE", { detail }));
   }
 
@@ -1617,9 +1641,9 @@ class GroupService {
         const myName =
           myNameData.rows && myNameData.rows.length > 0
             ? myNameData.rows[0].ALIAS ||
-            myNameData.rows[0].alias ||
-            myInfo.response.name ||
-            "Anonymous"
+              myNameData.rows[0].alias ||
+              myInfo.response.name ||
+              "Anonymous"
             : myInfo.response.name || "Anonymous";
 
         const payload: any = {
@@ -1662,7 +1686,7 @@ class GroupService {
         );
         MDS.log(
           "📝 [GROUP-SERVICE] Sending join request to adminAddress: " +
-          adminAddress,
+            adminAddress,
         );
 
         const sendCmd = `maxima action:send application:metachain-group to:${adminAddress.trim()} data:${hexData} poll:true`;
@@ -1671,7 +1695,7 @@ class GroupService {
             console.log("✅ [GROUP-SERVICE] Join request sent successfully.");
             MDS.log(
               "✅ [GROUP-SERVICE] Join request sent successfully to: " +
-              adminAddress,
+                adminAddress,
             );
             resolve();
           } else {
@@ -1681,11 +1705,11 @@ class GroupService {
             );
             MDS.log(
               "❌ [GROUP-SERVICE] Failed to send join request: " +
-              (sendRes.error || JSON.stringify(sendRes.response)),
+                (sendRes.error || JSON.stringify(sendRes.response)),
             );
             reject(
               "Could not send join request to group admin: " +
-              (sendRes.error || "Delivery failed"),
+                (sendRes.error || "Delivery failed"),
             );
           }
         });

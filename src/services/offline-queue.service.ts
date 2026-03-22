@@ -14,6 +14,7 @@ interface ChatMessageData {
   targetApplication: string;
   txpowid?: string;
   overrideSeq?: number;
+  customid?: string;
 }
 
 interface GroupMessageData {
@@ -132,7 +133,12 @@ class OfflineQueueService {
         `;
     try {
       await runSQL(sql);
-      console.log("📥 [QUEUE] Queued chat message for retry.");
+      const ageMs = data.timestamp
+        ? Math.max(0, Date.now() - data.timestamp)
+        : -1;
+      console.log(
+        `📥 [QUEUE] Queued chat message for retry. customid=${data.customid || "n/a"} age_ms=${ageMs}`,
+      );
     } catch (err) {
       console.error("❌ [QUEUE] Failed to queue chat message:", err);
     }
@@ -197,7 +203,12 @@ class OfflineQueueService {
       }
     }
 
-    console.log(`🔄 [QUEUE] Retrying item ${id} (${type})...`);
+    const customid = data && data.customid ? data.customid : "n/a";
+    const ageMs =
+      data && data.timestamp ? Math.max(0, Date.now() - data.timestamp) : -1;
+    console.log(
+      `🔄 [QUEUE] Retrying item ${id} (${type}) customid=${customid} age_ms=${ageMs}...`,
+    );
 
     try {
       if (type === "chat_message") {
@@ -216,7 +227,9 @@ class OfflineQueueService {
       }
 
       // Success!
-      console.log(`✅ [QUEUE] Item ${id} sent successfully.`);
+      console.log(
+        `✅ [QUEUE] Item ${id} sent successfully. customid=${customid}`,
+      );
       await this.deleteItem(id);
     } catch (err) {
       console.warn(`⚠️ [QUEUE] Item ${id} failed retry:`, err);

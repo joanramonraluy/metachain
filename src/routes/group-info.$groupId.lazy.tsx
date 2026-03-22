@@ -25,6 +25,10 @@ import { chatService } from "../services/chat.service";
 import { appContext } from "../AppContext";
 import { MDS } from "@minima-global/mds";
 import { GroupTabs, GroupTab } from "../components/group/GroupTabs";
+import {
+  getPublicListingsCount,
+  LISTINGS_PUBLIC_LIMIT,
+} from "../services/listings.service";
 
 export const Route = createLazyFileRoute("/group-info/$groupId")({
   component: GroupInfoPage,
@@ -59,6 +63,9 @@ function GroupInfoPage() {
   const [loading, setLoading] = useState(true);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [autoApprove, setAutoApprove] = useState(false);
+  const [isPublic, setIsPublic] = useState(false);
+  const [publicCount, setPublicCount] = useState(0);
+  const [publicError, setPublicError] = useState("");
 
   const [isCreator, setIsCreator] = useState(false);
   const [myRole, setMyRole] = useState<"creator" | "admin" | "member">(
@@ -133,6 +140,9 @@ function GroupInfoPage() {
         setAvatar((info as any).AVATAR || (info as any).avatar || null);
         setAutoApprove(
           parseBool((info as any).AUTO_APPROVE ?? (info as any).auto_approve),
+        );
+        setIsPublic(
+          parseBool((info as any).IS_PUBLIC ?? (info as any).is_public),
         );
         const creator =
           (info as any).CREATOR_PUBLICKEY || (info as any).creator_publickey;
@@ -229,6 +239,9 @@ function GroupInfoPage() {
                 (info as any).CREATED_DATE || (info as any).created_date || 0,
               ),
       });
+
+      const count = await getPublicListingsCount();
+      setPublicCount(count);
     } catch (err) {
       console.error("Failed to load group info:", err);
     } finally {
@@ -458,6 +471,30 @@ function GroupInfoPage() {
     } catch (err) {
       console.error("Failed to toggle auto-approve:", err);
       alert("Failed to update auto-approval setting");
+    }
+  };
+
+  const handleTogglePublicListing = async () => {
+    try {
+      const newValue = !isPublic;
+      if (newValue) {
+        const count = await getPublicListingsCount();
+        setPublicCount(count);
+        if (count >= LISTINGS_PUBLIC_LIMIT) {
+          setPublicError(
+            `You already have ${LISTINGS_PUBLIC_LIMIT} public listings. Remove one before adding another.`,
+          );
+          return;
+        }
+      }
+      await groupService.updateGroupPublic(groupId, newValue);
+      setIsPublic(newValue);
+      const updatedCount = await getPublicListingsCount();
+      setPublicCount(updatedCount);
+      setPublicError("");
+    } catch (err) {
+      console.error("Failed to update public listing:", err);
+      alert("Failed to update public listing");
     }
   };
 
@@ -1093,6 +1130,40 @@ function GroupInfoPage() {
                       Invite Link
                     </span>
                   </div>
+                </div>
+
+                {/* Public listing toggle */}
+                <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                      Public Listing
+                    </span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                      Make this group discoverable via gossip
+                    </span>
+                  </div>
+                  <button
+                    onClick={handleTogglePublicListing}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                      isPublic
+                        ? "bg-primary-600"
+                        : "bg-gray-300 dark:bg-gray-600"
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        isPublic ? "translate-x-6" : "translate-x-1"
+                      }`}
+                    />
+                  </button>
+                </div>
+                {publicError && (
+                  <div className="text-xs text-red-600 dark:text-red-400">
+                    {publicError}
+                  </div>
+                )}
+                <div className="text-xs text-gray-500 dark:text-gray-400">
+                  Public listings used: {publicCount}/{LISTINGS_PUBLIC_LIMIT}
                 </div>
 
                 {/* Auto-approve toggle */}

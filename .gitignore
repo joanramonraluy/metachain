@@ -28,6 +28,7 @@ Thumbs.db
 exemples/
 
 # Temporary development files
+
 grep_results.txt
 debug_plan.txt
 tsc_error.log

@@ -5,6 +5,7 @@
 
 import { MDS } from "@minima-global/mds";
 import { runSQL, utf8ToHex, escapeSql } from "./database.service";
+import { clearContactStatusCache } from "./messaging.service"; // Added clearContactStatusCache import
 
 const VERBOSE_CONTACT_REQUEST_LOGS = false;
 const contactReqLog = (...args: any[]) => {
@@ -358,6 +359,9 @@ function getStatusDescription(status: string) {
 export async function acceptChatRequest(fromPublicKey: string, fromAddress: string, options?: { skipMessageInsert?: boolean }): Promise<void> {
     try {
         console.log(`✅ [Contact Request] Accepting request from ${fromPublicKey}`);
+        
+        // Invalidate contact status cache
+        clearContactStatusCache(fromPublicKey);
 
         const now = Date.now();
         const safeFromPublicKey = escapeSql(fromPublicKey);
@@ -637,6 +641,9 @@ export async function sendMaximaContactRequest(toAddress: string, toPublicKey?: 
 export async function acceptMaximaContactRequest(fromPublicKey: string, fromAddress: string, options?: { skipMessageInsert?: boolean }): Promise<void> {
     try {
         console.log(`✅ [Maxima Contact] Accepting request from ${fromPublicKey}`);
+        
+        // Invalidate contact status cache
+        clearContactStatusCache(fromPublicKey);
 
         if (fromAddress) {
             console.log(`📇 Adding ${fromAddress} to maxcontacts`);

@@ -177,12 +177,12 @@ function requestGroupHistoryFromSW(groupId) {
               cleanAddr +
               " application:metachain-group data:" +
               hexData +
-              " poll:true"
+              " poll:false"
               : "maxima action:send publickey:" +
               memberPk +
               " application:metachain-group data:" +
               hexData +
-              " poll:true";
+              " poll:false";
           MDS.cmd(cmd);
           sentCount++;
         }
@@ -274,7 +274,7 @@ function handleGroupHistoryRequest(pubkey, maxjson) {
         pubkey +
         " application:metachain-group data:" +
         hexData +
-        " poll:true",
+        " poll:false",
       );
     });
   });
@@ -2019,7 +2019,7 @@ function sendMaximaGroupMsg(toPk, payloadObj) {
         toPk +
         " application:metachain-group data:" +
         hexData +
-        " poll:true",
+        " poll:false",
       );
     } else {
       logToUI(
@@ -2050,7 +2050,7 @@ function sendMaximaGroupMsg(toPk, payloadObj) {
                 cleanAddr +
                 " application:metachain-group data:" +
                 hexData +
-                " poll:true",
+                " poll:false",
               );
             } else {
               logToUI(

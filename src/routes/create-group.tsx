@@ -5,6 +5,10 @@ import { groupService } from "../services/group.service";
 import { chatService } from "../services/chat.service";
 import { MDS } from "@minima-global/mds";
 import { ArrowLeft, Check } from "lucide-react";
+import {
+  getPublicListingsCount,
+  LISTINGS_PUBLIC_LIMIT,
+} from "../services/listings.service";
 
 export const Route = createFileRoute("/create-group")({
   component: CreateGroupPage,
@@ -13,7 +17,7 @@ export const Route = createFileRoute("/create-group")({
 interface Contact {
   publickey: string;
   currentaddress: string;
-  type: 'contact' | 'community';
+  type: "contact" | "community";
   extradata?: {
     name?: string;
     icon?: string;
@@ -25,10 +29,17 @@ function CreateGroupPage() {
   const [groupName, setGroupName] = useState("");
   const [description, setDescription] = useState("");
   const [contacts, setContacts] = useState<Contact[]>([]);
-  const [selectedContacts, setSelectedContacts] = useState<Set<string>>(new Set());
+  const [selectedContacts, setSelectedContacts] = useState<Set<string>>(
+    new Set(),
+  );
   const [creating, setCreating] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeTab, setActiveTab] = useState<'all' | 'contacts' | 'community'>('all');
+  const [activeTab, setActiveTab] = useState<"all" | "contacts" | "community">(
+    "all",
+  );
+  const [isPublic, setIsPublic] = useState(false);
+  const [publicCount, setPublicCount] = useState(0);
+  const [publicError, setPublicError] = useState("");
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -37,29 +48,33 @@ function CreateGroupPage() {
         // 1. Fetch Maxima contacts
         const res = await MDS.cmd.maxcontacts();
         const rawContacts = (res as any)?.response?.contacts || [];
-        const contactsList: Contact[] = rawContacts.map((c: any) => ({ ...c, type: 'contact' }));
+        const contactsList: Contact[] = rawContacts.map((c: any) => ({
+          ...c,
+          type: "contact",
+        }));
 
         // 2. Fetch Recent Chats (for non-contacts)
         const chats = await chatService.getRecentChats();
 
         // 3. Create a set of existing contact public keys for fast lookup
-        const contactKeys = new Set(contactsList.map(c => c.publickey));
+        const contactKeys = new Set(contactsList.map((c) => c.publickey));
 
         // 4. Filter chats to find people NOT in contacts
         const chatContacts: Contact[] = chats
-          .filter(chat =>
-            chat.publickey &&
-            !contactKeys.has(chat.publickey) &&
-            !chat.roomname.startsWith("Group: ") // Optional: Exclude groups if needed
+          .filter(
+            (chat) =>
+              chat.publickey &&
+              !contactKeys.has(chat.publickey) &&
+              !chat.roomname.startsWith("Group: "), // Optional: Exclude groups if needed
           )
-          .map(chat => ({
+          .map((chat) => ({
             publickey: chat.publickey,
             currentaddress: chat.currentaddress || chat.publickey, // Use Maxima address if found (from Discovery), else fallback to pubkey
-            type: 'community',
+            type: "community",
             extradata: {
               name: chat.roomname,
-              icon: chat.avatar
-            }
+              icon: chat.avatar,
+            },
           }));
 
         // 5. Merge lists
@@ -70,6 +85,14 @@ function CreateGroupPage() {
     };
 
     loadContacts();
+  }, []);
+
+  useEffect(() => {
+    const loadPublicCount = async () => {
+      const count = await getPublicListingsCount();
+      setPublicCount(count);
+    };
+    loadPublicCount();
   }, []);
 
   const toggleContact = (publickey: string) => {
@@ -83,19 +106,34 @@ function CreateGroupPage() {
   };
 
   const handleCreateGroup = async () => {
-    if (!groupName.trim() || selectedContacts.size === 0 || !myPublicKey || !userName) {
+    if (
+      !groupName.trim() ||
+      selectedContacts.size === 0 ||
+      !myPublicKey ||
+      !userName
+    ) {
       alert("Please enter a group name and select at least one member");
       return;
     }
 
     setCreating(true);
     try {
+      const latestCount = await getPublicListingsCount();
+      if (isPublic && latestCount >= LISTINGS_PUBLIC_LIMIT) {
+        setPublicError(
+          `You already have ${LISTINGS_PUBLIC_LIMIT} public listings. Remove one before adding another.`,
+        );
+        setCreating(false);
+        return;
+      }
+
       const groupId = await groupService.createGroup(
         groupName,
         description,
         Array.from(selectedContacts),
         myPublicKey,
-        userName
+        userName,
+        isPublic,
       );
 
       console.log("✅ [CreateGroup] Group created:", groupId);
@@ -108,19 +146,20 @@ function CreateGroupPage() {
     }
   };
 
-  const filteredContacts = contacts.filter(c => {
+  const filteredContacts = contacts.filter((c) => {
     const matchesSearch = (c.extradata?.name || c.currentaddress)
       .toLowerCase()
       .includes(searchQuery.toLowerCase());
 
     if (!matchesSearch) return false;
 
-    if (activeTab === 'contacts') return c.type === 'contact';
-    if (activeTab === 'community') return c.type === 'community';
+    if (activeTab === "contacts") return c.type === "contact";
+    if (activeTab === "community") return c.type === "community";
     return true;
   });
 
-  const defaultAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23cbd5e1'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E";
+  const defaultAvatar =
+    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23cbd5e1'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E";
 
   return (
     <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-900">
@@ -139,7 +178,10 @@ function CreateGroupPage() {
           {/* Info banner */}
           <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 text-sm text-blue-700 dark:text-blue-300">
             <p className="font-semibold mb-1">📢 What is a Group?</p>
-            <p>Groups are shared spaces. Unlike channels, all members can read and publish messages.</p>
+            <p>
+              Groups are shared spaces. Unlike channels, all members can read
+              and publish messages.
+            </p>
           </div>
 
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 space-y-4">
@@ -174,10 +216,56 @@ function CreateGroupPage() {
                   rows={3}
                   maxLength={255}
                 />
-                <span className={`absolute bottom-2 right-2 text-[10px] font-medium ${description.length >= 240 ? 'text-red-500' : 'text-gray-400'}`}>
+                <span
+                  className={`absolute bottom-2 right-2 text-[10px] font-medium ${description.length >= 240 ? "text-red-500" : "text-gray-400"}`}
+                >
                   {description.length}/255
                 </span>
               </div>
+            </div>
+
+            <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
+              <div className="flex flex-col">
+                <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                  Public Listing
+                </span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  Make this group discoverable via gossip
+                </span>
+              </div>
+              <button
+                onClick={async () => {
+                  if (!isPublic) {
+                    const count = await getPublicListingsCount();
+                    setPublicCount(count);
+                    if (count >= LISTINGS_PUBLIC_LIMIT) {
+                      setPublicError(
+                        `You already have ${LISTINGS_PUBLIC_LIMIT} public listings. Remove one before adding another.`,
+                      );
+                      return;
+                    }
+                  }
+                  setPublicError("");
+                  setIsPublic(!isPublic);
+                }}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                  isPublic ? "bg-primary-600" : "bg-gray-300 dark:bg-gray-600"
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    isPublic ? "translate-x-6" : "translate-x-1"
+                  }`}
+                />
+              </button>
+            </div>
+            {publicError && (
+              <div className="text-xs text-red-600 dark:text-red-400">
+                {publicError}
+              </div>
+            )}
+            <div className="text-xs text-gray-500 dark:text-gray-400">
+              Public listings used: {publicCount}/{LISTINGS_PUBLIC_LIMIT}
             </div>
           </div>
 
@@ -185,10 +273,16 @@ function CreateGroupPage() {
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
             <button
               onClick={handleCreateGroup}
-              disabled={!groupName.trim() || selectedContacts.size === 0 || creating}
+              disabled={
+                !groupName.trim() || selectedContacts.size === 0 || creating
+              }
               className="w-full py-3 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 transition-colors disabled:bg-gray-300 disabled:text-gray-100 disabled:cursor-not-allowed dark:disabled:bg-gray-700 dark:disabled:text-gray-400 shadow-md"
             >
-              {creating ? "Creating..." : selectedContacts.size > 0 ? `Create Group with ${selectedContacts.size} ${selectedContacts.size === 1 ? "member" : "members"}` : "Select members to continue"}
+              {creating
+                ? "Creating..."
+                : selectedContacts.size > 0
+                  ? `Create Group with ${selectedContacts.size} ${selectedContacts.size === 1 ? "member" : "members"}`
+                  : "Select members to continue"}
             </button>
           </div>
 
@@ -198,14 +292,15 @@ function CreateGroupPage() {
             </h2>
 
             <div className="flex gap-2 mb-4 border-b border-gray-200 dark:border-gray-700">
-              {(['all', 'contacts', 'community'] as const).map((tab) => (
+              {(["all", "contacts", "community"] as const).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
-                  className={`pb-2 px-3 text-sm font-medium capitalize transition-colors relative ${activeTab === tab
-                    ? "text-primary-600 dark:text-primary-400 border-b-2 border-primary-600 dark:border-primary-400 -mb-px"
-                    : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                    }`}
+                  className={`pb-2 px-3 text-sm font-medium capitalize transition-colors relative ${
+                    activeTab === tab
+                      ? "text-primary-600 dark:text-primary-400 border-b-2 border-primary-600 dark:border-primary-400 -mb-px"
+                      : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                  }`}
                 >
                   {tab}
                 </button>
@@ -222,7 +317,9 @@ function CreateGroupPage() {
 
             <div className="space-y-2 max-h-96 overflow-y-auto">
               {filteredContacts.length === 0 ? (
-                <p className="text-gray-500 dark:text-gray-400 text-center py-8">No contacts found</p>
+                <p className="text-gray-500 dark:text-gray-400 text-center py-8">
+                  No contacts found
+                </p>
               ) : (
                 filteredContacts.map((contact) => {
                   const isSelected = selectedContacts.has(contact.publickey);
@@ -234,13 +331,18 @@ function CreateGroupPage() {
                     <div
                       key={contact.publickey}
                       onClick={() => toggleContact(contact.publickey)}
-                      className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors ${isSelected
-                        ? "bg-primary-50 dark:bg-primary-900/30 border-2 border-[#0088cc] dark:border-primary-500"
-                        : "bg-gray-50 dark:bg-gray-700/50 border-2 border-transparent hover:bg-gray-100 dark:hover:bg-gray-600"
-                        }`}
+                      className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors ${
+                        isSelected
+                          ? "bg-primary-50 dark:bg-primary-900/30 border-2 border-[#0088cc] dark:border-primary-500"
+                          : "bg-gray-50 dark:bg-gray-700/50 border-2 border-transparent hover:bg-gray-100 dark:hover:bg-gray-600"
+                      }`}
                     >
                       <img
-                        src={avatar.startsWith("data:image") ? avatar : defaultAvatar}
+                        src={
+                          avatar.startsWith("data:image")
+                            ? avatar
+                            : defaultAvatar
+                        }
                         alt={contact.extradata?.name || "Contact"}
                         className="w-10 h-10 rounded-full object-cover"
                         onError={(e: any) => {

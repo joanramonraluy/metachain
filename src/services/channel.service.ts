@@ -19,6 +19,7 @@ export interface Channel {
   archived?: boolean;
   archived_date?: number;
   favorite?: boolean;
+  is_public?: boolean;
 }
 
 export interface ChannelSubscriber {
@@ -44,15 +45,15 @@ export interface ChannelMessage {
 
 export interface ChannelMaximaMessage {
   messageType:
-  | "channel_invite"
-  | "channel_message"
-  | "channel_subscriber_added"
-  | "channel_subscriber_removed"
-  | "channel_role_update"
-  | "channel_info_updated"
-  | "channel_join_request"
-  | "channel_history_request"
-  | "channel_history_response";
+    | "channel_invite"
+    | "channel_message"
+    | "channel_subscriber_added"
+    | "channel_subscriber_removed"
+    | "channel_role_update"
+    | "channel_info_updated"
+    | "channel_join_request"
+    | "channel_history_request"
+    | "channel_history_response";
   channelId: string;
   channelName: string;
   adminPublickey: string;
@@ -223,14 +224,15 @@ class ChannelService {
     description: string,
     myPublicKey: string,
     myUsername: string,
+    isPublic: boolean,
     avatar: string = "",
   ): Promise<string> {
     const channelId = this.generateChannelId();
     const now = Date.now();
 
     await this.runSQL(`
-            INSERT INTO CHANNELS (channel_id, name, description, admin_publickey, created_date, avatar)
-            VALUES ('${channelId}', '${name.replace(/'/g, "''")}', '${description.replace(/'/g, "''")}', '${myPublicKey}', ${now}, '${avatar.replace(/'/g, "''")}')
+            INSERT INTO CHANNELS (channel_id, name, description, admin_publickey, created_date, avatar, is_public)
+            VALUES ('${channelId}', '${name.replace(/'/g, "''")}', '${description.replace(/'/g, "''")}', '${myPublicKey}', ${now}, '${avatar.replace(/'/g, "''")}', ${isPublic ? 1 : 0})
         `);
 
     // Insert self as creator subscriber
@@ -273,6 +275,11 @@ class ChannelService {
           String(row.FAVORITE) === "1" ||
           String(row.favorite).toUpperCase() === "TRUE" ||
           String(row.favorite) === "1",
+        is_public:
+          String(row.IS_PUBLIC).toUpperCase() === "TRUE" ||
+          String(row.IS_PUBLIC) === "1" ||
+          String(row.is_public).toUpperCase() === "TRUE" ||
+          String(row.is_public) === "1",
       }));
     } catch (err) {
       console.error("❌ [CHANNEL] getMyChannels failed:", err);
@@ -305,6 +312,11 @@ class ChannelService {
             String(row.FAVORITE) === "1" ||
             String(row.favorite).toUpperCase() === "TRUE" ||
             String(row.favorite) === "1",
+          is_public:
+            String(row.IS_PUBLIC).toUpperCase() === "TRUE" ||
+            String(row.IS_PUBLIC) === "1" ||
+            String(row.is_public).toUpperCase() === "TRUE" ||
+            String(row.is_public) === "1",
         };
       }
       return null;
@@ -420,7 +432,7 @@ class ChannelService {
     for (const sub of subs) {
       const pk = (sub as any).PUBLICKEY || sub.publickey;
       if (pk && pk !== myPublicKey && pk !== subscriberPublicKey) {
-        await this.sendMaximaMessage(pk, addedPayload).catch(() => { });
+        await this.sendMaximaMessage(pk, addedPayload).catch(() => {});
       }
     }
 
@@ -456,12 +468,12 @@ class ChannelService {
     for (const sub of subs) {
       const pk = (sub as any).PUBLICKEY || sub.publickey;
       if (pk && pk !== myPublicKey) {
-        await this.sendMaximaMessage(pk, payload).catch(() => { });
+        await this.sendMaximaMessage(pk, payload).catch(() => {});
       }
     }
 
     // Also notify the removed subscriber
-    await this.sendMaximaMessage(subscriberPublicKey, payload).catch(() => { });
+    await this.sendMaximaMessage(subscriberPublicKey, payload).catch(() => {});
     this.notifyChannelUpdate();
   }
 
@@ -475,7 +487,8 @@ class ChannelService {
     type: string,
     myPublicKey: string,
     myUsername: string,
-    filedata: string = "", forwarded: boolean = false,
+    filedata: string = "",
+    forwarded: boolean = false,
   ): Promise<void> {
     const channel = await this.getChannelInfo(channelId);
     if (!channel) throw new Error("Channel not found");
@@ -509,7 +522,8 @@ class ChannelService {
       message,
       messageContentType: type as any,
       filedata,
-      timestamp: now, forwarded,
+      timestamp: now,
+      forwarded,
     };
 
     // Send to all subscribers (except self)
@@ -560,7 +574,7 @@ class ChannelService {
         type: "CHANNEL_SYNC_START",
         channelId: channelId,
       }),
-      () => { },
+      () => {},
     );
 
     // NEW: Direct dispatch for immediate UI feedback
@@ -621,7 +635,7 @@ class ChannelService {
 
   private notifyChannelSyncEnd(channelId: string) {
     const detail = { type: "CHANNEL_SYNC_END", channelId: channelId };
-    MDS.comms.solo(JSON.stringify(detail), () => { });
+    MDS.comms.solo(JSON.stringify(detail), () => {});
     window.dispatchEvent(new CustomEvent("CHANNEL_UPDATE", { detail }));
   }
 
@@ -725,7 +739,7 @@ class ChannelService {
       for (const sub of subs) {
         const pk = (sub as any).PUBLICKEY || sub.publickey;
         if (pk && pk !== myPublicKey) {
-          await this.sendMaximaMessage(pk, payload).catch(() => { });
+          await this.sendMaximaMessage(pk, payload).catch(() => {});
         }
       }
 
@@ -759,7 +773,6 @@ class ChannelService {
       console.error("❌ [CHANNEL-SERVICE] Message handling error:", err);
     }
   }
-
 
   async archiveChannel(channelId: string): Promise<void> {
     try {
@@ -805,6 +818,21 @@ class ChannelService {
       this.notifyChannelUpdate(channelId, { favorite: false });
     } catch (err) {
       console.error("❌ [CHANNEL] Failed to unfavorite channel:", err);
+      throw err;
+    }
+  }
+
+  async updateChannelPublic(
+    channelId: string,
+    isPublic: boolean,
+  ): Promise<void> {
+    try {
+      await this.runSQL(
+        `UPDATE CHANNELS SET is_public = ${isPublic ? 1 : 0} WHERE channel_id = '${channelId}'`,
+      );
+      this.notifyChannelUpdate(channelId, { is_public: isPublic });
+    } catch (err) {
+      console.error("❌ [CHANNEL] Failed to update public listing:", err);
       throw err;
     }
   }
@@ -864,9 +892,9 @@ class ChannelService {
         const myName =
           myNameData.rows && myNameData.rows.length > 0
             ? myNameData.rows[0].ALIAS ||
-            myNameData.rows[0].alias ||
-            myInfo.response.name ||
-            "Anonymous"
+              myNameData.rows[0].alias ||
+              myInfo.response.name ||
+              "Anonymous"
             : myInfo.response.name || "Anonymous";
 
         const payload: any = {
@@ -908,7 +936,7 @@ class ChannelService {
             } else {
               reject(
                 "Could not send join request to channel admin: " +
-                sendRes.error,
+                  sendRes.error,
               );
             }
           },

@@ -290,7 +290,11 @@ SELECT * FROM TRANSACTIONS
 
     // Check if the message is for our application (case-insensitive)
     const app = maximaData.application.toLowerCase();
-    if (app === "metachain" || app === "metachain-group" || app === "metachain-channel") {
+    if (
+      app === "metachain" ||
+      app === "metachain-group" ||
+      app === "metachain-channel"
+    ) {
       const from = maximaData.from; // This is the Public Key
       let datastr = ""; // Initialize datastr here
 
@@ -319,18 +323,25 @@ SELECT * FROM TRANSACTIONS
 
           // Handle history sync response specifically to ensure UI signal
           if (json.messageType === "history_response") {
-            console.log(`✅ [GROUPS] History response received for ${json.groupId}. Waiting for SW to process...`);
+            console.log(
+              `✅ [GROUPS] History response received for ${json.groupId}. Waiting for SW to process...`,
+            );
           }
 
           groupService.handleIncomingGroupMessage(json, from);
           return;
         }
-        if (app === "metachain-channel" || (json.messageType && json.channelId)) {
+        if (
+          app === "metachain-channel" ||
+          (json.messageType && json.channelId)
+        ) {
           console.log("📢 [CHANNELS] Message detected:", json.messageType);
 
           // Handle history sync response specifically to ensure UI signal
           if (json.messageType === "channel_history_response") {
-            console.log(`✅ [CHANNELS] History response received for ${json.channelId}. Waiting for SW to process...`);
+            console.log(
+              `✅ [CHANNELS] History response received for ${json.channelId}. Waiting for SW to process...`,
+            );
           }
 
           channelService.handleIncomingChannelMessage(json, from);
@@ -386,7 +397,7 @@ SELECT * FROM TRANSACTIONS
               const escapedBio = (peer.bio || "").replace(/'/g, "''");
               const allowChats =
                 peer.allowNonContactChats !== undefined &&
-                  peer.allowNonContactChats !== null
+                peer.allowNonContactChats !== null
                   ? peer.allowNonContactChats
                     ? 1
                     : 0
@@ -414,8 +425,6 @@ VALUES('${peer.pubkey}', '${escapedAlias}', '${escapedBio}', '${peer.address}', 
           return;
         }
 
-
-
         // Handle Internal Sync - Peer Discovered from Beacon
         if (json.type === "peer_discovered") {
           console.log(
@@ -432,7 +441,7 @@ VALUES('${peer.pubkey}', '${escapedAlias}', '${escapedBio}', '${peer.address}', 
             const escapedBio = (peer.bio || "").replace(/'/g, "''");
             const allowChats =
               peer.allowNonContactChats !== undefined &&
-                peer.allowNonContactChats !== null
+              peer.allowNonContactChats !== null
                 ? peer.allowNonContactChats
                   ? 1
                   : 0
@@ -489,13 +498,8 @@ VALUES('${peer.pubkey}', '${escapedAlias}', '${escapedBio}', '${peer.address}', 
         }
 
         if (json.type === "ping") {
-          console.log("📡 [PING] Ping received from", from, "- sending Pong");
-          // Send Pong response
-          this.sendPong(from).catch((err) =>
-            console.error("❌ [PING] Failed to send Pong:", err),
-          );
-          // Notify listeners (optional, but good for debugging)
-          chatService.notifyNewMessage({ ...json, type: "ping" });
+          // PING/PONG ownership is Service Worker only.
+          // Frontend must not reply or it can create duplicate traffic loops.
           return;
         }
 
@@ -540,7 +544,7 @@ VALUES('${peer.pubkey}', '${escapedAlias}', '${escapedBio}', '${peer.address}', 
           // Use a safe default for allowChats if missing
           const allowChats =
             json.allowNonContactChats !== undefined &&
-              json.allowNonContactChats !== null
+            json.allowNonContactChats !== null
               ? json.allowNonContactChats
                 ? 1
                 : 0
@@ -1849,6 +1853,7 @@ WHERE(${addressClause}) AND status = 'pending'`;
         const msg = event.data;
         if (msg === "CHAT_LIST_UPDATE") {
           this.notifyChatListUpdate();
+          this.notifyNewMessage({ type: "CHAT_LIST_UPDATE" });
         } else {
           const parsedMsg = JSON.parse(msg);
           if (parsedMsg.type === "SW_LOG") {
@@ -1868,7 +1873,9 @@ WHERE(${addressClause}) AND status = 'pending'`;
             typeof parsedMsg.type === "string" &&
             parsedMsg.type.startsWith("CHANNEL_")
           ) {
-            console.log(`🚀 [SERVICE] Channel event received: ${parsedMsg.type}`);
+            console.log(
+              `🚀 [SERVICE] Channel event received: ${parsedMsg.type}`,
+            );
             window.dispatchEvent(
               new CustomEvent("CHANNEL_UPDATE", { detail: parsedMsg }),
             );

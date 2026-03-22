@@ -3,6 +3,207 @@
  * Handles peer discovery beacons and user registry
  */
 
+function encodeBase64Utf8(str) {
+  if (!str) return "";
+  try {
+    if (typeof btoa === "function") {
+      return btoa(unescape(encodeURIComponent(str)));
+    }
+  } catch (e) {}
+  try {
+    if (typeof Buffer !== "undefined") {
+      return Buffer.from(str, "utf8").toString("base64");
+    }
+  } catch (e) {}
+  return "";
+}
+
+function normalizeAllowNonContactChats(value, defaultValue) {
+  if (defaultValue === undefined || defaultValue === null) defaultValue = 1;
+  if (value === undefined || value === null) return defaultValue;
+  if (typeof value === "boolean") return value ? 1 : 0;
+  if (typeof value === "number") return value ? 1 : 0;
+  if (typeof value === "string") {
+    var normalized = value.trim().toLowerCase();
+    if (normalized === "true" || normalized === "1" || normalized === "yes")
+      return 1;
+    if (normalized === "false" || normalized === "0" || normalized === "no")
+      return 0;
+  }
+  return defaultValue;
+}
+
+function buildJoinLink(listingType, joinPayload) {
+  if (!joinPayload) return "";
+  var scheme = listingType === "group" ? "mcgrp://" : "mcch://";
+  var payload =
+    listingType === "group"
+      ? {
+          g: joinPayload.id,
+          n: joinPayload.name,
+          p: joinPayload.admin_publickey,
+          a: joinPayload.admin_address,
+        }
+      : {
+          c: joinPayload.id,
+          n: joinPayload.name,
+          p: joinPayload.admin_publickey,
+          a: joinPayload.admin_address,
+        };
+  if (!payload.g && !payload.c) return "";
+  var base64 = encodeBase64Utf8(JSON.stringify(payload));
+  return base64 ? scheme + base64 : "";
+}
+
+function buildPublicListings(myPubkey, myAddress, callback) {
+  var listings = [];
+  var groupSql =
+    "SELECT group_id, name, description, created_date FROM GROUPS WHERE COALESCE(is_public, FALSE) = TRUE AND (archived IS NULL OR archived = FALSE)";
+  MDS.sql(groupSql, function (groupRes) {
+    if (groupRes.status && groupRes.rows) {
+      for (var i = 0; i < groupRes.rows.length; i++) {
+        var row = groupRes.rows[i];
+        var groupId = row.GROUP_ID || row.group_id;
+        var name = row.NAME || row.name;
+        var description = row.DESCRIPTION || row.description || "";
+        var createdDate = row.CREATED_DATE || row.created_date || 0;
+        if (!groupId || !name) continue;
+        var joinPayload = {
+          id: groupId,
+          name: name,
+          admin_publickey: myPubkey,
+          admin_address: myAddress,
+        };
+        listings.push({
+          type: "group",
+          id: groupId,
+          name: name,
+          description: description,
+          created_date: createdDate,
+          join: joinPayload,
+          link: buildJoinLink("group", joinPayload),
+        });
+      }
+    }
+
+    var channelSql =
+      "SELECT channel_id, name, description, created_date FROM CHANNELS WHERE COALESCE(is_public, FALSE) = TRUE AND (archived IS NULL OR archived = FALSE)";
+    MDS.sql(channelSql, function (channelRes) {
+      if (channelRes.status && channelRes.rows) {
+        for (var j = 0; j < channelRes.rows.length; j++) {
+          var rowC = channelRes.rows[j];
+          var channelId = rowC.CHANNEL_ID || rowC.channel_id;
+          var cName = rowC.NAME || rowC.name;
+          var cDescription = rowC.DESCRIPTION || rowC.description || "";
+          var cCreatedDate = rowC.CREATED_DATE || rowC.created_date || 0;
+          if (!channelId || !cName) continue;
+          var joinPayloadC = {
+            id: channelId,
+            name: cName,
+            admin_publickey: myPubkey,
+            admin_address: myAddress,
+          };
+          listings.push({
+            type: "channel",
+            id: channelId,
+            name: cName,
+            description: cDescription,
+            created_date: cCreatedDate,
+            join: joinPayloadC,
+            link: buildJoinLink("channel", joinPayloadC),
+          });
+        }
+      }
+
+      listings.sort(function (a, b) {
+        return (b.created_date || 0) - (a.created_date || 0);
+      });
+      callback(listings.slice(0, 10));
+    });
+  });
+}
+
+function normalizeListings(listings) {
+  if (!Array.isArray(listings)) return [];
+  var normalized = [];
+  for (var i = 0; i < listings.length; i++) {
+    var item = listings[i];
+    if (!item || typeof item !== "object") continue;
+    var type = item.type;
+    if (type !== "group" && type !== "channel") continue;
+    var id = item.id || item.group_id || item.channel_id;
+    var name = item.name;
+    if (!id || !name) continue;
+    normalized.push({
+      type: type,
+      id: id,
+      name: name,
+      description: item.description || "",
+      join: item.join || null,
+      link: item.link || "",
+    });
+  }
+  return normalized.slice(0, 10);
+}
+
+function saveBeaconListings(beacon, now) {
+  if (!beacon || !beacon.pubkey) return;
+  if (!Array.isArray(beacon.listings)) return;
+
+  var incomingTimestamp = beacon.timestamp || 0;
+  if (incomingTimestamp <= 0) return;
+
+  var pk = beacon.pubkey;
+  var safePk = escapeSql(pk);
+  var cleanedListings = normalizeListings(beacon.listings);
+  var listingsJson = escapeSql(JSON.stringify(cleanedListings));
+
+  MDS.sql(
+    "SELECT timestamp FROM DISCOVERED_LISTINGS WHERE UPPER(owner_publickey)=UPPER('" +
+      safePk +
+      "')",
+    function (res) {
+      var storedTimestamp = 0;
+      if (res.status && res.rows && res.rows.length > 0) {
+        storedTimestamp = res.rows[0].TIMESTAMP || res.rows[0].timestamp || 0;
+      }
+
+      if (storedTimestamp >= incomingTimestamp) {
+        MDS.sql(
+          "UPDATE DISCOVERED_LISTINGS SET last_seen=" +
+            now +
+            " WHERE UPPER(owner_publickey)=UPPER('" +
+            safePk +
+            "')",
+        );
+        return;
+      }
+
+      var upsertSql =
+        "MERGE INTO DISCOVERED_LISTINGS (owner_publickey, listings, timestamp, last_seen) " +
+        "KEY (owner_publickey) " +
+        "VALUES ('" +
+        safePk +
+        "', '" +
+        listingsJson +
+        "', " +
+        incomingTimestamp +
+        ", " +
+        now +
+        ")";
+      MDS.sql(upsertSql, function (saveRes) {
+        if (saveRes.status) {
+          MDS.log("✅ [LISTINGS] Updated listings for " + pk.substring(0, 10));
+        } else {
+          MDS.log(
+            "❌ [LISTINGS] Failed to save listings: " + JSON.stringify(saveRes),
+          );
+        }
+      });
+    },
+  );
+}
+
 function handleBeacon(beacon, source) {
   try {
     // Validation logging
@@ -54,15 +255,14 @@ function handleBeacon(beacon, source) {
       .replace(/\s+/g, " ")
       .replace(/\s*:\s*/g, ":");
 
-    var allowNonContactChats =
-      beacon.allowNonContactChats !== undefined &&
-      beacon.allowNonContactChats !== null
-        ? beacon.allowNonContactChats
-          ? 1
-          : 0
-        : 1;
+    var allowNonContactChats = normalizeAllowNonContactChats(
+      beacon.allowNonContactChats,
+      1,
+    );
 
     MDS.log("📡 [BEACON] " + beacon.alias + " from " + source);
+
+    saveBeaconListings(beacon, now);
 
     // Save beacon - handle bio caching
     if (bioValue) {
@@ -73,14 +273,14 @@ function handleBeacon(beacon, source) {
         bioValue,
         cleanAddress,
         allowNonContactChats,
-        now
+        now,
       );
     } else {
       // Check DB for cached bio
       MDS.sql(
-        "SELECT bio FROM DISCOVERED_PEERS WHERE publickey='" +
+        "SELECT bio FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('" +
           beacon.pubkey +
-          "'",
+          "')",
         function (checkRes) {
           var bioToSave = "";
           if (
@@ -98,7 +298,7 @@ function handleBeacon(beacon, source) {
             bioToSave,
             cleanAddress,
             allowNonContactChats,
-            now
+            now,
           );
         },
       );
@@ -123,9 +323,9 @@ function saveBeaconWithBio(
 
   // Check stored beacon timestamp to avoid overwriting newer profile data with old gossip
   MDS.sql(
-    "SELECT extra_data FROM DISCOVERED_PEERS WHERE publickey='" +
+    "SELECT extra_data FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('" +
       beacon.pubkey +
-      "'",
+      "')",
     function (existingRes) {
       var storedTimestamp = 0;
       var hasExisting = false;
@@ -158,9 +358,9 @@ function saveBeaconWithBio(
         MDS.sql(
           "UPDATE DISCOVERED_PEERS SET last_seen=" +
             now +
-            " WHERE publickey='" +
+            " WHERE UPPER(publickey)=UPPER('" +
             beacon.pubkey +
-            "'",
+            "')",
           function (updateRes) {
             if (updateRes.status) {
               MDS.log("✅ [BEACON] Touched last_seen for: " + beacon.alias);
@@ -184,9 +384,9 @@ function saveBeaconWithBio(
         MDS.sql(
           "UPDATE DISCOVERED_PEERS SET last_seen=" +
             now +
-            " WHERE publickey='" +
+            " WHERE UPPER(publickey)=UPPER('" +
             beacon.pubkey +
-            "'",
+            "')",
           function (updateRes) {
             if (updateRes.status) {
               MDS.log("✅ [BEACON] Touched last_seen for: " + beacon.alias);
@@ -224,9 +424,14 @@ function saveBeaconWithBio(
           promoteToUserRegistry(beacon, now);
 
           // Reactive gossip
-          if (source === "P2P" || source === "MAXIMA") {
+          if ((source === "P2P" || source === "MAXIMA") && !hasExisting) {
             sendWelcomePackage(beacon.pubkey, beacon.alias, cleanAddress);
             askPeers([beacon.pubkey]);
+          } else if (source === "P2P" || source === "MAXIMA") {
+            MDS.log(
+              "⏭️ [GOSSIP] Welcome Package skipped for existing peer: " +
+                beacon.alias,
+            );
           }
         } else {
           MDS.log("❌ [BEACON] Save failed: " + JSON.stringify(res));
@@ -310,79 +515,114 @@ function sendBackgroundBeacon() {
             var minimaAddress =
               addrRes.status && addrRes.value ? addrRes.value : "";
 
-            // Get all profile data including avatar (like the working example)
-            MDS.sql("SELECT * FROM MY_PROFILE WHERE id=1", function (permRes) {
-              var allowNonContactChats = true;
-              var avatar = "";
-              var dbCountry = "";
-              var dbLanguages = [];
+            var finalizeBeacon = function (resolvedMinimaAddress) {
+              // Get all profile data including avatar (like the working example)
+              MDS.sql(
+                "SELECT * FROM MY_PROFILE WHERE id=1",
+                function (permRes) {
+                  var allowNonContactChats = true;
+                  var avatar = "";
+                  var dbCountry = "";
+                  var dbLanguages = [];
 
-              if (permRes.status && permRes.rows && permRes.rows.length > 0) {
-                var row = permRes.rows[0];
-                var val =
-                  row.ALLOW_NON_CONTACT_CHATS || row.allow_non_contact_chats;
-                allowNonContactChats =
-                  val === 1 || val === true || val === "true" || val === "1";
-                // Get avatar from DB (same as working example line 1714)
-                avatar = row.AVATAR || row.avatar || "";
-                // Get country from DB (with decoding like example line 1711)
-                dbCountry = decodeURIComponent(
-                  row.COUNTRY || row.country || "",
-                );
-                // Get languages from DB and parse as JSON array (like example line 1712-1713)
-                try {
-                  dbLanguages = JSON.parse(
-                    decodeURIComponent(row.LANGUAGES || row.languages || "[]"),
-                  );
-                } catch (e) {
-                  dbLanguages = [];
+                  if (
+                    permRes.status &&
+                    permRes.rows &&
+                    permRes.rows.length > 0
+                  ) {
+                    var row = permRes.rows[0];
+                    var val =
+                      row.ALLOW_NON_CONTACT_CHATS ||
+                      row.allow_non_contact_chats;
+                    allowNonContactChats =
+                      val === 1 ||
+                      val === true ||
+                      val === "true" ||
+                      val === "1";
+                    // Get avatar from DB (same as working example line 1714)
+                    avatar = row.AVATAR || row.avatar || "";
+                    // Get country from DB (with decoding like example line 1711)
+                    dbCountry = decodeURIComponent(
+                      row.COUNTRY || row.country || "",
+                    );
+                    // Get languages from DB and parse as JSON array (like example line 1712-1713)
+                    try {
+                      dbLanguages = JSON.parse(
+                        decodeURIComponent(
+                          row.LANGUAGES || row.languages || "[]",
+                        ),
+                      );
+                    } catch (e) {
+                      dbLanguages = [];
+                    }
+                  }
+
+                  // Use DB values as primary, keypair as fallback
+                  var finalCountry = dbCountry || country;
+                  var finalLanguages =
+                    dbLanguages.length > 0 ? dbLanguages : [];
+                  // Try to parse keypair languages if DB is empty
+                  if (finalLanguages.length === 0 && languages) {
+                    try {
+                      finalLanguages = JSON.parse(languages);
+                    } catch (e) {
+                      finalLanguages = [];
+                    }
+                  }
+
+                  buildPublicListings(myPubkey, myAddress, function (listings) {
+                    var beacon = {
+                      app: "metachain",
+                      type: "BEACON",
+                      v: 1,
+                      pubkey: myPubkey,
+                      alias: myName,
+                      bio: bio,
+                      address: myAddress,
+                      allowNonContactChats: allowNonContactChats,
+                      country: finalCountry,
+                      languages: finalLanguages,
+                      // Persist our immutable Wallet Address
+                      minimaaddress: resolvedMinimaAddress,
+                      // Use maxima icon as primary, MY_PROFILE as fallback
+                      avatar: myAvatar || avatar,
+                      listings: listings || [],
+                      timestamp: Date.now(),
+                    };
+
+                    var jsonStr = JSON.stringify(beacon);
+                    var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
+
+                    // P2P broadcast
+                    MDS.cmd("message data:" + hexData, function (res) {
+                      MDS.log("📡 [BG-BEACON] P2P broadcast sent");
+                    });
+
+                    // MLS unicast (Maxima) to make MLS a discovery hub
+                    sendBeaconToMLS(maxInfo.response, hexData);
+
+                    // Save self to DB
+                    handleBeacon(beacon, "SELF");
+                  });
+                },
+              );
+            };
+
+            if (!minimaAddress) {
+              MDS.cmd("getaddress", function (addrRes) {
+                if (
+                  addrRes &&
+                  addrRes.status &&
+                  addrRes.response &&
+                  addrRes.response.miniaddress
+                ) {
+                  minimaAddress = addrRes.response.miniaddress;
                 }
-              }
-
-              // Use DB values as primary, keypair as fallback
-              var finalCountry = dbCountry || country;
-              var finalLanguages = dbLanguages.length > 0 ? dbLanguages : [];
-              // Try to parse keypair languages if DB is empty
-              if (finalLanguages.length === 0 && languages) {
-                try {
-                  finalLanguages = JSON.parse(languages);
-                } catch (e) {
-                  finalLanguages = [];
-                }
-              }
-
-              var beacon = {
-                app: "metachain",
-                type: "BEACON",
-                v: 1,
-                pubkey: myPubkey,
-                alias: myName,
-                bio: bio,
-                address: myAddress,
-                allowNonContactChats: allowNonContactChats,
-                country: finalCountry,
-                languages: finalLanguages,
-                // Persist our immutable Wallet Address
-                minimaaddress: minimaAddress,
-                // Use maxima icon as primary, MY_PROFILE as fallback
-                avatar: myAvatar || avatar,
-                timestamp: Date.now(),
-              };
-
-              var jsonStr = JSON.stringify(beacon);
-              var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
-
-              // P2P broadcast
-              MDS.cmd("message data:" + hexData, function (res) {
-                MDS.log("📡 [BG-BEACON] P2P broadcast sent");
+                finalizeBeacon(minimaAddress);
               });
-
-              // MLS unicast (Maxima) to make MLS a discovery hub
-              sendBeaconToMLS(maxInfo.response, hexData);
-
-              // Save self to DB
-              handleBeacon(beacon, "SELF");
-            });
+            } else {
+              finalizeBeacon(minimaAddress);
+            }
           });
         });
       });
@@ -428,7 +668,7 @@ function sendBeaconToMLS(maxInfoResponse, hexData) {
       mls +
       " application:metachain data:" +
       hexData +
-      " poll:true",
+      " poll:false",
     function (res) {
       if (res.status) {
         MDS.log("✅ [BEACON-MLS] Beacon sent to MLS");
@@ -461,6 +701,9 @@ function createDiscoveredPeersTable() {
   MDS.log("💾 [DB] DISCOVERED_PEERS table check (already created in init).");
 }
 
+var LAST_MLS_BOOTSTRAP_AT = 0;
+var MLS_BOOTSTRAP_THROTTLE_MS = 30000;
+
 /**
  * Bootstrap discovery by sending get_peers to the configured MLS server.
  * Called on startup when DISCOVERED_PEERS may be empty (e.g. after -clean).
@@ -468,6 +711,13 @@ function createDiscoveredPeersTable() {
  * breaks the chicken-and-egg problem without requiring prior contacts.
  */
 function bootstrapFromMLS() {
+  var now = Date.now();
+  if (now - LAST_MLS_BOOTSTRAP_AT < MLS_BOOTSTRAP_THROTTLE_MS) {
+    MDS.log("⏭️ [BOOTSTRAP] Throttled repeated MLS bootstrap attempt.");
+    return;
+  }
+  LAST_MLS_BOOTSTRAP_AT = now;
+
   MDS.log("🔗 [BOOTSTRAP] Checking DISCOVERED_PEERS count...");
 
   MDS.sql(
@@ -553,7 +803,7 @@ function bootstrapFromMLS() {
             mlsFullAddress +
             " application:metachain data:" +
             hexData +
-            " poll:true",
+            " poll:false",
           function (res) {
             if (res.status) {
               MDS.log(

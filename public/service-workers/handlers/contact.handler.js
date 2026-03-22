@@ -78,6 +78,11 @@ function handleContactCancelled(pubkey) {
 
 function handleContactAccepted(pubkey, maxjson) {
     MDS.log("✅ [CONTACTS] Request accepted by " + pubkey);
+    
+    // Invalidate contact status cache
+    if (typeof clearContactStatusCache === 'function') {
+        clearContactStatusCache(pubkey);
+    }
 
     var now = Date.now();
     var safeFrom = escapeSql(pubkey);
@@ -152,6 +157,11 @@ function handleMaximaContactRequest(pubkey, maxjson) {
 
 function handleMaximaContactAccepted(pubkey, maxjson) {
     MDS.log("✅ [MAXIMA CONTACT] Request accepted by " + pubkey);
+
+    // Invalidate contact status cache
+    if (typeof clearContactStatusCache === 'function') {
+        clearContactStatusCache(pubkey);
+    }
 
     var now = Date.now();
     var safeFrom = escapeSql(pubkey);

@@ -170,6 +170,37 @@ function logToUI(msg) {
  * NOTE: Uses callbacks instead of async/await (MDS doesn't support async/await)
  */
 
+var ContactStatusCache = {};
+
+function clearContactStatusCache(publicKey) {
+    if (publicKey) {
+        delete ContactStatusCache[publicKey];
+    }
+}
+
+/**
+ * Check if a public key is a known contact (local cache + DB)
+ * @param {string} publicKey - Public key to check
+ * @param {function} callback - Callback function(isInContacts)
+ */
+function isTargetInContacts(publicKey, callback) {
+    if (ContactStatusCache[publicKey] !== undefined) {
+        callback(ContactStatusCache[publicKey]);
+        return;
+    }
+
+    var safePk = escapeSql(publicKey);
+    var sql = "SELECT status FROM MAXIMA_CONTACT_REQUESTS WHERE (UPPER(from_publickey)=UPPER('" + safePk + "') OR UPPER(to_publickey)=UPPER('" + safePk + "')) AND status='accepted' " +
+              "UNION ALL " +
+              "SELECT status FROM CONTACT_REQUESTS WHERE (UPPER(from_publickey)=UPPER('" + safePk + "') OR UPPER(to_publickey)=UPPER('" + safePk + "')) AND status='accepted' LIMIT 1";
+
+    MDS.sql(sql, function(res) {
+        var isInContacts = (res.status && res.rows && res.rows.length > 0);
+        ContactStatusCache[publicKey] = isInContacts;
+        callback(isInContacts);
+    });
+}
+
 /**
  * Send a Maxima message
  * @param {string} toPublicKey - Recipient's public key (0x...) or Maxima address (Mx...)
@@ -267,13 +298,22 @@ function sendMaximaMessage(toPublicKey, type, messageData, context, callback) {
                 if (toPublicKey.startsWith("Mx") || toPublicKey.startsWith("MX")) {
                     sendMessage("maxima action:send to:" + cleanMaximaAddress(toPublicKey) + " application:metachain data:" + hexData + " poll:false");
                 } else if (toPublicKey.startsWith("0x")) {
-                    // Try to resolve to Maxima address first
-                    resolveMaximaAddress(toPublicKey, function (err, mxAddress) {
-                        if (!err && mxAddress) {
-                            MDS.log("🔍 [SW-MAXIMA] Resolved 0x to Mx address: " + mxAddress);
-                            sendMessage("maxima action:send to:" + cleanMaximaAddress(mxAddress) + " application:metachain data:" + hexData + " poll:false");
-                        } else {
+                    // Optimized strategy: check if contact first
+                    isTargetInContacts(toPublicKey, function(isInContacts) {
+                        if (isInContacts) {
+                            // Known contact: prioritize publickey (standard Maxima behavior)
                             sendMessage("maxima action:send publickey:" + toPublicKey + " application:metachain data:" + hexData + " poll:false");
+                        } else {
+                            // Not a contact: try address-based send directly to avoid unnecessary "No Contact found" errors
+                            resolveMaximaAddress(toPublicKey, function (err, mxAddress) {
+                                if (!err && mxAddress) {
+                                    MDS.log("🔍 [SW-MAXIMA] Non-contact, sending via address: " + mxAddress);
+                                    sendMessage("maxima action:send to:" + cleanMaximaAddress(mxAddress) + " application:metachain data:" + hexData + " poll:false");
+                                } else {
+                                    // Fallback to publickey if no address found (might fail with "No Contact found")
+                                    sendMessage("maxima action:send publickey:" + toPublicKey + " application:metachain data:" + hexData + " poll:false");
+                                }
+                            });
                         }
                     });
                 } else {
@@ -948,7 +988,8 @@ function initDatabase() {
       "  description TEXT, " +
       "  archived BOOLEAN DEFAULT FALSE, " +
       "  archived_date BIGINT, " +
-      "  favorite BOOLEAN DEFAULT FALSE " +
+      "  favorite BOOLEAN DEFAULT FALSE, " +
+      "  is_public BOOLEAN DEFAULT FALSE " +
       " )";
 
     return runSQL(groupsSql).then(function (res) {
@@ -966,6 +1007,9 @@ function initDatabase() {
         ),
         runSQL(
           "ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS favorite BOOLEAN DEFAULT FALSE",
+        ),
+        runSQL(
+          "ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS is_public BOOLEAN DEFAULT FALSE",
         ),
         runSQL(
           "ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS auto_approve BOOLEAN DEFAULT FALSE",
@@ -1186,6 +1230,35 @@ function initDatabase() {
     });
   });
 
+  // 6.1 DISCOVERED_LISTINGS (per-peer public listings cache)
+  chain = chain.then(function () {
+    var sql =
+      "CREATE TABLE IF NOT EXISTS DISCOVERED_LISTINGS ( " +
+      "  owner_publickey VARCHAR(512) PRIMARY KEY, " +
+      "  listings CLOB, " +
+      "  timestamp BIGINT, " +
+      "  last_seen BIGINT " +
+      " )";
+    return runSQL(sql).then(function (res) {
+      MDS.log(
+        res.status
+          ? "📂 [DB] DISCOVERED_LISTINGS checked/init"
+          : "❌ [DB] DISCOVERED_LISTINGS init failed: " + res.error,
+      );
+      return Promise.all([
+        runSQL(
+          "ALTER TABLE DISCOVERED_LISTINGS ADD COLUMN IF NOT EXISTS listings CLOB",
+        ),
+        runSQL(
+          "ALTER TABLE DISCOVERED_LISTINGS ADD COLUMN IF NOT EXISTS timestamp BIGINT",
+        ),
+        runSQL(
+          "ALTER TABLE DISCOVERED_LISTINGS ADD COLUMN IF NOT EXISTS last_seen BIGINT",
+        ),
+      ]);
+    });
+  });
+
   // 7. PERSONAL_CONTACTS
   chain = chain.then(function () {
     var sql =
@@ -1245,7 +1318,8 @@ function initDatabase() {
       "  avatar TEXT, " +
       "  archived BOOLEAN DEFAULT FALSE, " +
       "  archived_date BIGINT, " +
-      "  favorite BOOLEAN DEFAULT FALSE " +
+      "  favorite BOOLEAN DEFAULT FALSE, " +
+      "  is_public BOOLEAN DEFAULT FALSE " +
       " )";
     return runSQL(channelsSql).then(function (res) {
       MDS.log(
@@ -1262,6 +1336,9 @@ function initDatabase() {
         ),
         runSQL(
           "ALTER TABLE CHANNELS ADD COLUMN IF NOT EXISTS favorite BOOLEAN DEFAULT FALSE",
+        ),
+        runSQL(
+          "ALTER TABLE CHANNELS ADD COLUMN IF NOT EXISTS is_public BOOLEAN DEFAULT FALSE",
         ),
       ]);
     });
@@ -1559,12 +1636,12 @@ function requestGroupHistoryFromSW(groupId) {
               cleanAddr +
               " application:metachain-group data:" +
               hexData +
-              " poll:true"
+              " poll:false"
               : "maxima action:send publickey:" +
               memberPk +
               " application:metachain-group data:" +
               hexData +
-              " poll:true";
+              " poll:false";
           MDS.cmd(cmd);
           sentCount++;
         }
@@ -1656,7 +1733,7 @@ function handleGroupHistoryRequest(pubkey, maxjson) {
         pubkey +
         " application:metachain-group data:" +
         hexData +
-        " poll:true",
+        " poll:false",
       );
     });
   });
@@ -3401,7 +3478,7 @@ function sendMaximaGroupMsg(toPk, payloadObj) {
         toPk +
         " application:metachain-group data:" +
         hexData +
-        " poll:true",
+        " poll:false",
       );
     } else {
       logToUI(
@@ -3432,7 +3509,7 @@ function sendMaximaGroupMsg(toPk, payloadObj) {
                 cleanAddr +
                 " application:metachain-group data:" +
                 hexData +
-                " poll:true",
+                " poll:false",
               );
             } else {
               logToUI(
@@ -3831,7 +3908,7 @@ function handleChannelHistoryRequest(pubkey, maxjson) {
         pubkey +
         " application:metachain-channel data:" +
         hexData +
-        " poll:true", // CORRECT: poll:true ensures message delivery for offline/non-contact recipients
+        " poll:false", // CORRECT: poll:true ensures message delivery for offline/non-contact recipients
       );
     });
   });
@@ -4182,246 +4259,419 @@ function handleChannelJoinRequest(pubkey, maxjson) {
  * Handles chat messages, read receipts, pings, pongs
  */
 
+var LAST_PONG_SENT = {};
+var PONG_THROTTLE_MS = 30000;
+
 function handleChatMessage(pubkey, maxjson) {
-    MDS.log("💬 [CHAT-DEBUG] RAW INCOMING from " + pubkey + ": " + JSON.stringify(maxjson));
-    MDS.log("💬 [CHAT] From: " + pubkey + " - " + (maxjson.message || "").substring(0, 30));
+  MDS.log(
+    "💬 [CHAT-DEBUG] RAW INCOMING from " +
+    pubkey +
+    ": " +
+    JSON.stringify(maxjson),
+  );
+  MDS.log(
+    "💬 [CHAT] From: " +
+    pubkey +
+    " - " +
+    (maxjson.message || "").substring(0, 30),
+  );
 
-    var now = Date.now();
-    var safePubkey = escapeSql(pubkey);
-    var safeUsername = escapeSql(maxjson.username || "Unknown");
-    var safeMessage = escapeSql(maxjson.message || "");
-    var safeFiledata = escapeSql(maxjson.filedata || "");
-    var msgType = maxjson.type || "text";
-    var amount = maxjson.amount || 0;
-    var senderSeq = maxjson.seq ? parseInt(maxjson.seq) : 0; // SEQUENCE TRACKING
-    var forwarded = maxjson.forwarded === true || maxjson.forwarded === 'true' || maxjson.forwarded === 1;
+  var now = Date.now();
+  var safePubkey = escapeSql(pubkey);
+  var safeUsername = escapeSql(maxjson.username || "Unknown");
+  var safeMessage = escapeSql(maxjson.message || "");
+  var safeFiledata = escapeSql(maxjson.filedata || "");
+  var msgType = maxjson.type || "text";
+  var amount = maxjson.amount || 0;
+  var senderSeq = maxjson.seq ? parseInt(maxjson.seq) : 0; // SEQUENCE TRACKING
+  var customid = maxjson.customid ? escapeSql(maxjson.customid) : "0x00";
+  var transportDelay =
+    maxjson.timestamp && parseInt(maxjson.timestamp) > 0
+      ? now - parseInt(maxjson.timestamp)
+      : -1;
+  var forwarded =
+    maxjson.forwarded === true ||
+    maxjson.forwarded === "true" ||
+    maxjson.forwarded === 1;
 
-    // 1. CHECK IF BLOCKED
-    var checkBlockSql = "SELECT blocked FROM CHAT_STATUS WHERE publickey='" + safePubkey + "'";
-    MDS.sql(checkBlockSql, function (blockRes) {
-        var isBlocked = false;
-        if (blockRes.status && blockRes.rows && blockRes.rows.length > 0) {
-            var val = blockRes.rows[0].BLOCKED;
-            isBlocked = val === true || val === 'TRUE' || val === 'true' || val === 1;
+  MDS.log(
+    "⏱️ [CHAT-LATENCY] customid=" +
+    customid +
+    " seq=" +
+    senderSeq +
+    " delay_ms=" +
+    transportDelay,
+  );
+
+  // 1. CHECK IF BLOCKED
+  var checkBlockSql =
+    "SELECT blocked FROM CHAT_STATUS WHERE publickey='" + safePubkey + "'";
+  MDS.sql(checkBlockSql, function (blockRes) {
+    var isBlocked = false;
+    if (blockRes.status && blockRes.rows && blockRes.rows.length > 0) {
+      var val = blockRes.rows[0].BLOCKED;
+      isBlocked = val === true || val === "TRUE" || val === "true" || val === 1;
+    }
+
+    if (isBlocked) {
+      MDS.log(
+        "🚫 [CHAT] Message BLOCKED from: " +
+        safeUsername +
+        " (" +
+        safePubkey +
+        ")",
+      );
+      return; // Abort insertion
+    } else {
+      MDS.log("✅ [CHAT-DEBUG] Block check passed for " + safeUsername);
+    }
+
+    // GAP DETECTION LOGIC
+    // Only run if we have a valid sequence number > 1 (1 is start)
+    if (senderSeq > 1) {
+      // Check the last sequence number we have from this sender
+      var seqSql =
+        "SELECT MAX(sender_seq) as last_seq FROM CHAT_MESSAGES WHERE publickey='" +
+        safePubkey +
+        "'";
+      MDS.sql(seqSql, function (seqRes) {
+        var lastSeq = 0;
+        if (seqRes.status && seqRes.rows && seqRes.rows.length > 0) {
+          lastSeq = parseInt(seqRes.rows[0].LAST_SEQ || 0);
         }
 
-        if (isBlocked) {
-            MDS.log("🚫 [CHAT] Message BLOCKED from: " + safeUsername + " (" + safePubkey + ")");
-            return; // Abort insertion
-        } else {
-            MDS.log("✅ [CHAT-DEBUG] Block check passed for " + safeUsername);
+        // If we have nothing (lastSeq=0) and incoming is > 1 -> Gap (start missed)
+        // If we have lastSeq (e.g. 5) and incoming is > lastSeq + 1 (e.g. 7) -> Gap (6 missed)
+        // Note: We used to check just > lastSeq+1, but if lastSeq=0, we expect senderSeq=1. Any start >1 is gap.
+        if (senderSeq > lastSeq + 1) {
+          var gapSize = senderSeq - lastSeq - 1;
+          MDS.log(
+            "⚠️ [GAP-DETECT] Sequence gap detected from " +
+            safeUsername +
+            " (Seq: " +
+            senderSeq +
+            ", Last: " +
+            lastSeq +
+            ", Missing: " +
+            gapSize +
+            ")",
+          );
+
+          // Trigger sync - use existing solo comms or direct function call if available
+          if (typeof requestChatHistory === "function") {
+            MDS.log("🔄 [GAP-FILL] Triggering sync to fill gap...");
+            requestChatHistory(pubkey);
+          }
         }
+      });
+    }
 
-        // GAP DETECTION LOGIC
-        // Only run if we have a valid sequence number > 1 (1 is start)
-        if (senderSeq > 1) {
-            // Check the last sequence number we have from this sender
-            var seqSql = "SELECT MAX(sender_seq) as last_seq FROM CHAT_MESSAGES WHERE publickey='" + safePubkey + "'";
-            MDS.sql(seqSql, function (seqRes) {
-                var lastSeq = 0;
-                if (seqRes.status && seqRes.rows && seqRes.rows.length > 0) {
-                    lastSeq = parseInt(seqRes.rows[0].LAST_SEQ || 0);
-                }
+    // 2. Insert message to DB if not blocked
+    var txpowid = maxjson.txpowid ? escapeSql(maxjson.txpowid) : null;
+    var initialState = txpowid ? "sent" : "received"; // 'sent' triggers blink on receiver side if txpowid exists
+    var txpowidVal = txpowid ? "'" + txpowid + "'" : "NULL";
+    var originalTimestamp = maxjson.timestamp ? maxjson.timestamp : 0;
+    // PERSIST CUSTOM ID (already normalized above)
 
-                // If we have nothing (lastSeq=0) and incoming is > 1 -> Gap (start missed)
-                // If we have lastSeq (e.g. 5) and incoming is > lastSeq + 1 (e.g. 7) -> Gap (6 missed)
-                // Note: We used to check just > lastSeq+1, but if lastSeq=0, we expect senderSeq=1. Any start >1 is gap.
-                if (senderSeq > lastSeq + 1) {
-                    var gapSize = senderSeq - lastSeq - 1;
-                    MDS.log("⚠️ [GAP-DETECT] Sequence gap detected from " + safeUsername + " (Seq: " + senderSeq + ", Last: " + lastSeq + ", Missing: " + gapSize + ")");
+    // CRITICAL FIX: Only store if we don't already have it
+    // We check BOTH txpowid (if available) AND time window simultaneously to ensure we catch duplicates
+    // even if one identifier is missing or slightly different.
+    var checkDup =
+      "SELECT COUNT(*) as count FROM CHAT_MESSAGES WHERE publickey='" +
+      safePubkey +
+      "'";
+    var conditions = [];
 
-                    // Trigger sync - use existing solo comms or direct function call if available
-                    if (typeof requestChatHistory === 'function') {
-                        MDS.log("🔄 [GAP-FILL] Triggering sync to fill gap...");
-                        requestChatHistory(pubkey);
-                    }
-                }
-            });
-        }
+    // 1. Check by TxPoWID (Strongest check)
+    if (txpowid) {
+      conditions.push("txpowid='" + txpowid + "'");
+    }
 
-        // 2. Insert message to DB if not blocked
-        var txpowid = maxjson.txpowid ? escapeSql(maxjson.txpowid) : null;
-        var initialState = txpowid ? 'sent' : 'received'; // 'sent' triggers blink on receiver side if txpowid exists
-        var txpowidVal = txpowid ? "'" + txpowid + "'" : "NULL";
-        var originalTimestamp = maxjson.timestamp ? maxjson.timestamp : 0;
-        var customid = maxjson.customid ? escapeSql(maxjson.customid) : "0x00"; // PERSIST CUSTOM ID
+    // 2. Check by Time Window & Content (Fuzzy check for 60s window)
+    // Checks against both original_timestamp (sender time) and date (local time)
+    var minTime = originalTimestamp - 60000;
+    var maxTime = originalTimestamp + 60000;
+    var timeCondition =
+      "message='" +
+      safeMessage +
+      "' AND (" +
+      "(original_timestamp >= " +
+      minTime +
+      " AND original_timestamp <= " +
+      maxTime +
+      ") OR " +
+      "(date >= " +
+      minTime +
+      " AND date <= " +
+      maxTime +
+      "))";
+    conditions.push("(" + timeCondition + ")");
 
-        // CRITICAL FIX: Only store if we don't already have it 
-        // We check BOTH txpowid (if available) AND time window simultaneously to ensure we catch duplicates
-        // even if one identifier is missing or slightly different.
-        var checkDup = "SELECT COUNT(*) as count FROM CHAT_MESSAGES WHERE publickey='" + safePubkey + "'";
-        var conditions = [];
+    // Combine with OR
+    if (conditions.length > 0) {
+      checkDup += " AND (" + conditions.join(" OR ") + ")";
+    }
 
-        // 1. Check by TxPoWID (Strongest check)
-        if (txpowid) {
-            conditions.push("txpowid='" + txpowid + "'");
-        }
+    MDS.log("🔍 [DEDUP-LIVE] Checking for duplicates with SQL: " + checkDup);
 
-        // 2. Check by Time Window & Content (Fuzzy check for 60s window)
-        // Checks against both original_timestamp (sender time) and date (local time)
-        var minTime = originalTimestamp - 60000;
-        var maxTime = originalTimestamp + 60000;
-        var timeCondition = "message='" + safeMessage + "' AND (" +
-            "(original_timestamp >= " + minTime + " AND original_timestamp <= " + maxTime + ") OR " +
-            "(date >= " + minTime + " AND date <= " + maxTime + "))";
-        conditions.push("(" + timeCondition + ")");
+    MDS.sql(checkDup, function (dupRes) {
+      if (dupRes.status && dupRes.rows && dupRes.rows[0].COUNT > 0) {
+        MDS.log(
+          "♻️ [CHAT] Ignoring duplicate message from " +
+          safeUsername +
+          " (already exists in DB)",
+        );
 
-        // Combine with OR
-        if (conditions.length > 0) {
-            checkDup += " AND (" + conditions.join(" OR ") + ")";
-        }
-
-        MDS.log("🔍 [DEDUP-LIVE] Checking for duplicates with SQL: " + checkDup);
-
-        MDS.sql(checkDup, function (dupRes) {
-            if (dupRes.status && dupRes.rows && dupRes.rows[0].COUNT > 0) {
-                MDS.log("♻️ [CHAT] Ignoring duplicate message from " + safeUsername + " (already exists in DB)");
-
-                // CRITICAL FIX: Even if duplicate, UPDATE sender_seq if it's currently 0 or NULL
-                // This fixes ordering if the message was first added via history sync (which might have lacked seq)
-                if (maxjson.seq && maxjson.seq > 0) {
-                    var updateSeqSql = "UPDATE CHAT_MESSAGES SET sender_seq=" + maxjson.seq +
-                        " WHERE publickey='" + safePubkey + "' AND (" + conditions.join(" OR ") + ")" +
-                        " AND (sender_seq IS NULL OR sender_seq = 0)";
-                    MDS.sql(updateSeqSql, function (res) {
-                        if (res.status && res.rowsAffected > 0) {
-                            MDS.log("🔄 [CHAT] Updated sequence for duplicate message to: " + maxjson.seq);
-                        }
-                    });
-                }
-                return;
-            } else {
-                MDS.log("✨ [CHAT-DEBUG] No duplicate found. Proceeding to INSERT...");
+        // CRITICAL FIX: Even if duplicate, UPDATE sender_seq if it's currently 0 or NULL
+        // This fixes ordering if the message was first added via history sync (which might have lacked seq)
+        if (maxjson.seq && maxjson.seq > 0) {
+          var updateSeqSql =
+            "UPDATE CHAT_MESSAGES SET sender_seq=" +
+            maxjson.seq +
+            " WHERE publickey='" +
+            safePubkey +
+            "' AND (" +
+            conditions.join(" OR ") +
+            ")" +
+            " AND (sender_seq IS NULL OR sender_seq = 0)";
+          MDS.sql(updateSeqSql, function (res) {
+            if (res.status && res.rowsAffected > 0) {
+              MDS.log(
+                "🔄 [CHAT] Updated sequence for duplicate message to: " +
+                maxjson.seq,
+              );
             }
+          });
+        }
+        return;
+      } else {
+        MDS.log("✨ [CHAT-DEBUG] No duplicate found. Proceeding to INSERT...");
+      }
 
-            var forwardedVal = forwarded ? 1 : 0;
-            var insertSql = "INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, txpowid, original_timestamp, sender_seq, customid, forwarded) "
-                + "VALUES ('', '" + safePubkey + "', '" + safeUsername + "', '" + msgType + "', '" + safeMessage + "', '" + safeFiledata + "', '" + initialState + "', " + amount + ", " + (originalTimestamp || now) + ", " + txpowidVal + ", " + originalTimestamp + ", " + senderSeq + ", '" + customid + "', " + forwardedVal + ")";
+      var forwardedVal = forwarded ? 1 : 0;
+      var insertSql =
+        "INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, txpowid, original_timestamp, sender_seq, customid, forwarded) " +
+        "VALUES ('', '" +
+        safePubkey +
+        "', '" +
+        safeUsername +
+        "', '" +
+        msgType +
+        "', '" +
+        safeMessage +
+        "', '" +
+        safeFiledata +
+        "', '" +
+        initialState +
+        "', " +
+        amount +
+        ", " +
+        (originalTimestamp || now) +
+        ", " +
+        txpowidVal +
+        ", " +
+        originalTimestamp +
+        ", " +
+        senderSeq +
+        ", '" +
+        customid +
+        "', " +
+        forwardedVal +
+        ")";
 
-            MDS.sql(insertSql, function (res) {
-                if (res.status) {
-                    MDS.log("✅ [CHAT] Message saved from " + safeUsername);
+      MDS.sql(insertSql, function (res) {
+        if (res.status) {
+          MDS.log("✅ [CHAT] Message saved from " + safeUsername);
 
-                    // 3. NOTIFY FRONTEND (Immediate Sync)
-                    // This triggers a UI refresh now that the message is safely in the DB
-                    MDS.comms.solo("CHAT_LIST_UPDATE", function () {
-                        MDS.log("📤 [CHAT-SYNC] Notification sent to frontend for " + safeUsername);
-                    });
+          // 3. NOTIFY FRONTEND (Immediate Sync)
+          // This triggers a UI refresh now that the message is safely in the DB
+          MDS.comms.solo("CHAT_LIST_UPDATE", function () {
+            MDS.log(
+              "📤 [CHAT-SYNC] Notification sent to frontend for " +
+              safeUsername,
+            );
+          });
 
-                    // FIX: Auto-discover user on message receipt to fix "Unknown" in chat list
-                    if (safeUsername && safeUsername !== "Unknown" && safeUsername !== "System") {
-                        var safeAvatar = escapeSql(maxjson.avatar || "");
-                        var safeAddress = escapeSql(maxjson.from_address || "");
+          // FIX: Auto-discover user on message receipt to fix "Unknown" in chat list
+          if (
+            safeUsername &&
+            safeUsername !== "Unknown" &&
+            safeUsername !== "System"
+          ) {
+            var safeAvatar = escapeSql(maxjson.avatar || "");
+            var safeAddress = escapeSql(maxjson.from_address || "");
 
-                        var upsertPeer = "MERGE INTO DISCOVERED_PEERS (publickey, alias, avatar, address, last_seen, source, allow_non_contact_chats) KEY(publickey) " +
-                            "VALUES ('" + safePubkey + "', '" + safeUsername + "', '" + safeAvatar + "', '" + safeAddress + "', " + now + ", 'MSG', 1)";
-                        MDS.sql(upsertPeer, function (pRes) {
-                            MDS.log("👤 [CHAT] Auto-discovered peer: " + safeUsername);
-                        });
-                    }
-
-                    // 3. SEND DELIVERY RECEIPT (New Logic)
-                    sendDeliveryReceipt(pubkey);
-
-                } else {
-                    MDS.log("❌ [CHAT] Save failed: " + res.error);
-                }
+            var upsertPeer =
+              "MERGE INTO DISCOVERED_PEERS (publickey, alias, avatar, address, last_seen, source, allow_non_contact_chats) KEY(publickey) " +
+              "VALUES ('" +
+              safePubkey +
+              "', '" +
+              safeUsername +
+              "', '" +
+              safeAvatar +
+              "', '" +
+              safeAddress +
+              "', " +
+              now +
+              ", 'MSG', 1)";
+            MDS.sql(upsertPeer, function (pRes) {
+              MDS.log("👤 [CHAT] Auto-discovered peer: " + safeUsername);
             });
-        });
+          }
+
+          // 3. SEND DELIVERY RECEIPT (New Logic)
+          sendDeliveryReceipt(pubkey);
+        } else {
+          MDS.log("❌ [CHAT] Save failed: " + res.error);
+        }
+      });
     });
+  });
 }
 
 // Helper to send delivery receipt from Service Worker
 function sendDeliveryReceipt(toPublicKey) {
-    // Prevent sending receipts to self or system
-    if (toPublicKey === 'Me' || toPublicKey === 'System') return;
+  // Prevent sending receipts to self or system
+  if (toPublicKey === "Me" || toPublicKey === "System") return;
 
-    var payload = {
-        message: "",
-        type: "delivery_receipt",
-        username: "Me",
-        filedata: ""
-    };
+  var payload = {
+    message: "",
+    type: "delivery_receipt",
+    username: "Me",
+    filedata: "",
+  };
 
-    var jsonStr = JSON.stringify(payload);
-    var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
+  var jsonStr = JSON.stringify(payload);
+  var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
 
-    // Use smart Address Resolution for non-contacts
-    resolveAndSend(toPublicKey, hexData, "DELIVERY", false);
+  // Use smart Address Resolution for non-contacts
+  resolveAndSend(toPublicKey, hexData, "DELIVERY", false);
 }
 
 function handleReadReceipt(pubkey) {
-    MDS.log("📖 [READ-RECEIPT] Received from " + pubkey);
-    // Update 'sent' OR 'delivered' messages to 'read'. 
-    // Exclude 'pending' (not sent yet), 'failed' AND 'confirmed' (final state for transactions).
-    // CRITICAL FIX: Do not overwrite 'confirmed' state with 'read'.
-    // CRITICAL FIX 2: Only update TEXT messages. Token/Charm transactions should NOT go to 'read' state.
-    var sql = "UPDATE CHAT_MESSAGES SET state='read' WHERE publickey='" + pubkey + "' AND username='Me' AND type='text' AND state!='pending' AND state!='failed' AND state!='read' AND state!='confirmed'";
-    MDS.sql(sql);
+  MDS.log("📖 [READ-RECEIPT] Received from " + pubkey);
+  // Update 'sent' OR 'delivered' messages to 'read'.
+  // Exclude 'pending' (not sent yet), 'failed' AND 'confirmed' (final state for transactions).
+  // CRITICAL FIX: Do not overwrite 'confirmed' state with 'read'.
+  // CRITICAL FIX 2: Only update TEXT messages. Token/Charm transactions should NOT go to 'read' state.
+  var sql =
+    "UPDATE CHAT_MESSAGES SET state='read' WHERE publickey='" +
+    pubkey +
+    "' AND username='Me' AND type='text' AND state!='pending' AND state!='failed' AND state!='read' AND state!='confirmed'";
+  MDS.sql(sql);
 }
 
 function handleDeliveryReceipt(pubkey) {
-    MDS.log("📬 [DELIVERY-RECEIPT] Received from " + pubkey);
-    // Update 'sent' messages to 'delivered'. 
-    // Do NOT overwrite 'read' status (as read > delivered).
-    var sql = "UPDATE CHAT_MESSAGES SET state='delivered' WHERE publickey='" + pubkey + "' AND username='Me' AND state='sent'";
-    MDS.sql(sql);
+  MDS.log("📬 [DELIVERY-RECEIPT] Received from " + pubkey);
+  // Update 'sent' messages to 'delivered'.
+  // Do NOT overwrite 'read' status (as read > delivered).
+  var sql =
+    "UPDATE CHAT_MESSAGES SET state='delivered' WHERE publickey='" +
+    pubkey +
+    "' AND username='Me' AND state='sent'";
+  MDS.sql(sql);
 }
 
 function handlePing(pubkey) {
-    MDS.log("📡 [PING] Received from " + pubkey);
+  var safeKey = (pubkey || "").trim();
+  if (!safeKey) return;
 
-    var payload = {
-        message: "",
-        type: "pong",
-        username: "Me",
-        filedata: ""
-    };
+  var now = Date.now();
+  var lastSent = LAST_PONG_SENT[safeKey] || 0;
+  if (now - lastSent < PONG_THROTTLE_MS) {
+    return;
+  }
+  LAST_PONG_SENT[safeKey] = now;
 
-    var jsonStr = JSON.stringify(payload);
-    var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
+  MDS.log("📡 [PING] Received from " + safeKey);
 
-    // Smart Address Resolution for Non-Contacts
-    if (pubkey.startsWith('0x')) {
-        var safeKey = pubkey.replace(/'/g, "''");
-        var peerSql = "SELECT ADDRESS FROM DISCOVERED_PEERS WHERE PUBLICKEY='" + safeKey + "' AND ADDRESS IS NOT NULL LIMIT 1";
+  var payload = {
+    message: "",
+    type: "pong",
+    username: "Me",
+    filedata: "",
+  };
 
-        MDS.sql(peerSql, function (peerRes) {
-            var sendCmd;
-            if (peerRes && peerRes.status && peerRes.count > 0) {
-                var rawMx = peerRes.rows[0].ADDRESS;
-                // Remove all whitespace and invalid characters
-                var mxAddress = rawMx ? rawMx.replace(/\s+/g, "").replace(/[^a-zA-Z0-9@:._-]/g, "").trim() : null;
+  var jsonStr = JSON.stringify(payload);
+  var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
 
-                if (mxAddress && (mxAddress.startsWith('Mx') || mxAddress.startsWith('MX'))) {
-                    sendCmd = 'maxima action:send to:' + mxAddress + ' application:metachain data:' + hexData + ' poll:false';
-                } else {
-                    sendCmd = "maxima action:send publickey:" + pubkey + " application:metachain data:" + hexData + " poll:false";
-                }
-            } else {
-                sendCmd = "maxima action:send publickey:" + pubkey + " application:metachain data:" + hexData + " poll:false";
-            }
+  // Smart Address Resolution for Non-Contacts
+  if (safeKey.startsWith("0x")) {
+    var safeSqlKey = safeKey.replace(/'/g, "''");
+    var peerSql =
+      "SELECT ADDRESS FROM DISCOVERED_PEERS WHERE PUBLICKEY='" +
+      safeSqlKey +
+      "' AND ADDRESS IS NOT NULL LIMIT 1";
 
-            MDS.cmd(sendCmd, function () {
-                MDS.log("✅ [PONG] Sent to " + pubkey.substring(0, 15) + "...");
-            });
-        });
-    } else {
-        var sendCmd;
-        if (pubkey.startsWith('Mx') || pubkey.startsWith('MX')) {
-            sendCmd = 'maxima action:send to:' + pubkey.trim() + ' application:metachain data:' + hexData + ' poll:false';
+    MDS.sql(peerSql, function (peerRes) {
+      var sendCmd;
+      if (peerRes && peerRes.status && peerRes.count > 0) {
+        var rawMx = peerRes.rows[0].ADDRESS;
+        // Remove all whitespace and invalid characters
+        var mxAddress = rawMx
+          ? rawMx
+            .replace(/\s+/g, "")
+            .replace(/[^a-zA-Z0-9@:._-]/g, "")
+            .trim()
+          : null;
+
+        if (
+          mxAddress &&
+          (mxAddress.startsWith("Mx") || mxAddress.startsWith("MX"))
+        ) {
+          sendCmd =
+            "maxima action:send to:" +
+            mxAddress +
+            " application:metachain data:" +
+            hexData +
+            " poll:false";
         } else {
-            sendCmd = "maxima action:send publickey:" + pubkey + " application:metachain data:" + hexData + " poll:false";
+          sendCmd =
+            "maxima action:send publickey:" +
+            safeKey +
+            " application:metachain data:" +
+            hexData +
+            " poll:false";
         }
-        MDS.cmd(sendCmd, function () {
-            MDS.log("✅ [PONG] Sent to " + pubkey.substring(0, 15) + "...");
-        });
+      } else {
+        sendCmd =
+          "maxima action:send publickey:" +
+          safeKey +
+          " application:metachain data:" +
+          hexData +
+          " poll:false";
+      }
+
+      MDS.cmd(sendCmd, function () {
+        MDS.log("✅ [PONG] Sent to " + safeKey.substring(0, 15) + "...");
+      });
+    });
+  } else {
+    var sendCmd;
+    if (safeKey.startsWith("Mx") || safeKey.startsWith("MX")) {
+      sendCmd =
+        "maxima action:send to:" +
+        safeKey +
+        " application:metachain data:" +
+        hexData +
+        " poll:false";
+    } else {
+      sendCmd =
+        "maxima action:send publickey:" +
+        safeKey +
+        " application:metachain data:" +
+        hexData +
+        " poll:false";
     }
+    MDS.cmd(sendCmd, function () {
+      MDS.log("✅ [PONG] Sent to " + safeKey.substring(0, 15) + "...");
+    });
+  }
 }
 
 function handlePong(pubkey) {
-    MDS.log("📡 [PONG] Received from " + pubkey);
-    // Let the UI handle pong events
+  MDS.log("📡 [PONG] Received from " + pubkey);
+  // Let the UI handle pong events
 }
 
 // ============================================================================
@@ -4429,366 +4679,546 @@ function handlePong(pubkey) {
 // ============================================================================
 
 function handleChatHistoryRequest(pubkey, maxjson) {
-    MDS.log("🔄 [HISTORY-REQ] Request from " + pubkey.substring(0, 10) + "...");
+  MDS.log("🔄 [HISTORY-REQ] Request from " + pubkey.substring(0, 10) + "...");
 
-    try {
-        var since = maxjson.timestamp ? maxjson.timestamp : 0;
-        // Limit history request to last 7 days by default if 0 provided
-        if (since === 0) {
-            since = Date.now() - (7 * 24 * 60 * 60 * 1000);
-        }
-
-        var safePubkey = escapeSql(pubkey);
-
-        // Filter: Only send messages where 'publickey' is the requester's key (direct chat)
-        // OR where I am the sender TO the requester.
-        // Wait, CHAT_MESSAGES table stores messages in a unified way?
-        // 'publickey' column store the 'other party' key.
-        // For incoming message: 'publickey' = sender.
-        // For outgoing message: 'publickey' = recipient.
-
-        // So we just select WHERE publickey = requester_pubkey
-        // This gives both sent and received messages in that conversation.
-
-        var sql = "SELECT * FROM CHAT_MESSAGES WHERE publickey='" + safePubkey + "' " +
-            "AND (type='text' OR type='token' OR type='charm') " +
-            "AND date > " + since + " " +
-            "ORDER BY date ASC LIMIT 100"; // Lower limit to 100 to ensure payload is manageable
-
-        MDS.sql(sql, function (res) {
-            if (res.status && res.rows) {
-                MDS.log("🔄 [HISTORY-REQ] Found " + res.count + " messages for " + pubkey.substring(0, 10));
-
-                var messages = res.rows.map(function (row) {
-                    return {
-                        id: row.ID,
-                        message: row.MESSAGE,
-                        type: row.TYPE,
-                        username: row.USERNAME,
-                        date: row.DATE,
-                        filedata: row.FILEDATA,
-                        amount: row.AMOUNT,
-                        tokenid: row.TOKENID,
-                        state: row.STATE,
-                        txpowid: row.TXPOWID,
-                        sender_seq: row.SENDER_SEQ, // Include sequence for ordering
-                        forwarded: (row.FORWARDED === 1 || row.forwarded === 1)
-                    };
-                });
-
-                // Send response back even if empty, so client knows sync happened
-                sendChatHistoryResponse(pubkey, messages);
-            } else {
-                MDS.log("🔄 [HISTORY-REQ] No messages found (SQL success but no rows?)");
-                sendChatHistoryResponse(pubkey, []);
-            }
-        });
-    } catch (e) {
-        MDS.log("❌ [HISTORY-REQ] Error processing request: " + e);
+  try {
+    var since = maxjson.timestamp ? maxjson.timestamp : 0;
+    // Limit history request to last 7 days by default if 0 provided
+    if (since === 0) {
+      since = Date.now() - 7 * 24 * 60 * 60 * 1000;
     }
+
+    var safePubkey = escapeSql(pubkey);
+
+    // Filter: Only send messages where 'publickey' is the requester's key (direct chat)
+    // OR where I am the sender TO the requester.
+    // Wait, CHAT_MESSAGES table stores messages in a unified way?
+    // 'publickey' column store the 'other party' key.
+    // For incoming message: 'publickey' = sender.
+    // For outgoing message: 'publickey' = recipient.
+
+    // So we just select WHERE publickey = requester_pubkey
+    // This gives both sent and received messages in that conversation.
+
+    var sql =
+      "SELECT * FROM CHAT_MESSAGES WHERE publickey='" +
+      safePubkey +
+      "' " +
+      "AND (type='text' OR type='token' OR type='charm') " +
+      "AND date > " +
+      since +
+      " " +
+      "ORDER BY date ASC LIMIT 100"; // Lower limit to 100 to ensure payload is manageable
+
+    MDS.sql(sql, function (res) {
+      if (res.status && res.rows) {
+        MDS.log(
+          "🔄 [HISTORY-REQ] Found " +
+          res.count +
+          " messages for " +
+          pubkey.substring(0, 10),
+        );
+
+        var messages = res.rows.map(function (row) {
+          return {
+            id: row.ID,
+            message: row.MESSAGE,
+            type: row.TYPE,
+            username: row.USERNAME,
+            date: row.DATE,
+            filedata: row.FILEDATA,
+            amount: row.AMOUNT,
+            tokenid: row.TOKENID,
+            state: row.STATE,
+            txpowid: row.TXPOWID,
+            sender_seq: row.SENDER_SEQ, // Include sequence for ordering
+            forwarded: row.FORWARDED === 1 || row.forwarded === 1,
+          };
+        });
+
+        // Send response back even if empty, so client knows sync happened
+        sendChatHistoryResponse(pubkey, messages);
+      } else {
+        MDS.log(
+          "🔄 [HISTORY-REQ] No messages found (SQL success but no rows?)",
+        );
+        sendChatHistoryResponse(pubkey, []);
+      }
+    });
+  } catch (e) {
+    MDS.log("❌ [HISTORY-REQ] Error processing request: " + e);
+  }
 }
 
 function sendChatHistoryResponse(toPubkey, messages) {
-    var payload = {
-        type: "chat_history_response",
-        messages: messages,
-        timestamp: Date.now()
-    };
+  var payload = {
+    type: "chat_history_response",
+    messages: messages,
+    timestamp: Date.now(),
+  };
 
-    var jsonStr = JSON.stringify(payload);
-    var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
+  var jsonStr = JSON.stringify(payload);
+  var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
 
-    // Log the size
-    MDS.log("🔄 [HISTORY-RESP] Sending response size: " + hexData.length + " chars to " + toPubkey.substring(0, 10));
+  // Log the size
+  MDS.log(
+    "🔄 [HISTORY-RESP] Sending response size: " +
+    hexData.length +
+    " chars to " +
+    toPubkey.substring(0, 10),
+  );
 
-    // Smart Address Resolution with Fallback
-    resolveAndSend(toPubkey, hexData, "HISTORY-RESP", true);
+  // Smart Address Resolution with Fallback
+  resolveAndSend(toPubkey, hexData, "HISTORY-RESP", false);
 }
 
 function handleChatHistoryResponse(pubkey, maxjson) {
-    var messages = maxjson.messages;
-    if (!messages || messages.length === 0) {
-        MDS.log("🔄 [HISTORY-RESP] Received empty history from " + pubkey);
-        return;
-    }
+  var messages = maxjson.messages;
+  if (!messages || messages.length === 0) {
+    MDS.log("🔄 [HISTORY-RESP] Received empty history from " + pubkey);
+    return;
+  }
 
-    MDS.log("🔄 [HISTORY-RESP] Processing " + messages.length + " messages from " + pubkey);
-    var safePubkey = escapeSql(pubkey);
-    processHistoryMessage(safePubkey, messages, 0);
+  MDS.log(
+    "🔄 [HISTORY-RESP] Processing " +
+    messages.length +
+    " messages from " +
+    pubkey,
+  );
+  var safePubkey = escapeSql(pubkey);
+  processHistoryMessage(safePubkey, messages, 0);
 }
 
 function processHistoryMessage(safePubkey, messages, index) {
-    if (index >= messages.length) {
-        MDS.log("✅ [HISTORY-RESP] Completed processing batch");
-        // Notify frontend to reload chat list
-        // MDS.comms.solo sends a message to the frontend
-        MDS.comms.solo("CHAT_LIST_UPDATE", function () {
-            MDS.log("📤 [HISTORY-SYNC] Notification sent to frontend");
-        });
-        return;
-    }
+  if (index >= messages.length) {
+    MDS.log("✅ [HISTORY-RESP] Completed processing batch");
+    // Notify frontend to reload chat list
+    // MDS.comms.solo sends a message to the frontend
+    MDS.comms.solo("CHAT_LIST_UPDATE", function () {
+      MDS.log("📤 [HISTORY-SYNC] Notification sent to frontend");
+    });
+    return;
+  }
 
-    var msg = messages[index];
-    var timestamp = msg.date;
-    var type = escapeSql(msg.type || "text");
-    var content = escapeSql(msg.message || "");
-    var username = escapeSql(msg.username || "Unknown");
-    var senderSeq = msg.sender_seq || 0; // Extract sender_seq
+  var msg = messages[index];
+  var timestamp = msg.date;
+  var type = escapeSql(msg.type || "text");
+  var content = escapeSql(msg.message || "");
+  var username = escapeSql(msg.username || "Unknown");
+  var senderSeq = msg.sender_seq || 0; // Extract sender_seq
 
-    var finalUsername = "Unknown";
-    var isIncoming = false;
+  var finalUsername = "Unknown";
+  var isIncoming = false;
 
-    if (msg.username === 'Me') {
-        isIncoming = true;
-        // Check if we can find a better name in DISCOVERED_PEERS
-        finalUsername = "Contact";
-    } else {
-        isIncoming = false;
-        finalUsername = "Me";
-    }
+  if (msg.username === "Me") {
+    isIncoming = true;
+    // Check if we can find a better name in DISCOVERED_PEERS
+    finalUsername = "Contact";
+  } else {
+    isIncoming = false;
+    finalUsername = "Me";
+  }
 
-    // START ENHANCED DEDUPLICATION
-    var tryInsert = function () {
-        var safeFiledata = escapeSql(msg.filedata || "");
-        var amount = msg.amount || 0;
-        var txpowidVal = msg.txpowid ? "'" + escapeSql(msg.txpowid) + "'" : "NULL";
+  // START ENHANCED DEDUPLICATION
+  var tryInsert = function () {
+    var safeFiledata = escapeSql(msg.filedata || "");
+    var amount = msg.amount || 0;
+    var txpowidVal = msg.txpowid ? "'" + escapeSql(msg.txpowid) + "'" : "NULL";
 
-        // Use provided state if valid, otherwise fallback to 'read' or 'received' based on type
-        var state = msg.state || "read";
+    // Use provided state if valid, otherwise fallback to 'read' or 'received' based on type
+    var state = msg.state || "read";
 
-        var safeCustomId = msg.customid ? escapeSql(msg.customid) : "0x00";
+    var safeCustomId = msg.customid ? escapeSql(msg.customid) : "0x00";
 
-        // CRITICAL: Resolve Correct Username (Alias) if it's "Contact" (incoming)
-        // This ensures compatibility with Live messages which use the resolved Alias
-        if (isIncoming && finalUsername === "Contact") {
-            MDS.sql("SELECT alias FROM DISCOVERED_PEERS WHERE publickey='" + safePubkey + "'", function (res) {
-                var resolvedName = "Contact";
-                if (res.status && res.rows && res.rows.length > 0) {
-                    resolvedName = escapeSql(res.rows[0].ALIAS || res.rows[0].alias || "Contact");
-                }
+    // CRITICAL: Resolve Correct Username (Alias) if it's "Contact" (incoming)
+    // This ensures compatibility with Live messages which use the resolved Alias
+    if (isIncoming && finalUsername === "Contact") {
+      MDS.sql(
+        "SELECT alias FROM DISCOVERED_PEERS WHERE publickey='" +
+        safePubkey +
+        "'",
+        function (res) {
+          var resolvedName = "Contact";
+          if (res.status && res.rows && res.rows.length > 0) {
+            resolvedName = escapeSql(
+              res.rows[0].ALIAS || res.rows[0].alias || "Contact",
+            );
+          }
 
-                var forwardedVal = msg.forwarded ? 1 : 0;
-                var insertSql = "INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, txpowid, original_timestamp, customid, sender_seq, forwarded) "
-                    + "VALUES ('', '" + safePubkey + "', '" + resolvedName + "', '" + type + "', '" + content + "', '" + safeFiledata + "', '" + state + "', " + amount + ", " + timestamp + ", " + txpowidVal + ", " + timestamp + ", '" + safeCustomId + "', " + senderSeq + ", " + forwardedVal + ")";
+          var forwardedVal = msg.forwarded ? 1 : 0;
+          var insertSql =
+            "INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, txpowid, original_timestamp, customid, sender_seq, forwarded) " +
+            "VALUES ('', '" +
+            safePubkey +
+            "', '" +
+            resolvedName +
+            "', '" +
+            type +
+            "', '" +
+            content +
+            "', '" +
+            safeFiledata +
+            "', '" +
+            state +
+            "', " +
+            amount +
+            ", " +
+            timestamp +
+            ", " +
+            txpowidVal +
+            ", " +
+            timestamp +
+            ", '" +
+            safeCustomId +
+            "', " +
+            senderSeq +
+            ", " +
+            forwardedVal +
+            ")";
 
-                MDS.sql(insertSql, function (insRes) {
-                    if (insRes.status) {
-                        MDS.log("✅ [HISTORY-SYNC] Recovered message from " + resolvedName + ": " + (content.substring(0, 20)));
-                    } else {
-                        // Fallback log if insert fails
-                        MDS.log("❌ [HISTORY-SYNC] Insert failed: " + insRes.error);
-                    }
-                    processHistoryMessage(safePubkey, messages, index + 1);
-                });
-            });
-            return; // EXIT here, async SQL handles the recursion
-        }
-
-        var forwardedVal = msg.forwarded ? 1 : 0;
-        var insertSql = "INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, txpowid, original_timestamp, customid, sender_seq, forwarded) "
-            + "VALUES ('', '" + safePubkey + "', '" + finalUsername + "', '" + type + "', '" + content + "', '" + safeFiledata + "', '" + state + "', " + amount + ", " + timestamp + ", " + txpowidVal + ", " + timestamp + ", '" + safeCustomId + "', " + senderSeq + ", " + forwardedVal + ")";
-
-        MDS.sql(insertSql, function (insRes) {
+          MDS.sql(insertSql, function (insRes) {
             if (insRes.status) {
-                MDS.log("✅ [HISTORY-SYNC] Recovered message: " + (content.substring(0, 20)));
-            }
-            processHistoryMessage(safePubkey, messages, index + 1);
-        });
-    };
-
-    var tryUpdate = function (existingId) {
-        if (!msg.txpowid) {
-            processHistoryMessage(safePubkey, messages, index + 1);
-            return;
-        }
-
-        var newState = msg.state || "read";
-        var safeTxPow = escapeSql(msg.txpowid);
-        var updateSql = "UPDATE CHAT_MESSAGES SET txpowid='" + safeTxPow + "', state='" + newState + "' WHERE id=" + existingId;
-
-        MDS.sql(updateSql, function (updRes) {
-            MDS.log("♻️ [HISTORY-SYNC] Updated existing message ID " + existingId + " with txpowid/state");
-            processHistoryMessage(safePubkey, messages, index + 1);
-        });
-    };
-
-    // 0. Primary Check: By CustomID (UUID)
-    if (msg.customid && msg.customid !== '0x00') {
-        var safeCustomId = escapeSql(msg.customid);
-        var customCheck = "SELECT * FROM CHAT_MESSAGES WHERE customid='" + safeCustomId + "'";
-        MDS.sql(customCheck, function (res) {
-            if (res.status && res.rows && res.rows.length > 0) {
-                // Found by UUID!
-                if (msg.txpowid) {
-                    tryUpdate(res.rows[0].ID);
-                } else {
-                    processHistoryMessage(safePubkey, messages, index + 1);
-                }
+              MDS.log(
+                "✅ [HISTORY-SYNC] Recovered message from " +
+                resolvedName +
+                ": " +
+                content.substring(0, 20),
+              );
             } else {
-                // Not found by UUID -> proceed to TxPoWID check
-                checkByTxPoWID();
+              // Fallback log if insert fails
+              MDS.log("❌ [HISTORY-SYNC] Insert failed: " + insRes.error);
             }
-        });
-    } else {
-        checkByTxPoWID();
+            processHistoryMessage(safePubkey, messages, index + 1);
+          });
+        },
+      );
+      return; // EXIT here, async SQL handles the recursion
     }
 
-    // 1. First Check: By TXPOWID (if available)
-    function checkByTxPoWID() {
+    var forwardedVal = msg.forwarded ? 1 : 0;
+    var insertSql =
+      "INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, txpowid, original_timestamp, customid, sender_seq, forwarded) " +
+      "VALUES ('', '" +
+      safePubkey +
+      "', '" +
+      finalUsername +
+      "', '" +
+      type +
+      "', '" +
+      content +
+      "', '" +
+      safeFiledata +
+      "', '" +
+      state +
+      "', " +
+      amount +
+      ", " +
+      timestamp +
+      ", " +
+      txpowidVal +
+      ", " +
+      timestamp +
+      ", '" +
+      safeCustomId +
+      "', " +
+      senderSeq +
+      ", " +
+      forwardedVal +
+      ")";
+
+    MDS.sql(insertSql, function (insRes) {
+      if (insRes.status) {
+        MDS.log(
+          "✅ [HISTORY-SYNC] Recovered message: " + content.substring(0, 20),
+        );
+      }
+      processHistoryMessage(safePubkey, messages, index + 1);
+    });
+  };
+
+  var tryUpdate = function (existingId) {
+    if (!msg.txpowid) {
+      processHistoryMessage(safePubkey, messages, index + 1);
+      return;
+    }
+
+    var newState = msg.state || "read";
+    var safeTxPow = escapeSql(msg.txpowid);
+    var updateSql =
+      "UPDATE CHAT_MESSAGES SET txpowid='" +
+      safeTxPow +
+      "', state='" +
+      newState +
+      "' WHERE id=" +
+      existingId;
+
+    MDS.sql(updateSql, function (updRes) {
+      MDS.log(
+        "♻️ [HISTORY-SYNC] Updated existing message ID " +
+        existingId +
+        " with txpowid/state",
+      );
+      processHistoryMessage(safePubkey, messages, index + 1);
+    });
+  };
+
+  // 0. Primary Check: By CustomID (UUID)
+  if (msg.customid && msg.customid !== "0x00") {
+    var safeCustomId = escapeSql(msg.customid);
+    var customCheck =
+      "SELECT * FROM CHAT_MESSAGES WHERE customid='" + safeCustomId + "'";
+    MDS.sql(customCheck, function (res) {
+      if (res.status && res.rows && res.rows.length > 0) {
+        // Found by UUID!
         if (msg.txpowid) {
-            var safeTxPow = escapeSql(msg.txpowid);
-            var txCheckSql = "SELECT * FROM CHAT_MESSAGES WHERE txpowid='" + safeTxPow + "'";
-
-            MDS.sql(txCheckSql, function (res) {
-                if (res.status && res.rows && res.rows.length > 0) {
-                    // Exact match found by ID - skip
-                    processHistoryMessage(safePubkey, messages, index + 1);
-                } else {
-                    // Not found by ID - Fallback to Content/Time check
-                    checkByContentAndTime();
-                }
-            });
+          tryUpdate(res.rows[0].ID);
         } else {
-            // No ID - direct check by Content/Time
-            checkByContentAndTime();
+          processHistoryMessage(safePubkey, messages, index + 1);
         }
+      } else {
+        // Not found by UUID -> proceed to TxPoWID check
+        checkByTxPoWID();
+      }
+    });
+  } else {
+    checkByTxPoWID();
+  }
+
+  // 1. First Check: By TXPOWID (if available)
+  function checkByTxPoWID() {
+    if (msg.txpowid) {
+      var safeTxPow = escapeSql(msg.txpowid);
+      var txCheckSql =
+        "SELECT * FROM CHAT_MESSAGES WHERE txpowid='" + safeTxPow + "'";
+
+      MDS.sql(txCheckSql, function (res) {
+        if (res.status && res.rows && res.rows.length > 0) {
+          // Exact match found by ID - skip
+          processHistoryMessage(safePubkey, messages, index + 1);
+        } else {
+          // Not found by ID - Fallback to Content/Time check
+          checkByContentAndTime();
+        }
+      });
+    } else {
+      // No ID - direct check by Content/Time
+      checkByContentAndTime();
+    }
+  }
+
+  // 2. Second Check: By Content & Time (Fallback)
+  function checkByContentAndTime() {
+    // Use original_timestamp if available, else date
+    // Note: 'timestamp' variable holds msg.date which IS the original timestamp for history messages
+    var checkTime = msg.original_timestamp || timestamp;
+
+    var minTime = checkTime - 60000; // 60 second window (increased to handle network/block latency)
+    var maxTime = checkTime + 60000;
+    var checkSql = "";
+
+    if (isIncoming) {
+      checkSql =
+        "SELECT * FROM CHAT_MESSAGES WHERE publickey='" +
+        safePubkey +
+        "' AND username!='Me' " +
+        "AND (original_timestamp BETWEEN " +
+        minTime +
+        " AND " +
+        maxTime +
+        " OR date BETWEEN " +
+        minTime +
+        " AND " +
+        maxTime +
+        ") " +
+        "AND message='" +
+        content +
+        "'";
+    } else {
+      checkSql =
+        "SELECT * FROM CHAT_MESSAGES WHERE publickey='" +
+        safePubkey +
+        "' AND username='Me' " +
+        "AND (original_timestamp BETWEEN " +
+        minTime +
+        " AND " +
+        maxTime +
+        " OR date BETWEEN " +
+        minTime +
+        " AND " +
+        maxTime +
+        ") " +
+        "AND message='" +
+        content +
+        "'";
     }
 
-    // 2. Second Check: By Content & Time (Fallback)
-    function checkByContentAndTime() {
-        // Use original_timestamp if available, else date
-        // Note: 'timestamp' variable holds msg.date which IS the original timestamp for history messages
-        var checkTime = msg.original_timestamp || timestamp;
-
-        var minTime = checkTime - 60000; // 60 second window (increased to handle network/block latency)
-        var maxTime = checkTime + 60000;
-        var checkSql = "";
-
-        if (isIncoming) {
-            checkSql = "SELECT * FROM CHAT_MESSAGES WHERE publickey='" + safePubkey + "' AND username!='Me' " +
-                "AND (original_timestamp BETWEEN " + minTime + " AND " + maxTime + " OR date BETWEEN " + minTime + " AND " + maxTime + ") " +
-                "AND message='" + content + "'";
+    MDS.sql(checkSql, function (res) {
+      if (res.status && res.rows && res.rows.length > 0) {
+        // Found by content! Update it if we have a txpowid to attach
+        if (msg.txpowid) {
+          tryUpdate(res.rows[0].ID);
         } else {
-            checkSql = "SELECT * FROM CHAT_MESSAGES WHERE publickey='" + safePubkey + "' AND username='Me' " +
-                "AND (original_timestamp BETWEEN " + minTime + " AND " + maxTime + " OR date BETWEEN " + minTime + " AND " + maxTime + ") " +
-                "AND message='" + content + "'";
+          processHistoryMessage(safePubkey, messages, index + 1);
         }
-
-        MDS.sql(checkSql, function (res) {
-            if (res.status && res.rows && res.rows.length > 0) {
-                // Found by content! Update it if we have a txpowid to attach
-                if (msg.txpowid) {
-                    tryUpdate(res.rows[0].ID);
-                } else {
-                    processHistoryMessage(safePubkey, messages, index + 1);
-                }
-            } else {
-                // Not found by either method -> Insert
-                tryInsert();
-            }
-        });
-    }
+      } else {
+        // Not found by either method -> Insert
+        tryInsert();
+      }
+    });
+  }
 }
 
 function requestHistoryFromRecentContacts() {
-    MDS.log("🔄 [HISTORY-SYNC] Starting startup sync (Enhanced)...");
+  MDS.log("🔄 [HISTORY-SYNC] Starting startup sync (Enhanced)...");
 
-    var sql = "SELECT publickey, address FROM DISCOVERED_PEERS WHERE source != 'SELF' ORDER BY last_seen DESC LIMIT 20";
+  var sql =
+    "SELECT publickey, address FROM DISCOVERED_PEERS WHERE source != 'SELF' ORDER BY last_seen DESC LIMIT 20";
 
-    MDS.sql(sql, function (res) {
-        MDS.log("🔍 [HISTORY-SYNC-DEBUG] SQL result status: " + res.status);
-        if (res.status && res.rows) {
-            MDS.log("🔄 [HISTORY-SYNC] Found " + res.rows.length + " contacts in DISCOVERED_PEERS");
-            if (res.rows.length === 0) {
-                MDS.log("⚠️ [HISTORY-SYNC] No contacts found to sync with");
-                return;
-            }
-            MDS.log("🔄 [HISTORY-SYNC] Syncing with " + res.rows.length + " recent contacts");
-            res.rows.forEach(function (row) {
-                MDS.log("🔄 [HISTORY-SYNC] Requesting history from: " + row.PUBLICKEY.substring(0, 20) + "...");
-                // Pass both publickey and address to increase success rate
-                requestChatHistory(row.PUBLICKEY, row.ADDRESS);
-            });
-        } else {
-            MDS.log("❌ [HISTORY-SYNC] SQL query failed: " + (res.error || "Unknown error"));
-        }
-    });
+  MDS.sql(sql, function (res) {
+    MDS.log("🔍 [HISTORY-SYNC-DEBUG] SQL result status: " + res.status);
+    if (res.status && res.rows) {
+      MDS.log(
+        "🔄 [HISTORY-SYNC] Found " +
+        res.rows.length +
+        " contacts in DISCOVERED_PEERS",
+      );
+      if (res.rows.length === 0) {
+        MDS.log("⚠️ [HISTORY-SYNC] No contacts found to sync with");
+        return;
+      }
+      MDS.log(
+        "🔄 [HISTORY-SYNC] Syncing with " +
+        res.rows.length +
+        " recent contacts",
+      );
+      res.rows.forEach(function (row) {
+        MDS.log(
+          "🔄 [HISTORY-SYNC] Requesting history from: " +
+          row.PUBLICKEY.substring(0, 20) +
+          "...",
+        );
+        // Pass both publickey and address to increase success rate
+        requestChatHistory(row.PUBLICKEY, row.ADDRESS);
+      });
+    } else {
+      MDS.log(
+        "❌ [HISTORY-SYNC] SQL query failed: " + (res.error || "Unknown error"),
+      );
+    }
+  });
 }
 
 function requestChatHistory(toPublicKey, toAddress) {
-    var payload = {
-        message: "",
-        type: "chat_history_request",
-        username: "Me",
-        filedata: "",
-        timestamp: Date.now() - (7 * 24 * 60 * 60 * 1000)
-    };
+  var payload = {
+    message: "",
+    type: "chat_history_request",
+    username: "Me",
+    filedata: "",
+    timestamp: Date.now() - 7 * 24 * 60 * 60 * 1000,
+  };
 
-    var jsonStr = JSON.stringify(payload);
-    var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
+  var jsonStr = JSON.stringify(payload);
+  var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
 
-    // Use specific address if known, otherwise fall back to resolution logic
-    if (toAddress && (toAddress.startsWith('Mx') || toAddress.startsWith('MX'))) {
-        // Use new robust cleaner
-        var cleanAddress = cleanMaximaAddress(toAddress);
+  // Use specific address if known, otherwise fall back to resolution logic
+  if (toAddress && (toAddress.startsWith("Mx") || toAddress.startsWith("MX"))) {
+    // Use new robust cleaner
+    var cleanAddress = cleanMaximaAddress(toAddress);
 
-        // EXTRA DEBUG: Log address transformation
-        MDS.log("🔍 [ADDR-DEBUG] Raw: '" + toAddress + "' -> Clean: '" + cleanAddress + "'");
+    // EXTRA DEBUG: Log address transformation
+    MDS.log(
+      "🔍 [ADDR-DEBUG] Raw: '" +
+      toAddress +
+      "' -> Clean: '" +
+      cleanAddress +
+      "'",
+    );
 
-        var sendCmd = 'maxima action:send to:' + cleanAddress + ' application:metachain data:' + hexData + ' poll:false';
+    var sendCmd =
+      "maxima action:send to:" +
+      cleanAddress +
+      " application:metachain data:" +
+      hexData +
+      " poll:false";
 
-        // DEBUG: Print EXACT command to see what Minima receives
-        MDS.log("🔍 [CMD-DEBUG-V3] " + sendCmd);
+    // DEBUG: Print EXACT command to see what Minima receives
+    MDS.log("🔍 [CMD-DEBUG-V3] " + sendCmd);
 
-        MDS.cmd(sendCmd, function (res) {
-            if (!res.status) {
-                MDS.log("⚠️ [HISTORY-SYNC] Failed to ask via address " + cleanAddress.substring(0, 10) + " Err: " + res.error);
-            }
-        });
-    } else {
-        // Fallback to resolving via DB or publickey
-        resolveAndSend(toPublicKey, hexData, "HISTORY-SYNC", false);
-    }
+    MDS.cmd(sendCmd, function (res) {
+      if (!res.status) {
+        MDS.log(
+          "⚠️ [HISTORY-SYNC] Failed to ask via address " +
+          cleanAddress.substring(0, 10) +
+          " Err: " +
+          res.error,
+        );
+      }
+    });
+  } else {
+    // Fallback to resolving via DB or publickey
+    resolveAndSend(toPublicKey, hexData, "HISTORY-SYNC", false);
+  }
 }
 
 // (cleanMaximaAddress is provided by utils/maxima-sender.js)
 
 // Helper for Robust Sending (Resolves Address)
 function resolveAndSend(pubkey, hexData, logTag, usePoll) {
-    var pollStr = usePoll ? " poll:true" : " poll:false";
+  var pollStr = usePoll ? " poll:false" : " poll:false";
 
-    // Clean key
-    var safeKey = pubkey.replace(/'/g, "''");
+  // Clean key
+  var safeKey = pubkey.replace(/'/g, "''");
 
-    var peerSql = "SELECT ADDRESS FROM DISCOVERED_PEERS WHERE PUBLICKEY='" + safeKey + "' AND ADDRESS IS NOT NULL LIMIT 1";
+  var peerSql =
+    "SELECT ADDRESS FROM DISCOVERED_PEERS WHERE PUBLICKEY='" +
+    safeKey +
+    "' AND ADDRESS IS NOT NULL LIMIT 1";
 
-    MDS.sql(peerSql, function (peerRes) {
-        var sendCmd;
-        if (peerRes && peerRes.status && peerRes.count > 0) {
-            var rawMx = peerRes.rows[0].ADDRESS;
-            // Use new robust cleaner
-            var mxAddress = rawMx ? cleanMaximaAddress(rawMx) : null;
+  MDS.sql(peerSql, function (peerRes) {
+    var sendCmd;
+    if (peerRes && peerRes.status && peerRes.count > 0) {
+      var rawMx = peerRes.rows[0].ADDRESS;
+      // Use new robust cleaner
+      var mxAddress = rawMx ? cleanMaximaAddress(rawMx) : null;
 
-            if (mxAddress && (mxAddress.startsWith('Mx') || mxAddress.startsWith('MX'))) {
-                sendCmd = 'maxima action:send to:' + mxAddress + ' application:metachain data:' + hexData + pollStr;
-                MDS.log("🔍 [CMD-DEBUG-RES] " + sendCmd);
-            } else {
-                sendCmd = "maxima action:send publickey:" + pubkey + " application:metachain data:" + hexData + pollStr;
-                MDS.log("🔍 [CMD-DEBUG-RES] " + sendCmd); // Log for publickey fallback as well
-            }
-        } else {
-            sendCmd = "maxima action:send publickey:" + pubkey + " application:metachain data:" + hexData + pollStr;
-            MDS.log("🔍 [CMD-DEBUG-RES] " + sendCmd); // Log for no peer address found
-        }
+      if (
+        mxAddress &&
+        (mxAddress.startsWith("Mx") || mxAddress.startsWith("MX"))
+      ) {
+        sendCmd =
+          "maxima action:send to:" +
+          mxAddress +
+          " application:metachain data:" +
+          hexData +
+          pollStr;
+        MDS.log("🔍 [CMD-DEBUG-RES] " + sendCmd);
+      } else {
+        sendCmd =
+          "maxima action:send publickey:" +
+          pubkey +
+          " application:metachain data:" +
+          hexData +
+          pollStr;
+        MDS.log("🔍 [CMD-DEBUG-RES] " + sendCmd); // Log for publickey fallback as well
+      }
+    } else {
+      sendCmd =
+        "maxima action:send publickey:" +
+        pubkey +
+        " application:metachain data:" +
+        hexData +
+        pollStr;
+      MDS.log("🔍 [CMD-DEBUG-RES] " + sendCmd); // Log for no peer address found
+    }
 
-        MDS.cmd(sendCmd, function (res) {
-            if (res.status) {
-                MDS.log("✅ [" + logTag + "] Sent to " + pubkey.substring(0, 10));
-            } else {
-                MDS.log("⚠️ [" + logTag + "] Failed send: " + res.error);
-            }
-        });
+    MDS.cmd(sendCmd, function (res) {
+      if (res.status) {
+        MDS.log("✅ [" + logTag + "] Sent to " + pubkey.substring(0, 10));
+      } else {
+        MDS.log("⚠️ [" + logTag + "] Failed send: " + res.error);
+      }
     });
+  });
 }
 
 // --------------------------------------------------------------------------
@@ -4802,61 +5232,88 @@ function resolveAndSend(pubkey, hexData, logTag, usePoll) {
  * If yes -> Send sync_status_report ("You are missing Y messages")
  */
 function handleSyncStatusCheck(msg, fromKey) {
-    var peerLastSeq = msg.last_received_seq || 0;
+  var peerLastSeq = msg.last_received_seq || 0;
 
-    // Check what is the maximum sequence number we have sent to this user
-    // We can infer this from CHAT_MESSAGES where publickey=fromKey AND fromMe=true? 
-    // Wait, CHAT_MESSAGES stores messages *received* from them or *sent* to them?
-    // It stores both. 
-    // Messages WE sent to THEM have: publickey=THEM, username=ME (or similar).
-    // AND they should have a 'seq' number we assigned them.
-    // BUT 'sender_seq' col tracks what THEY sent US.
-    // We need to know what WE sent THEM.
-    // The MESSAGE_COUNTERS table tracks the 'next_seq' we will give to the NEXT message.
-    // So 'next_seq - 1' is the last one we sent.
+  // Check what is the maximum sequence number we have sent to this user
+  // We can infer this from CHAT_MESSAGES where publickey=fromKey AND fromMe=true?
+  // Wait, CHAT_MESSAGES stores messages *received* from them or *sent* to them?
+  // It stores both.
+  // Messages WE sent to THEM have: publickey=THEM, username=ME (or similar).
+  // AND they should have a 'seq' number we assigned them.
+  // BUT 'sender_seq' col tracks what THEY sent US.
+  // We need to know what WE sent THEM.
+  // The MESSAGE_COUNTERS table tracks the 'next_seq' we will give to the NEXT message.
+  // So 'next_seq - 1' is the last one we sent.
 
-    var sql = "SELECT next_seq FROM MESSAGE_COUNTERS WHERE publickey='" + escapeSql(fromKey) + "'";
-    MDS.sql(sql, function (res) {
-        var myNextSeq = (res.rows && res.rows.length > 0) ? res.rows[0].NEXT_SEQ : 1;
-        var myLastSentSeq = myNextSeq - 1;
+  var sql =
+    "SELECT next_seq FROM MESSAGE_COUNTERS WHERE publickey='" +
+    escapeSql(fromKey) +
+    "'";
+  MDS.sql(sql, function (res) {
+    var myNextSeq = res.rows && res.rows.length > 0 ? res.rows[0].NEXT_SEQ : 1;
+    var myLastSentSeq = myNextSeq - 1;
 
-        MDS.log("🔄 [SMART-SYNC] Check from " + fromKey.substring(0, 10) + ". Their last: " + peerLastSeq + ", My last sent: " + myLastSentSeq);
+    MDS.log(
+      "🔄 [SMART-SYNC] Check from " +
+      fromKey.substring(0, 10) +
+      ". Their last: " +
+      peerLastSeq +
+      ", My last sent: " +
+      myLastSentSeq,
+    );
 
-        if (myLastSentSeq > peerLastSeq) {
-            var missingCount = myLastSentSeq - peerLastSeq;
-            MDS.log("⚠️ [SMART-SYNC] Peer is missing " + missingCount + " messages.");
+    if (myLastSentSeq > peerLastSeq) {
+      var missingCount = myLastSentSeq - peerLastSeq;
+      MDS.log("⚠️ [SMART-SYNC] Peer is missing " + missingCount + " messages.");
 
-            // Optimization: Get preview of the very last message to show in their UI
-            // We find the message with highest ID sent to them? 
-            // We don't strictly index our sent 'seq' in CHAT_MESSAGES yet (we just send it).
-            // We might need to query by date DESC.
-            var previewSql = "SELECT message, date, type FROM CHAT_MESSAGES WHERE publickey='" + escapeSql(fromKey) + "' AND state IN ('sent','delivered','read') ORDER BY date DESC LIMIT 1";
+      // Optimization: Get preview of the very last message to show in their UI
+      // We find the message with highest ID sent to them?
+      // We don't strictly index our sent 'seq' in CHAT_MESSAGES yet (we just send it).
+      // We might need to query by date DESC.
+      var previewSql =
+        "SELECT message, date, type FROM CHAT_MESSAGES WHERE publickey='" +
+        escapeSql(fromKey) +
+        "' AND state IN ('sent','delivered','read') ORDER BY date DESC LIMIT 1";
 
-            MDS.sql(previewSql, function (pRes) {
-                var lastMsg = (pRes.rows && pRes.rows.length > 0) ? pRes.rows[0] : null;
+      MDS.sql(previewSql, function (pRes) {
+        var lastMsg = pRes.rows && pRes.rows.length > 0 ? pRes.rows[0] : null;
 
-                var reportPayload = {
-                    type: "sync_status_report",
-                    missing_count: missingCount,
-                    my_highest_seq: myLastSentSeq,
-                    last_message_preview: lastMsg ? {
-                        text: (lastMsg.TYPE === 'text') ? lastMsg.MESSAGE : ("[" + lastMsg.TYPE + "]"),
-                        timestamp: lastMsg.DATE
-                    } : null
-                };
+        var reportPayload = {
+          type: "sync_status_report",
+          missing_count: missingCount,
+          my_highest_seq: myLastSentSeq,
+          last_message_preview: lastMsg
+            ? {
+              text:
+                lastMsg.TYPE === "text"
+                  ? lastMsg.MESSAGE
+                  : "[" + lastMsg.TYPE + "]",
+              timestamp: lastMsg.DATE,
+            }
+            : null,
+        };
 
-                // Send report back via Maxima
-                MDS.cmd("maxima action:send publickey:" + fromKey + " application:metachain data:" + JSON.stringify(reportPayload) + " poll:false", function (sendRes) {
-                    if (sendRes.status) MDS.log("✅ [SMART-SYNC] Sent status report to " + fromKey.substring(0, 10));
-                });
-            });
-
-        } else {
-            MDS.log("✅ [SMART-SYNC] Peer is up to date.");
-        }
-    });
+        // Send report back via Maxima
+        MDS.cmd(
+          "maxima action:send publickey:" +
+          fromKey +
+          " application:metachain data:" +
+          JSON.stringify(reportPayload) +
+          " poll:false",
+          function (sendRes) {
+            if (sendRes.status)
+              MDS.log(
+                "✅ [SMART-SYNC] Sent status report to " +
+                fromKey.substring(0, 10),
+              );
+          },
+        );
+      });
+    } else {
+      MDS.log("✅ [SMART-SYNC] Peer is up to date.");
+    }
+  });
 }
-
 
 /**
  * Handle incoming sync status report (PHASE 1 Response)
@@ -4866,16 +5323,22 @@ function handleSyncStatusCheck(msg, fromKey) {
  * For Phase 2: This will auto-trigger 'sync_data_request'
  */
 function handleSyncStatusReport(msg, fromKey) {
-    MDS.log("📊 [SMART-SYNC] Report from " + fromKey.substring(0, 10) + ": Missing " + msg.missing_count + " messages.");
+  MDS.log(
+    "📊 [SMART-SYNC] Report from " +
+    fromKey.substring(0, 10) +
+    ": Missing " +
+    msg.missing_count +
+    " messages.",
+  );
 
-    // Emit the report to the frontend so minima.service.ts can present it to the UI
-    var payload = {
-        type: "sync_status_report",
-        missing_count: msg.missing_count,
-        fromKey: fromKey,
-        last_message_preview: msg.last_message_preview
-    };
-    MDS.comms.solo(JSON.stringify(payload));
+  // Emit the report to the frontend so minima.service.ts can present it to the UI
+  var payload = {
+    type: "sync_status_report",
+    missing_count: msg.missing_count,
+    fromKey: fromKey,
+    last_message_preview: msg.last_message_preview,
+  };
+  MDS.comms.solo(JSON.stringify(payload));
 }
 
 /**
@@ -4958,6 +5421,11 @@ function handleContactCancelled(pubkey) {
 
 function handleContactAccepted(pubkey, maxjson) {
     MDS.log("✅ [CONTACTS] Request accepted by " + pubkey);
+    
+    // Invalidate contact status cache
+    if (typeof clearContactStatusCache === 'function') {
+        clearContactStatusCache(pubkey);
+    }
 
     var now = Date.now();
     var safeFrom = escapeSql(pubkey);
@@ -5032,6 +5500,11 @@ function handleMaximaContactRequest(pubkey, maxjson) {
 
 function handleMaximaContactAccepted(pubkey, maxjson) {
     MDS.log("✅ [MAXIMA CONTACT] Request accepted by " + pubkey);
+
+    // Invalidate contact status cache
+    if (typeof clearContactStatusCache === 'function') {
+        clearContactStatusCache(pubkey);
+    }
 
     var now = Date.now();
     var safeFrom = escapeSql(pubkey);
@@ -5147,232 +5620,387 @@ function handleContactUnblocked(pubkey) {
  * Handles profile requests and responses
  * RESTORED FROM WORKING EXAMPLE
  */
+var LAST_PROFILE_RESPONSE_SENT = {};
+var PROFILE_RESPONSE_THROTTLE_MS = 30000;
 
 function handleProfileRequest(pubkey, maxjson) {
-    MDS.log("🕵️ [PROFILE] Request received from: " + pubkey.substring(0, 20) + "...");
+  var safeKey = (pubkey || "").trim();
+  if (!safeKey) return;
 
-    try {
-        // Step 1: Check if requester is a contact
-        MDS.cmd("maxcontacts", function (contactsRes) {
-            var isContact = false;
-            if (contactsRes.status && contactsRes.response && contactsRes.response.contacts) {
-                var contacts = contactsRes.response.contacts;
-                for (var i = 0; i < contacts.length; i++) {
-                    if (contacts[i].publickey === pubkey) {
-                        isContact = true;
-                        break;
-                    }
-                }
+  var now = Date.now();
+  var lastSent = LAST_PROFILE_RESPONSE_SENT[safeKey] || 0;
+  if (now - lastSent < PROFILE_RESPONSE_THROTTLE_MS) {
+    MDS.log(
+      "⏭️ [PROFILE] Throttled repeated request from " +
+        safeKey.substring(0, 20) +
+        "...",
+    );
+    return;
+  }
+  LAST_PROFILE_RESPONSE_SENT[safeKey] = now;
+
+  MDS.log(
+    "🕵️ [PROFILE] Request received from: " + safeKey.substring(0, 20) + "...",
+  );
+
+  try {
+    // Step 1: Check if requester is a contact
+    MDS.cmd("maxcontacts", function (contactsRes) {
+      var isContact = false;
+      if (
+        contactsRes.status &&
+        contactsRes.response &&
+        contactsRes.response.contacts
+      ) {
+        var contacts = contactsRes.response.contacts;
+        for (var i = 0; i < contacts.length; i++) {
+          if (contacts[i].publickey === pubkey) {
+            isContact = true;
+            break;
+          }
+        }
+      }
+      MDS.log("🔍 [PROFILE] Requester is contact: " + isContact);
+
+      // Step 2: Fetch profile & privacy settings from DB
+      MDS.sql("SELECT * FROM MY_PROFILE LIMIT 1", function (res) {
+        MDS.log("🔍 [PROFILE-DEBUG] DB Fetch Result: " + JSON.stringify(res));
+
+        var profile = {};
+        var level2Visibility = "public";
+        var level3Visibility = "personal"; // Default to personal for safety
+        var row = {};
+
+        if (res.status && res.rows && res.rows.length > 0) {
+          row = res.rows[0];
+          // Log raw column values for debugging
+          MDS.log(
+            "🔍 [PROFILE] RAW DB Values - PRIVACY_L2: " +
+              row.PRIVACY_L2 +
+              ", PRIVACY_L3: " +
+              row.PRIVACY_L3,
+          );
+          // Read Privacy Settings from DB if available
+          if (row.PRIVACY_L2 || row.privacy_l2)
+            level2Visibility = row.PRIVACY_L2 || row.privacy_l2;
+
+          var rawL3 = row.PRIVACY_L3 || row.privacy_l3;
+          if (rawL3 === "contacts") {
+            level3Visibility = "personal"; // Enforcement: 'contacts' behaves as 'personal' for safety
+          } else if (rawL3) {
+            level3Visibility = rawL3;
+          }
+        }
+
+        MDS.log(
+          "🔐 [PROFILE] Privacy Resolved (DB) - L2: " +
+            level2Visibility +
+            ", L3: " +
+            level3Visibility,
+        );
+
+        // Check personal contacts via SQL (Migrated from Keypair)
+        MDS.sql("SELECT * FROM PERSONAL_CONTACTS", function (personalRes) {
+          var personalContacts = [];
+          if (personalRes.status && personalRes.rows) {
+            // Extract public keys
+            for (var i = 0; i < personalRes.rows.length; i++) {
+              personalContacts.push(personalRes.rows[i].PUBLICKEY);
             }
-            MDS.log("🔍 [PROFILE] Requester is contact: " + isContact);
+          }
+          MDS.log(
+            "🔍 [PROFILE-DEBUG] Personal Contacts (SQL): " +
+              personalContacts.length,
+          );
 
-            // Step 2: Fetch profile & privacy settings from DB
-            MDS.sql("SELECT * FROM MY_PROFILE LIMIT 1", function (res) {
-                MDS.log("🔍 [PROFILE-DEBUG] DB Fetch Result: " + JSON.stringify(res));
+          var isPersonalContact = false;
+          for (var i = 0; i < personalContacts.length; i++) {
+            if (personalContacts[i].toLowerCase() === pubkey.toLowerCase()) {
+              isPersonalContact = true;
+              break;
+            }
+          }
 
-                var profile = {};
-                var level2Visibility = "public";
-                var level3Visibility = "personal"; // Default to personal for safety
-                var row = {};
+          if (isPersonalContact) {
+            MDS.log("✅ [PROFILE] Requester is a PERSONAL contact!");
+          } else {
+            MDS.log(
+              "❌ [PROFILE-DEBUG] No match found for " +
+                pubkey.substring(0, 10) +
+                "... in Personal List",
+            );
+          }
 
-                if (res.status && res.rows && res.rows.length > 0) {
-                    row = res.rows[0];
-                    // Log raw column values for debugging
-                    MDS.log("🔍 [PROFILE] RAW DB Values - PRIVACY_L2: " + row.PRIVACY_L2 + ", PRIVACY_L3: " + row.PRIVACY_L3);
-                    // Read Privacy Settings from DB if available
-                    if (row.PRIVACY_L2 || row.privacy_l2) level2Visibility = row.PRIVACY_L2 || row.privacy_l2;
+          // Step 3: Determine what to include
+          var includeLevel2 = shouldIncludeLevel(
+            level2Visibility,
+            isContact,
+            isPersonalContact,
+          );
+          var includeLevel3 = shouldIncludeLevel(
+            level3Visibility,
+            isContact,
+            isPersonalContact,
+          );
 
-                    var rawL3 = row.PRIVACY_L3 || row.privacy_l3;
-                    if (rawL3 === 'contacts') {
-                        level3Visibility = 'personal'; // Enforcement: 'contacts' behaves as 'personal' for safety
-                    } else if (rawL3) {
-                        level3Visibility = rawL3;
-                    }
+          MDS.log(
+            "🔒 [PROFILE] Sharing - Level2: " +
+              includeLevel2 +
+              ", Level3: " +
+              includeLevel3,
+          );
+
+          // Populate profile object from row data
+          if (res.status && res.rows && res.rows.length > 0) {
+            // Level 2 fields
+            if (includeLevel2) {
+              try {
+                profile.social = JSON.parse(
+                  decodeURIComponent(row.SOCIAL_LINKS || "{}"),
+                );
+              } catch (e) {}
+              try {
+                profile.languages = JSON.parse(
+                  decodeURIComponent(row.LANGUAGES || "[]"),
+                );
+              } catch (e) {}
+              profile.location = decodeURIComponent(row.LOCATION || "");
+              profile.country = decodeURIComponent(row.COUNTRY || "");
+              profile.website = decodeURIComponent(row.WEBSITE || "");
+            }
+
+            // Level 3 fields
+            if (includeLevel3) {
+              profile.email = decodeURIComponent(row.EMAIL || "");
+              profile.phone = decodeURIComponent(row.PHONE || "");
+              MDS.log(
+                "📧 [PROFILE] Level 3 included - Email: " +
+                  (profile.email || "EMPTY") +
+                  ", Phone: " +
+                  (profile.phone || "EMPTY"),
+              );
+            } else {
+              MDS.log(
+                "🚫 [PROFILE] Level 3 NOT included (visibility: " +
+                  level3Visibility +
+                  ")",
+              );
+            }
+
+            var rawValue =
+              row.ALLOW_NON_CONTACT_CHATS || row.allow_non_contact_chats;
+            profile.allowNonContactChats =
+              rawValue === 1 ||
+              rawValue === "1" ||
+              rawValue === true ||
+              rawValue === "true";
+          }
+
+          // Step 5: Get Basic Info from Maxima (Level 1 - Always public)
+          MDS.cmd("maxima action:info", function (maximaRes) {
+            MDS.log("👤 [PROFILE] Maxima info - Status: " + maximaRes.status);
+
+            var name = "Unknown";
+            var avatar = "";
+
+            if (maximaRes.status && maximaRes.response) {
+              name = maximaRes.response.name || "Unknown";
+              avatar = maximaRes.response.icon
+                ? decodeURIComponent(maximaRes.response.icon)
+                : "";
+              MDS.log("👤 [PROFILE] Name from Maxima: " + name);
+            } else {
+              MDS.log("⚠️ [PROFILE] Failed to get Maxima info, using fallback");
+            }
+
+            MDS.cmd("keypair action:get key:p2p_bio", function (bioRes) {
+              var bio =
+                bioRes.status && bioRes.response && bioRes.response.value
+                  ? bioRes.response.value
+                  : "";
+
+              // Step 5.5: Get Minima Wallet Address
+              MDS.cmd("getaddress", function (addrRes) {
+                var minimaAddress = "";
+                if (
+                  addrRes.status &&
+                  addrRes.response &&
+                  addrRes.response.miniaddress
+                ) {
+                  minimaAddress = addrRes.response.miniaddress;
                 }
 
-                MDS.log("🔐 [PROFILE] Privacy Resolved (DB) - L2: " + level2Visibility + ", L3: " + level3Visibility);
+                // Step 6: Construct filtered response
+                var responsePayload = {
+                  type: "profile_response",
+                  // Level 1 - Always included
+                  name: name,
+                  bio: bio,
+                  avatar: avatar,
+                  allowNonContactChats: profile.allowNonContactChats,
+                  minimaaddress: minimaAddress, // ALWAYS INCLUDE WALLET ADDRESS
+                };
 
-                // Check personal contacts via SQL (Migrated from Keypair)
-                MDS.sql("SELECT * FROM PERSONAL_CONTACTS", function (personalRes) {
-                    var personalContacts = [];
-                    if (personalRes.status && personalRes.rows) {
-                        // Extract public keys
-                        for (var i = 0; i < personalRes.rows.length; i++) {
-                            personalContacts.push(personalRes.rows[i].PUBLICKEY);
-                        }
-                    }
-                    MDS.log("🔍 [PROFILE-DEBUG] Personal Contacts (SQL): " + personalContacts.length);
+                // Level 2 - Conditionally included
+                if (includeLevel2) {
+                  responsePayload.location = profile.location;
+                  responsePayload.country = profile.country;
+                  responsePayload.website = profile.website;
+                  responsePayload.social = profile.social;
+                  responsePayload.languages = profile.languages;
+                } else {
+                  responsePayload.privacy_l2 = "hidden";
+                }
 
-                    var isPersonalContact = false;
-                    for (var i = 0; i < personalContacts.length; i++) {
-                        if (personalContacts[i].toLowerCase() === pubkey.toLowerCase()) {
-                            isPersonalContact = true;
-                            break;
-                        }
-                    }
+                // Level 3 - Conditionally included
+                if (includeLevel3) {
+                  responsePayload.email = profile.email;
+                  responsePayload.phone = profile.phone;
+                  MDS.log(
+                    "✅ [PROFILE] Level 3 added to response - Email: " +
+                      (responsePayload.email || "EMPTY") +
+                      ", Phone: " +
+                      (responsePayload.phone || "EMPTY"),
+                  );
+                } else {
+                  responsePayload.privacy_l3 = "hidden";
+                  MDS.log("⚠️ [PROFILE] Level 3 NOT added to response");
+                }
 
-                    if (isPersonalContact) {
-                        MDS.log("✅ [PROFILE] Requester is a PERSONAL contact!");
-                    } else {
-                        MDS.log("❌ [PROFILE-DEBUG] No match found for " + pubkey.substring(0, 10) + "... in Personal List");
-                    }
+                MDS.log(
+                  "📦 [PROFILE] Final response payload: " +
+                    JSON.stringify(responsePayload),
+                );
+                var jsonStr = JSON.stringify(responsePayload);
+                var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
 
-                    // Step 3: Determine what to include
-                    var includeLevel2 = shouldIncludeLevel(level2Visibility, isContact, isPersonalContact);
-                    var includeLevel3 = shouldIncludeLevel(level3Visibility, isContact, isPersonalContact);
+                // Step 7: Prepare target address
+                var targetAddress = null;
+                if (maxjson.requesterAddress) {
+                  var rawAddr = maxjson.requesterAddress + "";
+                  var parts = rawAddr.split(":");
+                  if (parts.length >= 2) {
+                    var part1 = parts[0].replace(/[^a-zA-Z0-9@.-]/g, "").trim();
+                    var part2 = parts[1].replace(/[^0-9]/g, "").trim();
+                    targetAddress = part1 + ":" + part2;
+                  } else {
+                    targetAddress = rawAddr.replace(/[^a-zA-Z0-9@.:-]/g, "");
+                  }
+                }
 
-                    MDS.log("🔒 [PROFILE] Sharing - Level2: " + includeLevel2 + ", Level3: " + includeLevel3);
+                var sendCommand = "";
+                if (
+                  targetAddress &&
+                  (targetAddress.startsWith("Mx") ||
+                    targetAddress.startsWith("MX"))
+                ) {
+                  MDS.log(
+                    "📤 [PROFILE] Sending filtered response to address: " +
+                      targetAddress,
+                  );
+                  sendCommand =
+                    "maxima action:send to:" +
+                    targetAddress +
+                    " application:metachain data:" +
+                    hexData +
+                    " poll:false";
+                } else {
+                  MDS.log(
+                    "📤 [PROFILE] Sending filtered response to pubkey: " +
+                      pubkey.substring(0, 10) +
+                      "...",
+                  );
+                  sendCommand =
+                    "maxima action:send publickey:" +
+                    pubkey +
+                    " application:metachain data:" +
+                    hexData +
+                    " poll:false";
+                }
 
-                    // Populate profile object from row data
-                    if (res.status && res.rows && res.rows.length > 0) {
-                        // Level 2 fields
-                        if (includeLevel2) {
-                            try { profile.social = JSON.parse(decodeURIComponent(row.SOCIAL_LINKS || "{}")); } catch (e) { }
-                            try { profile.languages = JSON.parse(decodeURIComponent(row.LANGUAGES || "[]")); } catch (e) { }
-                            profile.location = decodeURIComponent(row.LOCATION || "");
-                            profile.country = decodeURIComponent(row.COUNTRY || "");
-                            profile.website = decodeURIComponent(row.WEBSITE || "");
-                        }
-
-                        // Level 3 fields
-                        if (includeLevel3) {
-                            profile.email = decodeURIComponent(row.EMAIL || "");
-                            profile.phone = decodeURIComponent(row.PHONE || "");
-                            MDS.log("📧 [PROFILE] Level 3 included - Email: " + (profile.email || "EMPTY") + ", Phone: " + (profile.phone || "EMPTY"));
-                        } else {
-                            MDS.log("🚫 [PROFILE] Level 3 NOT included (visibility: " + level3Visibility + ")");
-                        }
-
-                        var rawValue = row.ALLOW_NON_CONTACT_CHATS || row.allow_non_contact_chats;
-                        profile.allowNonContactChats = (rawValue === 1 || rawValue === "1" || rawValue === true || rawValue === "true");
-                    }
-
-                    // Step 5: Get Basic Info from Maxima (Level 1 - Always public)
-                    MDS.cmd("maxima action:info", function (maximaRes) {
-                        MDS.log("👤 [PROFILE] Maxima info - Status: " + maximaRes.status);
-
-                        var name = "Unknown";
-                        var avatar = "";
-
-                        if (maximaRes.status && maximaRes.response) {
-                            name = maximaRes.response.name || "Unknown";
-                            avatar = maximaRes.response.icon ? decodeURIComponent(maximaRes.response.icon) : "";
-                            MDS.log("👤 [PROFILE] Name from Maxima: " + name);
-                        } else {
-                            MDS.log("⚠️ [PROFILE] Failed to get Maxima info, using fallback");
-                        }
-
-                        MDS.cmd("keypair action:get key:p2p_bio", function (bioRes) {
-                            var bio = (bioRes.status && bioRes.response && bioRes.response.value) ? bioRes.response.value : "";
-
-                            // Step 5.5: Get Minima Wallet Address
-                            MDS.cmd("getaddress", function (addrRes) {
-                                var minimaAddress = "";
-                                if (addrRes.status && addrRes.response && addrRes.response.miniaddress) {
-                                    minimaAddress = addrRes.response.miniaddress;
-                                }
-
-                                // Step 6: Construct filtered response
-                                var responsePayload = {
-                                    type: "profile_response",
-                                    // Level 1 - Always included
-                                    name: name,
-                                    bio: bio,
-                                    avatar: avatar,
-                                    allowNonContactChats: profile.allowNonContactChats,
-                                    minimaaddress: minimaAddress // ALWAYS INCLUDE WALLET ADDRESS
-                                };
-
-                                // Level 2 - Conditionally included
-                                if (includeLevel2) {
-                                    responsePayload.location = profile.location;
-                                    responsePayload.country = profile.country;
-                                    responsePayload.website = profile.website;
-                                    responsePayload.social = profile.social;
-                                    responsePayload.languages = profile.languages;
-                                } else {
-                                    responsePayload.privacy_l2 = "hidden";
-                                }
-
-                                // Level 3 - Conditionally included
-                                if (includeLevel3) {
-                                    responsePayload.email = profile.email;
-                                    responsePayload.phone = profile.phone;
-                                    MDS.log("✅ [PROFILE] Level 3 added to response - Email: " + (responsePayload.email || "EMPTY") + ", Phone: " + (responsePayload.phone || "EMPTY"));
-                                } else {
-                                    responsePayload.privacy_l3 = "hidden";
-                                    MDS.log("⚠️ [PROFILE] Level 3 NOT added to response");
-                                }
-
-                                MDS.log("📦 [PROFILE] Final response payload: " + JSON.stringify(responsePayload));
-                                var jsonStr = JSON.stringify(responsePayload);
-                                var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
-
-                                // Step 7: Prepare target address
-                                var targetAddress = null;
-                                if (maxjson.requesterAddress) {
-                                    var rawAddr = maxjson.requesterAddress + "";
-                                    var parts = rawAddr.split(":");
-                                    if (parts.length >= 2) {
-                                        var part1 = parts[0].replace(/[^a-zA-Z0-9@.-]/g, "").trim();
-                                        var part2 = parts[1].replace(/[^0-9]/g, "").trim();
-                                        targetAddress = part1 + ":" + part2;
-                                    } else {
-                                        targetAddress = rawAddr.replace(/[^a-zA-Z0-9@.:-]/g, "");
-                                    }
-                                }
-
-                                var sendCommand = "";
-                                if (targetAddress && (targetAddress.startsWith("Mx") || targetAddress.startsWith("MX"))) {
-                                    MDS.log("📤 [PROFILE] Sending filtered response to address: " + targetAddress);
-                                    sendCommand = "maxima action:send to:" + targetAddress + " application:metachain data:" + hexData + " poll:false";
-                                } else {
-                                    MDS.log("📤 [PROFILE] Sending filtered response to pubkey: " + pubkey.substring(0, 10) + "...");
-                                    sendCommand = "maxima action:send publickey:" + pubkey + " application:metachain data:" + hexData + " poll:false";
-                                }
-
-                                // Step 8: Send Response
-                                MDS.cmd(sendCommand, function (sendRes) {
-                                    MDS.log("✅ [PROFILE] Response Sent. Status: " + sendRes.status);
-                                });
-                            });
-                        });
-                    });
+                // Step 8: Send Response
+                MDS.cmd(sendCommand, function (sendRes) {
+                  MDS.log(
+                    "✅ [PROFILE] Response Sent. Status: " + sendRes.status,
+                  );
                 });
+              });
             });
+          });
         });
-    } catch (e) {
-        MDS.log("❌ [PROFILE] CRITICAL ERROR in Handler: " + e.message);
-    }
+      });
+    });
+  } catch (e) {
+    MDS.log("❌ [PROFILE] CRITICAL ERROR in Handler: " + e.message);
+  }
 }
 
 function handleProfileResponse(pubkey, maxjson) {
-    MDS.log("📝 [PROFILE] Response received from: " + pubkey.substring(0, 20) + "...");
+  MDS.log(
+    "📝 [PROFILE] Response received from: " + pubkey.substring(0, 20) + "...",
+  );
 
-    // Update DISCOVERED_PEERS with extended profile data
-    var now = Date.now();
-    var safePubkey = escapeSql(pubkey);
+  // Update DISCOVERED_PEERS with extended profile data
+  var now = Date.now();
+  var safePubkey = escapeSql(pubkey);
 
-    // Serialize the full profile as extra_data
-    var extraData = escapeSql(JSON.stringify(maxjson));
+  // Serialize the full profile as extra_data
+  var extraData = escapeSql(JSON.stringify(maxjson));
 
-    // CRITICAL: Extract allowNonContactChats from profile response
-    var allowNonContactChats = 1; // Default to true
-    if (maxjson.allowNonContactChats !== undefined && maxjson.allowNonContactChats !== null) {
-        allowNonContactChats = maxjson.allowNonContactChats ? 1 : 0;
+  // CRITICAL: Extract allowNonContactChats from profile response
+  var allowNonContactChats = 1; // Default to true
+  if (
+    maxjson.allowNonContactChats !== undefined &&
+    maxjson.allowNonContactChats !== null
+  ) {
+    if (typeof maxjson.allowNonContactChats === "boolean") {
+      allowNonContactChats = maxjson.allowNonContactChats ? 1 : 0;
+    } else if (typeof maxjson.allowNonContactChats === "number") {
+      allowNonContactChats = maxjson.allowNonContactChats ? 1 : 0;
+    } else if (typeof maxjson.allowNonContactChats === "string") {
+      var normalized = maxjson.allowNonContactChats.trim().toLowerCase();
+      if (normalized === "true" || normalized === "1" || normalized === "yes") {
+        allowNonContactChats = 1;
+      } else if (
+        normalized === "false" ||
+        normalized === "0" ||
+        normalized === "no"
+      ) {
+        allowNonContactChats = 0;
+      }
     }
+  }
 
-    // Extract minimaaddress from profile response
-    var minimaAddress = escapeSql(maxjson.minimaaddress || "");
+  // Extract minimaaddress from profile response
+  var minimaAddress = escapeSql(maxjson.minimaaddress || "");
 
-    // Update bio, extra_data, minimaaddress, AND allow_non_contact_chats
-    var updateSql = "UPDATE DISCOVERED_PEERS SET bio='" + escapeSql(maxjson.bio || "") + "', extra_data='" + extraData + "', minimaaddress='" + minimaAddress + "', allow_non_contact_chats=" + allowNonContactChats + ", last_seen=" + now + " WHERE publickey='" + safePubkey + "'";
+  // Update bio, extra_data, minimaaddress, AND allow_non_contact_chats
+  var updateSql =
+    "UPDATE DISCOVERED_PEERS SET bio='" +
+    escapeSql(maxjson.bio || "") +
+    "', extra_data='" +
+    extraData +
+    "', minimaaddress='" +
+    minimaAddress +
+    "', allow_non_contact_chats=" +
+    allowNonContactChats +
+    ", last_seen=" +
+    now +
+    " WHERE publickey='" +
+    safePubkey +
+    "'";
 
-    MDS.sql(updateSql, function (res) {
-        if (res.status) {
-            MDS.log("✅ [PROFILE] Extended profile saved for " + pubkey.substring(0, 15) + "... (allowNonContactChats: " + allowNonContactChats + ")");
-        }
-    });
+  MDS.sql(updateSql, function (res) {
+    if (res.status) {
+      MDS.log(
+        "✅ [PROFILE] Extended profile saved for " +
+          pubkey.substring(0, 15) +
+          "... (allowNonContactChats: " +
+          allowNonContactChats +
+          ")",
+      );
+    }
+  });
 }
 
 /**
@@ -5644,6 +6272,207 @@ function handleDeniedTransaction(tx) {
  * Handles peer discovery beacons and user registry
  */
 
+function encodeBase64Utf8(str) {
+  if (!str) return "";
+  try {
+    if (typeof btoa === "function") {
+      return btoa(unescape(encodeURIComponent(str)));
+    }
+  } catch (e) {}
+  try {
+    if (typeof Buffer !== "undefined") {
+      return Buffer.from(str, "utf8").toString("base64");
+    }
+  } catch (e) {}
+  return "";
+}
+
+function normalizeAllowNonContactChats(value, defaultValue) {
+  if (defaultValue === undefined || defaultValue === null) defaultValue = 1;
+  if (value === undefined || value === null) return defaultValue;
+  if (typeof value === "boolean") return value ? 1 : 0;
+  if (typeof value === "number") return value ? 1 : 0;
+  if (typeof value === "string") {
+    var normalized = value.trim().toLowerCase();
+    if (normalized === "true" || normalized === "1" || normalized === "yes")
+      return 1;
+    if (normalized === "false" || normalized === "0" || normalized === "no")
+      return 0;
+  }
+  return defaultValue;
+}
+
+function buildJoinLink(listingType, joinPayload) {
+  if (!joinPayload) return "";
+  var scheme = listingType === "group" ? "mcgrp://" : "mcch://";
+  var payload =
+    listingType === "group"
+      ? {
+          g: joinPayload.id,
+          n: joinPayload.name,
+          p: joinPayload.admin_publickey,
+          a: joinPayload.admin_address,
+        }
+      : {
+          c: joinPayload.id,
+          n: joinPayload.name,
+          p: joinPayload.admin_publickey,
+          a: joinPayload.admin_address,
+        };
+  if (!payload.g && !payload.c) return "";
+  var base64 = encodeBase64Utf8(JSON.stringify(payload));
+  return base64 ? scheme + base64 : "";
+}
+
+function buildPublicListings(myPubkey, myAddress, callback) {
+  var listings = [];
+  var groupSql =
+    "SELECT group_id, name, description, created_date FROM GROUPS WHERE COALESCE(is_public, FALSE) = TRUE AND (archived IS NULL OR archived = FALSE)";
+  MDS.sql(groupSql, function (groupRes) {
+    if (groupRes.status && groupRes.rows) {
+      for (var i = 0; i < groupRes.rows.length; i++) {
+        var row = groupRes.rows[i];
+        var groupId = row.GROUP_ID || row.group_id;
+        var name = row.NAME || row.name;
+        var description = row.DESCRIPTION || row.description || "";
+        var createdDate = row.CREATED_DATE || row.created_date || 0;
+        if (!groupId || !name) continue;
+        var joinPayload = {
+          id: groupId,
+          name: name,
+          admin_publickey: myPubkey,
+          admin_address: myAddress,
+        };
+        listings.push({
+          type: "group",
+          id: groupId,
+          name: name,
+          description: description,
+          created_date: createdDate,
+          join: joinPayload,
+          link: buildJoinLink("group", joinPayload),
+        });
+      }
+    }
+
+    var channelSql =
+      "SELECT channel_id, name, description, created_date FROM CHANNELS WHERE COALESCE(is_public, FALSE) = TRUE AND (archived IS NULL OR archived = FALSE)";
+    MDS.sql(channelSql, function (channelRes) {
+      if (channelRes.status && channelRes.rows) {
+        for (var j = 0; j < channelRes.rows.length; j++) {
+          var rowC = channelRes.rows[j];
+          var channelId = rowC.CHANNEL_ID || rowC.channel_id;
+          var cName = rowC.NAME || rowC.name;
+          var cDescription = rowC.DESCRIPTION || rowC.description || "";
+          var cCreatedDate = rowC.CREATED_DATE || rowC.created_date || 0;
+          if (!channelId || !cName) continue;
+          var joinPayloadC = {
+            id: channelId,
+            name: cName,
+            admin_publickey: myPubkey,
+            admin_address: myAddress,
+          };
+          listings.push({
+            type: "channel",
+            id: channelId,
+            name: cName,
+            description: cDescription,
+            created_date: cCreatedDate,
+            join: joinPayloadC,
+            link: buildJoinLink("channel", joinPayloadC),
+          });
+        }
+      }
+
+      listings.sort(function (a, b) {
+        return (b.created_date || 0) - (a.created_date || 0);
+      });
+      callback(listings.slice(0, 10));
+    });
+  });
+}
+
+function normalizeListings(listings) {
+  if (!Array.isArray(listings)) return [];
+  var normalized = [];
+  for (var i = 0; i < listings.length; i++) {
+    var item = listings[i];
+    if (!item || typeof item !== "object") continue;
+    var type = item.type;
+    if (type !== "group" && type !== "channel") continue;
+    var id = item.id || item.group_id || item.channel_id;
+    var name = item.name;
+    if (!id || !name) continue;
+    normalized.push({
+      type: type,
+      id: id,
+      name: name,
+      description: item.description || "",
+      join: item.join || null,
+      link: item.link || "",
+    });
+  }
+  return normalized.slice(0, 10);
+}
+
+function saveBeaconListings(beacon, now) {
+  if (!beacon || !beacon.pubkey) return;
+  if (!Array.isArray(beacon.listings)) return;
+
+  var incomingTimestamp = beacon.timestamp || 0;
+  if (incomingTimestamp <= 0) return;
+
+  var pk = beacon.pubkey;
+  var safePk = escapeSql(pk);
+  var cleanedListings = normalizeListings(beacon.listings);
+  var listingsJson = escapeSql(JSON.stringify(cleanedListings));
+
+  MDS.sql(
+    "SELECT timestamp FROM DISCOVERED_LISTINGS WHERE UPPER(owner_publickey)=UPPER('" +
+      safePk +
+      "')",
+    function (res) {
+      var storedTimestamp = 0;
+      if (res.status && res.rows && res.rows.length > 0) {
+        storedTimestamp = res.rows[0].TIMESTAMP || res.rows[0].timestamp || 0;
+      }
+
+      if (storedTimestamp >= incomingTimestamp) {
+        MDS.sql(
+          "UPDATE DISCOVERED_LISTINGS SET last_seen=" +
+            now +
+            " WHERE UPPER(owner_publickey)=UPPER('" +
+            safePk +
+            "')",
+        );
+        return;
+      }
+
+      var upsertSql =
+        "MERGE INTO DISCOVERED_LISTINGS (owner_publickey, listings, timestamp, last_seen) " +
+        "KEY (owner_publickey) " +
+        "VALUES ('" +
+        safePk +
+        "', '" +
+        listingsJson +
+        "', " +
+        incomingTimestamp +
+        ", " +
+        now +
+        ")";
+      MDS.sql(upsertSql, function (saveRes) {
+        if (saveRes.status) {
+          MDS.log("✅ [LISTINGS] Updated listings for " + pk.substring(0, 10));
+        } else {
+          MDS.log(
+            "❌ [LISTINGS] Failed to save listings: " + JSON.stringify(saveRes),
+          );
+        }
+      });
+    },
+  );
+}
+
 function handleBeacon(beacon, source) {
   try {
     // Validation logging
@@ -5695,15 +6524,14 @@ function handleBeacon(beacon, source) {
       .replace(/\s+/g, " ")
       .replace(/\s*:\s*/g, ":");
 
-    var allowNonContactChats =
-      beacon.allowNonContactChats !== undefined &&
-      beacon.allowNonContactChats !== null
-        ? beacon.allowNonContactChats
-          ? 1
-          : 0
-        : 1;
+    var allowNonContactChats = normalizeAllowNonContactChats(
+      beacon.allowNonContactChats,
+      1,
+    );
 
     MDS.log("📡 [BEACON] " + beacon.alias + " from " + source);
+
+    saveBeaconListings(beacon, now);
 
     // Save beacon - handle bio caching
     if (bioValue) {
@@ -5714,14 +6542,14 @@ function handleBeacon(beacon, source) {
         bioValue,
         cleanAddress,
         allowNonContactChats,
-        now
+        now,
       );
     } else {
       // Check DB for cached bio
       MDS.sql(
-        "SELECT bio FROM DISCOVERED_PEERS WHERE publickey='" +
+        "SELECT bio FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('" +
           beacon.pubkey +
-          "'",
+          "')",
         function (checkRes) {
           var bioToSave = "";
           if (
@@ -5739,7 +6567,7 @@ function handleBeacon(beacon, source) {
             bioToSave,
             cleanAddress,
             allowNonContactChats,
-            now
+            now,
           );
         },
       );
@@ -5764,9 +6592,9 @@ function saveBeaconWithBio(
 
   // Check stored beacon timestamp to avoid overwriting newer profile data with old gossip
   MDS.sql(
-    "SELECT extra_data FROM DISCOVERED_PEERS WHERE publickey='" +
+    "SELECT extra_data FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('" +
       beacon.pubkey +
-      "'",
+      "')",
     function (existingRes) {
       var storedTimestamp = 0;
       var hasExisting = false;
@@ -5799,9 +6627,9 @@ function saveBeaconWithBio(
         MDS.sql(
           "UPDATE DISCOVERED_PEERS SET last_seen=" +
             now +
-            " WHERE publickey='" +
+            " WHERE UPPER(publickey)=UPPER('" +
             beacon.pubkey +
-            "'",
+            "')",
           function (updateRes) {
             if (updateRes.status) {
               MDS.log("✅ [BEACON] Touched last_seen for: " + beacon.alias);
@@ -5825,9 +6653,9 @@ function saveBeaconWithBio(
         MDS.sql(
           "UPDATE DISCOVERED_PEERS SET last_seen=" +
             now +
-            " WHERE publickey='" +
+            " WHERE UPPER(publickey)=UPPER('" +
             beacon.pubkey +
-            "'",
+            "')",
           function (updateRes) {
             if (updateRes.status) {
               MDS.log("✅ [BEACON] Touched last_seen for: " + beacon.alias);
@@ -5865,9 +6693,14 @@ function saveBeaconWithBio(
           promoteToUserRegistry(beacon, now);
 
           // Reactive gossip
-          if (source === "P2P" || source === "MAXIMA") {
+          if ((source === "P2P" || source === "MAXIMA") && !hasExisting) {
             sendWelcomePackage(beacon.pubkey, beacon.alias, cleanAddress);
             askPeers([beacon.pubkey]);
+          } else if (source === "P2P" || source === "MAXIMA") {
+            MDS.log(
+              "⏭️ [GOSSIP] Welcome Package skipped for existing peer: " +
+                beacon.alias,
+            );
           }
         } else {
           MDS.log("❌ [BEACON] Save failed: " + JSON.stringify(res));
@@ -5951,79 +6784,114 @@ function sendBackgroundBeacon() {
             var minimaAddress =
               addrRes.status && addrRes.value ? addrRes.value : "";
 
-            // Get all profile data including avatar (like the working example)
-            MDS.sql("SELECT * FROM MY_PROFILE WHERE id=1", function (permRes) {
-              var allowNonContactChats = true;
-              var avatar = "";
-              var dbCountry = "";
-              var dbLanguages = [];
+            var finalizeBeacon = function (resolvedMinimaAddress) {
+              // Get all profile data including avatar (like the working example)
+              MDS.sql(
+                "SELECT * FROM MY_PROFILE WHERE id=1",
+                function (permRes) {
+                  var allowNonContactChats = true;
+                  var avatar = "";
+                  var dbCountry = "";
+                  var dbLanguages = [];
 
-              if (permRes.status && permRes.rows && permRes.rows.length > 0) {
-                var row = permRes.rows[0];
-                var val =
-                  row.ALLOW_NON_CONTACT_CHATS || row.allow_non_contact_chats;
-                allowNonContactChats =
-                  val === 1 || val === true || val === "true" || val === "1";
-                // Get avatar from DB (same as working example line 1714)
-                avatar = row.AVATAR || row.avatar || "";
-                // Get country from DB (with decoding like example line 1711)
-                dbCountry = decodeURIComponent(
-                  row.COUNTRY || row.country || "",
-                );
-                // Get languages from DB and parse as JSON array (like example line 1712-1713)
-                try {
-                  dbLanguages = JSON.parse(
-                    decodeURIComponent(row.LANGUAGES || row.languages || "[]"),
-                  );
-                } catch (e) {
-                  dbLanguages = [];
+                  if (
+                    permRes.status &&
+                    permRes.rows &&
+                    permRes.rows.length > 0
+                  ) {
+                    var row = permRes.rows[0];
+                    var val =
+                      row.ALLOW_NON_CONTACT_CHATS ||
+                      row.allow_non_contact_chats;
+                    allowNonContactChats =
+                      val === 1 ||
+                      val === true ||
+                      val === "true" ||
+                      val === "1";
+                    // Get avatar from DB (same as working example line 1714)
+                    avatar = row.AVATAR || row.avatar || "";
+                    // Get country from DB (with decoding like example line 1711)
+                    dbCountry = decodeURIComponent(
+                      row.COUNTRY || row.country || "",
+                    );
+                    // Get languages from DB and parse as JSON array (like example line 1712-1713)
+                    try {
+                      dbLanguages = JSON.parse(
+                        decodeURIComponent(
+                          row.LANGUAGES || row.languages || "[]",
+                        ),
+                      );
+                    } catch (e) {
+                      dbLanguages = [];
+                    }
+                  }
+
+                  // Use DB values as primary, keypair as fallback
+                  var finalCountry = dbCountry || country;
+                  var finalLanguages =
+                    dbLanguages.length > 0 ? dbLanguages : [];
+                  // Try to parse keypair languages if DB is empty
+                  if (finalLanguages.length === 0 && languages) {
+                    try {
+                      finalLanguages = JSON.parse(languages);
+                    } catch (e) {
+                      finalLanguages = [];
+                    }
+                  }
+
+                  buildPublicListings(myPubkey, myAddress, function (listings) {
+                    var beacon = {
+                      app: "metachain",
+                      type: "BEACON",
+                      v: 1,
+                      pubkey: myPubkey,
+                      alias: myName,
+                      bio: bio,
+                      address: myAddress,
+                      allowNonContactChats: allowNonContactChats,
+                      country: finalCountry,
+                      languages: finalLanguages,
+                      // Persist our immutable Wallet Address
+                      minimaaddress: resolvedMinimaAddress,
+                      // Use maxima icon as primary, MY_PROFILE as fallback
+                      avatar: myAvatar || avatar,
+                      listings: listings || [],
+                      timestamp: Date.now(),
+                    };
+
+                    var jsonStr = JSON.stringify(beacon);
+                    var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
+
+                    // P2P broadcast
+                    MDS.cmd("message data:" + hexData, function (res) {
+                      MDS.log("📡 [BG-BEACON] P2P broadcast sent");
+                    });
+
+                    // MLS unicast (Maxima) to make MLS a discovery hub
+                    sendBeaconToMLS(maxInfo.response, hexData);
+
+                    // Save self to DB
+                    handleBeacon(beacon, "SELF");
+                  });
+                },
+              );
+            };
+
+            if (!minimaAddress) {
+              MDS.cmd("getaddress", function (addrRes) {
+                if (
+                  addrRes &&
+                  addrRes.status &&
+                  addrRes.response &&
+                  addrRes.response.miniaddress
+                ) {
+                  minimaAddress = addrRes.response.miniaddress;
                 }
-              }
-
-              // Use DB values as primary, keypair as fallback
-              var finalCountry = dbCountry || country;
-              var finalLanguages = dbLanguages.length > 0 ? dbLanguages : [];
-              // Try to parse keypair languages if DB is empty
-              if (finalLanguages.length === 0 && languages) {
-                try {
-                  finalLanguages = JSON.parse(languages);
-                } catch (e) {
-                  finalLanguages = [];
-                }
-              }
-
-              var beacon = {
-                app: "metachain",
-                type: "BEACON",
-                v: 1,
-                pubkey: myPubkey,
-                alias: myName,
-                bio: bio,
-                address: myAddress,
-                allowNonContactChats: allowNonContactChats,
-                country: finalCountry,
-                languages: finalLanguages,
-                // Persist our immutable Wallet Address
-                minimaaddress: minimaAddress,
-                // Use maxima icon as primary, MY_PROFILE as fallback
-                avatar: myAvatar || avatar,
-                timestamp: Date.now(),
-              };
-
-              var jsonStr = JSON.stringify(beacon);
-              var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
-
-              // P2P broadcast
-              MDS.cmd("message data:" + hexData, function (res) {
-                MDS.log("📡 [BG-BEACON] P2P broadcast sent");
+                finalizeBeacon(minimaAddress);
               });
-
-              // MLS unicast (Maxima) to make MLS a discovery hub
-              sendBeaconToMLS(maxInfo.response, hexData);
-
-              // Save self to DB
-              handleBeacon(beacon, "SELF");
-            });
+            } else {
+              finalizeBeacon(minimaAddress);
+            }
           });
         });
       });
@@ -6069,7 +6937,7 @@ function sendBeaconToMLS(maxInfoResponse, hexData) {
       mls +
       " application:metachain data:" +
       hexData +
-      " poll:true",
+      " poll:false",
     function (res) {
       if (res.status) {
         MDS.log("✅ [BEACON-MLS] Beacon sent to MLS");
@@ -6102,6 +6970,9 @@ function createDiscoveredPeersTable() {
   MDS.log("💾 [DB] DISCOVERED_PEERS table check (already created in init).");
 }
 
+var LAST_MLS_BOOTSTRAP_AT = 0;
+var MLS_BOOTSTRAP_THROTTLE_MS = 30000;
+
 /**
  * Bootstrap discovery by sending get_peers to the configured MLS server.
  * Called on startup when DISCOVERED_PEERS may be empty (e.g. after -clean).
@@ -6109,6 +6980,13 @@ function createDiscoveredPeersTable() {
  * breaks the chicken-and-egg problem without requiring prior contacts.
  */
 function bootstrapFromMLS() {
+  var now = Date.now();
+  if (now - LAST_MLS_BOOTSTRAP_AT < MLS_BOOTSTRAP_THROTTLE_MS) {
+    MDS.log("⏭️ [BOOTSTRAP] Throttled repeated MLS bootstrap attempt.");
+    return;
+  }
+  LAST_MLS_BOOTSTRAP_AT = now;
+
   MDS.log("🔗 [BOOTSTRAP] Checking DISCOVERED_PEERS count...");
 
   MDS.sql(
@@ -6194,7 +7072,7 @@ function bootstrapFromMLS() {
             mlsFullAddress +
             " application:metachain data:" +
             hexData +
-            " poll:true",
+            " poll:false",
           function (res) {
             if (res.status) {
               MDS.log(
@@ -6220,113 +7098,158 @@ function bootstrapFromMLS() {
  * Handles peer exchange (gossip) protocol
  */
 
+function loadListingsMap(callback) {
+  MDS.sql(
+    "SELECT owner_publickey, listings, timestamp FROM DISCOVERED_LISTINGS",
+    function (res) {
+      var map = {};
+      if (res.status && res.rows) {
+        for (var i = 0; i < res.rows.length; i++) {
+          var row = res.rows[i];
+          var pk = row.OWNER_PUBLICKEY || row.owner_publickey;
+          if (!pk) continue;
+          var listJson = row.LISTINGS || row.listings || "[]";
+          var parsed = [];
+          try {
+            parsed = JSON.parse(
+              typeof listJson === "string"
+                ? listJson
+                : JSON.stringify(listJson),
+            );
+          } catch (e) {
+            parsed = [];
+          }
+          map[pk] = {
+            listings: parsed,
+            timestamp: row.TIMESTAMP || row.timestamp || 0,
+          };
+        }
+      }
+      callback(map);
+    },
+  );
+}
+
 function handleGetPeers(pubkey, maxjson) {
   MDS.log(
     "🗣️ [GOSSIP] Peer request from " +
       (maxjson.alias || pubkey.substring(0, 10)),
   );
 
-  // Fetch known peers
-  var peerSql =
-    "SELECT * FROM DISCOVERED_PEERS ORDER BY last_seen DESC LIMIT 50";
-  MDS.sql(peerSql, function (res) {
-    if (res.status && res.rows && res.rows.length > 0) {
-      var peers = [];
-      for (var i = 0; i < res.rows.length; i++) {
-        var row = res.rows[i];
+  loadListingsMap(function (listingsMap) {
+    // Fetch known peers
+    var peerSql =
+      "SELECT * FROM DISCOVERED_PEERS ORDER BY last_seen DESC LIMIT 50";
+    MDS.sql(peerSql, function (res) {
+      if (res.status && res.rows && res.rows.length > 0) {
+        var peers = [];
+        for (var i = 0; i < res.rows.length; i++) {
+          var row = res.rows[i];
+          var publickey = row.PUBLICKEY || row.publickey;
 
-        // Parse extra_data
-        var avatar = "";
-        var country = "";
-        var languages = [];
-        var bio = row.BIO || "";
+          // Parse extra_data
+          var avatar = "";
+          var country = "";
+          var languages = [];
+          var bio = row.BIO || "";
+          var timestamp = 0;
 
-        if (row.EXTRA_DATA) {
-          try {
-            var extraObj = JSON.parse(row.EXTRA_DATA);
-            avatar = extraObj.avatar || "";
-            country = extraObj.country || "";
-            languages = extraObj.languages || [];
-            if (!bio && extraObj.bio) bio = extraObj.bio;
-          } catch (e) {}
+          if (row.EXTRA_DATA) {
+            try {
+              var extraObj = JSON.parse(row.EXTRA_DATA);
+              avatar = extraObj.avatar || "";
+              country = extraObj.country || "";
+              languages = extraObj.languages || [];
+              if (!bio && extraObj.bio) bio = extraObj.bio;
+              timestamp = extraObj.timestamp || 0;
+            } catch (e) {}
+          }
+
+          var listingEntry = listingsMap[publickey];
+
+          peers.push({
+            pubkey: publickey,
+            alias: row.ALIAS,
+            bio: bio,
+            address: row.ADDRESS,
+            allowNonContactChats:
+              row.ALLOW_NON_CONTACT_CHATS === 1 ||
+              row.ALLOW_NON_CONTACT_CHATS === true,
+            avatar: avatar,
+            country: country,
+            languages: languages,
+            listings: listingEntry ? listingEntry.listings : undefined,
+            timestamp: timestamp || (listingEntry ? listingEntry.timestamp : 0),
+          });
         }
 
-        peers.push({
-          pubkey: row.PUBLICKEY,
-          alias: row.ALIAS,
-          bio: bio,
-          address: row.ADDRESS,
-          allowNonContactChats:
-            row.ALLOW_NON_CONTACT_CHATS === 1 ||
-            row.ALLOW_NON_CONTACT_CHATS === true,
-          avatar: avatar,
-          country: country,
-          languages: languages,
-        });
-      }
+        // Send response (prefer address when provided to avoid contact requirement)
+        var replyPayload = {
+          app: "metachain",
+          type: "peers_response",
+          peers: peers,
+        };
+        var replyHex =
+          "0x" + utf8ToHex(JSON.stringify(replyPayload)).toUpperCase();
+        var targetAddress = maxjson && maxjson.address ? maxjson.address : "";
+        var sendCmd = targetAddress
+          ? "maxima action:send to:" +
+            targetAddress +
+            " application:metachain data:" +
+            replyHex +
+            " poll:false"
+          : "maxima action:send publickey:" +
+            pubkey +
+            " application:metachain data:" +
+            replyHex +
+            " poll:false";
 
-      // Send response (prefer address when provided to avoid contact requirement)
-      var replyPayload = {
-        app: "metachain",
-        type: "peers_response",
-        peers: peers,
-      };
-      var replyHex =
-        "0x" + utf8ToHex(JSON.stringify(replyPayload)).toUpperCase();
-      var targetAddress = maxjson && maxjson.address ? maxjson.address : "";
-      var sendCmd = targetAddress
-        ? "maxima action:send to:" +
-          targetAddress +
-          " application:metachain data:" +
-          replyHex +
-          " poll:false"
-        : "maxima action:send publickey:" +
+        var fallbackCmd =
+          "maxima action:send publickey:" +
           pubkey +
           " application:metachain data:" +
           replyHex +
           " poll:false";
 
-      var fallbackCmd =
-        "maxima action:send publickey:" +
-        pubkey +
-        " application:metachain data:" +
-        replyHex +
-        " poll:false";
+        MDS.cmd(sendCmd, function (sendRes) {
+          var targetLabel = targetAddress
+            ? "to " + targetAddress
+            : "publickey " + pubkey.substring(0, 10);
 
-      MDS.cmd(sendCmd, function (sendRes) {
-        var targetLabel = targetAddress
-          ? "to " + targetAddress
-          : "publickey " + pubkey.substring(0, 10);
+          if (sendRes && sendRes.status === false) {
+            MDS.log(
+              "⚠️ [GOSSIP] Failed to send peers " +
+                targetLabel +
+                ": " +
+                (sendRes.error || "unknown error"),
+            );
+          } else {
+            MDS.log(
+              "✅ [GOSSIP] Sent " + peers.length + " peers " + targetLabel,
+            );
+          }
 
-        if (sendRes && sendRes.status === false) {
-          MDS.log(
-            "⚠️ [GOSSIP] Failed to send peers " +
-              targetLabel +
-              ": " +
-              (sendRes.error || "unknown error"),
-          );
-        } else {
-          MDS.log("✅ [GOSSIP] Sent " + peers.length + " peers " + targetLabel);
-        }
-
-        // Always also send via publickey to avoid stale/ephemeral addresses
-        if (targetAddress) {
-          MDS.cmd(fallbackCmd, function (fallbackRes) {
-            var pkLabel = "publickey " + pubkey.substring(0, 10);
-            if (fallbackRes && fallbackRes.status === false) {
-              MDS.log(
-                "⚠️ [GOSSIP] Failed to send peers to " +
-                  pkLabel +
-                  ": " +
-                  (fallbackRes.error || "unknown error"),
-              );
-            } else {
-              MDS.log("✅ [GOSSIP] Sent " + peers.length + " peers " + pkLabel);
-            }
-          });
-        }
-      });
-    }
+          // Always also send via publickey to avoid stale/ephemeral addresses
+          if (targetAddress) {
+            MDS.cmd(fallbackCmd, function (fallbackRes) {
+              var pkLabel = "publickey " + pubkey.substring(0, 10);
+              if (fallbackRes && fallbackRes.status === false) {
+                MDS.log(
+                  "⚠️ [GOSSIP] Failed to send peers to " +
+                    pkLabel +
+                    ": " +
+                    (fallbackRes.error || "unknown error"),
+                );
+              } else {
+                MDS.log(
+                  "✅ [GOSSIP] Sent " + peers.length + " peers " + pkLabel,
+                );
+              }
+            });
+          }
+        });
+      }
+    });
   });
 }
 
@@ -6407,7 +7330,9 @@ function startGossip() {
         if (validPubkeys.length > 0) {
           askPeers(validPubkeys);
         } else {
-          MDS.log("⚠️ [GOSSIP] Only self found in discovery — triggering MLS bootstrap fallback.");
+          MDS.log(
+            "⚠️ [GOSSIP] Only self found in discovery — triggering MLS bootstrap fallback.",
+          );
           if (typeof bootstrapFromMLS === "function") {
             bootstrapFromMLS();
           }
@@ -6481,79 +7406,88 @@ function sendWelcomePackage(targetPubkey, targetAlias, targetAddress) {
 
   MDS.log("🎁 [GOSSIP] Sending Welcome Package to " + targetAlias);
 
-  var peerSql =
-    "SELECT * FROM DISCOVERED_PEERS ORDER BY last_seen DESC LIMIT 50";
-  MDS.sql(peerSql, function (res) {
-    if (res.status && res.rows && res.rows.length > 0) {
-      var peers = [];
-      for (var i = 0; i < res.rows.length; i++) {
-        var row = res.rows[i];
+  loadListingsMap(function (listingsMap) {
+    var peerSql =
+      "SELECT * FROM DISCOVERED_PEERS ORDER BY last_seen DESC LIMIT 50";
+    MDS.sql(peerSql, function (res) {
+      if (res.status && res.rows && res.rows.length > 0) {
+        var peers = [];
+        for (var i = 0; i < res.rows.length; i++) {
+          var row = res.rows[i];
+          var publickey = row.PUBLICKEY || row.publickey;
 
-        var avatar = "";
-        var country = "";
-        var languages = [];
-        var bio = row.BIO || "";
+          var avatar = "";
+          var country = "";
+          var languages = [];
+          var bio = row.BIO || "";
+          var timestamp = 0;
 
-        if (row.EXTRA_DATA) {
-          try {
-            var extraObj = JSON.parse(row.EXTRA_DATA);
-            avatar = extraObj.avatar || "";
-            country = extraObj.country || "";
-            languages = extraObj.languages || [];
-            if (!bio && extraObj.bio) bio = extraObj.bio;
-          } catch (e) {}
+          if (row.EXTRA_DATA) {
+            try {
+              var extraObj = JSON.parse(row.EXTRA_DATA);
+              avatar = extraObj.avatar || "";
+              country = extraObj.country || "";
+              languages = extraObj.languages || [];
+              if (!bio && extraObj.bio) bio = extraObj.bio;
+              timestamp = extraObj.timestamp || 0;
+            } catch (e) {}
+          }
+
+          var listingEntry = listingsMap[publickey];
+
+          peers.push({
+            pubkey: publickey,
+            alias: row.ALIAS,
+            bio: bio,
+            address: row.ADDRESS,
+            allowNonContactChats:
+              row.ALLOW_NON_CONTACT_CHATS === 1 ||
+              row.ALLOW_NON_CONTACT_CHATS === true,
+            avatar: avatar,
+            country: country,
+            languages: languages,
+            listings: listingEntry ? listingEntry.listings : undefined,
+            timestamp: timestamp || (listingEntry ? listingEntry.timestamp : 0),
+          });
         }
 
-        peers.push({
-          pubkey: row.PUBLICKEY,
-          alias: row.ALIAS,
-          bio: bio,
-          address: row.ADDRESS,
-          allowNonContactChats:
-            row.ALLOW_NON_CONTACT_CHATS === 1 ||
-            row.ALLOW_NON_CONTACT_CHATS === true,
-          avatar: avatar,
-          country: country,
-          languages: languages,
+        var responsePayload = {
+          app: "metachain",
+          type: "peers_response",
+          peers: peers,
+        };
+
+        var hexData =
+          "0x" + utf8ToHex(JSON.stringify(responsePayload)).toUpperCase();
+
+        // Send via Maxima unicast directly to the target
+        // Prioritize to:address (no contact required), fallback to publickey
+        var sendCmd = targetAddress
+          ? "maxima action:send to:" +
+            targetAddress +
+            " application:metachain data:" +
+            hexData +
+            " poll:false"
+          : "maxima action:send publickey:" +
+            targetPubkey +
+            " application:metachain data:" +
+            hexData +
+            " poll:false";
+
+        MDS.cmd(sendCmd, function (sendRes) {
+          if (sendRes && sendRes.status === false) {
+            MDS.log(
+              "⚠️ [GOSSIP] Failed to send Welcome Package to " +
+                targetAlias +
+                ": " +
+                (sendRes.error || "unknown error"),
+            );
+          } else {
+            MDS.log("✅ [GOSSIP] Welcome Package sent to " + targetAlias);
+          }
         });
       }
-
-      var responsePayload = {
-        app: "metachain",
-        type: "peers_response",
-        peers: peers,
-      };
-
-      var hexData =
-        "0x" + utf8ToHex(JSON.stringify(responsePayload)).toUpperCase();
-
-      // Send via Maxima unicast directly to the target
-      // Prioritize to:address (no contact required), fallback to publickey
-      var sendCmd = targetAddress
-        ? "maxima action:send to:" +
-          targetAddress +
-          " application:metachain data:" +
-          hexData +
-          " poll:false"
-        : "maxima action:send publickey:" +
-          targetPubkey +
-          " application:metachain data:" +
-          hexData +
-          " poll:false";
-
-      MDS.cmd(sendCmd, function (sendRes) {
-        if (sendRes && sendRes.status === false) {
-          MDS.log(
-            "⚠️ [GOSSIP] Failed to send Welcome Package to " +
-              targetAlias +
-              ": " +
-              (sendRes.error || "unknown error"),
-          );
-        } else {
-          MDS.log("✅ [GOSSIP] Welcome Package sent to " + targetAlias);
-        }
-      });
-    }
+    });
   });
 }
 

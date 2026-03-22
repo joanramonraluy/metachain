@@ -306,7 +306,7 @@ function handleChannelHistoryRequest(pubkey, maxjson) {
         pubkey +
         " application:metachain-channel data:" +
         hexData +
-        " poll:true", // CORRECT: poll:true ensures message delivery for offline/non-contact recipients
+        " poll:false", // CORRECT: poll:true ensures message delivery for offline/non-contact recipients
       );
     });
   });

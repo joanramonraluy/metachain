@@ -3,113 +3,158 @@
  * Handles peer exchange (gossip) protocol
  */
 
+function loadListingsMap(callback) {
+  MDS.sql(
+    "SELECT owner_publickey, listings, timestamp FROM DISCOVERED_LISTINGS",
+    function (res) {
+      var map = {};
+      if (res.status && res.rows) {
+        for (var i = 0; i < res.rows.length; i++) {
+          var row = res.rows[i];
+          var pk = row.OWNER_PUBLICKEY || row.owner_publickey;
+          if (!pk) continue;
+          var listJson = row.LISTINGS || row.listings || "[]";
+          var parsed = [];
+          try {
+            parsed = JSON.parse(
+              typeof listJson === "string"
+                ? listJson
+                : JSON.stringify(listJson),
+            );
+          } catch (e) {
+            parsed = [];
+          }
+          map[pk] = {
+            listings: parsed,
+            timestamp: row.TIMESTAMP || row.timestamp || 0,
+          };
+        }
+      }
+      callback(map);
+    },
+  );
+}
+
 function handleGetPeers(pubkey, maxjson) {
   MDS.log(
     "🗣️ [GOSSIP] Peer request from " +
       (maxjson.alias || pubkey.substring(0, 10)),
   );
 
-  // Fetch known peers
-  var peerSql =
-    "SELECT * FROM DISCOVERED_PEERS ORDER BY last_seen DESC LIMIT 50";
-  MDS.sql(peerSql, function (res) {
-    if (res.status && res.rows && res.rows.length > 0) {
-      var peers = [];
-      for (var i = 0; i < res.rows.length; i++) {
-        var row = res.rows[i];
+  loadListingsMap(function (listingsMap) {
+    // Fetch known peers
+    var peerSql =
+      "SELECT * FROM DISCOVERED_PEERS ORDER BY last_seen DESC LIMIT 50";
+    MDS.sql(peerSql, function (res) {
+      if (res.status && res.rows && res.rows.length > 0) {
+        var peers = [];
+        for (var i = 0; i < res.rows.length; i++) {
+          var row = res.rows[i];
+          var publickey = row.PUBLICKEY || row.publickey;
 
-        // Parse extra_data
-        var avatar = "";
-        var country = "";
-        var languages = [];
-        var bio = row.BIO || "";
+          // Parse extra_data
+          var avatar = "";
+          var country = "";
+          var languages = [];
+          var bio = row.BIO || "";
+          var timestamp = 0;
 
-        if (row.EXTRA_DATA) {
-          try {
-            var extraObj = JSON.parse(row.EXTRA_DATA);
-            avatar = extraObj.avatar || "";
-            country = extraObj.country || "";
-            languages = extraObj.languages || [];
-            if (!bio && extraObj.bio) bio = extraObj.bio;
-          } catch (e) {}
+          if (row.EXTRA_DATA) {
+            try {
+              var extraObj = JSON.parse(row.EXTRA_DATA);
+              avatar = extraObj.avatar || "";
+              country = extraObj.country || "";
+              languages = extraObj.languages || [];
+              if (!bio && extraObj.bio) bio = extraObj.bio;
+              timestamp = extraObj.timestamp || 0;
+            } catch (e) {}
+          }
+
+          var listingEntry = listingsMap[publickey];
+
+          peers.push({
+            pubkey: publickey,
+            alias: row.ALIAS,
+            bio: bio,
+            address: row.ADDRESS,
+            allowNonContactChats:
+              row.ALLOW_NON_CONTACT_CHATS === 1 ||
+              row.ALLOW_NON_CONTACT_CHATS === true,
+            avatar: avatar,
+            country: country,
+            languages: languages,
+            listings: listingEntry ? listingEntry.listings : undefined,
+            timestamp: timestamp || (listingEntry ? listingEntry.timestamp : 0),
+          });
         }
 
-        peers.push({
-          pubkey: row.PUBLICKEY,
-          alias: row.ALIAS,
-          bio: bio,
-          address: row.ADDRESS,
-          allowNonContactChats:
-            row.ALLOW_NON_CONTACT_CHATS === 1 ||
-            row.ALLOW_NON_CONTACT_CHATS === true,
-          avatar: avatar,
-          country: country,
-          languages: languages,
-        });
-      }
+        // Send response (prefer address when provided to avoid contact requirement)
+        var replyPayload = {
+          app: "metachain",
+          type: "peers_response",
+          peers: peers,
+        };
+        var replyHex =
+          "0x" + utf8ToHex(JSON.stringify(replyPayload)).toUpperCase();
+        var targetAddress = maxjson && maxjson.address ? maxjson.address : "";
+        var sendCmd = targetAddress
+          ? "maxima action:send to:" +
+            targetAddress +
+            " application:metachain data:" +
+            replyHex +
+            " poll:false"
+          : "maxima action:send publickey:" +
+            pubkey +
+            " application:metachain data:" +
+            replyHex +
+            " poll:false";
 
-      // Send response (prefer address when provided to avoid contact requirement)
-      var replyPayload = {
-        app: "metachain",
-        type: "peers_response",
-        peers: peers,
-      };
-      var replyHex =
-        "0x" + utf8ToHex(JSON.stringify(replyPayload)).toUpperCase();
-      var targetAddress = maxjson && maxjson.address ? maxjson.address : "";
-      var sendCmd = targetAddress
-        ? "maxima action:send to:" +
-          targetAddress +
-          " application:metachain data:" +
-          replyHex +
-          " poll:false"
-        : "maxima action:send publickey:" +
+        var fallbackCmd =
+          "maxima action:send publickey:" +
           pubkey +
           " application:metachain data:" +
           replyHex +
           " poll:false";
 
-      var fallbackCmd =
-        "maxima action:send publickey:" +
-        pubkey +
-        " application:metachain data:" +
-        replyHex +
-        " poll:false";
+        MDS.cmd(sendCmd, function (sendRes) {
+          var targetLabel = targetAddress
+            ? "to " + targetAddress
+            : "publickey " + pubkey.substring(0, 10);
 
-      MDS.cmd(sendCmd, function (sendRes) {
-        var targetLabel = targetAddress
-          ? "to " + targetAddress
-          : "publickey " + pubkey.substring(0, 10);
+          if (sendRes && sendRes.status === false) {
+            MDS.log(
+              "⚠️ [GOSSIP] Failed to send peers " +
+                targetLabel +
+                ": " +
+                (sendRes.error || "unknown error"),
+            );
+          } else {
+            MDS.log(
+              "✅ [GOSSIP] Sent " + peers.length + " peers " + targetLabel,
+            );
+          }
 
-        if (sendRes && sendRes.status === false) {
-          MDS.log(
-            "⚠️ [GOSSIP] Failed to send peers " +
-              targetLabel +
-              ": " +
-              (sendRes.error || "unknown error"),
-          );
-        } else {
-          MDS.log("✅ [GOSSIP] Sent " + peers.length + " peers " + targetLabel);
-        }
-
-        // Always also send via publickey to avoid stale/ephemeral addresses
-        if (targetAddress) {
-          MDS.cmd(fallbackCmd, function (fallbackRes) {
-            var pkLabel = "publickey " + pubkey.substring(0, 10);
-            if (fallbackRes && fallbackRes.status === false) {
-              MDS.log(
-                "⚠️ [GOSSIP] Failed to send peers to " +
-                  pkLabel +
-                  ": " +
-                  (fallbackRes.error || "unknown error"),
-              );
-            } else {
-              MDS.log("✅ [GOSSIP] Sent " + peers.length + " peers " + pkLabel);
-            }
-          });
-        }
-      });
-    }
+          // Always also send via publickey to avoid stale/ephemeral addresses
+          if (targetAddress) {
+            MDS.cmd(fallbackCmd, function (fallbackRes) {
+              var pkLabel = "publickey " + pubkey.substring(0, 10);
+              if (fallbackRes && fallbackRes.status === false) {
+                MDS.log(
+                  "⚠️ [GOSSIP] Failed to send peers to " +
+                    pkLabel +
+                    ": " +
+                    (fallbackRes.error || "unknown error"),
+                );
+              } else {
+                MDS.log(
+                  "✅ [GOSSIP] Sent " + peers.length + " peers " + pkLabel,
+                );
+              }
+            });
+          }
+        });
+      }
+    });
   });
 }
 
@@ -190,7 +235,9 @@ function startGossip() {
         if (validPubkeys.length > 0) {
           askPeers(validPubkeys);
         } else {
-          MDS.log("⚠️ [GOSSIP] Only self found in discovery — triggering MLS bootstrap fallback.");
+          MDS.log(
+            "⚠️ [GOSSIP] Only self found in discovery — triggering MLS bootstrap fallback.",
+          );
           if (typeof bootstrapFromMLS === "function") {
             bootstrapFromMLS();
           }
@@ -264,78 +311,87 @@ function sendWelcomePackage(targetPubkey, targetAlias, targetAddress) {
 
   MDS.log("🎁 [GOSSIP] Sending Welcome Package to " + targetAlias);
 
-  var peerSql =
-    "SELECT * FROM DISCOVERED_PEERS ORDER BY last_seen DESC LIMIT 50";
-  MDS.sql(peerSql, function (res) {
-    if (res.status && res.rows && res.rows.length > 0) {
-      var peers = [];
-      for (var i = 0; i < res.rows.length; i++) {
-        var row = res.rows[i];
+  loadListingsMap(function (listingsMap) {
+    var peerSql =
+      "SELECT * FROM DISCOVERED_PEERS ORDER BY last_seen DESC LIMIT 50";
+    MDS.sql(peerSql, function (res) {
+      if (res.status && res.rows && res.rows.length > 0) {
+        var peers = [];
+        for (var i = 0; i < res.rows.length; i++) {
+          var row = res.rows[i];
+          var publickey = row.PUBLICKEY || row.publickey;
 
-        var avatar = "";
-        var country = "";
-        var languages = [];
-        var bio = row.BIO || "";
+          var avatar = "";
+          var country = "";
+          var languages = [];
+          var bio = row.BIO || "";
+          var timestamp = 0;
 
-        if (row.EXTRA_DATA) {
-          try {
-            var extraObj = JSON.parse(row.EXTRA_DATA);
-            avatar = extraObj.avatar || "";
-            country = extraObj.country || "";
-            languages = extraObj.languages || [];
-            if (!bio && extraObj.bio) bio = extraObj.bio;
-          } catch (e) {}
+          if (row.EXTRA_DATA) {
+            try {
+              var extraObj = JSON.parse(row.EXTRA_DATA);
+              avatar = extraObj.avatar || "";
+              country = extraObj.country || "";
+              languages = extraObj.languages || [];
+              if (!bio && extraObj.bio) bio = extraObj.bio;
+              timestamp = extraObj.timestamp || 0;
+            } catch (e) {}
+          }
+
+          var listingEntry = listingsMap[publickey];
+
+          peers.push({
+            pubkey: publickey,
+            alias: row.ALIAS,
+            bio: bio,
+            address: row.ADDRESS,
+            allowNonContactChats:
+              row.ALLOW_NON_CONTACT_CHATS === 1 ||
+              row.ALLOW_NON_CONTACT_CHATS === true,
+            avatar: avatar,
+            country: country,
+            languages: languages,
+            listings: listingEntry ? listingEntry.listings : undefined,
+            timestamp: timestamp || (listingEntry ? listingEntry.timestamp : 0),
+          });
         }
 
-        peers.push({
-          pubkey: row.PUBLICKEY,
-          alias: row.ALIAS,
-          bio: bio,
-          address: row.ADDRESS,
-          allowNonContactChats:
-            row.ALLOW_NON_CONTACT_CHATS === 1 ||
-            row.ALLOW_NON_CONTACT_CHATS === true,
-          avatar: avatar,
-          country: country,
-          languages: languages,
+        var responsePayload = {
+          app: "metachain",
+          type: "peers_response",
+          peers: peers,
+        };
+
+        var hexData =
+          "0x" + utf8ToHex(JSON.stringify(responsePayload)).toUpperCase();
+
+        // Send via Maxima unicast directly to the target
+        // Prioritize to:address (no contact required), fallback to publickey
+        var sendCmd = targetAddress
+          ? "maxima action:send to:" +
+            targetAddress +
+            " application:metachain data:" +
+            hexData +
+            " poll:false"
+          : "maxima action:send publickey:" +
+            targetPubkey +
+            " application:metachain data:" +
+            hexData +
+            " poll:false";
+
+        MDS.cmd(sendCmd, function (sendRes) {
+          if (sendRes && sendRes.status === false) {
+            MDS.log(
+              "⚠️ [GOSSIP] Failed to send Welcome Package to " +
+                targetAlias +
+                ": " +
+                (sendRes.error || "unknown error"),
+            );
+          } else {
+            MDS.log("✅ [GOSSIP] Welcome Package sent to " + targetAlias);
+          }
         });
       }
-
-      var responsePayload = {
-        app: "metachain",
-        type: "peers_response",
-        peers: peers,
-      };
-
-      var hexData =
-        "0x" + utf8ToHex(JSON.stringify(responsePayload)).toUpperCase();
-
-      // Send via Maxima unicast directly to the target
-      // Prioritize to:address (no contact required), fallback to publickey
-      var sendCmd = targetAddress
-        ? "maxima action:send to:" +
-          targetAddress +
-          " application:metachain data:" +
-          hexData +
-          " poll:false"
-        : "maxima action:send publickey:" +
-          targetPubkey +
-          " application:metachain data:" +
-          hexData +
-          " poll:false";
-
-      MDS.cmd(sendCmd, function (sendRes) {
-        if (sendRes && sendRes.status === false) {
-          MDS.log(
-            "⚠️ [GOSSIP] Failed to send Welcome Package to " +
-              targetAlias +
-              ": " +
-              (sendRes.error || "unknown error"),
-          );
-        } else {
-          MDS.log("✅ [GOSSIP] Welcome Package sent to " + targetAlias);
-        }
-      });
-    }
+    });
   });
 }

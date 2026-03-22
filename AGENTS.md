@@ -1,6 +1,6 @@
 1 # AGENTS.md - MetaChain Engineering Guide
 
-Last reviewed against codebase: 2026-03-21 (commit `uncommitted` + Beacon timestamp guard + CHANNEL_SUBSCRIBERS FE DB parity)
+Last reviewed against codebase: 2026-03-22 (commit `uncommitted` + beacon listings cache + public listings UI + pong throttle + welcome gating + FE ping/pong dedupe + MDS_SOLO callback fix + poll:false latency reduction)
 Scope: `/home/joanramon/Minima/metachain`
 
 ## 1) Project Intent
@@ -69,8 +69,9 @@ SW `handleBeacon` (`public/service-workers/handlers/beacon.handler.js`) currentl
 - self-beacon ignore by comparing `MY_MAXIMA_PK` (except `source === SELF` so the node can persist itself)
 - profile overwrite protection: if incoming `timestamp` is missing and a profile already exists, only `last_seen` is updated
 - persistence into `DISCOVERED_PEERS` with `allow_non_contact_chats` and `extra_data`
+- public listings sync: `listings` array (max 10, types `group`/`channel`) cached in `DISCOVERED_LISTINGS`, updated only when beacon `timestamp` is newer
 - promotion into stable `METACHAIN_USERS`
-- reactive relay: when source is `P2P` or `MAXIMA`, calls `sendWelcomePackage` + `askPeers`
+- reactive relay: when source is `P2P` or `MAXIMA`, calls `sendWelcomePackage` + `askPeers` only when the peer is newly discovered (not already in `DISCOVERED_PEERS`)
 
 ### 4.3 Beacon relay chain (how discovery propagates)
 When a node receives a beacon from a P2P or MAXIMA source, it:
@@ -107,6 +108,7 @@ Current behavior:
 - Settings UI no longer auto-sets static MLS on load
 - Self-MLS detection uses `p2pidentity` to avoid loops when contact address differs
 - `staticmls` persists across normal restarts and is lost only on clean reset or data wipe (e.g. `-clean`, `reset`, basefolder change, or restoring an old backup)
+- MLS bootstrap attempts (`bootstrapFromMLS`) are throttled (30s) to avoid repeated startup bursts when discovery is empty.
 
 MLS is used for **Maxima routing** (unicast). With the MLS beacon hub behavior, nodes also unicast their own beacons to the MLS server so it can answer `get_peers` even when P2P MetaChain neighbors are sparse. Two nodes sharing an MLS server can exchange Maxima messages and discover peers via MLS without direct P2P MetaChain neighbors, assuming the MLS runs MetaChain and receives those beacons. `get_peers` now includes the requester `address` so the MLS can respond via `to:` even when the requester is not a Maxima contact. Prefer `mls` (stable `Mx@ip:port`) over `contact` (often transient) when populating this field. MLS responses are sent to both `to:<address>` and `publickey` to handle stale/ephemeral addresses.
 
@@ -133,7 +135,7 @@ Relevant files:
 - `src/services/contact-requests.service.ts`
 - `src/services/minima.service.ts` (smart sync/history paths)
 
-Never remove fallback-to-address logic unless replacing it with an equivalent robust path.
+Never remove fallback-to-address logic unless replacing it with an equivalent robust path. **Use `poll:false` by default** for all outbound MAXIMA sends to prevent runtime blocking (77s+) when targets are offline or not in contacts.
 
 ### 5.2 Contact systems are intentionally dual
 Two parallel protocols:
@@ -160,6 +162,21 @@ Canonical key naming rule:
 - Beacon/profile JSON field: `allowNonContactChats`
 - Legacy keypair fallback keys exist (`allow_noncontact_chats`, `profile_chat_permission_allow_all`).
 Do not introduce additional permission key names.
+
+### 5.4 Optimized Non-Contact Messaging (Caching)
+To reduce RPC latency and "No Contact found" error noise, both FE and SW implement a session-based `ContactStatusCache` (Record<publicKey, boolean>).
+
+**Sending Strategy (Dual-Runtime):**
+1. **Recipients in Contacts**: Prioritize `maxima action:send publickey:<0x...>` (standard Maxima routing).
+2. **Recipients NOT in Contacts**: 
+   - Resolve `Mx...` address from `DISCOVERED_PEERS`.
+   - If resolved, send via `maxima action:send to:<Mx...>` directly, bypassing the initial `publickey` attempt.
+   - If not resolved, fallback to `publickey` (standard behavior).
+
+**Cache Lifecycle:**
+- **Initialization**: Populated on the first message send to a peer by checking `MAXIMA_CONTACT_REQUESTS` and `CONTACT_REQUESTS`.
+- **Invalidation**: Cleared automatically via `clearContactStatusCache(publicKey)` when a contact request is accepted in either frontend (`contact-requests.service.ts`) or service worker (`contact.handler.js`).
+- **Persistence**: Session-only (in-memory).
 
 ## 6) FE <-> SW Coherence Contract
 
@@ -201,7 +218,7 @@ Do not create independent history merge algorithms in FE.
 ### 6.4 Protocol Matrix (Ingress -> Persistence -> UI)
 | Protocol / Type | Ingress Owner | Persistence Owner | Primary Tables | FE Refresh Signal |
 | --- | --- | --- | --- | --- |
-| `BEACON`, `register` | SW `main.js` -> `beacon.handler.js` | SW | `DISCOVERED_PEERS`, `METACHAIN_USERS` | no direct SW signal; FE refreshes via DB reads / discovery events |
+| `BEACON`, `register` | SW `main.js` -> `beacon.handler.js` | SW | `DISCOVERED_PEERS`, `METACHAIN_USERS`, `DISCOVERED_LISTINGS` | no direct SW signal; FE refreshes via DB reads / discovery events |
 | `get_peers`, `peers_response` | SW `gossip.handler.js` | SW | `DISCOVERED_PEERS` | `DISCOVERY_UPDATE` |
 | `text`, `token`, `charm` chat payloads | SW `chat.handler.js` | SW | `CHAT_MESSAGES`, `TRANSACTIONS` (tx flows) | `CHAT_LIST_UPDATE`, `onNewMessage` |
 | `delivery_receipt`, `read` | SW `chat.handler.js` | SW | `CHAT_MESSAGES` | `onNewMessage` |
@@ -218,6 +235,7 @@ Do not create independent history merge algorithms in FE.
 4. History merge, sequence gap recovery and sync reports: SW only.
 5. UI presentation, optimistic rendering and route-level UX: FE only.
 6. FE can trigger sends; SW owns canonical inbound persistence and reconciliation.
+7. `ping`/`pong` protocol responses are SW-owned; FE may observe `pong` for presence UI but must not send `pong`.
 
 ### 6.6 Handler Signature Contract (Critical)
 For SW message handlers, preserve argument order consistently between dispatcher and handler definitions.
@@ -232,12 +250,12 @@ Do not swap to `(fromKey, msg)` in dispatcher calls. This breaks sequence SQL ch
 - Canonical network message for group settings sync (including `auto_approve`) is `group_update_details`.
 - SW still accepts legacy `group_info_updated` for backward compatibility, but new sends should use `group_update_details`.
 - When a member is promoted to `admin`, the promoter's SW sends a settings snapshot (`group_update_details` with current `auto_approve`) directly to the promoted admin.
-+
-+### 6.8 Chat Synchronization and UI Optimizations (FE-side)
-+1. **Lazy/Debounced Reloads**: Chat message list reloads in `$address.tsx` must be suppressed for "control" payloads (e.g., `ping`, `pong`, `read_receipt`, `delivery_receipt`) that do not change content visibility.
-+2. **Discovery Loading UX**: When accessing a non-contact's profile, the **Actions** tab in `ContactInfoPage` uses `isCheckingProfile` to show a "Verifying Permissions" loading state while waiting for real-time permission confirmation (via `profile_response`). This prevents UI flashes of restricted states based on stale Discovery/Beacon cache.
-+3. **Profile Discovery Trigger**: Chat view (`$address.tsx`) and Contact Info both trigger `requestProfile` if the cached peer is a non-contact or has incomplete data (missing alias/address).
-+
+### 6.8 Chat Synchronization and UI Optimizations (FE-side)
+1. **Lazy/Debounced Reloads**: Chat message list reloads in `$address.tsx` must be suppressed for "control" payloads (e.g., `ping`, `pong`, `read_receipt`, `delivery_receipt`) that do not change content visibility.
+2. **Discovery Loading UX**: When accessing a non-contact's profile, the **Actions** tab in `ContactInfoPage` uses `isCheckingProfile` to show a "Verifying Permissions" loading state while waiting for real-time permission confirmation (via `profile_response`). This prevents UI flashes of restricted states based on stale Discovery/Beacon cache.
+3. **Profile Discovery Trigger**: Chat view (`$address.tsx`) and Contact Info both trigger `requestProfile` if the cached peer is a non-contact or has incomplete data (missing alias/address).
+4. **Profile Request Guardrails**: `requestProfile` emits at most one in-flight request per peer and enforces a 30s throttle; SW `handleProfileRequest` also throttles repeated requester calls to reduce MAXIMA queue pressure.
+
 ## 7) Ordering, Dedup and Transaction Safety
 
 ### 7.1 Message ordering invariants
@@ -275,6 +293,7 @@ Never add a new column in only one runtime.
 
 6. Schema parity for shared tables must keep minimum compatible columns across both runtimes:
 - `DISCOVERED_PEERS`: `publickey`, `address`, `alias`, `last_seen`, `source`, `allow_non_contact_chats`
+- `DISCOVERED_LISTINGS`: `owner_publickey`, `listings`, `timestamp`, `last_seen`
 - `METACHAIN_USERS`: `publickey`, `alias` (plus SW registry fields used by discovery merge)
 - `MESSAGE_COUNTERS`: `publickey`, `next_seq`
 
@@ -316,6 +335,8 @@ When changing protocol code, log:
 9. Legacy/corrupt `GROUP_MEMBERS` rows with blank `publickey` can break Maxima sends (`BLANK param not allowed : publickey`); sender/sync loops must skip and cleanup blank keys.
 10. **`discovery_interval` / `discovery_limit` UI controls are disconnected from the SW** (`src/routes/settings/discovery.tsx` saves to keypair but SW uses hardcoded `GOSSIP_INTERVAL`/`BEACON_INTERVAL` in `utils.js`). These settings have zero effect until the SW is updated to read them. See section 4.4.
 11. **Beacon transport is P2P-only (`MSG_GENMESSAGE`), not Maxima**. Two MetaChain nodes with no shared MetaChain-running P2P neighbor cannot discover each other via beacon. Do not assume discovery will work on sparse mainnet deployments without a common MetaChain relay node or shared MLS for Maxima fallback. See section 4.3.
+12. **`MDS.comms.solo("type")` does NOT support a second callback argument** in the Minima JS/TS bridge. Providing one (a frequent legacy pattern) causes the notification to fail silently. Notifications must be fire-and-forget; let the FE logic handle state transitions via DB reads.
+13. **Blocking Sends (`poll:true`) are prohibited** in hot paths (chat/beacon/history). A blocking send to an offline peer will freeze the Service Worker event loop for ~77 seconds, pausing all gossip, incoming message processing, and DB maintenance. Always use `poll:false`.
 
 ## 12) Pre-merge Checklist (Mandatory for protocol/state changes)
 

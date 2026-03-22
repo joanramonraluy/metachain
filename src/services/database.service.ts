@@ -343,7 +343,8 @@ export async function initDB(): Promise<void> {
                                 archived BOOLEAN DEFAULT FALSE,
                                 archived_date BIGINT,
                                 favorite BOOLEAN DEFAULT FALSE,
-                                auto_approve BOOLEAN DEFAULT FALSE
+                                auto_approve BOOLEAN DEFAULT FALSE,
+                                is_public BOOLEAN DEFAULT FALSE
                             )`;
 
             MDS.sql(createGroupsTable, (res: any) => {
@@ -364,6 +365,10 @@ export async function initDB(): Promise<void> {
                 );
                 MDS.sql(
                   "ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS favorite BOOLEAN DEFAULT FALSE",
+                  () => {},
+                );
+                MDS.sql(
+                  "ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS is_public BOOLEAN DEFAULT FALSE",
                   () => {},
                 );
                 MDS.sql(
@@ -575,7 +580,8 @@ export async function initDB(): Promise<void> {
                           avatar TEXT,
                           archived BOOLEAN DEFAULT FALSE,
                           archived_date BIGINT,
-                          favorite BOOLEAN DEFAULT FALSE
+                          favorite BOOLEAN DEFAULT FALSE,
+                          is_public BOOLEAN DEFAULT FALSE
                         )`;
 
                       MDS.sql(createChannelsTable, (cRes: any) => {
@@ -598,6 +604,10 @@ export async function initDB(): Promise<void> {
                           );
                           MDS.sql(
                             "ALTER TABLE CHANNELS ADD COLUMN IF NOT EXISTS favorite BOOLEAN DEFAULT FALSE",
+                            () => {},
+                          );
+                          MDS.sql(
+                            "ALTER TABLE CHANNELS ADD COLUMN IF NOT EXISTS is_public BOOLEAN DEFAULT FALSE",
                             () => {},
                           );
 
@@ -760,6 +770,40 @@ export async function initDB(): Promise<void> {
                       () => {},
                     );
                   }
+
+                  // Create DISCOVERED_LISTINGS table
+                  const createDiscoveredListingsTable = `
+                                        CREATE TABLE IF NOT EXISTS DISCOVERED_LISTINGS (
+                                            owner_publickey VARCHAR(512) PRIMARY KEY,
+                                            listings CLOB,
+                                            timestamp BIGINT,
+                                            last_seen BIGINT
+                                        )`;
+
+                  MDS.sql(createDiscoveredListingsTable, (listRes: any) => {
+                    if (!listRes.status) {
+                      console.error(
+                        "❌ [DB] Failed to create DISCOVERED_LISTINGS table:",
+                        listRes.error,
+                      );
+                    } else {
+                      console.log(
+                        "📂 [DB] DISCOVERED_LISTINGS table initialized",
+                      );
+                      MDS.sql(
+                        "ALTER TABLE DISCOVERED_LISTINGS ADD COLUMN IF NOT EXISTS listings CLOB",
+                        () => {},
+                      );
+                      MDS.sql(
+                        "ALTER TABLE DISCOVERED_LISTINGS ADD COLUMN IF NOT EXISTS timestamp BIGINT",
+                        () => {},
+                      );
+                      MDS.sql(
+                        "ALTER TABLE DISCOVERED_LISTINGS ADD COLUMN IF NOT EXISTS last_seen BIGINT",
+                        () => {},
+                      );
+                    }
+                  });
 
                   // Create SESSION_UID table for APK logic
                   const createSessionUidTable = `

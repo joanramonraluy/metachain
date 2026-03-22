@@ -6,6 +6,37 @@
  * NOTE: Uses callbacks instead of async/await (MDS doesn't support async/await)
  */
 
+var ContactStatusCache = {};
+
+function clearContactStatusCache(publicKey) {
+    if (publicKey) {
+        delete ContactStatusCache[publicKey];
+    }
+}
+
+/**
+ * Check if a public key is a known contact (local cache + DB)
+ * @param {string} publicKey - Public key to check
+ * @param {function} callback - Callback function(isInContacts)
+ */
+function isTargetInContacts(publicKey, callback) {
+    if (ContactStatusCache[publicKey] !== undefined) {
+        callback(ContactStatusCache[publicKey]);
+        return;
+    }
+
+    var safePk = escapeSql(publicKey);
+    var sql = "SELECT status FROM MAXIMA_CONTACT_REQUESTS WHERE (UPPER(from_publickey)=UPPER('" + safePk + "') OR UPPER(to_publickey)=UPPER('" + safePk + "')) AND status='accepted' " +
+              "UNION ALL " +
+              "SELECT status FROM CONTACT_REQUESTS WHERE (UPPER(from_publickey)=UPPER('" + safePk + "') OR UPPER(to_publickey)=UPPER('" + safePk + "')) AND status='accepted' LIMIT 1";
+
+    MDS.sql(sql, function(res) {
+        var isInContacts = (res.status && res.rows && res.rows.length > 0);
+        ContactStatusCache[publicKey] = isInContacts;
+        callback(isInContacts);
+    });
+}
+
 /**
  * Send a Maxima message
  * @param {string} toPublicKey - Recipient's public key (0x...) or Maxima address (Mx...)
@@ -103,13 +134,22 @@ function sendMaximaMessage(toPublicKey, type, messageData, context, callback) {
                 if (toPublicKey.startsWith("Mx") || toPublicKey.startsWith("MX")) {
                     sendMessage("maxima action:send to:" + cleanMaximaAddress(toPublicKey) + " application:metachain data:" + hexData + " poll:false");
                 } else if (toPublicKey.startsWith("0x")) {
-                    // Try to resolve to Maxima address first
-                    resolveMaximaAddress(toPublicKey, function (err, mxAddress) {
-                        if (!err && mxAddress) {
-                            MDS.log("🔍 [SW-MAXIMA] Resolved 0x to Mx address: " + mxAddress);
-                            sendMessage("maxima action:send to:" + cleanMaximaAddress(mxAddress) + " application:metachain data:" + hexData + " poll:false");
-                        } else {
+                    // Optimized strategy: check if contact first
+                    isTargetInContacts(toPublicKey, function(isInContacts) {
+                        if (isInContacts) {
+                            // Known contact: prioritize publickey (standard Maxima behavior)
                             sendMessage("maxima action:send publickey:" + toPublicKey + " application:metachain data:" + hexData + " poll:false");
+                        } else {
+                            // Not a contact: try address-based send directly to avoid unnecessary "No Contact found" errors
+                            resolveMaximaAddress(toPublicKey, function (err, mxAddress) {
+                                if (!err && mxAddress) {
+                                    MDS.log("🔍 [SW-MAXIMA] Non-contact, sending via address: " + mxAddress);
+                                    sendMessage("maxima action:send to:" + cleanMaximaAddress(mxAddress) + " application:metachain data:" + hexData + " poll:false");
+                                } else {
+                                    // Fallback to publickey if no address found (might fail with "No Contact found")
+                                    sendMessage("maxima action:send publickey:" + toPublicKey + " application:metachain data:" + hexData + " poll:false");
+                                }
+                            });
                         }
                     });
                 } else {
