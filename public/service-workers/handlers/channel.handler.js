@@ -299,15 +299,8 @@ function handleChannelHistoryRequest(pubkey, maxjson) {
         historyMessages: historyMessages,
       };
 
-      var hexData =
-        "0x" + utf8ToHex(JSON.stringify(responsePayload)).toUpperCase();
-      MDS.cmd(
-        "maxima action:send publickey:" +
-        pubkey +
-        " application:metachain-channel data:" +
-        hexData +
-        " poll:false", // CORRECT: poll:true ensures message delivery for offline/non-contact recipients
-      );
+      // Send history response with Address Resolution
+      smartSend(pubkey, "metachain-channel", hexData, "CHANNEL-HISTORY-RESP", false);
     });
   });
 }
@@ -402,23 +395,8 @@ function requestChannelHistoryFromSW(channelId) {
           var subPk = row.PUBLICKEY || row.publickey;
           if (subPk === myPubkey) continue;
           var addr = row.ADDRESS || row.address;
-          var cleanAddr = addr
-            ? addr.replace(/\s+/g, "").replace(/[^a-zA-Z0-9@:._-]/g, "")
-            : null;
-          var cmd =
-            cleanAddr &&
-              (cleanAddr.startsWith("Mx") || cleanAddr.startsWith("MX"))
-              ? "maxima action:send to:" +
-              cleanAddr +
-              " application:metachain-channel data:" +
-              hexData +
-              " poll:false"
-              : "maxima action:send publickey:" +
-              subPk +
-              " application:metachain-channel data:" +
-              hexData +
-              " poll:false";
-          MDS.cmd(cmd);
+          // Use smartSend for address resolution fallback
+          smartSend(subPk, "metachain-channel", hexData, "CHANNEL-HISTORY-SYNC", false, addr);
           sentCount++;
         }
 
@@ -616,15 +594,8 @@ function handleChannelJoinRequest(pubkey, maxjson) {
               timestamp: Date.now(),
             };
 
-            var hexData =
-              "0x" + utf8ToHex(JSON.stringify(invitePayload)).toUpperCase();
-            MDS.cmd(
-              "maxima action:send to:" +
-              requesterAddress +
-              " application:metachain-channel data:" +
-              hexData +
-              " poll:false",
-            );
+            // 3. Send INVITE back (as "acceptance") via smartSend
+            smartSend(pubkey, "metachain-channel", hexData, "CHANNEL-JOIN-ACCEPT", false, requesterAddress);
 
             // 4. Send SYSTEM MESSAGE locally
             var systemMsg = requesterName + " joined the channel";

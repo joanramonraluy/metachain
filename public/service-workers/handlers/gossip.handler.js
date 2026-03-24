@@ -72,14 +72,14 @@ function handleGetPeers(pubkey, maxjson) {
 
           var listingEntry = listingsMap[publickey];
 
+          var ancc = row.ALLOW_NON_CONTACT_CHATS;
           peers.push({
             pubkey: publickey,
             alias: row.ALIAS,
             bio: bio,
             address: row.ADDRESS,
             allowNonContactChats:
-              row.ALLOW_NON_CONTACT_CHATS === 1 ||
-              row.ALLOW_NON_CONTACT_CHATS === true,
+              ancc === 1 || ancc === true || ancc === "1" || ancc === "true" || ancc === "TRUE",
             avatar: avatar,
             country: country,
             languages: languages,
@@ -94,65 +94,23 @@ function handleGetPeers(pubkey, maxjson) {
           type: "peers_response",
           peers: peers,
         };
-        var replyHex =
-          "0x" + utf8ToHex(JSON.stringify(replyPayload)).toUpperCase();
+        var replyHex = "0x" + utf8ToHex(JSON.stringify(replyPayload)).toUpperCase();
         var targetAddress = maxjson && maxjson.address ? maxjson.address : "";
-        var sendCmd = targetAddress
-          ? "maxima action:send to:" +
-            targetAddress +
-            " application:metachain data:" +
-            replyHex +
-            " poll:false"
-          : "maxima action:send publickey:" +
-            pubkey +
-            " application:metachain data:" +
-            replyHex +
-            " poll:false";
 
-        var fallbackCmd =
-          "maxima action:send publickey:" +
-          pubkey +
-          " application:metachain data:" +
-          replyHex +
-          " poll:false";
-
-        MDS.cmd(sendCmd, function (sendRes) {
-          var targetLabel = targetAddress
-            ? "to " + targetAddress
-            : "publickey " + pubkey.substring(0, 10);
-
-          if (sendRes && sendRes.status === false) {
-            MDS.log(
-              "⚠️ [GOSSIP] Failed to send peers " +
-                targetLabel +
-                ": " +
-                (sendRes.error || "unknown error"),
-            );
-          } else {
-            MDS.log(
-              "✅ [GOSSIP] Sent " + peers.length + " peers " + targetLabel,
-            );
-          }
-
-          // Always also send via publickey to avoid stale/ephemeral addresses
-          if (targetAddress) {
-            MDS.cmd(fallbackCmd, function (fallbackRes) {
-              var pkLabel = "publickey " + pubkey.substring(0, 10);
-              if (fallbackRes && fallbackRes.status === false) {
-                MDS.log(
-                  "⚠️ [GOSSIP] Failed to send peers to " +
-                    pkLabel +
-                    ": " +
-                    (fallbackRes.error || "unknown error"),
-                );
-              } else {
-                MDS.log(
-                  "✅ [GOSSIP] Sent " + peers.length + " peers " + pkLabel,
-                );
-              }
+        if (targetAddress) {
+            var sendCmd = "maxima action:send to:" + targetAddress + " application:metachain data:" + replyHex + " poll:false";
+            MDS.cmd(sendCmd, function (sendRes) {
+                if (sendRes && sendRes.status === false) {
+                    MDS.log("⚠️ [GOSSIP] Failed to send peers to address: " + sendRes.error);
+                } else {
+                    MDS.log("✅ [GOSSIP] Sent " + peers.length + " peers to " + targetAddress);
+                }
+                // Always also send via smartSend (publickey fallback with resolution)
+                smartSend(pubkey, "metachain", replyHex, "GOSSIP-REPLY", false);
             });
-          }
-        });
+        } else {
+            smartSend(pubkey, "metachain", replyHex, "GOSSIP-REPLY", false);
+        }
       }
     });
   });
@@ -295,13 +253,7 @@ function askPeers(pubkeys) {
       var pk = pubkeys[i];
       if (MY_MAXIMA_PK && pk === MY_MAXIMA_PK) continue;
 
-      MDS.cmd(
-        "maxima action:send publickey:" +
-          pk +
-          " application:metachain data:" +
-          hexData +
-          " poll:false",
-      );
+      smartSend(pk, "metachain", hexData, "GOSSIP-ASK", false);
     }
   });
 }
@@ -340,14 +292,14 @@ function sendWelcomePackage(targetPubkey, targetAlias, targetAddress) {
 
           var listingEntry = listingsMap[publickey];
 
+          var ancc2 = row.ALLOW_NON_CONTACT_CHATS;
           peers.push({
             pubkey: publickey,
             alias: row.ALIAS,
             bio: bio,
             address: row.ADDRESS,
             allowNonContactChats:
-              row.ALLOW_NON_CONTACT_CHATS === 1 ||
-              row.ALLOW_NON_CONTACT_CHATS === true,
+              ancc2 === 1 || ancc2 === true || ancc2 === "1" || ancc2 === "true" || ancc2 === "TRUE",
             avatar: avatar,
             country: country,
             languages: languages,
@@ -367,30 +319,20 @@ function sendWelcomePackage(targetPubkey, targetAlias, targetAddress) {
 
         // Send via Maxima unicast directly to the target
         // Prioritize to:address (no contact required), fallback to publickey
-        var sendCmd = targetAddress
-          ? "maxima action:send to:" +
-            targetAddress +
-            " application:metachain data:" +
-            hexData +
-            " poll:false"
-          : "maxima action:send publickey:" +
-            targetPubkey +
-            " application:metachain data:" +
-            hexData +
-            " poll:false";
-
-        MDS.cmd(sendCmd, function (sendRes) {
-          if (sendRes && sendRes.status === false) {
-            MDS.log(
-              "⚠️ [GOSSIP] Failed to send Welcome Package to " +
-                targetAlias +
-                ": " +
-                (sendRes.error || "unknown error"),
-            );
-          } else {
-            MDS.log("✅ [GOSSIP] Welcome Package sent to " + targetAlias);
-          }
-        });
+        if (targetAddress) {
+            var sendCmd = "maxima action:send to:" + targetAddress + " application:metachain data:" + hexData + " poll:false";
+            MDS.cmd(sendCmd, function (sendRes) {
+                if (sendRes && sendRes.status === false) {
+                    MDS.log("⚠️ [GOSSIP] Failed to send Welcome Package to " + targetAddress + ": " + sendRes.error);
+                } else {
+                    MDS.log("✅ [GOSSIP] Welcome Package sent to " + targetAddress);
+                }
+                // Always also send via smartSend (publickey fallback with resolution)
+                smartSend(targetPubkey, "metachain", hexData, "GOSSIP-WELCOME", false);
+            });
+        } else {
+            smartSend(targetPubkey, "metachain", hexData, "GOSSIP-WELCOME", false);
+        }
       }
     });
   });

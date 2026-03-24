@@ -1,0 +1,697 @@
+user1:
+ 🚀 [ProfileService] Module Initialized via import
+ 🔧[MinimaService] Instance created: #8757
+ 🚀 [Main] STARTUP ENV CHECK:
+ 🚀 [Main] URL: https://10.0.0.11:9003/0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449/index.html
+ 🚀 [Main] Hostname: 10.0.0.11
+ 🚀 [Main] Protocol: https:
+ 🚀 [Main] Native: false
+ Using Stored UID for connection: 0x52E85C8C7A5D2FBFA203D504FBA832DA876C5414FCCF7309A183A74D38CB9698409CF0729D86C7656F304E4CA76C1C9D64FE4DA6ECFBF117305D020777EE7966F0D7777135A2B601B7B8285CCD9CE819A0BB5BE827F994C5B1DDD3C851C95DB4BCBA482B5284869EA1B3A28BF5ECED2A103176EF6A98FF7704068E24204EDA2E
+ ⚙️ [SERVICE] MinimaService initialized - waiting for MDS.init...
+ Minima @ 24/3/2026 8:48:39 : MDS Inited
+ Minima @ 24/3/2026 8:48:39 : MDS HOST  : https://10.0.0.11:9003/
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+ MDS initialised! 🚀 Starting serialized initialization sequence...
+ 1️⃣ [AppContext] Checking Write Mode (Waiting for node)...
+ 🕵️‍♂️ [AppContext] Checking Session Validity...
+ Sidebar rendering with userName: User
+ 🕵️‍♂️ [AppContext] Session Check Result: Object
+ ✅ [AppContext] Node ready! Mode: READ (Attempt 1)
+ 2️⃣ [AppContext] Initializing Database...
+ 📂 [DB] CHAT_MESSAGES table initialized
+ 📂 [DB] CHAT_STATUS table initialized
+ 📂 [DB] TRANSACTIONS table initialized
+ 📂 [DB] virtual publickey_upper column added to CHAT_MESSAGES
+ 📂 [DB] archived column added/verified
+ 📂 [DB] app_installed column added/verified
+ 📂 [DB] archived_date column added/verified
+ 📂 [DB] last_opened column added/verified
+ 📂 [DB] favorite column added/verified
+ 📂 [DB] muted column added/verified
+ 📂 [DB] blocked column added/verified
+ 📂 [DB] blocked_by_them column added/verified
+ 📂 [DB] virtual publickey_upper column added to CHAT_STATUS
+ 📂 [DB] pendinguid column added/verified
+index-Cze2e0S6.js:18 📂 [DB] txpowid column added/verified in CHAT_MESSAGES
+index-Cze2e0S6.js:18 📂 [DB] sender_seq column added/verified in CHAT_MESSAGES
+index-Cze2e0S6.js:18 📂 [DB] original_timestamp column added/verified in CHAT_MESSAGES
+index-Cze2e0S6.js:18 📂 [DB] customid column added/verified in CHAT_MESSAGES
+index-Cze2e0S6.js:18 📂 [DB] virtual publickey_upper column added to TRANSACTIONS
+index-Cze2e0S6.js:18 📂 [DB] PROFILES table initialized
+index-Cze2e0S6.js:18 📂 [DB] MESSAGE_COUNTERS table initialized
+index-Cze2e0S6.js:18 📂 [DB] GROUPS table initialized
+index-Cze2e0S6.js:18 📂 [DB] MY_PROFILE table checked/initialized
+index-Cze2e0S6.js:18 📂 [DB] DISCOVERED_PEERS table initialized
+index-Cze2e0S6.js:18 📂 [DB] GROUP_MEMBERS table initialized
+index-Cze2e0S6.js:18 📂 [DB] Verified DISCOVERED_PEERS source column
+index-Cze2e0S6.js:18 📂 [DB] virtual publickey_upper column added to DISCOVERED_PEERS
+index-Cze2e0S6.js:18 📂 [DB] METACHAIN_USERS table initialized
+index-Cze2e0S6.js:18 📂 [DB] GROUP_MESSAGES table initialized
+index-Cze2e0S6.js:18 📂 [DB] DISCOVERED_LISTINGS table initialized
+index-Cze2e0S6.js:18 📂 [DB] propagated column added/verified in GROUP_MESSAGES
+index-Cze2e0S6.js:18 📂 [DB] sender_seq column added/verified in GROUP_MESSAGES
+index-Cze2e0S6.js:18 📂 [DB] GROUP_MSG_COUNTERS table initialized
+index-Cze2e0S6.js:18 📂 [DB] GROUP_BANS table initialized
+index-Cze2e0S6.js:18 📂 [DB] CONTACT_REQUESTS table initialized
+index-Cze2e0S6.js:18 📂 [DB] customid column added/verified in GROUP_MESSAGES
+index-Cze2e0S6.js:18 📂 [DB] from_address column added/verified
+index-Cze2e0S6.js:18 📂 [DB] MAXIMA_CONTACT_REQUESTS table initialized
+index-Cze2e0S6.js:18 📂 [DB] virtual publickey_upper column added to METACHAIN_USERS
+index-Cze2e0S6.js:18 📂 [DB] Verified DISCOVERED_PEERS allow_non_contact_chats column
+index-Cze2e0S6.js:18 📂 [DB] CHANNELS table initialized
+index-Cze2e0S6.js:18 📂 [DB] CHANNEL_SUBSCRIBERS table initialized
+index-Cze2e0S6.js:18 ✅ [QUEUE] OFFLINE_QUEUE table ready.
+index-Cze2e0S6.js:18 ✅ [QUEUE] Reconnection listener registered
+index-Cze2e0S6.js:18 ✅ [AppContext] Database ready
+index-Cze2e0S6.js:18 📂 [DB] CHANNEL_MSG_COUNTERS table initialized
+index-Cze2e0S6.js:18 📍 [PROFILE] Found cached Minima Address in KeyPair: MxG083R0FC91U129TUPS2EM07JDM3R2050JCZ3W2D8WFQQ25CMAJMEU6QW9R1GK
+index-Cze2e0S6.js:18 🧹 [AppContext] Running legacy chat migration...
+index-Cze2e0S6.js:18 🧹 [MIGRATION] Checking for legacy chat keys (Mx addresses)...
+index-Cze2e0S6.js:18 ✅ [MIGRATION] No legacy chat keys found.
+index-Cze2e0S6.js:18 🧹 [AppContext] Normalizing identities...
+index-Cze2e0S6.js:18 🧹 [MIGRATION] Normalizing identities and deduplicating...
+index-Cze2e0S6.js:18 ✅ [MIGRATION] Identity normalization complete.
+index-Cze2e0S6.js:18 3️⃣ [AppContext] Fetching User Profile...
+index-Cze2e0S6.js:18 🔄 [AppContext] Fetching latest user profile from Maxima...
+index-Cze2e0S6.js:18 ✅ [AppContext] Profile fetched: Name=user1
+index-Cze2e0S6.js:18 🖼️ [AppContext] Profile Icon: "0x00"
+index-Cze2e0S6.js:18 4️⃣ [AppContext] Verifying Block Status...
+index-Cze2e0S6.js:18 Sidebar rendering with userName: user1
+index-Cze2e0S6.js:18 ✅ [AppContext] Initialization Complete! Setting loaded = true
+index-Cze2e0S6.js:18 ⏰ [AppContext] Starting transaction confirmation checker...
+index-Cze2e0S6.js:18 ⏰ [TX-CONFIRM] Starting confirmation checker (recursive loop)
+index-Cze2e0S6.js:18 🔄 [SERVICE] Starting Offline Queue Polling...
+index-Cze2e0S6.js:18 🔄 [QUEUE] Starting offline message queue polling (serialized)...
+index-Cze2e0S6.js:18 [GROUP-SERVICE] getMyGroups for 0x30819F300D06092A864886F70D010101050003818D0030818902818100A269FBE25C01C146FFA3C7B137215E69EC0463ECD38FB3227824B79F055CAA3D7D9B91FEC330DB4785670EE9790E238C37BB7D1F4D9A1B17CBB29F3E1F06236F2FE63E95C92F717FA497806CEC31CB70DC120D4CEBB7D349929B82CAEBD94D9BCC168EF508E29ED262B49BABB6CEDE65BC146C192B40C09C7C2D09F631BE6E350203010001: 0 rows found
+index-Cze2e0S6.js:18 ℹ️ [DEBUG] Groups fetched successfully: 0 groups, active: 0
+index-Cze2e0S6.js:18 ✅ [AppContext] Heartbeat - Minima is BACK ONLINE
+index-Cze2e0S6.js:18 ✅ [NOTIFICATIONS] Permission granted
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 👀 [AppContext] App resumed - checking session validity...
+index-Cze2e0S6.js:18 🕵️‍♂️ [AppContext] Checking Session Validity...
+index-Cze2e0S6.js:18 🕵️‍♂️ [AppContext] Session Check Result: Object
+index-Cze2e0S6.js:18 🔴 [NOTIFICATIONS] Unread count: 0
+discovery.lazy-Dk3dUzok.js:1 ⚠️ [DISCOVERY] Loaded users from cache
+discovery.lazy-Dk3dUzok.js:1 🔄 [DISCOVERY] loadData triggering...
+discovery.lazy-Dk3dUzok.js:1 🔍 [DiscoveryService] RAW DISCOVERED PEERS: [{"PUBLICKEY":"0X30819F300D06092A864886F70D010101050003818D0030818902818100A269FBE25C01C146FFA3C7B137215E69EC0463ECD38FB3227824B79F055CAA3D7D9B91FEC330DB4785670EE9790E238C37BB7D1F4D9A1B17CBB29F3E1F06236F2FE63E95C92F717FA497806CEC31CB70DC120D4CEBB7D349929B82CAEBD94D9BCC168EF508E29ED262B49BABB6CEDE65BC146C192B40C09C7C2D09F631BE6E350203010001","ALIAS":"user1","BIO":"","ADDRESS":"MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60G15VQJ5BKC30295H7YGYCTGRGM3TKWZW61EF71TTAQFMZE7QJ8D69RWB0WVVUUC8N7NWPKMFTTYWKPSNQZNT822REPGK5VMHTHE8TSPN0F7FPU47G64TVVJYC5U39J5RBQ81ATZCMAYPV4SZ69G3001WDTRH4U9D3JUFGSEGHZR0C4AG78N4UTCAE7PF4SCVTV7C4K9105CEZYS10608006UKS5JJ@10.0.0.11:9001","LAST_SEEN":"1774338521214","SOURCE":"SELF","ALLOW_NON_CONTACT_CHATS":"true","EXTRA_DATA":"{\"app\":\"metachain\",\"type\":\"BEACON\",\"v\":1,\"pubkey\":\"0x30819F300D06092A864886F70D010101050003818D0030818902818100A269FBE25C01C146FFA3C7B137215E69EC0463ECD38FB3227824B79F055CAA3D7D9B91FEC330DB4785670EE9790E238C37BB7D1F4D9A1B17CBB29F3E1F06236F2FE63E95C92F717FA497806CEC31CB70DC120D4CEBB7D349929B82CAEBD94D9BCC168EF508E29ED262B49BABB6CEDE65BC146C192B40C09C7C2D09F631BE6E350203010001\",\"alias\":\"user1\",\"bio\":\"\",\"address\":\"MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60G15VQJ5BKC30295H7YGYCTGRGM3TKWZW61EF71TTAQFMZE7QJ8D69RWB0WVVUUC8N7NWPKMFTTYWKPSNQZNT822REPGK5VMHTHE8TSPN0F7FPU47G64TVVJYC5U39J5RBQ81ATZCMAYPV4SZ69G3001WDTRH4U9D3JUFGSEGHZR0C4AG78N4UTCAE7PF4SCVTV7C4K9105CEZYS10608006UKS5JJ@10.0.0.11:9001\",\"allowNonContactChats\":true,\"country\":\"\",\"languages\":[],\"minimaaddress\":\"MxG083R0FC91U129TUPS2EM07JDM3R2050JCZ3W2D8WFQQ25CMAJMEU6QW9R1GK\",\"avatar\":\"0x00\",\"listings\":[],\"timestamp\":1774338501053}","PUBLICKEY_UPPER":"0X30819F300D06092A864886F70D010101050003818D0030818902818100A269FBE25C01C146FFA3C7B137215E69EC0463ECD38FB3227824B79F055CAA3D7D9B91FEC330DB4785670EE9790E238C37BB7D1F4D9A1B17CBB29F3E1F06236F2FE63E95C92F717FA497806CEC31CB70DC120D4CEBB7D349929B82CAEBD94D9BCC168EF508E29ED262B49BABB6CEDE65BC146C192B40C09C7C2D09F631BE6E350203010001"},{"PUBLICKEY":"0X30819F300D06092A864886F70D010101050003818D0030818902818100988AE5B6EFC396D2D19A92BD5B714350572C5B86662C3B99BEF10D2E69572B5C7D95D2CD5CCA75142AC9160B2AB705A9CB917053D72CAC27F3B15699B944737F0319E75FF4E5EFD4AF6912D9127824BFC6FEDC64C954A760F945102AD559FA3C5827DA200E673B6B7FF01BC16A6F04272F3E051A31A6D052D777C5D9EFE8D7CD0203010001","ALIAS":"user2","BIO":"","ADDRESS":"MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60G13UMGN07QYV4RZUWA33M01Y4CAJ2Y8TNJUN74C0A4HYJWNWYTCQ1QR0Z55EE3MZAJ1JJ07EFTB2TC6K91W889EY5ZJZEVD2N87PHE99E05TPGP72EAD7UNFBUJSVV1G33A1BZJD8HK2YHKQYFBCD7HTP53FTV6E4ZG0SG82EJD2SQGFJ53U17Q3162GZR8B028E0ZMJQZPU554106080075NWBEM@10.0.0.11:9001","LAST_SEEN":"1774338500952","SOURCE":"P2P","ALLOW_NON_CONTACT_CHATS":"true","EXTRA_DATA":"{\"app\":\"metachain\",\"type\":\"BEACON\",\"v\":1,\"pubkey\":\"0x30819F300D06092A864886F70D010101050003818D0030818902818100988AE5B6EFC396D2D19A92BD5B714350572C5B86662C3B99BEF10D2E69572B5C7D95D2CD5CCA75142AC9160B2AB705A9CB917053D72CAC27F3B15699B944737F0319E75FF4E5EFD4AF6912D9127824BFC6FEDC64C954A760F945102AD559FA3C5827DA200E673B6B7FF01BC16A6F04272F3E051A31A6D052D777C5D9EFE8D7CD0203010001\",\"alias\":\"user2\",\"bio\":\"\",\"address\":\"MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60G13UMGN07QYV4RZUWA33M01Y4CAJ2Y8TNJUN74C0A4HYJWNWYTCQ1QR0Z55EE3MZAJ1JJ07EFTB2TC6K91W889EY5ZJZEVD2N87PHE99E05TPGP72EAD7UNFBUJSVV1G33A1BZJD8HK2YHKQYFBCD7HTP53FTV6E4ZG0SG82EJD2SQGFJ53U17Q3162GZR8B028E0ZMJQZPU554106080075NWBEM@10.0.0.11:9001\",\"allowNonContactChats\":true,\"country\":\"\",\"languages\":[],\"minimaaddress\":\"MxG083VQCGK13RY11Q2P7K7M9MCDUA3ZSMTHV9PBPZK149NHK23K6HUYUJQ6Y07\",\"avatar\":\"0x00\",\"listings\":[],\"timestamp\":1774338381391}","MINIMAADDRESS":"MxG083VQCGK13RY11Q2P7K7M9MCDUA3ZSMTHV9PBPZK149NHK23K6HUYUJQ6Y07","PUBLICKEY_UPPER":"0X30819F300D06092A864886F70D010101050003818D0030818902818100988AE5B6EFC396D2D19A92BD5B714350572C5B86662C3B99BEF10D2E69572B5C7D95D2CD5CCA75142AC9160B2AB705A9CB917053D72CAC27F3B15699B944737F0319E75FF4E5EFD4AF6912D9127824BFC6FEDC64C954A760F945102AD559FA3C5827DA200E673B6B7FF01BC16A6F04272F3E051A31A6D052D777C5D9EFE8D7CD0203010001"}]
+discovery.lazy-Dk3dUzok.js:1 ✅ [DISCOVERY] Received 1 users.
+discovery.lazy-Dk3dUzok.js:1 📡 [DISCOVERY] Found 1 users (1 online)
+discovery.lazy-Dk3dUzok.js:1 ⚡ [DISCOVERY] State updated.
+contact-info._address.lazy-CgzEFW0A.js:2 🔍 [CONTACT] Not in Maxima, checking Discovery...
+contact-info._address.lazy-CgzEFW0A.js:2 ✅ [CONTACT] Found in Discovery: Object
+contact-info._address.lazy-CgzEFW0A.js:2 📦 [CONTACT] Parsed extra_data: Object
+contact-info._address.lazy-CgzEFW0A.js:2 🔐 [CONTACT] Permission from DB: true
+contact-info._address.lazy-CgzEFW0A.js:2 🎯 [CONTACT] Populating extended profile from local cache
+contact-info._address.lazy-CgzEFW0A.js:2 🔄 [PROFILE] Requesting extended profile...
+contact-info._address.lazy-CgzEFW0A.js:2 🔍 [CONTACT] Checking request status and history...
+index-Cze2e0S6.js:18 [PROFILE FLOW] Step 1 - Sending profile_request requestId=1774338524549_arow0ge to 0X30819F30...
+index-Cze2e0S6.js:18 [ProfileService] Requesting profile from MxG18HGG6FJ038614Y8C...
+index-Cze2e0S6.js:18 [ProfileService] Sending profile request via Maxima to: MxG18HGG6FJ038614Y8CW46US6G208
+index-Cze2e0S6.js:18 [PROFILE] Sending profile_request to 0X30819F300D06092A864886F70D010101050003818D0030818902818100988AE5B6EFC396D2D19A92BD5B714350572C5B86662C3B99BEF10D2E69572B5C7D95D2CD5CCA75142AC9160B2AB705A9CB917053D72CAC27F3B15699B944737F0319E75FF4E5EFD4AF6912D9127824BFC6FEDC64C954A760F945102AD559FA3C5827DA200E673B6B7FF01BC16A6F04272F3E051A31A6D052D777C5D9EFE8D7CD0203010001
+contact-info._address.lazy-CgzEFW0A.js:2 🔍 [CONTACT] Checking Maxima Contact Request status...
+index-Cze2e0S6.js:18 [PROFILE] Maxima send command executed
+index-Cze2e0S6.js:18 [ProfileService] ✅ Profile request sent successfully
+contact-info._address.lazy-CgzEFW0A.js:2 🔍 [CONTACT DEBUG] Checking Incoming SQL: SELECT * FROM MAXIMA_CONTACT_REQUESTS
+                                    WHERE UPPER(from_publickey)=UPPER('0X30819F300D06092A864886F70D010101050003818D0030818902818100988AE5B6EFC396D2D19A92BD5B714350572C5B86662C3B99BEF10D2E69572B5C7D95D2CD5CCA75142AC9160B2AB705A9CB917053D72CAC27F3B15699B944737F0319E75FF4E5EFD4AF6912D9127824BFC6FEDC64C954A760F945102AD559FA3C5827DA200E673B6B7FF01BC16A6F04272F3E051A31A6D052D777C5D9EFE8D7CD0203010001')
+                                    AND UPPER(to_publickey)=UPPER('0x30819F300D06092A864886F70D010101050003818D0030818902818100A269FBE25C01C146FFA3C7B137215E69EC0463ECD38FB3227824B79F055CAA3D7D9B91FEC330DB4785670EE9790E238C37BB7D1F4D9A1B17CBB29F3E1F06236F2FE63E95C92F717FA497806CEC31CB70DC120D4CEBB7D349929B82CAEBD94D9BCC168EF508E29ED262B49BABB6CEDE65BC146C192B40C09C7C2D09F631BE6E350203010001')
+                                    AND status='pending'
+contact-info._address.lazy-CgzEFW0A.js:2 🔍 [CONTACT DEBUG] Contact PK: 0X30819F300D06092A864886F70D010101050003818D0030818902818100988AE5B6EFC396D2D19A92BD5B714350572C5B86662C3B99BEF10D2E69572B5C7D95D2CD5CCA75142AC9160B2AB705A9CB917053D72CAC27F3B15699B944737F0319E75FF4E5EFD4AF6912D9127824BFC6FEDC64C954A760F945102AD559FA3C5827DA200E673B6B7FF01BC16A6F04272F3E051A31A6D052D777C5D9EFE8D7CD0203010001
+contact-info._address.lazy-CgzEFW0A.js:2 🔍 [CONTACT DEBUG] My PK: 0x30819F300D06092A864886F70D010101050003818D0030818902818100A269FBE25C01C146FFA3C7B137215E69EC0463ECD38FB3227824B79F055CAA3D7D9B91FEC330DB4785670EE9790E238C37BB7D1F4D9A1B17CBB29F3E1F06236F2FE63E95C92F717FA497806CEC31CB70DC120D4CEBB7D349929B82CAEBD94D9BCC168EF508E29ED262B49BABB6CEDE65BC146C192B40C09C7C2D09F631BE6E350203010001
+contact-info._address.lazy-CgzEFW0A.js:2 🔍 [CONTACT DEBUG] Incoming Result: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MDS_TIMER_10SECONDS', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MDS_TIMER_60SECONDS', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 🔥 [AppContext] RAW MAXIMA EVENT: {event: 'MAXIMA', data: {…}}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MAXIMA', from: '0x30819F30', application: 'metachain'}
+index-Cze2e0S6.js:18 ✉️ [MDS] MAXIMA event detected: {event: 'MAXIMA', data: {…}}
+index-Cze2e0S6.js:18 📨 [MAXIMA] Event received: {from: '0x30819F300D06092A864886F70D010101050003818D003081…6CEDE65BC146C192B40C09C7C2D09F631BE6E350203010001', application: 'metachain', data: '0x7B22617070223A226D657461636861696E222C2274797065…7383750403138352E3133322E39302E39383A39303031227D'}
+index-Cze2e0S6.js:18 📨[MAXIMA - DEBUG] Processing msg type: get_peers, from: 0x30819F300D06092A864886F70D010101050003818D0030818902818100A269FBE25C01C146FFA3C7B137215E69EC0463ECD38FB3227824B79F055CAA3D7D9B91FEC330DB4785670EE9790E238C37BB7D1F4D9A1B17CBB29F3E1F06236F2FE63E95C92F717FA497806CEC31CB70DC120D4CEBB7D349929B82CAEBD94D9BCC168EF508E29ED262B49BABB6CEDE65BC146C192B40C09C7C2D09F631BE6E350203010001
+index-Cze2e0S6.js:18 📨[MAXIMA - DEBUG] Full Payload:  {app: 'metachain', type: 'get_peers', alias: 'user1', address: 'MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60…BNW8E0FKDUPJRYFS10608004FNW87P@185.132.90.98:9001'}
+index-Cze2e0S6.js:18 ℹ️ [MAXIMA] Ignoring non-chat type: get_peers
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 🔥 [AppContext] RAW MAXIMA EVENT: {event: 'MAXIMA', data: {…}}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MAXIMA', from: '0x30819F30', application: 'metachain'}
+index-Cze2e0S6.js:18 ✉️ [MDS] MAXIMA event detected: {event: 'MAXIMA', data: {…}}
+index-Cze2e0S6.js:18 📨 [MAXIMA] Event received: {from: '0x30819F300D06092A864886F70D010101050003818D003081…A6F04272F3E051A31A6D052D777C5D9EFE8D7CD0203010001', application: 'metachain', data: '0x7B22617070223A226D657461636861696E222C2274797065…7383750403138352E3133322E39302E39383A39303031227D'}
+index-Cze2e0S6.js:18 📨[MAXIMA - DEBUG] Processing msg type: get_peers, from: 0x30819F300D06092A864886F70D010101050003818D0030818902818100988AE5B6EFC396D2D19A92BD5B714350572C5B86662C3B99BEF10D2E69572B5C7D95D2CD5CCA75142AC9160B2AB705A9CB917053D72CAC27F3B15699B944737F0319E75FF4E5EFD4AF6912D9127824BFC6FEDC64C954A760F945102AD559FA3C5827DA200E673B6B7FF01BC16A6F04272F3E051A31A6D052D777C5D9EFE8D7CD0203010001
+index-Cze2e0S6.js:18 📨[MAXIMA - DEBUG] Full Payload:  {app: 'metachain', type: 'get_peers', alias: 'user2', address: 'MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60…BNW8E0FKDUPJRYFS10608004FNW87P@185.132.90.98:9001'}
+index-Cze2e0S6.js:18 ℹ️ [MAXIMA] Ignoring non-chat type: get_peers
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 🔥 [AppContext] RAW MAXIMA EVENT: {event: 'MAXIMA', data: {…}}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MAXIMA', from: '0x30819F30', application: 'metachain'}
+index-Cze2e0S6.js:18 ✉️ [MDS] MAXIMA event detected: {event: 'MAXIMA', data: {…}}
+index-Cze2e0S6.js:18 📨 [MAXIMA] Event received: {from: '0x30819F300D06092A864886F70D010101050003818D003081…6CEDE65BC146C192B40C09C7C2D09F631BE6E350203010001', application: 'metachain', data: '0x7B22617070223A226D657461636861696E222C2274797065…7383750403138352E3133322E39302E39383A39303031227D'}
+index-Cze2e0S6.js:18 📨[MAXIMA - DEBUG] Processing msg type: get_peers, from: 0x30819F300D06092A864886F70D010101050003818D0030818902818100A269FBE25C01C146FFA3C7B137215E69EC0463ECD38FB3227824B79F055CAA3D7D9B91FEC330DB4785670EE9790E238C37BB7D1F4D9A1B17CBB29F3E1F06236F2FE63E95C92F717FA497806CEC31CB70DC120D4CEBB7D349929B82CAEBD94D9BCC168EF508E29ED262B49BABB6CEDE65BC146C192B40C09C7C2D09F631BE6E350203010001
+index-Cze2e0S6.js:18 📨[MAXIMA - DEBUG] Full Payload:  {app: 'metachain', type: 'get_peers', alias: 'user1', address: 'MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60…BNW8E0FKDUPJRYFS10608004FNW87P@185.132.90.98:9001'}
+index-Cze2e0S6.js:18 ℹ️ [MAXIMA] Ignoring non-chat type: get_peers
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 🔥 [AppContext] RAW MAXIMA EVENT: {event: 'MAXIMA', data: {…}}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MAXIMA', from: '0x30819F30', application: 'metachain'}
+index-Cze2e0S6.js:18 ✉️ [MDS] MAXIMA event detected: {event: 'MAXIMA', data: {…}}
+index-Cze2e0S6.js:18 📨 [MAXIMA] Event received: {from: '0x30819F300D06092A864886F70D010101050003818D003081…A6F04272F3E051A31A6D052D777C5D9EFE8D7CD0203010001', application: 'metachain', data: '0x7B226D657373616765223A22222C2274797065223A226368…4696D657374616D70223A313737333733333733333430327D'}
+index-Cze2e0S6.js:18 📨[MAXIMA - DEBUG] Processing msg type: chat_history_request, from: 0x30819F300D06092A864886F70D010101050003818D0030818902818100988AE5B6EFC396D2D19A92BD5B714350572C5B86662C3B99BEF10D2E69572B5C7D95D2CD5CCA75142AC9160B2AB705A9CB917053D72CAC27F3B15699B944737F0319E75FF4E5EFD4AF6912D9127824BFC6FEDC64C954A760F945102AD559FA3C5827DA200E673B6B7FF01BC16A6F04272F3E051A31A6D052D777C5D9EFE8D7CD0203010001
+index-Cze2e0S6.js:18 📨[MAXIMA - DEBUG] Full Payload:  {message: '', type: 'chat_history_request', username: 'Me', filedata: '', timestamp: 1773733733402}
+index-Cze2e0S6.js:18 🔥 [AppContext] RAW MAXIMA EVENT: {event: 'MAXIMA', data: {…}}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MAXIMA', from: '0x30819F30', application: 'metachain'}
+index-Cze2e0S6.js:18 ✉️ [MDS] MAXIMA event detected: {event: 'MAXIMA', data: {…}}
+index-Cze2e0S6.js:18 📨 [MAXIMA] Event received: {from: '0x30819F300D06092A864886F70D010101050003818D003081…A6F04272F3E051A31A6D052D777C5D9EFE8D7CD0203010001', application: 'metachain', data: '0x7B22617070223A226D657461636861696E222C2274797065…7383750403138352E3133322E39302E39383A39303031227D'}
+index-Cze2e0S6.js:18 📨[MAXIMA - DEBUG] Processing msg type: get_peers, from: 0x30819F300D06092A864886F70D010101050003818D0030818902818100988AE5B6EFC396D2D19A92BD5B714350572C5B86662C3B99BEF10D2E69572B5C7D95D2CD5CCA75142AC9160B2AB705A9CB917053D72CAC27F3B15699B944737F0319E75FF4E5EFD4AF6912D9127824BFC6FEDC64C954A760F945102AD559FA3C5827DA200E673B6B7FF01BC16A6F04272F3E051A31A6D052D777C5D9EFE8D7CD0203010001
+index-Cze2e0S6.js:18 📨[MAXIMA - DEBUG] Full Payload:  {app: 'metachain', type: 'get_peers', alias: 'user2', address: 'MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60…BNW8E0FKDUPJRYFS10608004FNW87P@185.132.90.98:9001'}
+index-Cze2e0S6.js:18 ℹ️ [MAXIMA] Ignoring non-chat type: get_peers
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MDS_TIMER_10SECONDS', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINING', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINING', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'NEWBLOCK', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MDS_TIMER_10SECONDS', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MDSCOMMS', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 🚀 [SERVICE] Solo message received from SW: {minidapp: 'MetaChain', public: false, message: '{"type":"SW_LOG","message":"📨 [MAXIMA] Event rece…hain From: 0x30819F30","timestamp":1774338553514}'}
+index-Cze2e0S6.js:18 📡 [SW-LOG] 📨 [MAXIMA] Event received. App: metachain From: 0x30819F30
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+contact-info._address.lazy-CgzEFW0A.js:2 ❌ [PROFILE] Failed to request: Error: Profile request timed out
+    at index-Cze2e0S6.js:18:329467
+de @ contact-info._address.lazy-CgzEFW0A.js:2
+contact-info._address.lazy-CgzEFW0A.js:2 ⚠️ [PROFILE] Assuming restricted access or offline. Continuing with basic info.
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MDS_TIMER_10SECONDS', from: undefined, application: undefined}
+User2:
+ 🚀 [ProfileService] Module Initialized via import
+ 🔧[MinimaService] Instance created: #6740
+ 🚀 [Main] STARTUP ENV CHECK:
+ 🚀 [Main] URL: https://10.0.0.12:9003/0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72/index.html
+ 🚀 [Main] Hostname: 10.0.0.12
+ 🚀 [Main] Protocol: https:
+ 🚀 [Main] Native: false
+ Using Stored UID for connection: 0x130D780F4FDD1AFC56D00D9D02ED7B6C39F129BF3CBB0F17A5AB3DE71450C23BAD35E98ECA40CE06D41D8F31AC658EFF57592317F996FFF268F83BD0EC65ECC3721F5EAFE2327CCE64725A4BF85E94865C7ADD63F23429878E939510862C7FA0C2E40E596C6C5A840D7DDD016A3380E1FE12454F8A5487F6C333DF302A262524
+ ⚙️ [SERVICE] MinimaService initialized - waiting for MDS.init...
+ Minima @ 24/3/2026 8:48:41 : MDS Inited
+ Minima @ 24/3/2026 8:48:41 : MDS HOST  : https://10.0.0.12:9003/
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+ MDS initialised! 🚀 Starting serialized initialization sequence...
+ 1️⃣ [AppContext] Checking Write Mode (Waiting for node)...
+ 🕵️‍♂️ [AppContext] Checking Session Validity...
+ Sidebar rendering with userName: User
+ ✅ [AppContext] Node ready! Mode: READ (Attempt 1)
+ 2️⃣ [AppContext] Initializing Database...
+ 🕵️‍♂️ [AppContext] Session Check Result: Object
+ 📂 [DB] TRANSACTIONS table initialized
+ 📂 [DB] CHAT_STATUS table initialized
+ 📂 [DB] CHAT_MESSAGES table initialized
+ 📂 [DB] archived column added/verified
+ 📂 [DB] archived_date column added/verified
+ 📂 [DB] blocked column added/verified
+ 📂 [DB] muted column added/verified
+ 📂 [DB] favorite column added/verified
+ 📂 [DB] virtual publickey_upper column added to CHAT_STATUS
+ 📂 [DB] blocked_by_them column added/verified
+ 📂 [DB] txpowid column added/verified in CHAT_MESSAGES
+ 📂 [DB] sender_seq column added/verified in CHAT_MESSAGES
+ 📂 [DB] original_timestamp column added/verified in CHAT_MESSAGES
+ 📂 [DB] customid column added/verified in CHAT_MESSAGES
+ 📂 [DB] virtual publickey_upper column added to CHAT_MESSAGES
+ 📂 [DB] app_installed column added/verified
+ 📂 [DB] last_opened column added/verified
+ 📂 [DB] pendinguid column added/verified
+ 📂 [DB] PROFILES table initialized
+ 📂 [DB] virtual publickey_upper column added to TRANSACTIONS
+ 📂 [DB] MY_PROFILE table checked/initialized
+ 📂 [DB] GROUPS table initialized
+ 📂 [DB] MESSAGE_COUNTERS table initialized
+ 📂 [DB] GROUP_MEMBERS table initialized
+ 📂 [DB] DISCOVERED_PEERS table initialized
+ 📂 [DB] METACHAIN_USERS table initialized
+ 📂 [DB] Verified DISCOVERED_PEERS source column
+ 📂 [DB] virtual publickey_upper column added to DISCOVERED_PEERS
+ 📂 [DB] GROUP_MESSAGES table initialized
+ 📂 [DB] DISCOVERED_LISTINGS table initialized
+ 📂 [DB] propagated column added/verified in GROUP_MESSAGES
+ 📂 [DB] customid column added/verified in GROUP_MESSAGES
+ 📂 [DB] sender_seq column added/verified in GROUP_MESSAGES
+ 📂 [DB] GROUP_MSG_COUNTERS table initialized
+ 📂 [DB] GROUP_BANS table initialized
+ 📂 [DB] CONTACT_REQUESTS table initialized
+ 📂 [DB] MAXIMA_CONTACT_REQUESTS table initialized
+ 📂 [DB] from_address column added/verified
+ 📂 [DB] Verified DISCOVERED_PEERS allow_non_contact_chats column
+ 📂 [DB] CHANNELS table initialized
+ 📂 [DB] virtual publickey_upper column added to METACHAIN_USERS
+ 📂 [DB] CHANNEL_MSG_COUNTERS table initialized
+ ✅ [QUEUE] OFFLINE_QUEUE table ready.
+ ✅ [QUEUE] Reconnection listener registered
+ ✅ [AppContext] Database ready
+ 📂 [DB] CHANNEL_SUBSCRIBERS table initialized
+ 📍 [PROFILE] Found cached Minima Address in KeyPair: MxG083VQCGK13RY11Q2P7K7M9MCDUA3ZSMTHV9PBPZK149NHK23K6HUYUJQ6Y07
+ 🧹 [AppContext] Running legacy chat migration...
+ 🧹 [MIGRATION] Checking for legacy chat keys (Mx addresses)...
+ ✅ [MIGRATION] No legacy chat keys found.
+ 🧹 [AppContext] Normalizing identities...
+ 🧹 [MIGRATION] Normalizing identities and deduplicating...
+ ✅ [MIGRATION] Identity normalization complete.
+ 3️⃣ [AppContext] Fetching User Profile...
+ 🔄 [AppContext] Fetching latest user profile from Maxima...
+ ✅ [AppContext] Profile fetched: Name=user2
+ 🖼️ [AppContext] Profile Icon: "0x00"
+ 4️⃣ [AppContext] Verifying Block Status...
+ Sidebar rendering with userName: user2
+ ✅ [AppContext] Initialization Complete! Setting loaded = true
+ ⏰ [AppContext] Starting transaction confirmation checker...
+ ⏰ [TX-CONFIRM] Starting confirmation checker (recursive loop)
+ 🔄 [SERVICE] Starting Offline Queue Polling...
+ 🔄 [QUEUE] Starting offline message queue polling (serialized)...
+ [GROUP-SERVICE] getMyGroups for 0x30819F300D06092A864886F70D010101050003818D0030818902818100988AE5B6EFC396D2D19A92BD5B714350572C5B86662C3B99BEF10D2E69572B5C7D95D2CD5CCA75142AC9160B2AB705A9CB917053D72CAC27F3B15699B944737F0319E75FF4E5EFD4AF6912D9127824BFC6FEDC64C954A760F945102AD559FA3C5827DA200E673B6B7FF01BC16A6F04272F3E051A31A6D052D777C5D9EFE8D7CD0203010001: 0 rows found
+ ℹ️ [DEBUG] Groups fetched successfully: 0 groups, active: 0
+ ✅ [AppContext] Heartbeat - Minima is BACK ONLINE
+ ⚠️ [NOTIFICATIONS] Permission denied / limited
+requestNotificationPermission @ index-Cze2e0S6.js:18
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+ 🔥 [AppContext] RAW MAXIMA EVENT: Object
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+ ✉️ [MDS] MAXIMA event detected: Object
+ 📨 [MAXIMA] Event received: Object
+ 📨[MAXIMA - DEBUG] Processing msg type: profile_request, from: 0x30819F300D06092A864886F70D010101050003818D0030818902818100A269FBE25C01C146FFA3C7B137215E69EC0463ECD38FB3227824B79F055CAA3D7D9B91FEC330DB4785670EE9790E238C37BB7D1F4D9A1B17CBB29F3E1F06236F2FE63E95C92F717FA497806CEC31CB70DC120D4CEBB7D349929B82CAEBD94D9BCC168EF508E29ED262B49BABB6CEDE65BC146C192B40C09C7C2D09F631BE6E350203010001
+ 📨[MAXIMA - DEBUG] Full Payload:  Object
+ 👤 [PROFILE] Request received from 0x30819F300D06092A864886F70D010101050003818D0030818902818100A269FBE25C01C146FFA3C7B137215E69EC0463ECD38FB3227824B79F055CAA3D7D9B91FEC330DB4785670EE9790E238C37BB7D1F4D9A1B17CBB29F3E1F06236F2FE63E95C92F717FA497806CEC31CB70DC120D4CEBB7D349929B82CAEBD94D9BCC168EF508E29ED262B49BABB6CEDE65BC146C192B40C09C7C2D09F631BE6E350203010001 - Delegating to Service Worker
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+ 🔥 [AppContext] RAW MAXIMA EVENT: Object
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+ ✉️ [MDS] MAXIMA event detected: Object
+ 📨 [MAXIMA] Event received: Object
+ 📨[MAXIMA - DEBUG] Processing msg type: get_peers, from: 0x30819F300D06092A864886F70D010101050003818D0030818902818100A269FBE25C01C146FFA3C7B137215E69EC0463ECD38FB3227824B79F055CAA3D7D9B91FEC330DB4785670EE9790E238C37BB7D1F4D9A1B17CBB29F3E1F06236F2FE63E95C92F717FA497806CEC31CB70DC120D4CEBB7D349929B82CAEBD94D9BCC168EF508E29ED262B49BABB6CEDE65BC146C192B40C09C7C2D09F631BE6E350203010001
+ 📨[MAXIMA - DEBUG] Full Payload:  Object
+ ℹ️ [MAXIMA] Ignoring non-chat type: get_peers
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+ 🔥 [AppContext] RAW MAXIMA EVENT: Object
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+ ✉️ [MDS] MAXIMA event detected: Object
+ 📨 [MAXIMA] Event received: Object
+ 📨[MAXIMA - DEBUG] Processing msg type: get_peers, from: 0x30819F300D06092A864886F70D010101050003818D0030818902818100988AE5B6EFC396D2D19A92BD5B714350572C5B86662C3B99BEF10D2E69572B5C7D95D2CD5CCA75142AC9160B2AB705A9CB917053D72CAC27F3B15699B944737F0319E75FF4E5EFD4AF6912D9127824BFC6FEDC64C954A760F945102AD559FA3C5827DA200E673B6B7FF01BC16A6F04272F3E051A31A6D052D777C5D9EFE8D7CD0203010001
+ 📨[MAXIMA - DEBUG] Full Payload:  Object
+ ℹ️ [MAXIMA] Ignoring non-chat type: get_peers
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+ 🔥 [AppContext] RAW MAXIMA EVENT: Object
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+ ✉️ [MDS] MAXIMA event detected: Object
+ 📨 [MAXIMA] Event received: Object
+ 📨[MAXIMA - DEBUG] Processing msg type: chat_history_request, from: 0x30819F300D06092A864886F70D010101050003818D0030818902818100A269FBE25C01C146FFA3C7B137215E69EC0463ECD38FB3227824B79F055CAA3D7D9B91FEC330DB4785670EE9790E238C37BB7D1F4D9A1B17CBB29F3E1F06236F2FE63E95C92F717FA497806CEC31CB70DC120D4CEBB7D349929B82CAEBD94D9BCC168EF508E29ED262B49BABB6CEDE65BC146C192B40C09C7C2D09F631BE6E350203010001
+ 📨[MAXIMA - DEBUG] Full Payload:  Object
+ 🔥 [AppContext] RAW MAXIMA EVENT: Object
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+ ✉️ [MDS] MAXIMA event detected: Object
+ 📨 [MAXIMA] Event received: Object
+ 📨[MAXIMA - DEBUG] Processing msg type: get_peers, from: 0x30819F300D06092A864886F70D010101050003818D0030818902818100A269FBE25C01C146FFA3C7B137215E69EC0463ECD38FB3227824B79F055CAA3D7D9B91FEC330DB4785670EE9790E238C37BB7D1F4D9A1B17CBB29F3E1F06236F2FE63E95C92F717FA497806CEC31CB70DC120D4CEBB7D349929B82CAEBD94D9BCC168EF508E29ED262B49BABB6CEDE65BC146C192B40C09C7C2D09F631BE6E350203010001
+ 📨[MAXIMA - DEBUG] Full Payload:  Object
+ ℹ️ [MAXIMA] Ignoring non-chat type: get_peers
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+ 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 🔥 [AppContext] RAW MAXIMA EVENT: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 ✉️ [MDS] MAXIMA event detected: Object
+index-Cze2e0S6.js:18 📨 [MAXIMA] Event received: Object
+index-Cze2e0S6.js:18 📨[MAXIMA - DEBUG] Processing msg type: get_peers, from: 0x30819F300D06092A864886F70D010101050003818D0030818902818100988AE5B6EFC396D2D19A92BD5B714350572C5B86662C3B99BEF10D2E69572B5C7D95D2CD5CCA75142AC9160B2AB705A9CB917053D72CAC27F3B15699B944737F0319E75FF4E5EFD4AF6912D9127824BFC6FEDC64C954A760F945102AD559FA3C5827DA200E673B6B7FF01BC16A6F04272F3E051A31A6D052D777C5D9EFE8D7CD0203010001
+index-Cze2e0S6.js:18 📨[MAXIMA - DEBUG] Full Payload:  Object
+index-Cze2e0S6.js:18 ℹ️ [MAXIMA] Ignoring non-chat type: get_peers
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 🚀 [SERVICE] Solo message received from SW: Object
+index-Cze2e0S6.js:18 📡 [SW-LOG] 📨 [MAXIMA] Event received. App: metachain From: 0x30819F30
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 🚀 [SERVICE] Solo message received from SW: Object
+index-Cze2e0S6.js:18 📡 [SW-LOG] 📨 [MAXIMA] Event received. App: metachain From: 0x30819F30
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-Cze2e0S6.js:18 👀 [AppContext] App resumed - checking session validity...
+index-Cze2e0S6.js:18 🕵️‍♂️ [AppContext] Checking Session Validity...
+index-Cze2e0S6.js:18 🕵️‍♂️ [AppContext] Session Check Result: Object
+index-Cze2e0S6.js:18 🔴 [NOTIFICATIONS] Unread count: 0
+User1:
+Minima @ 24/03/2026 08:48:33 [220,3 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🚀 [SW] Inited event received. Version v3.0
+Minima @ 24/03/2026 08:48:33 [220,3 MB] : Notification : {"uid":"0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449","title":"MetaChain","text":"MetaChain Service Worker Started","show":true}
+Minima @ 24/03/2026 08:48:33 [220,3 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ⏰ [SW] Starting Database Initialization...
+Minima @ 24/03/2026 08:48:33 [220,4 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🚀 [SW] STARTING UP - v2.6 REPAIR
+Minima @ 24/03/2026 08:48:33 [221,2 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🔑 [SW] My Public Key: 0x30819F300D06092A864886F70D010101050003818D0030818902818100A269FBE25C01C146FFA3C7B137215E69EC0463ECD38FB3227824B79F055CAA3D7D9B91FEC330DB4785670EE9790E238C37BB7D1F4D9A1B17CBB29F3E1F06236F2FE63E95C92F717FA497806CEC31CB70DC120D4CEBB7D349929B82CAEBD94D9BCC168EF508E29ED262B49BABB6CEDE65BC146C192B40C09C7C2D09F631BE6E350203010001
+Minima @ 24/03/2026 08:48:33 [221,8 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ℹ️ [MLS] Static MLS already configured.
+Minima @ 24/03/2026 08:48:33 [222,1 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📂 [DB] TRANSACTIONS table checked/init
+Minima @ 24/03/2026 08:48:33 [222,6 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 💾 [DB] CHAT_MESSAGES checked/init
+Minima @ 24/03/2026 08:48:33 [223,1 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📂 [DB] GROUPS checked/init
+Minima @ 24/03/2026 08:48:33 [223,4 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📂 [DB] GROUP_MEMBERS checked/init
+Minima @ 24/03/2026 08:48:33 [223,5 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📂 [DB] GROUP_MESSAGES checked/init
+Minima @ 24/03/2026 08:48:33 [223,9 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📂 [DB] GROUP_BANS checked/init
+Minima @ 24/03/2026 08:48:33 [224,2 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📂 [DB] GROUP_JOIN_REQUESTS checked/init
+Minima @ 24/03/2026 08:48:33 [224,3 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📊 [DB] MESSAGE_COUNTERS checked/init
+Minima @ 24/03/2026 08:48:33 [224,9 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📂 [DB] CONTACT_REQUESTS checked/init
+Minima @ 24/03/2026 08:48:33 [225,0 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📂 [DB] DISCOVERED_PEERS checked/init
+Minima @ 24/03/2026 08:48:33 [225,2 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📂 [DB] DISCOVERED_LISTINGS checked/init
+Minima @ 24/03/2026 08:48:33 [225,4 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📂 [DB] METACHAIN_USERS checked/init
+Minima @ 24/03/2026 08:48:33 [225,5 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📢 [DB] CHANNELS checked/init
+Minima @ 24/03/2026 08:48:33 [225,5 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📢 [DB] CHANNEL_SUBSCRIBERS checked/init
+Minima @ 24/03/2026 08:48:33 [225,6 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📢 [DB] CHANNEL_MESSAGES checked/init
+Minima @ 24/03/2026 08:48:33 [225,7 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📊 [DB] CHANNEL_MSG_COUNTERS checked/init
+Minima @ 24/03/2026 08:48:33 [225,7 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🔄 [DB] Starting Identity Migration (Mx -> Hex)...
+Minima @ 24/03/2026 08:48:33 [60,9 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ✅ [DB] Identity Migration complete.
+Minima @ 24/03/2026 08:48:33 [61,4 MB] : 8LBHVF4957P95:0x7B22617070223A226D657461636861696E222C2274797065223A22424541434F4E222C2276223A312C227075626B6579223A223078333038313946333030443036303932413836343838364637304430313031303130353030303338313844303033303831383930323831383130303938384145354236454643333936443244313941393242443542373134333530353732433542383636363243334239394245463130443245363935373242354337443935443243443543434137353134324143393136304232414237303541394342393137303533443732434143323746334231353639394239343437333746303331394537354646344535454644344146363931324439313237383234424643364645444336344339353441373630463934353130324144353539464133433538323744413230304536373342364237464630314243313641364630343237324633453035314133314136443035324437373743354439454645384437434430323033303130303031222C22616C696173223A227573657232222C2262696F223A22222C2261646472657373223A224D7847313848474736464A3033383631345938435734365553364732303831304B30303730434430305A3833323832473630473133554D474E303751595634525A55574133334D3031593443414A325938544E4A554E37344330413448594A574E5759544351315152305A35354545334D5A414A314A4A303745465442325443364B3931573838394559355A4A5A455644324E3837504845393945303554504750373245414437554E4642554A535656314733334131425A4A4438484B3259484B5159464243443748545035334654563645345A473053473832454A4432535147464A35335531375133313632475A52384230323845305A4D4A515A50553535343130363038303037354E5742454D4031302E302E302E31313A39303031222C22616C6C6F774E6F6E436F6E746163744368617473223A747275652C22636F756E747279223A22222C226C616E677561676573223A5B5D2C226D696E696D6161646472657373223A224D7847303833565143474B313352593131513250374B374D394D43445541335A534D544856395042505A4B3134394E484B32334B36485559554A5136593037222C22617661746172223A2230783030222C226C697374696E6773223A5B5D2C2274696D657374616D70223A313737343333383531333036347D
+Minima @ 24/03/2026 08:48:33 [61,5 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ✅ [INIT] Database sequence complete. Starting Services...
+Minima @ 24/03/2026 08:48:33 [61,5 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ✅ [INIT] MINIMALOG listener registered
+Minima @ 24/03/2026 08:48:33 [61,6 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📡 [BG-BEACON] Preparing beacon...
+Minima @ 24/03/2026 08:48:33 [63,7 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📡 [BG-BEACON] P2P broadcast sent
+Minima @ 24/03/2026 08:48:41 [188,6 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ✅ [BEACON-MLS] Beacon sent to MLS
+Minima @ 24/03/2026 08:48:41 [188,6 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📡 [BEACON] user1 from SELF
+Minima @ 24/03/2026 08:48:41 [189,1 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ✅ [LISTINGS] Updated listings for 0x30819F30
+Minima @ 24/03/2026 08:48:41 [189,3 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ✅ [BEACON] Saved: user1
+Minima @ 24/03/2026 08:48:41 [189,5 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🔍 [SW-TX] Checking pending transactions...
+Minima @ 24/03/2026 08:48:41 [189,6 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ✅ [SW-TX] No pending transactions in DB
+Minima @ 24/03/2026 08:48:41 [189,6 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🔍 [SW-TX-CONFIRM] Checking SENT transactions...
+Minima @ 24/03/2026 08:48:53 [98,8 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ✅ [BEACON-MLS] Beacon sent to MLS
+Minima @ 24/03/2026 08:48:53 [98,8 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📡 [BEACON] user1 from SELF
+Minima @ 24/03/2026 08:48:53 [99,3 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ✅ [LISTINGS] Updated listings for 0x30819F30
+Minima @ 24/03/2026 08:48:53 [99,9 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ✅ [BEACON] Saved: user1
+Minima @ 24/03/2026 08:48:53 [100,1 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🗣️ [GOSSIP] Starting discovery...
+Minima @ 24/03/2026 08:48:53 [100,5 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🗣️ [GOSSIP] Asking 2 discovered peers...
+Minima @ 24/03/2026 08:48:53 [101,3 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🔍 [GOSSIP-ASK] Optimized send via address resolution: MxG18HGG6FJ0386...
+Minima @ 24/03/2026 08:48:53 [168,4 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ✅ [GOSSIP-ASK] Sent to 0X30819F30
+Minima @ 24/03/2026 08:48:53 [168,9 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🔍 [GOSSIP-ASK] Optimized send via address resolution: MxG18HGG6FJ0386...
+Minima @ 24/03/2026 08:48:53 [191,9 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ✅ [GOSSIP-ASK] Sent to 0X30819F30
+Minima @ 24/03/2026 08:48:53 [192,0 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🔗 [BOOTSTRAP] Checking DISCOVERED_PEERS count...
+Minima @ 24/03/2026 08:48:53 [192,4 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🔗 [BOOTSTRAP] Already have 1 peers — skipping MLS bootstrap.
+Minima @ 24/03/2026 08:48:53 [192,4 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ✅ [INIT] NEWBLOCK listener registered for periodic tasks.
+Minima @ 24/03/2026 08:48:53 [192,4 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🔄 [HISTORY-SYNC] Starting startup sync (Enhanced)...
+Minima @ 24/03/2026 08:48:53 [192,7 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🔍 [HISTORY-SYNC-DEBUG] SQL result status: true
+Minima @ 24/03/2026 08:48:53 [192,7 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🔄 [HISTORY-SYNC] Syncing with 1 contacts from DISCOVERED_PEERS
+Minima @ 24/03/2026 08:48:53 [192,9 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🔄 [HISTORY-SYNC] Requesting history from: 0X30819F300D06092A86...
+Minima @ 24/03/2026 08:48:53 [194,4 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🔍 [ADDR-DEBUG] Raw: 'MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60G13UMGN07QYV4RZUWA33M01Y4CAJ2Y8TNJUN74C0A4HYJWNWYTCQ1QR0Z55EE3MZAJ1JJ07EFTB2TC6K91W889EY5ZJZEVD2N87PHE99E05TPGP72EAD7UNFBUJSVV1G33A1BZJD8HK2YHKQYFBCD7HTP53FTV6E4ZG0SG82EJD2SQGFJ53U17Q3162GZR8B028E0ZMJQZPU554106080075NWBEM@10.0.0.11:9001' -> Clean: 'MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60G13UMGN07QYV4RZUWA33M01Y4CAJ2Y8TNJUN74C0A4HYJWNWYTCQ1QR0Z55EE3MZAJ1JJ07EFTB2TC6K91W889EY5ZJZEVD2N87PHE99E05TPGP72EAD7UNFBUJSVV1G33A1BZJD8HK2YHKQYFBCD7HTP53FTV6E4ZG0SG82EJD2SQGFJ53U17Q3162GZR8B028E0ZMJQZPU554106080075NWBEM@10.0.0.11:9001'
+Minima @ 24/03/2026 08:48:53 [194,4 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🔍 [CMD-DEBUG-V3] maxima action:send to:MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60G13UMGN07QYV4RZUWA33M01Y4CAJ2Y8TNJUN74C0A4HYJWNWYTCQ1QR0Z55EE3MZAJ1JJ07EFTB2TC6K91W889EY5ZJZEVD2N87PHE99E05TPGP72EAD7UNFBUJSVV1G33A1BZJD8HK2YHKQYFBCD7HTP53FTV6E4ZG0SG82EJD2SQGFJ53U17Q3162GZR8B028E0ZMJQZPU554106080075NWBEM@10.0.0.11:9001 application:metachain data:0x7B226D657373616765223A22222C2274797065223A22636861745F686973746F72795F72657175657374222C22757365726E616D65223A224D65222C2266696C6564617461223A22222C2274696D657374616D70223A313737333733333733333237357D poll:false
+Minima @ 24/03/2026 08:48:53 [102,9 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📦 [INIT] Coin discovery scheduled for first NEWBLOCK event
+Minima @ 24/03/2026 08:48:53 [102,9 MB] : Started service.js MetaChain
+Minima @ 24/03/2026 08:48:53 [104,6 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📡 [P2P] Beacon: user2
+Minima @ 24/03/2026 08:48:53 [104,7 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📡 [BEACON] user2 from P2P
+Minima @ 24/03/2026 08:48:53 [105,1 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ✅ [LISTINGS] Updated listings for 0x30819F30
+Minima @ 24/03/2026 08:48:53 [105,4 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ✅ [BEACON] Saved: user2
+Minima @ 24/03/2026 08:48:53 [105,6 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ⏭️ [GOSSIP] Welcome Package skipped for existing peer: user2
+Minima @ 24/03/2026 08:48:53 [107,9 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🧹 [SW-CLEANUP] Starting orphan cleanup check...
+Minima @ 24/03/2026 08:48:53 [108,1 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ✅ [SW-CLEANUP] No old pending messages found.
+Minima @ 24/03/2026 08:48:53 [108,2 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🔄 [GROUP-SYNC] Startup sync for all groups...
+Minima @ 24/03/2026 08:48:53 [108,4 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🔄 [CHANNEL-SYNC] Startup sync for all channels...
+Minima @ 24/03/2026 08:48:53 [108,5 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🗣️ [GOSSIP] Starting discovery...
+Minima @ 24/03/2026 08:48:53 [109,1 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🗣️ [GOSSIP] Asking 2 discovered peers...
+Minima @ 24/03/2026 08:48:53 [109,4 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🔍 [GOSSIP-ASK] Optimized send via address resolution: MxG18HGG6FJ0386...
+Minima @ 24/03/2026 08:48:53 [114,9 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ✅ [GOSSIP-ASK] Sent to 0X30819F30
+Minima @ 24/03/2026 08:48:53 [115,2 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🔍 [GOSSIP-ASK] Optimized send via address resolution: MxG18HGG6FJ0386...
+Minima @ 24/03/2026 08:48:53 [127,3 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ✅ [GOSSIP-ASK] Sent to 0X30819F30
+Minima @ 24/03/2026 08:48:53 [127,9 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📡 [BG-BEACON] Preparing beacon...
+Minima @ 24/03/2026 08:48:53 [128,2 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📡 [BG-BEACON] P2P broadcast sent
+Minima @ 24/03/2026 08:48:53 [176,1 MB] : 8LBHVF4957P95:0x7B22617070223A226D657461636861696E222C2274797065223A22424541434F4E222C2276223A312C227075626B6579223A223078333038313946333030443036303932413836343838364637304430313031303130353030303338313844303033303831383930323831383130303938384145354236454643333936443244313941393242443542373134333530353732433542383636363243334239394245463130443245363935373242354337443935443243443543434137353134324143393136304232414237303541394342393137303533443732434143323746334231353639394239343437333746303331394537354646344535454644344146363931324439313237383234424643364645444336344339353441373630463934353130324144353539464133433538323744413230304536373342364237464630314243313641364630343237324633453035314133314136443035324437373743354439454645384437434430323033303130303031222C22616C696173223A227573657232222C2262696F223A22222C2261646472657373223A224D7847313848474736464A3033383631345938435734365553364732303831304B30303730434430305A3833323832473630473133554D474E303751595634525A55574133334D3031593443414A325938544E4A554E37344330413448594A574E5759544351315152305A35354545334D5A414A314A4A303745465442325443364B3931573838394559355A4A5A455644324E3837504845393945303554504750373245414437554E4642554A535656314733334131425A4A4438484B3259484B5159464243443748545035334654563645345A473053473832454A4432535147464A35335531375133313632475A52384230323845305A4D4A515A50553535343130363038303037354E5742454D4031302E302E302E31313A39303031222C22616C6C6F774E6F6E436F6E746163744368617473223A747275652C22636F756E747279223A22222C226C616E677561676573223A5B5D2C226D696E696D6161646472657373223A224D7847303833565143474B313352593131513250374B374D394D43445541335A534D544856395042505A4B3134394E484B32334B36485559554A5136593037222C22617661746172223A2230783030222C226C697374696E6773223A5B5D2C2274696D657374616D70223A313737343333383533333537367D
+Minima @ 24/03/2026 08:49:13 [159,9 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ✅ [BEACON-MLS] Beacon sent to MLS
+Minima @ 24/03/2026 08:49:13 [159,9 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📡 [BEACON] user1 from SELF
+Minima @ 24/03/2026 08:49:13 [160,3 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ✅ [LISTINGS] Updated listings for 0x30819F30
+Minima @ 24/03/2026 08:49:13 [160,6 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ✅ [BEACON] Saved: user1
+Minima @ 24/03/2026 08:49:13 [160,8 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🔍 [SW-TX] Checking pending transactions...
+Minima @ 24/03/2026 08:49:13 [160,8 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ✅ [SW-TX] No pending transactions in DB
+Minima @ 24/03/2026 08:49:13 [160,8 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🔍 [SW-TX-CONFIRM] Checking SENT transactions...
+Minima @ 24/03/2026 08:49:13 [161,5 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📨 [MAXIMA] RAW DATA: App=metachain From=0x30819F30 DataLen=716
+Minima @ 24/03/2026 08:49:13 [161,5 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📨 [MAXIMA] Event received. App: metachain From: 0x30819F30
+Minima @ 24/03/2026 08:49:13 [162,0 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🔍 [MAXIMA-DEBUG-ALL] App: metachain Type: get_peers From: 0x30819F30
+Minima @ 24/03/2026 08:49:13 [162,0 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📨 [MAXIMA] Full JSON Payload: {"app":"metachain","type":"get_peers","alias":"user1","address":"MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60G17D9TPD0R9AC9DS958UHDTTR419GV7JJ7TFN0NY69KD3E5V89PK1A4ANW4D3SBPWRTAUMA3QB3EC0AD3NR3CEKE90UZNV7S68FCN4VD0D5H7FYJAAZPPZYZQHYK25VU8WDZVPUPDBBGSCSA0PZFAQEN329TYQ2VYUB8HMA7CH7C6J8VEHPWBWAM9QBFQ3KBNW8E0FKDUPJRYFS10608004FNW87P@185.132.90.98:9001"}
+Minima @ 24/03/2026 08:49:13 [162,0 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📨 [MAXIMA-GOSSIP] get_peers request from 0x30819F30
+Minima @ 24/03/2026 08:49:13 [162,0 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🗣️ [GOSSIP] Peer request from user1
+Minima @ 24/03/2026 08:49:33 [69,3 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ✅ [GOSSIP] Sent 2 peers to MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60G17D9TPD0R9AC9DS958UHDTTR419GV7JJ7TFN0NY69KD3E5V89PK1A4ANW4D3SBPWRTAUMA3QB3EC0AD3NR3CEKE90UZNV7S68FCN4VD0D5H7FYJAAZPPZYZQHYK25VU8WDZVPUPDBBGSCSA0PZFAQEN329TYQ2VYUB8HMA7CH7C6J8VEHPWBWAM9QBFQ3KBNW8E0FKDUPJRYFS10608004FNW87P@185.132.90.98:9001
+Minima @ 24/03/2026 08:49:33 [69,7 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🔍 [GOSSIP-REPLY] Optimized send via address resolution: MxG18HGG6FJ0386...
+Minima @ 24/03/2026 08:49:33 [101,1 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ✅ [GOSSIP-REPLY] Sent to 0x30819F30
+Minima @ 24/03/2026 08:49:33 [102,0 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📨 [MAXIMA] RAW DATA: App=metachain From=0x30819F30 DataLen=716
+Minima @ 24/03/2026 08:49:33 [102,0 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📨 [MAXIMA] Event received. App: metachain From: 0x30819F30
+Minima @ 24/03/2026 08:49:33 [102,4 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🔍 [MAXIMA-DEBUG-ALL] App: metachain Type: get_peers From: 0x30819F30
+Minima @ 24/03/2026 08:49:33 [102,5 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📨 [MAXIMA] Full JSON Payload: {"app":"metachain","type":"get_peers","alias":"user2","address":"MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60G17D9TPD0R9AC9DS958UHDTTR419GV7JJ7TFN0NY69KD3E5V89PK1A4ANW4D3SBPWRTAUMA3QB3EC0AD3NR3CEKE90UZNV7S68FCN4VD0D5H7FYJAAZPPZYZQHYK25VU8WDZVPUPDBBGSCSA0PZFAQEN329TYQ2VYUB8HMA7CH7C6J8VEHPWBWAM9QBFQ3KBNW8E0FKDUPJRYFS10608004FNW87P@185.132.90.98:9001"}
+Minima @ 24/03/2026 08:49:33 [102,5 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📨 [MAXIMA-GOSSIP] get_peers request from 0x30819F30
+Minima @ 24/03/2026 08:49:33 [102,5 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🗣️ [GOSSIP] Peer request from user2
+User2:
+Minima @ 24/03/2026 08:48:33 [177,7 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🚀 [SW] Inited event received. Version v3.0
+Minima @ 24/03/2026 08:48:33 [177,7 MB] : Notification : {"uid":"0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72","title":"MetaChain","text":"MetaChain Service Worker Started","show":true}
+Minima @ 24/03/2026 08:48:33 [177,7 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ⏰ [SW] Starting Database Initialization...
+Minima @ 24/03/2026 08:48:33 [177,8 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🚀 [SW] STARTING UP - v2.6 REPAIR
+Minima @ 24/03/2026 08:48:33 [178,4 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔑 [SW] My Public Key: 0x30819F300D06092A864886F70D010101050003818D0030818902818100988AE5B6EFC396D2D19A92BD5B714350572C5B86662C3B99BEF10D2E69572B5C7D95D2CD5CCA75142AC9160B2AB705A9CB917053D72CAC27F3B15699B944737F0319E75FF4E5EFD4AF6912D9127824BFC6FEDC64C954A760F945102AD559FA3C5827DA200E673B6B7FF01BC16A6F04272F3E051A31A6D052D777C5D9EFE8D7CD0203010001
+Minima @ 24/03/2026 08:48:33 [179,2 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ℹ️ [MLS] Static MLS already configured.
+Minima @ 24/03/2026 08:48:33 [179,5 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📂 [DB] TRANSACTIONS table checked/init
+Minima @ 24/03/2026 08:48:33 [181,8 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 💾 [DB] CHAT_MESSAGES checked/init
+Minima @ 24/03/2026 08:48:33 [185,3 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📂 [DB] GROUPS checked/init
+Minima @ 24/03/2026 08:48:33 [185,4 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📂 [DB] GROUP_MEMBERS checked/init
+Minima @ 24/03/2026 08:48:33 [185,4 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📂 [DB] GROUP_MESSAGES checked/init
+Minima @ 24/03/2026 08:48:33 [185,8 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📂 [DB] GROUP_BANS checked/init
+Minima @ 24/03/2026 08:48:33 [185,9 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📂 [DB] GROUP_JOIN_REQUESTS checked/init
+Minima @ 24/03/2026 08:48:33 [186,0 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📊 [DB] MESSAGE_COUNTERS checked/init
+Minima @ 24/03/2026 08:48:33 [186,7 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📂 [DB] CONTACT_REQUESTS checked/init
+Minima @ 24/03/2026 08:48:33 [186,8 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📂 [DB] DISCOVERED_PEERS checked/init
+Minima @ 24/03/2026 08:48:33 [187,4 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📂 [DB] DISCOVERED_LISTINGS checked/init
+Minima @ 24/03/2026 08:48:33 [189,6 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📂 [DB] METACHAIN_USERS checked/init
+Minima @ 24/03/2026 08:48:33 [190,2 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📢 [DB] CHANNELS checked/init
+Minima @ 24/03/2026 08:48:33 [190,4 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📢 [DB] CHANNEL_SUBSCRIBERS checked/init
+Minima @ 24/03/2026 08:48:33 [190,5 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📢 [DB] CHANNEL_MESSAGES checked/init
+Minima @ 24/03/2026 08:48:33 [190,7 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📊 [DB] CHANNEL_MSG_COUNTERS checked/init
+Minima @ 24/03/2026 08:48:33 [190,7 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔄 [DB] Starting Identity Migration (Mx -> Hex)...
+Minima @ 24/03/2026 08:48:33 [194,0 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [DB] Identity Migration complete.
+Minima @ 24/03/2026 08:48:33 [194,0 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [INIT] Database sequence complete. Starting Services...
+Minima @ 24/03/2026 08:48:33 [194,1 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [INIT] MINIMALOG listener registered
+Minima @ 24/03/2026 08:48:33 [194,1 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📡 [BG-BEACON] Preparing beacon...
+Minima @ 24/03/2026 08:48:33 [198,3 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📡 [BG-BEACON] P2P broadcast sent
+Minima @ 24/03/2026 08:48:33 [205,3 MB] : FHA0OUUILVQNT:0x7B22617070223A226D657461636861696E222C2274797065223A22424541434F4E222C2276223A312C227075626B6579223A223078333038313946333030443036303932413836343838364637304430313031303130353030303338313844303033303831383930323831383130304132363946424532354330314331343646464133433742313337323135453639454330343633454344333846423332323738323442373946303535434141334437443942393146454333333044423437383536373045453937393045323338433337424237443146344439413142313743424232394633453146303632333646324645363345393543393246373137464134393738303643454333314342373044433132304434434542423744333439393239423832434145424439344439424343313638454635303845323945443236324234394241424236434544453635424331343643313932423430433039433743324430394636333142453645333530323033303130303031222C22616C696173223A227573657231222C2262696F223A22222C2261646472657373223A224D7847313848474736464A3033383631345938435734365553364732303831304B30303730434430305A383332383247363047313556514A35424B433330323935483759475943544752474D33544B575A5736314546373154544151464D5A4537514A3844363952574230575656555543384E374E57504B4D46545459574B50534E515A4E54383232524550474B35564D48544845385453504E30463746505534374736345456564A5943355533394A35524251383141545A434D4159505634535A36394733303031574454524834553944334A554647534547485A52304334414737384E3455544341453750463453435654563743344B3931303543455A59533130363038303036554B53354A4A4031302E302E302E31313A39303031222C22616C6C6F774E6F6E436F6E746163744368617473223A747275652C22636F756E747279223A22222C226C616E677561676573223A5B5D2C226D696E696D6161646472657373223A224D7847303833523046433931553132395455505332454D30374A444D3352323035304A435A3357324438574651513235434D414A4D4555365157395231474B222C22617661746172223A2230783030222C226C697374696E6773223A5B5D2C2274696D657374616D70223A313737343333383531333036377D
+Minima @ 24/03/2026 08:48:42 [161,1 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [BEACON-MLS] Beacon sent to MLS
+Minima @ 24/03/2026 08:48:42 [161,1 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📡 [BEACON] user2 from SELF
+Minima @ 24/03/2026 08:48:42 [161,7 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [LISTINGS] Updated listings for 0x30819F30
+Minima @ 24/03/2026 08:48:42 [162,1 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [BEACON] Saved: user2
+Minima @ 24/03/2026 08:48:42 [162,4 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔍 [SW-TX] Checking pending transactions...
+Minima @ 24/03/2026 08:48:42 [162,4 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [SW-TX] No pending transactions in DB
+Minima @ 24/03/2026 08:48:42 [162,5 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔍 [SW-TX-CONFIRM] Checking SENT transactions...
+Minima @ 24/03/2026 08:48:53 [179,9 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [BEACON-MLS] Beacon sent to MLS
+Minima @ 24/03/2026 08:48:53 [180,0 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📡 [BEACON] user2 from SELF
+Minima @ 24/03/2026 08:48:53 [180,4 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [LISTINGS] Updated listings for 0x30819F30
+Minima @ 24/03/2026 08:48:53 [180,6 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [BEACON] Saved: user2
+Minima @ 24/03/2026 08:48:53 [180,8 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🗣️ [GOSSIP] Starting discovery...
+Minima @ 24/03/2026 08:48:53 [181,1 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🗣️ [GOSSIP] Asking 2 discovered peers...
+Minima @ 24/03/2026 08:48:53 [181,3 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔍 [GOSSIP-ASK] Optimized send via address resolution: MxG18HGG6FJ0386...
+Minima @ 24/03/2026 08:48:53 [142,4 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [GOSSIP-ASK] Sent to 0X30819F30
+Minima @ 24/03/2026 08:48:53 [142,7 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔍 [GOSSIP-ASK] Optimized send via address resolution: MxG18HGG6FJ0386...
+Minima @ 24/03/2026 08:48:53 [71,0 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [GOSSIP-ASK] Sent to 0X30819F30
+Minima @ 24/03/2026 08:48:53 [71,2 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔗 [BOOTSTRAP] Checking DISCOVERED_PEERS count...
+Minima @ 24/03/2026 08:48:53 [71,5 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔗 [BOOTSTRAP] Already have 1 peers — skipping MLS bootstrap.
+Minima @ 24/03/2026 08:48:53 [71,6 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [INIT] NEWBLOCK listener registered for periodic tasks.
+Minima @ 24/03/2026 08:48:53 [71,6 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔄 [HISTORY-SYNC] Starting startup sync (Enhanced)...
+Minima @ 24/03/2026 08:48:53 [72,1 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔍 [HISTORY-SYNC-DEBUG] SQL result status: true
+Minima @ 24/03/2026 08:48:53 [72,2 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔄 [HISTORY-SYNC] Syncing with 1 contacts from DISCOVERED_PEERS
+Minima @ 24/03/2026 08:48:53 [72,3 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔄 [HISTORY-SYNC] Requesting history from: 0X30819F300D06092A86...
+Minima @ 24/03/2026 08:48:53 [72,9 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔍 [ADDR-DEBUG] Raw: 'MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60G15VQJ5BKC30295H7YGYCTGRGM3TKWZW61EF71TTAQFMZE7QJ8D69RWB0WVVUUC8N7NWPKMFTTYWKPSNQZNT822REPGK5VMHTHE8TSPN0F7FPU47G64TVVJYC5U39J5RBQ81ATZCMAYPV4SZ69G3001WDTRH4U9D3JUFGSEGHZR0C4AG78N4UTCAE7PF4SCVTV7C4K9105CEZYS10608006UKS5JJ@10.0.0.11:9001' -> Clean: 'MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60G15VQJ5BKC30295H7YGYCTGRGM3TKWZW61EF71TTAQFMZE7QJ8D69RWB0WVVUUC8N7NWPKMFTTYWKPSNQZNT822REPGK5VMHTHE8TSPN0F7FPU47G64TVVJYC5U39J5RBQ81ATZCMAYPV4SZ69G3001WDTRH4U9D3JUFGSEGHZR0C4AG78N4UTCAE7PF4SCVTV7C4K9105CEZYS10608006UKS5JJ@10.0.0.11:9001'
+Minima @ 24/03/2026 08:48:53 [73,0 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔍 [CMD-DEBUG-V3] maxima action:send to:MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60G15VQJ5BKC30295H7YGYCTGRGM3TKWZW61EF71TTAQFMZE7QJ8D69RWB0WVVUUC8N7NWPKMFTTYWKPSNQZNT822REPGK5VMHTHE8TSPN0F7FPU47G64TVVJYC5U39J5RBQ81ATZCMAYPV4SZ69G3001WDTRH4U9D3JUFGSEGHZR0C4AG78N4UTCAE7PF4SCVTV7C4K9105CEZYS10608006UKS5JJ@10.0.0.11:9001 application:metachain data:0x7B226D657373616765223A22222C2274797065223A22636861745F686973746F72795F72657175657374222C22757365726E616D65223A224D65222C2266696C6564617461223A22222C2274696D657374616D70223A313737333733333733333430327D poll:false
+Minima @ 24/03/2026 08:48:53 [160,8 MB] : FHA0OUUILVQNT:0x7B22617070223A226D657461636861696E222C2274797065223A22424541434F4E222C2276223A312C227075626B6579223A223078333038313946333030443036303932413836343838364637304430313031303130353030303338313844303033303831383930323831383130304132363946424532354330314331343646464133433742313337323135453639454330343633454344333846423332323738323442373946303535434141334437443942393146454333333044423437383536373045453937393045323338433337424237443146344439413142313743424232394633453146303632333646324645363345393543393246373137464134393738303643454333314342373044433132304434434542423744333439393239423832434145424439344439424343313638454635303845323945443236324234394241424236434544453635424331343643313932423430433039433743324430394636333142453645333530323033303130303031222C22616C696173223A227573657231222C2262696F223A22222C2261646472657373223A224D7847313848474736464A3033383631345938435734365553364732303831304B30303730434430305A383332383247363047313556514A35424B433330323935483759475943544752474D33544B575A5736314546373154544151464D5A4537514A3844363952574230575656555543384E374E57504B4D46545459574B50534E515A4E54383232524550474B35564D48544845385453504E30463746505534374736345456564A5943355533394A35524251383141545A434D4159505634535A36394733303031574454524834553944334A554647534547485A52304334414737384E3455544341453750463453435654563743344B3931303543455A59533130363038303036554B53354A4A4031302E302E302E31313A39303031222C22616C6C6F774E6F6E436F6E746163744368617473223A747275652C22636F756E747279223A22222C226C616E677561676573223A5B5D2C226D696E696D6161646472657373223A224D7847303833523046433931553132395455505332454D30374A444D3352323035304A435A3357324438574651513235434D414A4D4555365157395231474B222C22617661746172223A2230783030222C226C697374696E6773223A5B5D2C2274696D657374616D70223A313737343333383533333436307D
+Minima @ 24/03/2026 08:48:53 [207,0 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📦 [INIT] Coin discovery scheduled for first NEWBLOCK event
+Minima @ 24/03/2026 08:48:53 [207,0 MB] : Started service.js MetaChain
+Minima @ 24/03/2026 08:48:53 [209,1 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📡 [P2P] Beacon: user1
+Minima @ 24/03/2026 08:48:53 [209,2 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📡 [BEACON] user1 from P2P
+Minima @ 24/03/2026 08:48:53 [209,6 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [LISTINGS] Updated listings for 0x30819F30
+Minima @ 24/03/2026 08:48:53 [209,8 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [BEACON] Saved: user1
+Minima @ 24/03/2026 08:48:53 [210,0 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ⏭️ [GOSSIP] Welcome Package skipped for existing peer: user1
+Minima @ 24/03/2026 08:48:53 [210,3 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🧹 [SW-CLEANUP] Starting orphan cleanup check...
+Minima @ 24/03/2026 08:48:53 [210,5 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [SW-CLEANUP] No old pending messages found.
+Minima @ 24/03/2026 08:48:53 [210,8 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔄 [GROUP-SYNC] Startup sync for all groups...
+Minima @ 24/03/2026 08:48:53 [211,0 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔄 [CHANNEL-SYNC] Startup sync for all channels...
+Minima @ 24/03/2026 08:48:53 [211,2 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🗣️ [GOSSIP] Starting discovery...
+Minima @ 24/03/2026 08:48:53 [211,5 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🗣️ [GOSSIP] Asking 2 discovered peers...
+Minima @ 24/03/2026 08:48:53 [211,7 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔍 [GOSSIP-ASK] Optimized send via address resolution: MxG18HGG6FJ0386...
+Minima @ 24/03/2026 08:48:53 [59,1 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [GOSSIP-ASK] Sent to 0X30819F30
+Minima @ 24/03/2026 08:48:53 [59,4 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔍 [GOSSIP-ASK] Optimized send via address resolution: MxG18HGG6FJ0386...
+Minima @ 24/03/2026 08:48:53 [161,4 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [GOSSIP-ASK] Sent to 0X30819F30
+Minima @ 24/03/2026 08:48:53 [161,7 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📡 [BG-BEACON] Preparing beacon...
+Minima @ 24/03/2026 08:48:53 [162,7 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📡 [BG-BEACON] P2P broadcast sent
+Minima @ 24/03/2026 08:49:13 [165,6 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [BEACON-MLS] Beacon sent to MLS
+Minima @ 24/03/2026 08:49:13 [165,7 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📡 [BEACON] user2 from SELF
+Minima @ 24/03/2026 08:49:13 [166,1 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [LISTINGS] Updated listings for 0x30819F30
+Minima @ 24/03/2026 08:49:13 [166,4 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [BEACON] Saved: user2
+Minima @ 24/03/2026 08:49:13 [166,6 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔍 [SW-TX] Checking pending transactions...
+Minima @ 24/03/2026 08:49:13 [166,6 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [SW-TX] No pending transactions in DB
+Minima @ 24/03/2026 08:49:13 [166,6 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔍 [SW-TX-CONFIRM] Checking SENT transactions...
+Minima @ 24/03/2026 08:49:13 [167,4 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📨 [MAXIMA] RAW DATA: App=metachain From=0x30819F30 DataLen=1476
+Minima @ 24/03/2026 08:49:13 [167,4 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📨 [MAXIMA] Event received. App: metachain From: 0x30819F30
+Minima @ 24/03/2026 08:49:13 [169,6 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔍 [MAXIMA-DEBUG-ALL] App: metachain Type: profile_request From: 0x30819F30
+Minima @ 24/03/2026 08:49:13 [169,6 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📨 [MAXIMA] Full JSON Payload: {"type":"profile_request","requestId":"1774338524549_arow0ge","requester":"0x30819F300D06092A864886F70D010101050003818D0030818902818100A269FBE25C01C146FFA3C7B137215E69EC0463ECD38FB3227824B79F055CAA3D7D9B91FEC330DB4785670EE9790E238C37BB7D1F4D9A1B17CBB29F3E1F06236F2FE63E95C92F717FA497806CEC31CB70DC120D4CEBB7D349929B82CAEBD94D9BCC168EF508E29ED262B49BABB6CEDE65BC146C192B40C09C7C2D09F631BE6E350203010001","requesterAddress":"MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60G15VQJ5BKC30295H7YGYCTGRGM3TKWZW61EF71TTAQFMZE7QJ8D69RWB0WVVUUC8N7NWPKMFTTYWKPSNQZNT822REPGK5VMHTHE8TSPN0F7FPU47G64TVVJYC5U39J5RBQ81ATZCMAYPV4SZ69G3001WDTRH4U9D3JUFGSEGHZR0C4AG78N4UTCAE7PF4SCVTV7C4K9105CEZYS10608006UKS5JJ@10.0.0.11:9001","timestamp":1774338524579}
+Minima @ 24/03/2026 08:49:13 [169,6 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > [PROFILE FLOW] Step 2 - profile_request received from 0x30819F30 requestId=1774338524549_arow0ge
+Minima @ 24/03/2026 08:49:13 [169,6 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > [PROFILE SW] Handling profile request requestId=1774338524549_arow0ge
+Minima @ 24/03/2026 08:49:13 [169,6 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > [PROFILE SW] Step 2.1 - Checking contacts...
+Minima @ 24/03/2026 08:49:13 [170,0 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔍 [PROFILE] Requester is contact: false
+Minima @ 24/03/2026 08:49:13 [170,0 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > [PROFILE SW] Step 2.2 - Fetching profile from DB...
+Minima @ 24/03/2026 08:49:13 [170,7 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔍 [PROFILE-DEBUG] DB Fetch Result: {"sql":"SELECT * FROM MY_PROFILE LIMIT 1","status":true,"results":true,"count":1,"rows":[{"ID":"1","ALLOW_NON_CONTACT_CHATS":"true","PRIVACY_L2":"public","PRIVACY_L3":"contacts"}]}
+Minima @ 24/03/2026 08:49:13 [170,8 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔍 [PROFILE] RAW DB Values - PRIVACY_L2: public, PRIVACY_L3: contacts
+Minima @ 24/03/2026 08:49:13 [170,8 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔐 [PROFILE] Privacy Resolved (DB) - L2: public, L3: personal
+Minima @ 24/03/2026 08:49:13 [170,9 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > [PROFILE SW] Step 2.3 - Fetching personal contacts...
+Minima @ 24/03/2026 08:49:13 [171,2 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔍 [PROFILE-DEBUG] Personal Contacts (SQL): 0
+Minima @ 24/03/2026 08:49:13 [171,3 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ❌ [PROFILE-DEBUG] No match found for 0x30819F30... in Personal List
+Minima @ 24/03/2026 08:49:13 [171,5 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔒 [PROFILE] Sharing - Level2: true, Level3: false
+Minima @ 24/03/2026 08:49:13 [171,9 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🚫 [PROFILE] Level 3 NOT included (visibility: personal)
+Minima @ 24/03/2026 08:49:13 [172,1 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > [PROFILE SW] Profile loaded requestId=1774338524549_arow0ge
+Minima @ 24/03/2026 08:49:13 [172,1 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > [PROFILE SW] Step 2.4 - Fetching Maxima info...
+Minima @ 24/03/2026 08:49:13 [173,2 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 👤 [PROFILE] Maxima info - Status: true
+Minima @ 24/03/2026 08:49:13 [173,2 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 👤 [PROFILE] Name from Maxima: user2
+Minima @ 24/03/2026 08:49:13 [173,2 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > [PROFILE SW] Step 2.5 - Fetching p2p_bio...
+Minima @ 24/03/2026 08:49:13 [173,3 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > [PROFILE SW] Step 2.6 - Fetching address...
+Minima @ 24/03/2026 08:49:14 [156,0 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ⚠️ [PROFILE] Level 3 NOT added to response
+Minima @ 24/03/2026 08:49:14 [156,0 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📦 [PROFILE] Final response payload: {"type":"profile_response","requestId":"1774338524549_arow0ge","name":"user2","bio":"","avatar":"0x00","allowNonContactChats":true,"minimaaddress":"MxG0802GJSUBAKJE4B7N6V7J53YU881YW9F0PF1TQ7E98PFCN65EFSBBWGUZGY7","location":"","country":"","website":"","social":{},"languages":[],"privacy_l3":"hidden"}
+Minima @ 24/03/2026 08:49:14 [158,0 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📤 [PROFILE] Sending filtered response via publickey to: 0x30819F30...
+Minima @ 24/03/2026 08:49:14 [158,0 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > [PROFILE SW] Sending profile_response requestId=1774338524549_arow0ge
+Minima @ 24/03/2026 08:49:14 [158,0 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > [PROFILE FLOW] Step 3 - Sending profile_response requestId=1774338524549_arow0ge to 0x30819F30
+Minima @ 24/03/2026 08:49:14 [158,5 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > [PROFILE SW] profile_response sent requestId=1774338524549_arow0ge status=false
+Minima @ 24/03/2026 08:49:14 [158,6 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [PROFILE] Response Sent. Status: false
+Minima @ 24/03/2026 08:49:14 [158,9 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📨 [MAXIMA] RAW DATA: App=metachain From=0x30819F30 DataLen=716
+Minima @ 24/03/2026 08:49:14 [158,9 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📨 [MAXIMA] Event received. App: metachain From: 0x30819F30
+Minima @ 24/03/2026 08:49:14 [159,4 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔍 [MAXIMA-DEBUG-ALL] App: metachain Type: get_peers From: 0x30819F30
+Minima @ 24/03/2026 08:49:14 [159,4 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📨 [MAXIMA] Full JSON Payload: {"app":"metachain","type":"get_peers","alias":"user1","address":"MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60G17D9TPD0R9AC9DS958UHDTTR419GV7JJ7TFN0NY69KD3E5V89PK1A4ANW4D3SBPWRTAUMA3QB3EC0AD3NR3CEKE90UZNV7S68FCN4VD0D5H7FYJAAZPPZYZQHYK25VU8WDZVPUPDBBGSCSA0PZFAQEN329TYQ2VYUB8HMA7CH7C6J8VEHPWBWAM9QBFQ3KBNW8E0FKDUPJRYFS10608004FNW87P@185.132.90.98:9001"}
+Minima @ 24/03/2026 08:49:14 [159,4 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📨 [MAXIMA-GOSSIP] get_peers request from 0x30819F30
+Minima @ 24/03/2026 08:49:14 [159,5 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🗣️ [GOSSIP] Peer request from user1
+Minima @ 24/03/2026 08:49:34 [201,5 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [GOSSIP] Sent 2 peers to MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60G17D9TPD0R9AC9DS958UHDTTR419GV7JJ7TFN0NY69KD3E5V89PK1A4ANW4D3SBPWRTAUMA3QB3EC0AD3NR3CEKE90UZNV7S68FCN4VD0D5H7FYJAAZPPZYZQHYK25VU8WDZVPUPDBBGSCSA0PZFAQEN329TYQ2VYUB8HMA7CH7C6J8VEHPWBWAM9QBFQ3KBNW8E0FKDUPJRYFS10608004FNW87P@185.132.90.98:9001
+Minima @ 24/03/2026 08:49:34 [201,9 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔍 [GOSSIP-REPLY] Optimized send via address resolution: MxG18HGG6FJ0386...
+Minima @ 24/03/2026 08:49:34 [65,3 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [GOSSIP-REPLY] Sent to 0x30819F30
+Minima @ 24/03/2026 08:49:34 [65,6 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📨 [MAXIMA] RAW DATA: App=metachain From=0x30819F30 DataLen=716
+Minima @ 24/03/2026 08:49:34 [65,6 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📨 [MAXIMA] Event received. App: metachain From: 0x30819F30
+Minima @ 24/03/2026 08:49:34 [66,1 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔍 [MAXIMA-DEBUG-ALL] App: metachain Type: get_peers From: 0x30819F30
+Minima @ 24/03/2026 08:49:34 [66,1 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📨 [MAXIMA] Full JSON Payload: {"app":"metachain","type":"get_peers","alias":"user2","address":"MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60G17D9TPD0R9AC9DS958UHDTTR419GV7JJ7TFN0NY69KD3E5V89PK1A4ANW4D3SBPWRTAUMA3QB3EC0AD3NR3CEKE90UZNV7S68FCN4VD0D5H7FYJAAZPPZYZQHYK25VU8WDZVPUPDBBGSCSA0PZFAQEN329TYQ2VYUB8HMA7CH7C6J8VEHPWBWAM9QBFQ3KBNW8E0FKDUPJRYFS10608004FNW87P@185.132.90.98:9001"}
+Minima @ 24/03/2026 08:49:34 [66,1 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📨 [MAXIMA-GOSSIP] get_peers request from 0x30819F30
+Minima @ 24/03/2026 08:49:34 [66,1 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🗣️ [GOSSIP] Peer request from user2

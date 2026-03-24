@@ -550,11 +550,9 @@ function DiscoveryPage() {
                               className="text-xs text-gray-400 font-mono truncate"
                               title={user.publickey || user.user_id || ""}
                             >
-                              {(user.publickey || user.user_id || "").substring(
-                                0,
-                                12,
-                              )}
+                              {(user.publickey || user.user_id || "").substring(0, 4)}
                               ...
+                              {(user.publickey || user.user_id || "").slice(-6)}
                             </p>
                           </div>
                         </div>

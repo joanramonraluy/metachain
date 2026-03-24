@@ -19,9 +19,12 @@ import { chatService } from "./chat.service";
  * @returns SHA256 hash of sorted public keys (64 characters)
  */
 export async function generateChatId(publicKey1: string, publicKey2: string): Promise<string> {
+    // Normalize to UpperCase to ensure case-insensitivity in the hash
+    const pk1 = publicKey1.toUpperCase();
+    const pk2 = publicKey2.toUpperCase();
     // Sort alphabetically to ensure same result regardless of order
-    const sorted = [publicKey1, publicKey2].sort();
-    const combined = sorted.join('|');
+    const sorted = [pk1, pk2].sort();
+    const combined = sorted.join(':');
 
     // Use browser native crypto for reliability and speed (avoids MDS dependency issues)
     try {
@@ -80,7 +83,7 @@ export async function insertTransaction(
     // Ensure we handle the case where we might be re-inserting if using pendingID
     const sql = `
         INSERT INTO TRANSACTIONS (txpowid, type, publickey, message_timestamp, status, date, metadata, pendinguid, amount, tokenid)
-        VALUES (${txpowidVal}, '${type}', '${publickey}', ${messageTimestamp}, 'pending', ${now}, '${metadataStr}', ${pendinguidVal}, ${amountVal}, ${tokenidVal})
+        VALUES (${txpowidVal}, '${type}', UPPER('${publickey}'), ${messageTimestamp}, 'pending', ${now}, '${metadataStr}', ${pendinguidVal}, ${amountVal}, ${tokenidVal})
     `;
 
     console.log(`💾 [TX] Inserting transaction: ${effectiveTxPoWID} (${type})`);
@@ -862,10 +865,10 @@ export async function updateMessageState(publickey: string, timestamp: number, s
     let sql: string;
 
     if (newTimestamp) {
-        sql = `UPDATE CHAT_MESSAGES SET state='${state}', date=${newTimestamp} WHERE publickey='${publickey}' AND date=${timestamp}`;
+        sql = `UPDATE CHAT_MESSAGES SET state='${state}', date=${newTimestamp} WHERE UPPER(publickey)=UPPER('${publickey}') AND date=${timestamp}`;
         console.log(`🔄 [MSG] Updating message state: ${timestamp} -> ${state} (new timestamp: ${newTimestamp})`);
     } else {
-        sql = `UPDATE CHAT_MESSAGES SET state='${state}' WHERE publickey='${publickey}' AND date=${timestamp}`;
+        sql = `UPDATE CHAT_MESSAGES SET state='${state}' WHERE UPPER(publickey)=UPPER('${publickey}') AND date=${timestamp}`;
         console.log(`🔄 [MSG] Updating message state: ${timestamp} -> ${state}`);
     }
 
@@ -888,9 +891,13 @@ export async function updateMessageState(publickey: string, timestamp: number, s
     }
 }
 
+export function normalizeKey(key: string): string {
+  return key ? key.toUpperCase().trim() : "";
+}
+
 export function getPendingMessages(publickey: string) {
     return new Promise((resolve) => {
-        const sql = `SELECT * FROM CHAT_MESSAGES WHERE publickey='${publickey}' AND state='pending' ORDER BY date ASC`;
+        const sql = `SELECT * FROM CHAT_MESSAGES WHERE UPPER(publickey)=UPPER('${publickey}') AND state='pending' ORDER BY date ASC`;
         MDS.sql(sql, (res: any) => {
             if (res.status && res.rows) {
                 resolve(res.rows);
@@ -1102,7 +1109,7 @@ export function startConfirmationChecker(): void {
 
 
                                         // Update CHAT_MESSAGES directly since there is no TRANSACTIONS row
-                                        await runSQL(`UPDATE CHAT_MESSAGES SET txpowid='${newTxPoWID}' WHERE publickey='${msg.publickey}' AND date=${msg.date}`);
+                                        await runSQL(`UPDATE CHAT_MESSAGES SET txpowid='${newTxPoWID}' WHERE UPPER(publickey)=UPPER('${msg.publickey}') AND date=${msg.date}`);
 
                                         // Check confirmation for this new ID immediately
                                         const newStatus = await check3BlockConfirmation(newTxPoWID);
@@ -1131,7 +1138,7 @@ export function startConfirmationChecker(): void {
                                             console.log(`🔄 [TX-CONFIRM-INCOMING] Found NEW ID for zombie transaction ${msg.date}: ${newTxPoWID}. Updating DB.`);
 
                                             // Update DB
-                                            await runSQL(`UPDATE CHAT_MESSAGES SET txpowid='${newTxPoWID}' WHERE publickey='${msg.publickey}' AND date=${msg.date}`);
+                                            await runSQL(`UPDATE CHAT_MESSAGES SET txpowid='${newTxPoWID}' WHERE UPPER(publickey)=UPPER('${msg.publickey}') AND date=${msg.date}`);
 
                                             // Check immediately
                                             const newStatus = await check3BlockConfirmation(newTxPoWID);
@@ -1163,7 +1170,7 @@ export function startConfirmationChecker(): void {
                                         console.log(`⏳ [TX-CONFIRM] Orphan found but status is ${status}`);
                                         // Update CHAT_MESSAGES with the found ID so future checks use the optimized path
                                         // And so we can track it properly.
-                                        await runSQL(`UPDATE CHAT_MESSAGES SET txpowid='${recoveredTxPoWID}' WHERE publickey='${msg.publickey}' AND date=${msg.date}`);
+                                        await runSQL(`UPDATE CHAT_MESSAGES SET txpowid='${recoveredTxPoWID}' WHERE UPPER(publickey)=UPPER('${msg.publickey}') AND date=${msg.date}`);
 
                                         // Also insert into TRANSACTIONS so it's tracked normally? 
                                         // Maybe overkill, but ensures consistency. For now, updating message is enough.

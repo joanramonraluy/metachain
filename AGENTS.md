@@ -1,6 +1,6 @@
 1 # AGENTS.md - MetaChain Engineering Guide
 
-Last reviewed against codebase: 2026-03-22 (commit `uncommitted` + beacon listings cache + public listings UI + pong throttle + welcome gating + FE ping/pong dedupe + MDS_SOLO callback fix + poll:false latency reduction)
+Last reviewed against codebase: 2026-03-24 (commit `v0.9` + Profile Bug Revert + MLS Auto-Bootstrap Removal)
 Scope: `/home/joanramon/Minima/metachain`
 
 ## 1) Project Intent
@@ -103,14 +103,16 @@ UI settings page: `src/routes/settings/discovery.tsx`
 
 Current behavior:
 - Reads `maxima action:info` -> `mls` + `staticmls`
-- If absent, Service Worker auto-attempts default static MLS assignment
 - Settings UI supports manual server entry and "use my node as server" mode
-- Settings UI no longer auto-sets static MLS on load
+- Settings UI does NOT auto-set static MLS on load
 - Self-MLS detection uses `p2pidentity` to avoid loops when contact address differs
 - `staticmls` persists across normal restarts and is lost only on clean reset or data wipe (e.g. `-clean`, `reset`, basefolder change, or restoring an old backup)
-- MLS bootstrap attempts (`bootstrapFromMLS`) are throttled (30s) to avoid repeated startup bursts when discovery is empty.
+- Service Worker does NOT auto-attempt default static MLS assignment (removed to avoid profile blocking during startup)
+- Service Worker does NOT call `bootstrapFromMLS()` on reconnection (removed to avoid message queue saturation)
 
-MLS is used for **Maxima routing** (unicast). With the MLS beacon hub behavior, nodes also unicast their own beacons to the MLS server so it can answer `get_peers` even when P2P MetaChain neighbors are sparse. Two nodes sharing an MLS server can exchange Maxima messages and discover peers via MLS without direct P2P MetaChain neighbors, assuming the MLS runs MetaChain and receives those beacons. `get_peers` now includes the requester `address` so the MLS can respond via `to:` even when the requester is not a Maxima contact. Prefer `mls` (stable `Mx@ip:port`) over `contact` (often transient) when populating this field. MLS responses are sent to both `to:<address>` and `publickey` to handle stale/ephemeral addresses.
+**Important Change (v0.9)**: Automatic MLS initialization and bootstrap were removed because they caused interference with profile requests and message delivery. If manual MLS configuration is desired, use the UI settings page. Automatic MLS is now only managed through explicit user configuration or operator intervention.
+
+MLS is used for **Maxima routing** (unicast) when manually configured. Nodes can unicast messages and discover peers via MLS assuming both nodes share an MLS server. `get_peers` includes the requester `address` to handle non-contact responses. MLS responses are sent to both `to:<address>` and `publickey` to handle stale/ephemeral addresses.
 
 ### 4.7 Permanent registration flow
 `minima.service.ts` handles incoming `mls_register_permanent` and runs:
@@ -136,6 +138,33 @@ Relevant files:
 - `src/services/minima.service.ts` (smart sync/history paths)
 
 Never remove fallback-to-address logic unless replacing it with an equivalent robust path. **Use `poll:false` by default** for all outbound MAXIMA sends to prevent runtime blocking (77s+) when targets are offline or not in contacts.
+
+### 5.5 MDS API: Service Worker vs Frontend (Critical Distinction)
+
+The `MDS` object behaves differently depending on the runtime context:
+
+| Context | `MDS.cmd(string, cb)` | `MDS.executeRaw(string, cb)` | Typed methods |
+|---|---|---|---|
+| **Service Worker** (raw `mds.js`) | ✅ Callable as a function | ✅ Available | Not applicable |
+| **Frontend TS** (`@minima-global/mds`) | ❌ `MDS.cmd` is a **namespace object**, NOT callable | ⚠️ Available but avoid for simple Maxima sends | `MDS.cmd.maxima(...)`, `MDS.cmd.block()`, etc. |
+
+**Rule**: Prefer `MDS.cmd.maxima(...)` (typed API) over `MDS.executeRaw` for all standard Maxima operations from the frontend:
+```typescript
+// Preferred: typed, clean, and error-safe
+MDS.cmd.maxima({
+  params: {
+    action: 'send',
+    to: peerAddress,
+    application: 'metachain',
+    data: hexData
+  }
+}, callback);
+
+// Fallback only when raw command string is required (rare):
+MDS.executeRaw(`maxima action:send to:${addr} application:metachain data:${hex} poll:false`, callback);
+```
+
+Using raw `MDS.executeRaw` adds hidden complexity (SQL dependencies, executeRaw semantics) without benefit for normal sends. `MDS.cmd.maxima()` is the canonical, safe path. Use `executeRaw` only for SQL queries, debug commands, or when a raw string is absolutely necessary — and document why.
 
 ### 5.2 Contact systems are intentionally dual
 Two parallel protocols:
@@ -224,7 +253,7 @@ Do not create independent history merge algorithms in FE.
 | `delivery_receipt`, `read` | SW `chat.handler.js` | SW | `CHAT_MESSAGES` | `onNewMessage` |
 | `contact_request` domain | SW `contact.handler.js` | SW | `CONTACT_REQUESTS`, `CHAT_MESSAGES` | `onNewMessage` |
 | `maxima_contact_*` domain | SW `contact.handler.js` | SW | `MAXIMA_CONTACT_REQUESTS`, `CHAT_MESSAGES` | `onNewMessage` |
-| `profile_request`, `profile_response` | SW `profile.handler.js` | SW (authoritative), FE may cache | `DISCOVERED_PEERS`, `MY_PROFILE` | `peer_updated` |
+| `profile_request`, `profile_response` | SW `profile.handler.js` (both request and response) | SW (authoritative), FE may cache | `DISCOVERED_PEERS`, `MY_PROFILE` | `peer_updated` |
 | `chat_history_*`, `sync_status_*` | SW `chat.handler.js` | SW | `CHAT_MESSAGES`, `MESSAGE_COUNTERS` | `CHAT_LIST_UPDATE`, `history_sync` |
 | reconnect signal (`RECONNECTED`) | SW `main.js` | FE queue state | local queue/cache | offline queue + chat refresh |
 
@@ -254,7 +283,7 @@ Do not swap to `(fromKey, msg)` in dispatcher calls. This breaks sequence SQL ch
 1. **Lazy/Debounced Reloads**: Chat message list reloads in `$address.tsx` must be suppressed for "control" payloads (e.g., `ping`, `pong`, `read_receipt`, `delivery_receipt`) that do not change content visibility.
 2. **Discovery Loading UX**: When accessing a non-contact's profile, the **Actions** tab in `ContactInfoPage` uses `isCheckingProfile` to show a "Verifying Permissions" loading state while waiting for real-time permission confirmation (via `profile_response`). This prevents UI flashes of restricted states based on stale Discovery/Beacon cache.
 3. **Profile Discovery Trigger**: Chat view (`$address.tsx`) and Contact Info both trigger `requestProfile` if the cached peer is a non-contact or has incomplete data (missing alias/address).
-4. **Profile Request Guardrails**: `requestProfile` emits at most one in-flight request per peer and enforces a 30s throttle; SW `handleProfileRequest` also throttles repeated requester calls to reduce MAXIMA queue pressure.
+4. **Profile Request Guardrails**: `requestProfile` enforces a 30s per-peer throttle at the call site (`chat/$address.tsx`). The SW `handleProfileRequest` does NOT throttle — any throttle there was removed because it silently dropped retries for legitimate re-requests. The SW response send uses `poll:false` via `MDS.cmd` (raw string). The FE request send uses `MDS.executeRaw` with `poll:false` for direct P2P delivery (~1–3s); without `poll:false`, delivery waits for a blockchain block event (~10–20s per hop).
 
 ## 7) Ordering, Dedup and Transaction Safety
 
@@ -299,6 +328,8 @@ Never add a new column in only one runtime.
 
 If one runtime extends a shared table, add backward-compatible `ALTER TABLE ... ADD COLUMN IF NOT EXISTS ...` in both runtimes.
 
+7. **Virtual Column Constraint**: Do NOT use `ALTER TABLE ... ALTER COLUMN ... SET DATA TYPE` for computed/virtual columns (e.g. `AS UPPER(...)`). H2 does not allow altering columns referenced by expressions. Ensure `ADD COLUMN IF NOT EXISTS` already specifies the desired length.
+
 ## 9) TypeScript and Frontend Standards
 
 1. Must pass strict TS (`npm run build` includes type-check).
@@ -337,6 +368,12 @@ When changing protocol code, log:
 11. **Beacon transport is P2P-only (`MSG_GENMESSAGE`), not Maxima**. Two MetaChain nodes with no shared MetaChain-running P2P neighbor cannot discover each other via beacon. Do not assume discovery will work on sparse mainnet deployments without a common MetaChain relay node or shared MLS for Maxima fallback. See section 4.3.
 12. **`MDS.comms.solo("type")` does NOT support a second callback argument** in the Minima JS/TS bridge. Providing one (a frequent legacy pattern) causes the notification to fail silently. Notifications must be fire-and-forget; let the FE logic handle state transitions via DB reads.
 13. **Blocking Sends (`poll:true`) are prohibited** in hot paths (chat/beacon/history). A blocking send to an offline peer will freeze the Service Worker event loop for ~77 seconds, pausing all gossip, incoming message processing, and DB maintenance. Always use `poll:false`.
+14. **Dual Identity (Mx vs 0x)**: Messages arriving via Service Worker always use Hex Keys. Frontend must query using both the address from the URL (`Mx...`) and the canonical Hex Key (`0x...`) to ensure all messages are visible.
+16. **`MDS.cmd` is NOT callable as a function from the frontend TypeScript context**. `MDS.cmd` in `@minima-global/mds` is a namespace object with typed methods (`MDS.cmd.maxima(...)` etc.), not a function. Calling `(MDS.cmd as any)(rawString, cb)` silently does nothing or ignores `poll:false`. Always use the typed `MDS.cmd.maxima(...)` API for Maxima sends; reserve `MDS.executeRaw` for SQL queries only. See section 5.5.
+17. **H2 BOOLEAN columns return strings, not booleans**. `SELECT allow_non_contact_chats` returns `"true"` or `"false"` (strings), not JS `true`/`false`. All boolean DB checks must handle both: `value === 1 || value === true || value === "1" || value === "true"`. Missing this causes permission gates to always evaluate to `false`.
+15. **SW/FE Race Condition**: Maxima events trigger reloads in both SW (persistence) and FE (UI). FE must use a small delay (e.g. 200ms) for `MAXIMA` content reloads to ensure SW has finished its DB work. `CHAT_LIST_UPDATE` signals from SW are deterministic and do not require a delay.
+18. **`MDSCOMMS` not `MDS_SOLO`**: `MDS.comms.solo()` in the SW fires a **`MDSCOMMS`** event at the frontend, NOT `MDS_SOLO`. The event data structure is `{ event: "MDSCOMMS", data: { public: false, message: "<string>" } }` — the payload string is at `event.data.message`, not `event.data`. In `processEvent` (minima.service.ts), always check `event.event === "MDSCOMMS"` and extract `event.data?.message ?? event.data`. Using the wrong event name means `NEW_CHAT_MESSAGE` and `CHAT_LIST_UPDATE` signals from the SW are silently dropped, causing messages to not appear in the UI unless a MAXIMA fallback fires.
+19. **Profile Request/Response Simplicity**: Profile request/response must NOT use `MDS.executeRaw` SQL lookup or add requestId tracing. The FE uses `MDS.cmd.maxima()` to send directly to `peerAddress`; the SW sends the response via `MDS.cmd()` directly to `requesterAddress` (validating the Mx prefix). Avoid complexity: keep the flow straightforward with regex address validation and fallback-to-publickey logic. Intricate routing or SQL DB lookups in the send path add latency and cause profile request timeouts.
 
 ## 12) Pre-merge Checklist (Mandatory for protocol/state changes)
 
@@ -411,3 +448,8 @@ Expected: permission gate behavior changes accordingly and beacon updates propag
 |---|---|---|---|
 | 1 | `src/routes/settings/discovery.tsx` + `public/service-workers/utils.js` | `discovery_interval` and `discovery_limit` keypair values saved by UI are never read by SW. SW uses hardcoded `GOSSIP_INTERVAL=30000` and `BEACON_INTERVAL=60000`. Fix: SW must read keypair values at init (and on NEWBLOCK) and apply them dynamically. | Medium |
 | 2 | Discovery / mainnet | Two MetaChain nodes with no shared MetaChain P2P neighbor cannot discover each other via beacon relay. No fix possible at SW level without a common MetaChain intermediary or MLS-based Maxima contact exchange. | By design / known limitation |
+
+### Closed / Fixed (v0.9)
+| # | Component | Description |
+|---|---|---|
+| A | Profile Request Bug | Auto-MLS bootstrap and aggressive requestId + SQL lookup in profile requests caused timeouts and blocking sends. Reverted both the FE and SW to simple, direct routing with typed `MDS.cmd.maxima()` and regex address validation. Service Worker no longer auto-attempts static MLS or calls `bootstrapFromMLS()` on reconnection. |

@@ -163,7 +163,7 @@ class GroupService {
       // 1. Create group in database
       const createGroupSql = `
                 INSERT INTO GROUPS (group_id, name, creator_publickey, created_date, description, is_public)
-                VALUES ('${groupId}', '${name.replace(/'/g, "''")}', '${myPublicKey}', ${now}, '${description.replace(/'/g, "''")}', ${isPublic ? 1 : 0})
+                VALUES ('${groupId}', '${name.replace(/'/g, "''")}', UPPER('${myPublicKey}'), ${now}, '${description.replace(/'/g, "''")}', ${isPublic ? 1 : 0})
             `;
       await this.runSQL(createGroupSql);
       console.log("✅ [GROUP-MGMT] Created:", groupId);
@@ -171,7 +171,7 @@ class GroupService {
       // 2. Add creator as member
       const addCreatorSql = `
                 INSERT INTO GROUP_MEMBERS (group_id, publickey, username, joined_date, role)
-                VALUES ('${groupId}', '${myPublicKey}', '${myUsername.replace(/'/g, "''")}', ${now}, 'creator')
+                VALUES ('${groupId}', UPPER('${myPublicKey}'), '${myUsername.replace(/'/g, "''")}', ${now}, 'creator')
             `;
       await this.runSQL(addCreatorSql);
 
@@ -181,7 +181,7 @@ class GroupService {
         const username = await this.getUsernameFromContact(memberPubkey);
         const addMemberSql = `
                     INSERT INTO GROUP_MEMBERS (group_id, publickey, username, joined_date, role)
-                    VALUES ('${groupId}', '${memberPubkey}', '${username.replace(/'/g, "''")}', ${now}, 'member')
+                    VALUES ('${groupId}', UPPER('${memberPubkey}'), '${username.replace(/'/g, "''")}', ${now}, 'member')
                 `;
         await this.runSQL(addMemberSql);
       }
@@ -216,7 +216,7 @@ class GroupService {
       // 6. Insert initial "Group Created" message
       const initialMsgSql = `
                 INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read)
-                VALUES ('${groupId}', '${myPublicKey}', '${myUsername.replace(/'/g, "''")}', 'system', 'You created the group', '', ${now}, 1)
+                VALUES ('${groupId}', UPPER('${myPublicKey}'), '${myUsername.replace(/'/g, "''")}', 'system', 'You created the group', '', ${now}, 1)
             `;
       await this.runSQL(initialMsgSql);
 
@@ -234,7 +234,7 @@ class GroupService {
                 SELECT DISTINCT g.*, gm.role AS my_role
                 FROM GROUPS g
                 INNER JOIN GROUP_MEMBERS gm ON g.group_id = gm.group_id
-                WHERE gm.publickey = '${myPublicKey}'
+                WHERE UPPER(gm.publickey) = UPPER('${myPublicKey}')
                 ORDER BY g.created_date DESC
             `;
       const res = await this.runSQL(sql);
@@ -442,7 +442,7 @@ class GroupService {
         try {
           // Try to resolve Maxima address from DISCOVERED_PEERS
           const res = await this.runSQL(
-            `SELECT address FROM DISCOVERED_PEERS WHERE publickey='${pubkey.replace(/'/g, "''")}'`,
+            `SELECT address FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('${pubkey.replace(/'/g, "''")}')`,
           );
           if (res.rows && res.rows.length > 0) {
             const address = res.rows[0].ADDRESS || res.rows[0].address;
@@ -519,7 +519,7 @@ class GroupService {
 
         try {
           const res = await this.runSQL(
-            `SELECT address FROM DISCOVERED_PEERS WHERE publickey='${pubkey.replace(/'/g, "''")}'`,
+            `SELECT address FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('${pubkey.replace(/'/g, "''")}')`,
           );
           if (res.rows && res.rows.length > 0) {
             const address = res.rows[0].ADDRESS || res.rows[0].address;
@@ -574,7 +574,7 @@ class GroupService {
   ): Promise<void> {
     try {
       // Optimistic update locally
-      const sql = `UPDATE GROUP_MEMBERS SET role = '${newRole}' WHERE group_id = '${groupId}' AND publickey = '${memberPubkey}'`;
+      const sql = `UPDATE GROUP_MEMBERS SET role = '${newRole}' WHERE group_id = '${groupId}' AND UPPER(publickey) = UPPER('${memberPubkey}')`;
       await this.runSQL(sql);
       console.log(
         `✅ [GROUP-MGMT] Updated role for ${memberPubkey} to ${newRole} locally.`,
@@ -602,7 +602,7 @@ class GroupService {
         try {
           // Try to resolve Maxima address from DISCOVERED_PEERS
           const res = await this.runSQL(
-            `SELECT address FROM DISCOVERED_PEERS WHERE publickey='${pubkey.replace(/'/g, "''")}'`,
+            `SELECT address FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('${pubkey.replace(/'/g, "''")}')`,
           );
           if (res.rows && res.rows.length > 0) {
             const address = res.rows[0].ADDRESS || res.rows[0].address;
@@ -674,7 +674,7 @@ class GroupService {
       // Add to database
       const sql = `
                 INSERT INTO GROUP_MEMBERS (group_id, publickey, username, joined_date, role)
-                VALUES ('${groupId}', '${publickey}', '${username.replace(/'/g, "''")}', ${now}, 'member')
+                VALUES ('${groupId}', UPPER('${publickey}'), '${username.replace(/'/g, "''")}', ${now}, 'member')
             `;
       await this.runSQL(sql);
 
@@ -685,7 +685,7 @@ class GroupService {
       // Notify all existing members about the new member
       // Read the new member's Mx address from their join request (if it exists)
       const joinReqRes = await this.runSQL(
-        `SELECT address FROM GROUP_JOIN_REQUESTS WHERE group_id='${groupId}' AND publickey='${publickey}' LIMIT 1`,
+        `SELECT address FROM GROUP_JOIN_REQUESTS WHERE group_id='${groupId}' AND UPPER(publickey)=UPPER('${publickey}') LIMIT 1`,
       );
       const memberAddress =
         joinReqRes.rows && joinReqRes.rows.length > 0
@@ -758,7 +758,7 @@ class GroupService {
                 SELECT m.*, COALESCE(d.alias, m.username) as resolved_name
                 FROM GROUP_MEMBERS m
                 LEFT JOIN DISCOVERED_PEERS d ON UPPER(m.publickey) = UPPER(d.publickey)
-                WHERE m.group_id = '${groupId}' AND m.publickey = '${publickey}'
+                WHERE m.group_id = '${groupId}' AND UPPER(m.publickey) = UPPER('${publickey}')
             `;
       const memberRes = await this.runSQL(memberSql);
       if (!memberRes.rows || memberRes.rows.length === 0) {
@@ -781,7 +781,7 @@ class GroupService {
       const allMembers = await this.getGroupMembers(groupId);
 
       // Remove from database
-      const sql = `DELETE FROM GROUP_MEMBERS WHERE group_id = '${groupId}' AND publickey = '${publickey}'`;
+      const sql = `DELETE FROM GROUP_MEMBERS WHERE group_id = '${groupId}' AND UPPER(publickey) = UPPER('${publickey}')`;
       await this.runSQL(sql);
 
       // 🚫 Auto-ban the removed member to prevent re-entry
@@ -819,12 +819,12 @@ class GroupService {
     myUsername: string,
   ): Promise<void> {
     // Leaving is NOT a ban — use a direct delete to skip the auto-ban logic
-    const memberSql = `SELECT * FROM GROUP_MEMBERS WHERE group_id = '${groupId}' AND publickey = '${myPublicKey}'`;
+    const memberSql = `SELECT * FROM GROUP_MEMBERS WHERE group_id = '${groupId}' AND UPPER(publickey) = UPPER('${myPublicKey}')`;
     const memberRes = await this.runSQL(memberSql);
     if (!memberRes.rows || memberRes.rows.length === 0) return;
 
     await this.runSQL(
-      `DELETE FROM GROUP_MEMBERS WHERE group_id = '${groupId}' AND publickey = '${myPublicKey}'`,
+      `DELETE FROM GROUP_MEMBERS WHERE group_id = '${groupId}' AND UPPER(publickey) = UPPER('${myPublicKey}')`,
     );
 
     const group = await this.getGroupInfo(groupId);
@@ -861,7 +861,7 @@ class GroupService {
   ): Promise<void> {
     try {
       const now = Date.now();
-      const sql = `MERGE INTO GROUP_BANS (group_id, publickey, username, banned_by, banned_at) KEY(group_id, publickey) VALUES ('${groupId}', '${publickey}', '${username.replace(/'/g, "''")}', '${bannedBy}', ${now})`;
+      const sql = `MERGE INTO GROUP_BANS (group_id, publickey, username, banned_by, banned_at) KEY(group_id, publickey) VALUES ('${groupId}', UPPER('${publickey}'), '${username.replace(/'/g, "''")}', '${bannedBy}', ${now})`;
       await this.runSQL(sql);
       console.log(
         `✅ [GROUP-BAN] Banned ${publickey.substring(0, 10)} from group ${groupId}`,
@@ -1034,7 +1034,7 @@ class GroupService {
 
       // Get/increment per-sender sequence number for gap detection
       const seqRes = await this.runSQL(
-        `SELECT my_next_seq FROM GROUP_MSG_COUNTERS WHERE group_id='${groupId}' AND sender_publickey='${myPublicKey}'`,
+        `SELECT my_next_seq FROM GROUP_MSG_COUNTERS WHERE group_id='${groupId}' AND UPPER(sender_publickey)=UPPER('${myPublicKey}')`,
       );
       let mySeq = 1;
       if (seqRes.rows && seqRes.rows.length > 0) {
@@ -1042,11 +1042,11 @@ class GroupService {
           seqRes.rows[0].MY_NEXT_SEQ || seqRes.rows[0].my_next_seq || 1,
         );
         await this.runSQL(
-          `UPDATE GROUP_MSG_COUNTERS SET my_next_seq=${mySeq + 1} WHERE group_id='${groupId}' AND sender_publickey='${myPublicKey}'`,
+          `UPDATE GROUP_MSG_COUNTERS SET my_next_seq=${mySeq + 1} WHERE group_id='${groupId}' AND UPPER(sender_publickey)=UPPER('${myPublicKey}')`,
         );
       } else {
         await this.runSQL(
-          `INSERT INTO GROUP_MSG_COUNTERS (group_id, sender_publickey, last_seen_seq, my_next_seq) VALUES ('${groupId}', '${myPublicKey}', 0, ${mySeq + 1})`,
+          `INSERT INTO GROUP_MSG_COUNTERS (group_id, sender_publickey, last_seen_seq, my_next_seq) VALUES ('${groupId}', UPPER('${myPublicKey}'), 0, ${mySeq + 1})`,
         );
       }
 
@@ -1055,7 +1055,7 @@ class GroupService {
       const escapedMsg = message.replace(/'/g, "''");
       const insertSql = `
                 INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read, sender_seq, customid, forwarded)
-                VALUES ('${groupId}', '${myPublicKey}', '${myUsername.replace(/'/g, "''")}', '${type}', '${escapedMsg}', '${filedata}', ${now}, 1, ${mySeq}, '${customId}', ${forwarded ? 1 : 0})
+                VALUES ('${groupId}', UPPER('${myPublicKey}'), '${myUsername.replace(/'/g, "''")}', '${type}', '${escapedMsg}', '${filedata}', ${now}, 1, ${mySeq}, '${customId}', ${forwarded ? 1 : 0})
             `;
       await this.runSQL(insertSql);
 
@@ -1134,7 +1134,7 @@ class GroupService {
     try {
       const sql = `
                 SELECT * FROM GROUP_MESSAGES
-                WHERE group_id = '${groupId}'
+                WHERE UPPER(group_id) = UPPER('${groupId}')
                 ORDER BY date ASC
             `;
       const res = await this.runSQL(sql);
@@ -1557,7 +1557,7 @@ class GroupService {
   ): Promise<void> {
     // First delete it locally
     await this.runSQL(
-      `DELETE FROM GROUP_JOIN_REQUESTS WHERE group_id = '${groupId}' AND publickey = '${publickey}'`,
+      `DELETE FROM GROUP_JOIN_REQUESTS WHERE group_id = '${groupId}' AND UPPER(publickey) = UPPER('${publickey}')`,
     );
 
     // Notify other admins that it was resolved
@@ -1661,11 +1661,11 @@ class GroupService {
         // even if we are not yet full Maxima contacts.
         const now = Date.now();
         await this.runSQL(
-          `DELETE FROM DISCOVERED_PEERS WHERE publickey='${adminPubkey}'`,
+          `DELETE FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('${adminPubkey}')`,
         );
         await this.runSQL(`
                     INSERT INTO DISCOVERED_PEERS (publickey, address, source, alias, last_seen, avatar)
-                    VALUES ('${adminPubkey}', '${adminAddress}', 'INVITE', 'Unknown', ${now}, '')
+                    VALUES (UPPER('${adminPubkey}'), '${adminAddress}', 'INVITE', 'Unknown', ${now}, '')
                 `);
 
         // Send directly via the admin address (Mx...) using poll:true

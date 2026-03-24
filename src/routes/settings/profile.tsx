@@ -4,6 +4,7 @@ import { MDS } from '@minima-global/mds';
 import { useAppContext } from '../../AppContext';
 import { User, Globe, Loader2, Info, Edit2, ChevronDown, ChevronUp, Copy, Check, Shield, X } from 'lucide-react';
 import { sendBeacon } from '../../hooks/useBeaconSender';
+import { invalidateMessagingCache } from '../../services/messaging.service';
 
 export const Route = createFileRoute('/settings/profile')({
   component: RouteComponent,
@@ -143,13 +144,14 @@ function RouteComponent() {
       if (maximaInfo.status && maximaInfo.response) {
         const pubkey = (maximaInfo.response as any).publickey;
         const escapedName = name.trim().replace(/'/g, "''");
-        const updateSelfSql = `UPDATE DISCOVERED_PEERS SET alias='${escapedName}' WHERE publickey='${pubkey}' AND source='SELF'`;
+        const updateSelfSql = `UPDATE DISCOVERED_PEERS SET alias='${escapedName}' WHERE UPPER(publickey)=UPPER('${pubkey}') AND source='SELF'`;
         // @ts-ignore
         MDS.sql(updateSelfSql);
       }
 
       await refreshProfile();
       sendBeacon().catch(console.error);
+      invalidateMessagingCache(); // Invalidate session cache so next message uses fresh avatar/address
       // setName(name.trim()); // Optimistic update handled by state, context refresh follows
       console.log("✅ [Profile] Name saved & Beacon sent & DB updated");
     } catch (error) {
@@ -188,6 +190,7 @@ function RouteComponent() {
 
       await refreshProfile();
       setAvatar(avatarUrl);
+      invalidateMessagingCache(); // Invalidate session cache so next message uses fresh avatar
       console.log("✅ [Profile] Avatar saved");
     } catch (error) {
       console.error("❌ [Profile] Failed to save avatar:", error);
@@ -206,11 +209,12 @@ function RouteComponent() {
       if (maximaInfo.status && maximaInfo.response) {
         const pubkey = (maximaInfo.response as any).publickey;
         const escapedBio = bio.trim().replace(/'/g, "''");
-        const updateSelfSql = `UPDATE DISCOVERED_PEERS SET bio='${escapedBio}' WHERE publickey='${pubkey}' AND source='SELF'`;
+        const updateSelfSql = `UPDATE DISCOVERED_PEERS SET bio='${escapedBio}' WHERE UPPER(publickey)=UPPER('${pubkey}') AND source='SELF'`;
         // @ts-ignore
         MDS.sql(updateSelfSql);
       }
       sendBeacon().catch(console.error);
+      invalidateMessagingCache(); // Invalidate session cache for fresh data
     } catch (error) {
       console.error("❌ [Profile] Failed to save bio:", error);
     }
@@ -248,6 +252,7 @@ function RouteComponent() {
       // @ts-ignore
       MDS.sql(updateProfileSql);
       sendBeacon().catch(console.error);
+      invalidateMessagingCache(); // Invalidate session cache for fresh data
 
     } catch (error) {
       console.error("❌ [Profile] Failed to save extended profile:", error);

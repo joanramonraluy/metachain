@@ -32,15 +32,23 @@ export const runSQL = (sql: string): Promise<any> => {
    -------------------------------------------------------------------------- */
 
 // Layer 1: Get P2P discovered peers (ephemeral, TTL 1 hour)
-export const getDiscoveredPeers = async (): Promise<DiscoveredPeer[]> => {
-  const sql = "SELECT * FROM DISCOVERED_PEERS ORDER BY last_seen DESC";
+export const getDiscoveredPeers = async (
+  pk?: string,
+): Promise<DiscoveredPeer[]> => {
+  const sql = pk
+    ? `SELECT * FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('${pk}') ORDER BY last_seen DESC`
+    : "SELECT * FROM DISCOVERED_PEERS ORDER BY last_seen DESC";
   const result = await MDS.sql(sql);
   return result.rows || [];
 };
 
 // Layer 2: Get stable user registry (persistent, no TTL)
-export const getMetachainUsers = async (): Promise<MetachainUser[]> => {
-  const sql = "SELECT * FROM METACHAIN_USERS ORDER BY last_updated DESC";
+export const getMetachainUsers = async (
+  pk?: string,
+): Promise<MetachainUser[]> => {
+  const sql = pk
+    ? `SELECT * FROM METACHAIN_USERS WHERE UPPER(publickey)=UPPER('${pk}') ORDER BY last_updated DESC`
+    : "SELECT * FROM METACHAIN_USERS ORDER BY last_updated DESC";
   const result = await MDS.sql(sql);
   return result.rows || [];
 };
@@ -88,7 +96,7 @@ export const getUsersWithStatus = async (): Promise<UserWithStatus[]> => {
     const firstSeen = (user as any).FIRST_SEEN || user.first_seen;
     const lastUpdated = (user as any).LAST_UPDATED || user.last_updated;
 
-    userMap.set(publickey, {
+    userMap.set(publickey.toUpperCase(), {
       user_id: userId,
       publickey: publickey,
       alias: alias,
@@ -212,10 +220,10 @@ export const getUsersWithStatus = async (): Promise<UserWithStatus[]> => {
       return str;
     };
 
-    const existing = userMap.get(publickey);
+    const existing = userMap.get(publickey.toUpperCase());
     if (existing) {
       // Update existing user with online status and latest address
-      userMap.set(publickey, {
+      userMap.set(publickey.toUpperCase(), {
         ...existing,
         // Force update alias from beacon if present and valid (not empty/unknown)
         alias:
@@ -237,7 +245,7 @@ export const getUsersWithStatus = async (): Promise<UserWithStatus[]> => {
       });
     } else {
       // Add new ephemeral peer not in registry yet
-      userMap.set(publickey, {
+      userMap.set(publickey.toUpperCase(), {
         user_id: publickey,
         publickey: publickey,
         alias: safeDecode(alias) || "Anonymous",
@@ -308,40 +316,7 @@ export const getUsersWithStatus = async (): Promise<UserWithStatus[]> => {
       return b.last_updated - a.last_updated;
     });
 
-  // 3. Deduplicate by Alias (Case-Insensitive)
-  // We want to remove older/offline instances of the same user (same alias)
-  // BUT we must allow specific generic aliases (Anonymous, Unknown) to duplicate.
-  const uniqueAliasMap = new Map<string, boolean>();
-  const finalUsers: UserWithStatus[] = [];
-
-  for (const user of sortedUsers) {
-    // Normalize alias for comparison
-    const aliasKey = (user.alias || "").toLowerCase().trim();
-
-    // If no alias, or generic alias, we allow it (don't dedupe)
-    // Checks for 'anonymous', 'unknown', or empty string
-    if (!aliasKey || aliasKey === "anonymous" || aliasKey === "unknown") {
-      finalUsers.push(user);
-      continue;
-    }
-
-    // Check if we've already seen this alias
-    if (!uniqueAliasMap.has(aliasKey)) {
-      // First time seeing this alias.
-      // Since sortedUsers is already sorted by (Online > Offline) and (New > Old),
-      // the FIRST one we encounter is the "best" one to keep.
-      uniqueAliasMap.set(aliasKey, true);
-      finalUsers.push(user);
-    } else {
-      // We have already added a "better" version of this alias.
-      // Skip this one (it's either offline or older).
-      console.log(
-        `🧹 [Discovery] Deduplicated user alias "${user.alias}" (dropped ${user.publickey.substring(0, 10)}...)`,
-      );
-    }
-  }
-
-  return finalUsers;
+  return sortedUsers;
 };
 
 /* --------------------------------------------------------------------------
@@ -405,12 +380,12 @@ export const getDiscoveredListings = async (): Promise<DiscoveredListing[]> => {
   (usersRes.rows || []).forEach((row: any) => {
     const pk = getCI(row, "publickey");
     const alias = getCI(row, "alias");
-    if (pk && alias) aliasMap.set(pk, alias);
+    if (pk && alias) aliasMap.set(pk.toUpperCase(), alias);
   });
   (peersRes.rows || []).forEach((row: any) => {
     const pk = getCI(row, "publickey");
     const alias = getCI(row, "alias");
-    if (pk && alias && !aliasMap.has(pk)) aliasMap.set(pk, alias);
+    if (pk && alias && !aliasMap.has(pk.toUpperCase())) aliasMap.set(pk.toUpperCase(), alias);
   });
 
   const rows = listingsRes.rows || [];
@@ -458,7 +433,7 @@ export const getDiscoveredListings = async (): Promise<DiscoveredListing[]> => {
 
       results.push({
         owner_publickey: owner,
-        owner_alias: aliasMap.get(owner),
+        owner_alias: aliasMap.get(owner.toUpperCase()),
         type,
         id,
         name,

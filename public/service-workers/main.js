@@ -18,10 +18,6 @@ var DB_READY = false;
 var INITIAL_CLEANUP_DONE = false;
 var GROUP_STARTUP_SYNC_DONE = false;
 
-var STATIC_MLS_ATTEMPTED = false;
-var DEFAULT_MLS_HOST =
-  "MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60G17D9TPD0R9AC9DS958UHDTTR419GV7JJ7TFN0NY69KD3E5V89PK1A4ANW4D3SBPWRTAUMA3QB3EC0AD3NR3CEKE90UZNV7S68FCN4VD0D5H7FYJAAZPPZYZQHYK25VU8WDZVPUPDBBGSCSA0PZFAQEN329TYQ2VYUB8HMA7CH7C6J8VEHPWBWAM9QBFQ3KBNW8E0FKDUPJRYFS10608004FNW87P@185.132.90.98:9001";
-
 // Flag to trigger coin discovery on first NEWBLOCK (when node is synced)
 var COIN_DISCOVERY_PENDING = false;
 var NEWBLOCK_COUNT = 0;
@@ -38,9 +34,6 @@ MDS.init(function (msg) {
     MDS.notify("MetaChain Service Worker Started");
     MDS.log("⏰ [SW] Starting Database Initialization...");
     initDatabase();
-    MDS.cmd("timer 2000", function () {
-      ensureStaticMLS();
-    });
   }
 
   // Periodic tasks via NEWBLOCK
@@ -155,12 +148,6 @@ MDS.init(function (msg) {
       if (typeof requestAllChannelsHistory === "function") {
         requestAllChannelsHistory();
       }
-      // Re-bootstrap from MLS to refresh DISCOVERED_PEERS
-      if (typeof bootstrapFromMLS === "function") {
-        MDS.cmd("timer 2000", function () {
-          bootstrapFromMLS();
-        });
-      }
     }
 
     LAST_MAXIMA_EVENT_TIME = now;
@@ -205,6 +192,7 @@ MDS.init(function (msg) {
             " From: " +
             pubkey.substring(0, 10),
         );
+        MDS.log("📨 [MAXIMA] Full JSON Payload: " + jsonstr);
         if (app === "metachain-group") {
           logToUI(
             "🔍 [MAXIMA-GROUP] Type: " +
@@ -602,59 +590,3 @@ MDS.init(function (msg) {
     }
   }
 });
-
-function ensureStaticMLS() {
-  if (STATIC_MLS_ATTEMPTED) {
-    return;
-  }
-  STATIC_MLS_ATTEMPTED = true;
-
-  MDS.cmd("maxima action:info", function (infoRes) {
-    if (!infoRes || !infoRes.status || !infoRes.response) {
-      MDS.log("⚠️ [MLS] Maxima info unavailable. Retrying in 30s...");
-      MDS.cmd("timer 30000", function () {
-        STATIC_MLS_ATTEMPTED = false;
-        ensureStaticMLS();
-      });
-      return;
-    }
-
-    var isStatic = infoRes.response.staticmls === true;
-    if (isStatic) {
-      MDS.log("ℹ️ [MLS] Static MLS already configured.");
-      return;
-    }
-
-    var defaultAt = DEFAULT_MLS_HOST.indexOf("@");
-    var defaultMxPrefix =
-      defaultAt !== -1 ? DEFAULT_MLS_HOST.substring(0, defaultAt) : "";
-    var myMxPrefix = infoRes.response.p2pidentity || "";
-    if (myMxPrefix.indexOf("@") !== -1) {
-      myMxPrefix = myMxPrefix.substring(0, myMxPrefix.indexOf("@"));
-    }
-    if (defaultMxPrefix && myMxPrefix && defaultMxPrefix === myMxPrefix) {
-      MDS.log("ℹ️ [MLS] This node is the default MLS host.");
-      return;
-    }
-
-    if (!DEFAULT_MLS_HOST) {
-      MDS.log("⚠️ [MLS] No default MLS host configured.");
-      return;
-    }
-
-    MDS.log("🛰️ [MLS] No static MLS configured. Setting default MLS...");
-    MDS.cmd(
-      "maxextra action:staticmls host:" + DEFAULT_MLS_HOST,
-      function (setRes) {
-        if (setRes && setRes.status) {
-          MDS.log("✅ [MLS] Static MLS set to default.");
-        } else {
-          MDS.log(
-            "⚠️ [MLS] Failed to set static MLS: " +
-              (setRes && setRes.error ? setRes.error : "unknown error"),
-          );
-        }
-      },
-    );
-  });
-}

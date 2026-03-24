@@ -232,13 +232,13 @@ class ChannelService {
 
     await this.runSQL(`
             INSERT INTO CHANNELS (channel_id, name, description, admin_publickey, created_date, avatar, is_public)
-            VALUES ('${channelId}', '${name.replace(/'/g, "''")}', '${description.replace(/'/g, "''")}', '${myPublicKey}', ${now}, '${avatar.replace(/'/g, "''")}', ${isPublic ? 1 : 0})
+            VALUES ('${channelId}', '${name.replace(/'/g, "''")}', '${description.replace(/'/g, "''")}', UPPER('${myPublicKey}'), ${now}, '${avatar.replace(/'/g, "''")}', ${isPublic ? 1 : 0})
         `);
 
     // Insert self as creator subscriber
     await this.runSQL(`
             INSERT INTO CHANNEL_SUBSCRIBERS (channel_id, publickey, username, joined_date, role)
-            VALUES ('${channelId}', '${myPublicKey}', '${myUsername.replace(/'/g, "''")}', ${now}, 'creator')
+            VALUES ('${channelId}', UPPER('${myPublicKey}'), '${myUsername.replace(/'/g, "''")}', ${now}, 'creator')
         `);
 
     console.log("✅ [CHANNEL] Created:", channelId);
@@ -252,7 +252,7 @@ class ChannelService {
                 SELECT DISTINCT c.*
                 FROM CHANNELS c
                 INNER JOIN CHANNEL_SUBSCRIBERS cs ON c.channel_id = cs.channel_id
-                WHERE cs.publickey = '${myPublicKey}'
+                WHERE UPPER(cs.publickey) = UPPER('${myPublicKey}')
                 ORDER BY c.created_date DESC
             `);
       if (!res.rows) return [];
@@ -346,7 +346,7 @@ class ChannelService {
   async isAdmin(channelId: string, myPublicKey: string): Promise<boolean> {
     try {
       const res = await this.runSQL(
-        `SELECT role FROM CHANNEL_SUBSCRIBERS WHERE channel_id='${channelId}' AND UPPER(publickey)=UPPER('${myPublicKey}')`,
+        `SELECT role FROM CHANNEL_SUBSCRIBERS WHERE UPPER(channel_id)=UPPER('${channelId}') AND UPPER(publickey)=UPPER('${myPublicKey}')`,
       );
       if (!res.rows || res.rows.length === 0) return false;
       const role = (res.rows[0].ROLE || res.rows[0].role || "").toLowerCase();
@@ -392,7 +392,7 @@ class ChannelService {
     try {
       await this.runSQL(`
                 INSERT INTO CHANNEL_SUBSCRIBERS (channel_id, publickey, username, joined_date, role)
-                VALUES ('${channelId}', '${subscriberPublicKey.replace(/'/g, "''")}', '${subscriberUsername.replace(/'/g, "''")}', ${now}, 'subscriber')
+                VALUES ('${channelId}', UPPER('${subscriberPublicKey.replace(/'/g, "''")}'), '${subscriberUsername.replace(/'/g, "''")}', ${now}, 'subscriber')
             `);
     } catch (e) {
       console.warn("Subscriber already in DB or error:", e);
@@ -450,7 +450,7 @@ class ChannelService {
     const safeChannel = channel as any;
 
     await this.runSQL(
-      `DELETE FROM CHANNEL_SUBSCRIBERS WHERE channel_id='${channelId}' AND UPPER(publickey)=UPPER('${subscriberPublicKey.replace(/'/g, "''")}')`,
+      `DELETE FROM CHANNEL_SUBSCRIBERS WHERE UPPER(channel_id)=UPPER('${channelId}') AND UPPER(publickey)=UPPER('${subscriberPublicKey.replace(/'/g, "''")}')`,
     );
 
     const now = Date.now();
@@ -506,7 +506,7 @@ class ChannelService {
     const escapedMsg = message.replace(/'/g, "''");
     await this.runSQL(`
             INSERT INTO CHANNEL_MESSAGES (channel_id, sender_publickey, sender_username, type, message, filedata, date, read, sender_seq, forwarded)
-            VALUES ('${channelId}', '${myPublicKey}', '${myUsername.replace(/'/g, "''")}', '${type}', '${escapedMsg}', '${filedata}', ${now}, 1, ${seq}, ${forwarded ? 1 : 0})
+            VALUES ('${channelId}', UPPER('${myPublicKey}'), '${myUsername.replace(/'/g, "''")}', '${type}', '${escapedMsg}', '${filedata}', ${now}, 1, ${seq}, ${forwarded ? 1 : 0})
         `);
 
     // 3. Construct payload
@@ -544,7 +544,7 @@ class ChannelService {
     try {
       const res = await this.runSQL(`
                 SELECT * FROM CHANNEL_MESSAGES
-                WHERE channel_id = '${channelId}'
+                WHERE UPPER(channel_id) = UPPER('${channelId}')
                 ORDER BY date ASC
             `);
       return res.rows || [];
@@ -607,7 +607,7 @@ class ChannelService {
         return;
       }
 
-      const lastMsgSql = `SELECT date FROM CHANNEL_MESSAGES WHERE channel_id = '${channelId}' ORDER BY date DESC LIMIT 1`;
+      const lastMsgSql = `SELECT date FROM CHANNEL_MESSAGES WHERE UPPER(channel_id) = UPPER('${channelId}') ORDER BY date DESC LIMIT 1`;
       const res = await this.runSQL(lastMsgSql);
       const lastTimestamp =
         res.rows && res.rows.length > 0 ? res.rows[0].DATE : 0;
@@ -642,7 +642,7 @@ class ChannelService {
   async getUnreadCount(channelId: string): Promise<number> {
     try {
       const res = await this.runSQL(
-        `SELECT COUNT(*) as cnt FROM CHANNEL_MESSAGES WHERE channel_id='${channelId}' AND read=0`,
+        `SELECT COUNT(*) as cnt FROM CHANNEL_MESSAGES WHERE UPPER(channel_id)=UPPER('${channelId}') AND read=0`,
       );
       return Number(res.rows?.[0]?.CNT || res.rows?.[0]?.cnt || 0);
     } catch {
@@ -662,7 +662,7 @@ class ChannelService {
   ): Promise<void> {
     try {
       // Optimistic update locally
-      const sql = `UPDATE CHANNEL_SUBSCRIBERS SET role = '${newRole}' WHERE channel_id = '${channelId}' AND publickey = '${subscriberPubkey}'`;
+      const sql = `UPDATE CHANNEL_SUBSCRIBERS SET role = '${newRole}' WHERE UPPER(channel_id) = UPPER('${channelId}') AND UPPER(publickey) = UPPER('${subscriberPubkey}')`;
       await this.runSQL(sql);
 
       // Construct payload
@@ -708,17 +708,17 @@ class ChannelService {
       // Update local DB
       if (newName) {
         await this.runSQL(
-          `UPDATE CHANNELS SET name = '${newName.replace(/'/g, "''")}' WHERE channel_id = '${channelId}'`,
+          `UPDATE CHANNELS SET name = '${newName.replace(/'/g, "''")}' WHERE UPPER(channel_id) = UPPER('${channelId}')`,
         );
       }
       if (newDescription !== null) {
         await this.runSQL(
-          `UPDATE CHANNELS SET description = '${newDescription.replace(/'/g, "''")}' WHERE channel_id = '${channelId}'`,
+          `UPDATE CHANNELS SET description = '${newDescription.replace(/'/g, "''")}' WHERE UPPER(channel_id) = UPPER('${channelId}')`,
         );
       }
       if (avatar !== null) {
         await this.runSQL(
-          `UPDATE CHANNELS SET avatar = '${avatar.replace(/'/g, "''")}' WHERE channel_id = '${channelId}'`,
+          `UPDATE CHANNELS SET avatar = '${avatar.replace(/'/g, "''")}' WHERE UPPER(channel_id) = UPPER('${channelId}')`,
         );
       }
 
@@ -777,7 +777,7 @@ class ChannelService {
   async archiveChannel(channelId: string): Promise<void> {
     try {
       await this.runSQL(
-        `UPDATE CHANNELS SET archived = TRUE, archived_date = ${Date.now()} WHERE channel_id = '${channelId}'`,
+        `UPDATE CHANNELS SET archived = TRUE, archived_date = ${Date.now()} WHERE UPPER(channel_id) = UPPER('${channelId}')`,
       );
       this.notifyChannelUpdate(channelId, { archived: true });
     } catch (err) {
@@ -789,7 +789,7 @@ class ChannelService {
   async unarchiveChannel(channelId: string): Promise<void> {
     try {
       await this.runSQL(
-        `UPDATE CHANNELS SET archived = FALSE, archived_date = 0 WHERE channel_id = '${channelId}'`,
+        `UPDATE CHANNELS SET archived = FALSE, archived_date = 0 WHERE UPPER(channel_id) = UPPER('${channelId}')`,
       );
       this.notifyChannelUpdate(channelId, { archived: false });
     } catch (err) {
@@ -801,7 +801,7 @@ class ChannelService {
   async favoriteChannel(channelId: string): Promise<void> {
     try {
       await this.runSQL(
-        `UPDATE CHANNELS SET favorite = TRUE WHERE channel_id = '${channelId}'`,
+        `UPDATE CHANNELS SET favorite = TRUE WHERE UPPER(channel_id) = UPPER('${channelId}')`,
       );
       this.notifyChannelUpdate(channelId, { favorite: true });
     } catch (err) {
@@ -813,7 +813,7 @@ class ChannelService {
   async unfavoriteChannel(channelId: string): Promise<void> {
     try {
       await this.runSQL(
-        `UPDATE CHANNELS SET favorite = FALSE WHERE channel_id = '${channelId}'`,
+        `UPDATE CHANNELS SET favorite = FALSE WHERE UPPER(channel_id) = UPPER('${channelId}')`,
       );
       this.notifyChannelUpdate(channelId, { favorite: false });
     } catch (err) {
@@ -828,7 +828,7 @@ class ChannelService {
   ): Promise<void> {
     try {
       await this.runSQL(
-        `UPDATE CHANNELS SET is_public = ${isPublic ? 1 : 0} WHERE channel_id = '${channelId}'`,
+        `UPDATE CHANNELS SET is_public = ${isPublic ? 1 : 0} WHERE UPPER(channel_id) = UPPER('${channelId}')`,
       );
       this.notifyChannelUpdate(channelId, { is_public: isPublic });
     } catch (err) {
@@ -913,11 +913,11 @@ class ChannelService {
         // Seed DISCOVERED_PEERS so we can reach the admin via Mx address
         const now = Date.now();
         await this.runSQL(
-          `DELETE FROM DISCOVERED_PEERS WHERE publickey='${data.p}'`,
+          `DELETE FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('${data.p}')`,
         );
         await this.runSQL(`
                     INSERT INTO DISCOVERED_PEERS (publickey, address, source, alias, last_seen, avatar)
-                    VALUES ('${data.p}', '${adminAddress}', 'CHANNEL_INVITE', 'Unknown', ${now}, '')
+                    VALUES (UPPER('${data.p}'), '${adminAddress}', 'CHANNEL_INVITE', 'Unknown', ${now}, '')
                 `);
 
         const payloadJsonStr = JSON.stringify(payload);

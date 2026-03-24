@@ -72,8 +72,10 @@ class ChatService {
   async updateUnreadNotification() {
     // Only run if native (optional check)
     try {
+      // Use 'state' column instead of 'read' which is not updated.
+      // Filter out messages from 'Me' and existing 'read' state.
       const sql =
-        "SELECT COUNT(*) as count FROM CHAT_MESSAGES WHERE read = 0 AND username != 'Me'";
+        "SELECT COUNT(*) as count FROM CHAT_MESSAGES WHERE UPPER(state) = 'RECEIVED' AND username != 'Me'";
       MDS.sql(sql, async (res: any) => {
         if (res.status && res.rows && res.rows.length > 0) {
           const count = parseInt(res.rows[0].COUNT);
@@ -119,7 +121,7 @@ class ChatService {
       const sql = `
                 MERGE INTO CHAT_STATUS (publickey, archived, archived_date)
                 KEY (publickey)
-                VALUES ('${publickey}', TRUE, ${Date.now()})
+                VALUES (UPPER('${publickey}'), TRUE, ${Date.now()})
             `;
       console.log("💾 [SQL] Archiving chat:", publickey);
       MDS.sql(sql, (res: any) => {
@@ -137,7 +139,7 @@ class ChatService {
 
   unarchiveChat(publickey: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      const sql = `UPDATE CHAT_STATUS SET archived=FALSE WHERE publickey='${publickey}'`;
+      const sql = `UPDATE CHAT_STATUS SET archived=FALSE WHERE UPPER(publickey)=UPPER('${publickey}')`;
       console.log("💾 [SQL] Unarchiving chat:", publickey);
       MDS.sql(sql, (res: any) => {
         if (!res.status) {
@@ -157,7 +159,7 @@ class ChatService {
       const sql = `
                 MERGE INTO CHAT_STATUS (publickey, last_opened)
                 KEY (publickey)
-                VALUES ('${publickey}', ${Date.now()})
+                VALUES (UPPER('${publickey}'), ${Date.now()})
             `;
       console.log("💾 [SQL] Marking chat as opened:", publickey);
       MDS.sql(sql, (res: any) => {
@@ -169,7 +171,7 @@ class ChatService {
           // Also mark all messages in this chat as read
           // NOTE: The 'read' column in CHAT_MESSAGES is what we use for the badge.
           // We should update it here.
-          const updateReadSql = `UPDATE CHAT_MESSAGES SET read=1 WHERE publickey='${publickey}' AND read=0`;
+          const updateReadSql = `UPDATE CHAT_MESSAGES SET read=1 WHERE UPPER(publickey)=UPPER('${publickey}') AND read=0`;
           MDS.sql(updateReadSql, () => {
             this.updateUnreadNotification(); // UPDATE BADGE AFTER OPENING
             resolve();
@@ -184,7 +186,7 @@ class ChatService {
       const sql = `
                 MERGE INTO CHAT_STATUS (publickey, app_installed)
                 KEY (publickey)
-                VALUES ('${publickey}', TRUE)
+                VALUES (UPPER('${publickey}'), TRUE)
             `;
       MDS.sql(sql, (res: any) => {
         if (res.status) {
@@ -202,7 +204,7 @@ class ChatService {
 
   isAppInstalled(publickey: string): Promise<boolean> {
     return new Promise((resolve) => {
-      const sql = `SELECT app_installed FROM CHAT_STATUS WHERE publickey='${publickey}'`;
+      const sql = `SELECT app_installed FROM CHAT_STATUS WHERE UPPER(publickey)=UPPER('${publickey}')`;
       MDS.sql(sql, (res: any) => {
         if (res.status && res.rows && res.rows.length > 0) {
           const val = res.rows[0].APP_INSTALLED;
@@ -219,7 +221,7 @@ class ChatService {
       const sql = `
                 MERGE INTO CHAT_STATUS (publickey, muted)
                 KEY (publickey)
-                VALUES ('${publickey}', TRUE)
+                VALUES (UPPER('${publickey}'), TRUE)
             `;
       MDS.sql(sql, (res: any) => {
         if (res.status) {
@@ -235,7 +237,7 @@ class ChatService {
 
   unmuteContact(publickey: string): Promise<void> {
     return new Promise((resolve) => {
-      const sql = `UPDATE CHAT_STATUS SET muted=FALSE WHERE publickey='${publickey}'`;
+      const sql = `UPDATE CHAT_STATUS SET muted=FALSE WHERE UPPER(publickey)=UPPER('${publickey}')`;
       MDS.sql(sql, (res: any) => {
         if (res.status) {
           console.log("✅ [DB] Contact unmuted:", publickey);
@@ -250,7 +252,7 @@ class ChatService {
 
   isContactMuted(publickey: string): Promise<boolean> {
     return new Promise((resolve) => {
-      const sql = `SELECT muted FROM CHAT_STATUS WHERE publickey='${publickey}'`;
+      const sql = `SELECT muted FROM CHAT_STATUS WHERE UPPER(publickey)=UPPER('${publickey}')`;
       MDS.sql(sql, (res: any) => {
         if (res.status && res.rows && res.rows.length > 0) {
           const val = res.rows[0].MUTED;
@@ -269,7 +271,7 @@ class ChatService {
       const sql = `
                 MERGE INTO CHAT_STATUS (publickey, favorite)
                 KEY (publickey)
-                VALUES ('${publickey}', TRUE)
+                VALUES (UPPER('${publickey}'), TRUE)
             `;
       MDS.sql(sql, (res: any) => {
         if (res.status) {
@@ -285,7 +287,7 @@ class ChatService {
 
   unmarkChatAsFavorite(publickey: string): Promise<void> {
     return new Promise((resolve) => {
-      const sql = `UPDATE CHAT_STATUS SET favorite=FALSE WHERE publickey='${publickey}'`;
+      const sql = `UPDATE CHAT_STATUS SET favorite=FALSE WHERE UPPER(publickey)=UPPER('${publickey}')`;
       MDS.sql(sql, (res: any) => {
         if (res.status) {
           console.log("☆ [DB] Chat unmarked as favorite:", publickey);
@@ -303,7 +305,7 @@ class ChatService {
 
   isChatFavorite(publickey: string): Promise<boolean> {
     return new Promise((resolve) => {
-      const sql = `SELECT favorite FROM CHAT_STATUS WHERE publickey='${publickey}'`;
+      const sql = `SELECT favorite FROM CHAT_STATUS WHERE UPPER(publickey)='${publickey.toUpperCase()}'`;
       MDS.sql(sql, (res: any) => {
         if (res.status && res.rows && res.rows.length > 0) {
           const val = res.rows[0].FAVORITE;
@@ -322,7 +324,7 @@ class ChatService {
       const sql = `
                 MERGE INTO CHAT_STATUS (publickey, blocked)
                 KEY (publickey)
-                VALUES ('${publickey}', TRUE)
+                VALUES (UPPER('${publickey}'), TRUE)
             `;
       MDS.sql(sql, (res: any) => {
         if (res.status) {
@@ -340,7 +342,7 @@ class ChatService {
 
   unblockContact(publickey: string): Promise<void> {
     return new Promise((resolve) => {
-      const sql = `UPDATE CHAT_STATUS SET blocked=FALSE WHERE publickey='${publickey}'`;
+      const sql = `UPDATE CHAT_STATUS SET blocked=FALSE WHERE UPPER(publickey)=UPPER('${publickey}')`;
       MDS.sql(sql, (res: any) => {
         if (res.status) {
           console.log("✅ [DB] Contact unblocked:", publickey);
@@ -360,7 +362,7 @@ class ChatService {
     blockedByThem: boolean;
   }> {
     return new Promise((resolve) => {
-      const sql = `SELECT * FROM CHAT_STATUS WHERE publickey='${publickey}'`;
+      const sql = `SELECT * FROM CHAT_STATUS WHERE UPPER(publickey)=UPPER('${publickey}')`;
       MDS.sql(sql, (res: any) => {
         if (!res.status || !res.rows || res.rows.length === 0) {
           resolve({
@@ -437,19 +439,26 @@ class ChatService {
 
     const sql = `
             INSERT INTO CHAT_MESSAGES (roomname,publickey,username,type,message,filedata,state,amount,date,customid,sender_seq,original_timestamp,forwarded)
-            VALUES ('${safeRoomname}','${safeKey}','${safeUsername}','${type}','${escapedMsg}','${safeFiledata}','${state}',${amount},${timestamp},'${safeCustomId}', ${sqlSeq}, ${msgOriginalTimestamp}, ${sqlForwarded})
+            VALUES ('${safeRoomname}',UPPER('${safeKey}'),'${safeUsername}','${type}','${escapedMsg}','${safeFiledata}','${state}',${amount},${timestamp},'${safeCustomId}', ${sqlSeq}, ${msgOriginalTimestamp}, ${sqlForwarded})
         `;
     console.log("📥 [CHAT-DB] Inserting message:", {
       type,
       seq: sqlSeq,
       customid: safeCustomId,
+      roomname: safeRoomname,
+      publickey: safeKey,
     });
     try {
-      await runSQL(sql);
-      console.log("✅ [CHAT-DB] Insert success");
+      const res = await runSQL(sql);
+      console.log("✅ [CHAT-DB] Insert success:", {
+        status: res.status,
+        customid: safeCustomId,
+        publickey: safeKey,
+      });
 
       // Update badge count if message is not from 'Me'
       if (username !== "Me") {
+        console.log("🔔 [CHAT-DB] Notifying of incoming message...");
         this.updateUnreadNotification();
       }
     } catch (err) {
@@ -473,7 +482,7 @@ class ChatService {
 
       // Where clause
       // We use date (timestamp) as the primary identifier along with publickey for now
-      sql += ` WHERE publickey='${safeKey}' AND date=${date}`;
+      sql += ` WHERE UPPER(publickey)=UPPER('${safeKey}') AND date=${date}`;
 
       MDS.sql(sql, (res: any) => {
         if (!res.status)
@@ -483,23 +492,44 @@ class ChatService {
     });
   }
 
-  getMessages(publickey: string): Promise<ChatMessage[]> {
+  getMessages(publickey: string | string[]): Promise<ChatMessage[]> {
     return new Promise((resolve) => {
-      const safePublickey = escapeSql(publickey);
+      const keys = Array.isArray(publickey) ? publickey : [publickey];
+      const validKeys = keys.filter((k) => !!k);
+
+      if (validKeys.length === 0) {
+        resolve([]);
+        return;
+      }
+
+      // Construct a mixed query: case-insensitive for hex, case-sensitive for Mx
+      const conditions = validKeys.map((k) => {
+        const escaped = escapeSql(k);
+        return `UPPER(publickey) = UPPER('${escaped}')`;
+      });
+
       const sql = `
                 SELECT * FROM CHAT_MESSAGES
-                WHERE publickey='${safePublickey}'
+                WHERE (${conditions.join(" OR ")})
                 ORDER BY COALESCE(original_timestamp, date) ASC, sender_seq ASC, id ASC
             `;
+
+      console.log(`🔍 [DB] Fetching messages for keys: ${validKeys.join(", ")}`);
+
       MDS.sql(sql, (res: any) => {
         if (!res.status || !res.rows) {
+          if (!res.status)
+            console.error("❌ [DB] Fetch messages failed:", res.error);
           resolve([]);
           return;
         }
         // FILTER: Remove messages that are strictly "undefined" string
         const validRows = res.rows.filter(
-          (r: any) => r.MESSAGE !== "undefined",
+          (r: any) => r.MESSAGE !== "undefined" && r.message !== "undefined",
         );
+        if (validRows.length > 0) {
+          console.log(`✅ [DB] Found ${validRows.length} messages.`);
+        }
         resolve(validRows);
       });
     });
@@ -510,7 +540,7 @@ class ChatService {
       const safePublickey = escapeSql(publickey);
       const sql = `
                 SELECT MAX(date) as last_date FROM CHAT_MESSAGES
-                WHERE publickey='${safePublickey}'
+                WHERE UPPER(publickey)='${safePublickey.toUpperCase()}'
             `;
       MDS.sql(sql, (res: any) => {
         if (
@@ -530,7 +560,7 @@ class ChatService {
   deleteAllMessages(publickey: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const safePublickey = escapeSql(publickey);
-      const sql = `DELETE FROM CHAT_MESSAGES WHERE publickey='${safePublickey}'`;
+      const sql = `DELETE FROM CHAT_MESSAGES WHERE UPPER(publickey)=UPPER('${safePublickey}')`;
       console.log("🔥 [CHAT-DB-DEBUG] DELETING ALL MESSAGES for:", publickey);
       MDS.sql(sql, (res: any) => {
         if (!res.status) {
@@ -685,7 +715,7 @@ class ChatService {
                 d.avatar as discovery_avatar,
                 d.address as discovery_address
             FROM CHAT_MESSAGES m
-            LEFT JOIN CHAT_STATUS s ON m.publickey = s.publickey
+            LEFT JOIN CHAT_STATUS s ON UPPER(m.publickey) = UPPER(s.publickey)
             LEFT JOIN DISCOVERED_PEERS d ON UPPER(m.publickey) = UPPER(d.publickey)
             LEFT JOIN METACHAIN_USERS u ON UPPER(m.publickey) = UPPER(u.publickey)
             ORDER BY COALESCE(m.original_timestamp, m.date) DESC, m.sender_seq DESC, m.id DESC
@@ -813,6 +843,9 @@ class ChatService {
   }
 
   notifyNewMessage(msg: any) {
+    console.log(
+      `📣 [CHAT-UI] Notifying UI of new message: type=${msg.type || "text"}, from=${msg.from?.substring(0, 10)}`,
+    );
     this.newMessageCallbacks.forEach((cb) => cb(msg));
   }
 

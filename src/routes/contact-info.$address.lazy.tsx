@@ -10,6 +10,7 @@ import type { ExtendedProfile } from "../services/profile.service";
 import { personalContactsService } from "../services/personal-contacts.service";
 import { appContext } from "../AppContext";
 
+import { resolveHexFromAddress } from "../services/messaging.service";
 import { safeUrl } from "../utils/sanitization";
 
 export const Route = createLazyFileRoute("/contact-info/$address")({
@@ -81,6 +82,26 @@ function ContactInfoPage() {
 
 
     // Handle Block Toggle (Direct - No Confirmation)
+    // 1. Route Identity Normalization (Mx -> Hex)
+    // If the route parameter is an Mx address, resolve it to Hex and redirect
+    useEffect(() => {
+        if (address.startsWith("Mx") || address.startsWith("MX")) {
+            console.log("🔄 [CONTACT-INFO] Normalizing Mx route to Hex Public Key...");
+            resolveHexFromAddress(address).then((hex) => {
+                if (hex) {
+                    console.log("✅ [CONTACT-INFO] Resolved to:", hex);
+                    navigate({
+                        to: "/contact-info/$address",
+                        params: { address: hex },
+                        replace: true,
+                    });
+                } else {
+                    console.warn("⚠️ [CONTACT-INFO] Could not resolve Mx address to Hex.");
+                }
+            });
+        }
+    }, [address, navigate]);
+
     const handleToggleBlock = async () => {
         console.log("🔘 [CONTACT] handleToggleBlock clicked. Contact:", contact?.publickey, "isBlocked:", isBlocked);
         if (!contact?.publickey) {
@@ -213,7 +234,7 @@ function ContactInfoPage() {
                     const upsertSql = `
                         MERGE INTO DISCOVERED_PEERS (publickey, address, alias, last_seen)
                         KEY(publickey)
-                        VALUES ('${safePk}', '${safeAddr}', '${safeName}', ${now})
+                        VALUES (UPPER('${safePk}'), '${safeAddr}', '${safeName}', ${now})
                     `;
                     await MDS.sql(upsertSql);
                     console.log("💾 [CONTACT] Synced Maxima contact to Discovery DB");
@@ -223,7 +244,7 @@ function ContactInfoPage() {
 
                 // ALSO fetch bio from DISCOVERED_PEERS for P2P bio data
                 try {
-                    const bioSql = `SELECT bio FROM DISCOVERED_PEERS WHERE publickey='${c.publickey}'`;
+                    const bioSql = `SELECT bio FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('${c.publickey}')`;
                     const bioRes = await MDS.sql(bioSql);
                     if (bioRes.status && bioRes.rows && bioRes.rows.length > 0 && bioRes.rows[0].BIO) {
                         console.log("✅ [CONTACT] Found P2P bio:", bioRes.rows[0].BIO);
@@ -246,7 +267,7 @@ function ContactInfoPage() {
 
                 // Try to find in discovered peers (P2P Discovery)
                 // Note: Column names are lowercase in database schema
-                const sql = `SELECT * FROM DISCOVERED_PEERS WHERE publickey='${address}'`;
+                const sql = `SELECT * FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('${address}')`;
                 const discoveryRes = await MDS.sql(sql);
 
                 if (discoveryRes.status && discoveryRes.rows && discoveryRes.rows.length > 0) {
@@ -356,7 +377,7 @@ function ContactInfoPage() {
             const myPublicKey = (myInfo.response as any).publickey;
             const escapeSql = (str: string) => str.replace(/'/g, "''");
 
-            const sql = `SELECT * FROM MAXIMA_CONTACT_REQUESTS WHERE from_publickey='${escapeSql(myPublicKey)}' AND to_publickey='${escapeSql(contact.publickey)}' AND status='pending'`;
+            const sql = `SELECT * FROM MAXIMA_CONTACT_REQUESTS WHERE UPPER(from_publickey)=UPPER('${escapeSql(myPublicKey)}') AND UPPER(to_publickey)=UPPER('${escapeSql(contact.publickey)}') AND status='pending'`;
             const result = await minimaService.runSQL(sql);
 
             setMaximaRequestPending(result.rows && result.rows.length > 0);
@@ -476,7 +497,7 @@ function ContactInfoPage() {
             // Fix: Check both publickey AND address (in case message was saved with Mx address)
             const safeAddr = contact.currentaddress ? contact.currentaddress.replace(/'/g, "''") : '';
             const requestSql = `SELECT * FROM CHAT_MESSAGES 
-                                WHERE (publickey='${contact.publickey}' ${safeAddr ? `OR publickey='${safeAddr}'` : ''}) 
+                                WHERE (UPPER(publickey)=UPPER('${contact.publickey}') ${safeAddr ? `OR UPPER(publickey)=UPPER('${safeAddr}')` : ''}) 
                                 AND (message='Contact request sent' OR message='Chat request sent' 
                                   OR message='Chat request accepted' OR message='Contact accepted' OR message='User chat accepted'
                                   OR message='Contact request declined' OR message='Chat request declined' 
@@ -506,7 +527,7 @@ function ContactInfoPage() {
             // 2. Check for REAL chat history (exclude system messages, read receipts, delivery reports)
             // This prevents "Solicitor can send messages" just because a request/decline message exists
             const historySql = `SELECT * FROM CHAT_MESSAGES 
-                                WHERE publickey='${contact.publickey}' 
+                                WHERE UPPER(publickey)=UPPER('${contact.publickey}') 
                                 AND type NOT IN ('system', 'read', 'delivery') 
                                 AND message NOT LIKE 'Contact request%' AND message NOT LIKE 'Chat request%' 
                                 AND state IN ('received', 'read')
@@ -543,8 +564,8 @@ function ContactInfoPage() {
 
             // Check for OUTGOING requests (I sent to them)
             const maxOutgoingSql = `SELECT * FROM MAXIMA_CONTACT_REQUESTS 
-                                    WHERE from_publickey='${myPublicKey}' 
-                                    AND to_publickey='${contact.publickey}' 
+                                    WHERE UPPER(from_publickey)=UPPER('${myPublicKey}') 
+                                    AND UPPER(to_publickey)=UPPER('${contact.publickey}') 
                                     AND status='pending'`;
             const maxOutgoingRes = await minimaService.runSQL(maxOutgoingSql);
 
@@ -557,8 +578,8 @@ function ContactInfoPage() {
 
             // Check for INCOMING requests (they sent to me)
             const maxIncomingSql = `SELECT * FROM MAXIMA_CONTACT_REQUESTS 
-                                    WHERE from_publickey='${contact.publickey}' 
-                                    AND to_publickey='${myPublicKey}' 
+                                    WHERE UPPER(from_publickey)=UPPER('${contact.publickey}') 
+                                    AND UPPER(to_publickey)=UPPER('${myPublicKey}') 
                                     AND status='pending'`;
 
             console.log("🔍 [CONTACT DEBUG] Checking Incoming SQL:", maxIncomingSql);
@@ -739,7 +760,7 @@ function ContactInfoPage() {
                     .map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
 
                 await new Promise<any>((resolve) => {
-                    MDS.executeRaw(`maxima action:send publickey:${contact.publickey} application:metachain data:${hexData}`, resolve);
+                    MDS.executeRaw(`maxima action:send publickey:${contact.publickey} application:metachain data:${hexData} poll:false`, resolve);
                 });
                 console.log("📤 [CONTACT] Removal notification sent");
             } catch (notifyErr) {
@@ -774,7 +795,7 @@ function ContactInfoPage() {
                     const escapeSql = (str: string) => str.replace(/'/g, "''");
                     const safePk = escapeSql(contact.publickey);
                     const insertSql = `INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp) 
-                                       VALUES('', '${safePk}', 'System', 'system', 'You removed this contact', '', 'sent', 0, ${Date.now()}, NULL, ${Date.now()})`;
+                                       VALUES('', UPPER('${safePk}'), 'System', 'system', 'You removed this contact', '', 'sent', 0, ${Date.now()}, NULL, ${Date.now()})`;
                     await MDS.sql(insertSql);
                     console.log("💾 [CONTACT] Local system message inserted");
                 } catch (sqlErr) {

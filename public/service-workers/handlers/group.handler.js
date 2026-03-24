@@ -51,9 +51,7 @@ function sendGroupAddressBeacon() {
               if (peerRes.status && peerRes.rows && peerRes.rows.length > 0) {
                 var addr = peerRes.rows[0].ADDRESS || peerRes.rows[0].address;
                 if (addr) {
-                  var cleanAddr = addr
-                    .replace(/\s+/g, "")
-                    .replace(/[^a-zA-Z0-9@:._-]/g, "");
+                  var cleanAddr = cleanMaximaAddress(addr);
                   MDS.cmd(
                     "maxima action:send to:" +
                     cleanAddr +
@@ -115,7 +113,7 @@ function requestGroupHistoryFromSW(groupId) {
     JSON.stringify({
       type: "GROUP_SYNC_START",
       groupId: groupId,
-    }),
+    })
   );
 
   MDS.cmd("maxima action:info", function (maxInfo) {
@@ -157,7 +155,7 @@ function requestGroupHistoryFromSW(groupId) {
             JSON.stringify({
               type: "GROUP_SYNC_END",
               groupId: groupId,
-            }),
+            })
           );
           return;
         }
@@ -166,24 +164,8 @@ function requestGroupHistoryFromSW(groupId) {
           var row = memberRes.rows[i];
           var memberPk = row.PUBLICKEY;
           if (memberPk === myPubkey) continue;
-          var addr = row.ADDRESS;
-          var cleanAddr = addr
-            ? addr.replace(/\s+/g, "").replace(/[^a-zA-Z0-9@:._-]/g, "")
-            : null;
-          var cmd =
-            cleanAddr &&
-              (cleanAddr.startsWith("Mx") || cleanAddr.startsWith("MX"))
-              ? "maxima action:send to:" +
-              cleanAddr +
-              " application:metachain-group data:" +
-              hexData +
-              " poll:false"
-              : "maxima action:send publickey:" +
-              memberPk +
-              " application:metachain-group data:" +
-              hexData +
-              " poll:false";
-          MDS.cmd(cmd);
+          // Use smartSend for robust delivery to group members
+          smartSend(memberPk, "metachain-group", hexData, "GROUP-HISTORY-SYNC", false, addr);
           sentCount++;
         }
 
@@ -194,7 +176,7 @@ function requestGroupHistoryFromSW(groupId) {
             JSON.stringify({
               type: "GROUP_SYNC_END",
               groupId: groupId,
-            }),
+            })
           );
         }
       });
@@ -268,14 +250,8 @@ function handleGroupHistoryRequest(pubkey, maxjson) {
       var hexData =
         "0x" + utf8ToHex(JSON.stringify(responsePayload)).toUpperCase();
 
-      // Send history response with poll:true
-      MDS.cmd(
-        "maxima action:send publickey:" +
-        pubkey +
-        " application:metachain-group data:" +
-        hexData +
-        " poll:false",
-      );
+      // Send history response with Address Resolution
+      smartSend(pubkey, "metachain-group", hexData, "GROUP-HISTORY-RESP", false);
     });
   });
 }
@@ -300,7 +276,7 @@ function handleGroupHistoryResponse(pubkey, maxjson) {
         JSON.stringify({
           type: "GROUP_SYNC_END",
           groupId: groupId,
-        }),
+        })
       );
       return;
     }
@@ -596,48 +572,8 @@ function propagateGroupMessage(pubkey, maxjson) {
         }
 
         // Look up Mx address in DISCOVERED_PEERS
-        var peerSql =
-          "SELECT address FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('" +
-          escapeSql(memberPubkey) +
-          "') LIMIT 1";
-        MDS.sql(peerSql, function (peerRes) {
-          if (peerRes.status && peerRes.rows && peerRes.rows.length > 0) {
-            var mxAddress = peerRes.rows[0].ADDRESS || peerRes.rows[0].address;
-            if (mxAddress) {
-              var cleanAddress = mxAddress
-                .replace(/\s+/g, "")
-                .replace(/[^a-zA-Z0-9@:._-]/g, "");
-              MDS.log(
-                "📤 [GROUP-MSG] Propagating to: " +
-                memberPubkey.substring(0, 10),
-              );
-              MDS.cmd(
-                "maxima action:send to:" +
-                cleanAddress +
-                " application:metachain-group data:" +
-                hexData +
-                " poll:false",
-              );
-              propagatedCount++;
-            }
-          } else {
-            // Fallback: try by publickey directly (works if they are already a contact)
-            MDS.log(
-              "⚠️ [GROUP-MSG] No address for " +
-              memberPubkey.substring(0, 10) +
-              ", trying publickey fallback.",
-            );
-            MDS.cmd(
-              "maxima action:send publickey:" +
-              memberPubkey +
-              " application:metachain-group data:" +
-              hexData +
-              " poll:false",
-            );
-            propagatedCount++;
-          }
-          sendToMember(index + 1);
-        });
+        smartSend(memberPubkey, "metachain-group", hexData, "GROUP-PROPAGATE", false);
+        sendToMember(index + 1);
       };
 
       sendToMember(0);
@@ -734,13 +670,13 @@ function handleGroupInvite(pubkey, maxjson) {
                   MDS.sql(initialMsgSql, function () {
                     // Notify UI that a new group was added
                     MDS.comms.solo(
-                      JSON.stringify({ type: "group_list_updated" }),
+                      JSON.stringify({ type: "group_list_updated" })
                     );
                     MDS.comms.solo(
                       JSON.stringify({
                         type: "group_sync_start",
                         groupId: safeGroupId,
-                      }),
+                      })
                     );
                     // Trigger history sync
                     if (typeof requestGroupHistoryFromSW === "function") {
@@ -750,7 +686,7 @@ function handleGroupInvite(pubkey, maxjson) {
                 } else {
                   // Even if msg exists, notify UI in case it's a new join
                   MDS.comms.solo(
-                    JSON.stringify({ type: "group_list_updated" }),
+                    JSON.stringify({ type: "group_list_updated" })
                   );
                 }
               });
@@ -1929,145 +1865,26 @@ function broadcastJoinRequestToAdmins(
       originalTimestamp: timestamp,
     };
     if (resolutionStatus) msg.resolutionStatus = resolutionStatus;
-    MDS.cmd("maxcontacts", function (contactRes) {
-      var contacts =
-        contactRes.response && contactRes.response.contacts
-          ? contactRes.response.contacts
-          : [];
-      var payloadStr = JSON.stringify(msg);
-      var hexData = "0x" + utf8ToHex(payloadStr).toUpperCase();
-      var sendToAdmin = function (index) {
+    var hexData = "0x" + utf8ToHex(JSON.stringify(msg)).toUpperCase();
+    var sendToAdmin = function (index) {
         if (index >= res.rows.length) return;
         var adminPk = res.rows[index].PUBLICKEY || res.rows[index].publickey;
         if (adminPk.toUpperCase() === MY_MAXIMA_PK.toUpperCase()) {
-          sendToAdmin(index + 1);
-          return;
-        }
-        var isContact = false;
-        for (var j = 0; j < contacts.length; j++)
-          if (contacts[j].publickey.toUpperCase() === adminPk.toUpperCase()) {
-            isContact = true;
-            break;
-          }
-        if (isContact) {
-          MDS.cmd(
-            "maxima action:send publickey:" +
-            adminPk +
-            " application:metachain-group data:" +
-            hexData +
-            " poll:false",
-          );
-          sendToAdmin(index + 1);
-        } else {
-          var searchSql =
-            "SELECT address FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('" +
-            escapeSql(adminPk) +
-            "') LIMIT 1";
-          MDS.sql(searchSql, function (peerRes) {
-            if (peerRes.status && peerRes.rows && peerRes.rows.length > 0) {
-              var mxAddress =
-                peerRes.rows[0].ADDRESS || peerRes.rows[0].address;
-              if (mxAddress) {
-                var cleanAddress = mxAddress
-                  .replace(/\s+/g, "")
-                  .replace(/[^a-zA-Z0-9@:._-]/g, "");
-                MDS.cmd(
-                  "maxima action:send to:" +
-                  cleanAddress +
-                  " application:metachain-group data:" +
-                  hexData +
-                  " poll:false",
-                );
-              }
-            }
             sendToAdmin(index + 1);
-          });
+            return;
         }
-      };
-      sendToAdmin(0);
-    });
+
+        smartSend(adminPk, "metachain-group", hexData, "GROUP-ADMIN-NOTIFY", false);
+        sendToAdmin(index + 1);
+    };
+    sendToAdmin(0);
   });
 }
 
 function sendMaximaGroupMsg(toPk, payloadObj) {
   var hexData = "0x" + utf8ToHex(JSON.stringify(payloadObj)).toUpperCase();
-  MDS.log(
-    "🚀 [GROUP-MSG] Sending to " +
-    toPk.substring(0, 10) +
-    " type: " +
-    payloadObj.messageType,
-  );
-  MDS.cmd("maxcontacts", function (res) {
-    var contacts =
-      res.response && res.response.contacts ? res.response.contacts : [];
-    var isContact = false;
-    for (var i = 0; i < contacts.length; i++) {
-      if (contacts[i].publickey.toUpperCase() === toPk.toUpperCase()) {
-        isContact = true;
-        break;
-      }
-    }
-    if (isContact) {
-      logToUI(
-        "🚀 [GROUP-MSG] Sending via CONTACT to " +
-        toPk.substring(0, 10) +
-        " type: " +
-        payloadObj.messageType,
-      );
-      MDS.cmd(
-        "maxima action:send publickey:" +
-        toPk +
-        " application:metachain-group data:" +
-        hexData +
-        " poll:false",
-      );
-    } else {
-      logToUI(
-        "🚀 [GROUP-MSG] Not a contact, searching DISCOVERED_PEERS for " +
-        toPk.substring(0, 10),
-      );
-      MDS.sql(
-        "SELECT address FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('" +
-        escapeSql(toPk) +
-        "') LIMIT 1",
-        function (peerRes) {
-          if (peerRes.status && peerRes.rows && peerRes.rows.length > 0) {
-            var addr = peerRes.rows[0].ADDRESS || peerRes.rows[0].address;
-            if (addr) {
-              logToUI(
-                "🚀 [GROUP-MSG] Sending via ADDRESS " +
-                addr +
-                " to " +
-                toPk.substring(0, 10) +
-                " type: " +
-                payloadObj.messageType,
-              );
-              var cleanAddr = addr
-                .replace(/\s+/g, "")
-                .replace(/[^a-zA-Z0-9@:._-]/g, "");
-              MDS.cmd(
-                "maxima action:send to:" +
-                cleanAddr +
-                " application:metachain-group data:" +
-                hexData +
-                " poll:false",
-              );
-            } else {
-              logToUI(
-                "⚠️ [GROUP-MSG] Found peer record but address was null for " +
-                toPk.substring(0, 10),
-              );
-            }
-          } else {
-            logToUI(
-              "❌ [GROUP-MSG] No address found in contacts or DISCOVERED_PEERS for " +
-              toPk.substring(0, 10),
-            );
-          }
-        },
-      );
-    }
-  });
+  logToUI("🚀 [GROUP-MSG] Sending to " + toPk.substring(0, 10) + " type: " + payloadObj.messageType);
+  smartSend(toPk, "metachain-group", hexData, "GROUP-MSG", false);
 }
 
 function sendMemberAddedNotificationSW(

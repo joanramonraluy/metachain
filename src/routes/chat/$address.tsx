@@ -32,6 +32,7 @@ import { minimaService } from "../../services/minima.service";
 import { chatService } from "../../services/chat.service";
 import * as contactRequestsService from "../../services/contact-requests.service";
 import { transactionService } from "../../services/transaction.service";
+import { resolveHexFromAddress } from "../../services/messaging.service";
 import { requestProfile } from "../../services/profile.service";
 import InviteDialog from "../../components/chat/InviteDialog";
 import { useTheme } from "../../context/ThemeContext";
@@ -215,6 +216,21 @@ function ChatPage() {
     return sorted;
   };
   const { address } = Route.useParams();
+  const navigate = useNavigate();
+
+  // 0. Identity Normalization (Mx -> Hex)
+  // Ensures that we always use the Hex Public Key as the primary identifier in the route
+  useEffect(() => {
+    if (address.startsWith("Mx") || address.startsWith("MX")) {
+      resolveHexFromAddress(address).then((hex) => {
+        if (hex) {
+          console.log(`🔄 [CHAT] Normalizing Identity: Resolved Mx ${address} -> Hex ${hex}`);
+          navigate({ to: `/chat/${hex}`, replace: true });
+        }
+      });
+    }
+  }, [address, navigate]);
+
   const searchParams = Route.useSearch(); // Get search parameters
   const [contact, setContact] = useState<Contact | null>(null);
   const [messages, setMessages] = useState<ParsedMessage[]>([]);
@@ -294,11 +310,12 @@ function ChatPage() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isSendingRef = useRef(false); // Guard to prevent concurrent message sends
   const historyRequestedFor = useRef<string | null>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const cursorPositionRef = useRef<number | null>(null);
 
-  const navigate = useNavigate();
+  // Removed duplicate navigate declaration (moved to top of ChatPage)
 
   // Auto-focus input
   useEffect(() => {
@@ -735,6 +752,11 @@ function ChatPage() {
       const updatedPeer = e.detail;
       console.log("🔄 [CHAT] Received peer_updated event:", updatedPeer);
       const updatedKey = updatedPeer?.publickey || updatedPeer?.pubkey;
+      const updatedAddress =
+        updatedPeer?.address ||
+        updatedPeer?.currentaddress ||
+        updatedPeer?.minimaaddress ||
+        "";
       const contactKey = contact?.publickey || "";
       const contactAddr = contact?.currentaddress || "";
       const isMatch =
@@ -742,7 +764,9 @@ function ChatPage() {
           contactKey &&
           updatedKey.toLowerCase() === contactKey.toLowerCase()) ||
         (updatedKey && contactAddr && updatedKey === contactAddr) ||
-        (updatedKey && address && updatedKey === address);
+        (updatedKey && address && updatedKey === address) ||
+        (updatedAddress && address && updatedAddress === address) ||
+        (updatedAddress && contactAddr && updatedAddress === contactAddr);
       if (!isMatch) return;
       console.log("🔄 [CHAT] Triggering contact refresh due to peer update.");
       fetchContact();
@@ -841,7 +865,7 @@ function ChatPage() {
       const escapeSql = (str: string) => str.replace(/'/g, "''");
       // Relaxed query: Check for ANY pending request from this user to us
       const maximaReqSql = `SELECT * FROM MAXIMA_CONTACT_REQUESTS
-                            WHERE from_publickey='${escapeSql(contact.publickey)}'
+                            WHERE UPPER(from_publickey)=UPPER('${escapeSql(contact.publickey)}')
                             AND status='pending'`;
 
       console.log(`🔍 [CHAT DEBUG] Checking Maxima Req SQL: ${maximaReqSql}`);
@@ -914,14 +938,14 @@ function ChatPage() {
       try {
         const sPeer = contact.publickey.replace(/'/g, "''");
         const sql = `SELECT * FROM CONTACT_REQUESTS
-                   WHERE ((from_publickey='${myPublicKey.replace(
+                   WHERE ((UPPER(from_publickey)=UPPER('${myPublicKey.replace(
                      /'/g,
                      "''",
-                   )}' AND to_publickey='${sPeer}')
-                      OR (from_publickey='${sPeer}' AND to_publickey='${myPublicKey.replace(
+                   )}') AND UPPER(to_publickey)=UPPER('${sPeer}'))
+                      OR (UPPER(from_publickey)=UPPER('${sPeer}') AND UPPER(to_publickey)=UPPER('${myPublicKey.replace(
                         /'/g,
                         "''",
-                      )}'))
+                      )}')))
                    AND status='accepted'`;
 
         const res = await new Promise<any>((resolve) => MDS.sql(sql, resolve));
@@ -933,7 +957,7 @@ function ChatPage() {
           setBlockReason("none");
         } else {
           // HISTORY OVERRIDE
-          const historySql = `SELECT * FROM CHAT_MESSAGES WHERE publickey='${sPeer}' AND type!='system' LIMIT 1`;
+          const historySql = `SELECT * FROM CHAT_MESSAGES WHERE UPPER(publickey)=UPPER('${sPeer}') AND type!='system' LIMIT 1`;
           const histRes = await new Promise<any>((resolve) =>
             MDS.sql(historySql, resolve),
           );
@@ -1065,10 +1089,11 @@ function ChatPage() {
       LOAD MESSAGES FROM DB
   ---------------------------------------------------------------------------- */
   // Helper to load messages from DB - reusable for initial load and after sending
-  const loadMessagesFromDB = async () => {
-    // FIX: Use address instead of contact.publickey so we can see messages/history
-    // even if the user is not in our contacts list anymore
-    const targetKey = address || contact?.publickey;
+  const loadMessagesFromDB = async (delay = 0) => {
+    if (delay > 0) await new Promise((r) => setTimeout(r, delay));
+
+    // FIX: Prioritize publickey (Canonical) over bridge address
+    const targetKey = contact?.publickey || address;
     if (!targetKey) return;
 
     // QUEUEING MECHANISM: If already loading, mark as pending and skip this run
@@ -1088,45 +1113,57 @@ function ChatPage() {
       if (cached) {
         try {
           const cachedMsgs = JSON.parse(cached);
-          // Apply cache only on cold load.
-          // During active chat use (send/reload), applying cache can override
-          // optimistic state and cause appear/disappear flicker.
-          if (
-            Array.isArray(cachedMsgs) &&
-            cachedMsgs.length > 0 &&
-            messages.length === 0
-          ) {
-            // We need to pass them through the parser logic or store parsed?
-            // Storing parsed is risky due to types.
-            // Let's assume we store PARSED messages in cache to save processing.
-            // Wait, check if we parsed rawMessages below.
-            // YES, we map rawMessages to parsedMessages.
-            // So we should store parsedMessages.
-            setMessages(deduplicateMessages(cachedMsgs));
-            console.log("⚠️ [CHAT-DB] Loaded messages from cache");
-            // Don't return, allow fetch to proceed and update
+          // Apply cache only on cold load (actual state is empty, not stale closure).
+          // Use functional form to avoid stale closure on `messages`.
+          if (Array.isArray(cachedMsgs) && cachedMsgs.length > 0) {
+            setMessages((prev) => {
+              if (prev.length > 0) return prev; // already have live messages, don't overwrite
+              console.log("⚠️ [CHAT-DB] Loaded messages from cache");
+              return deduplicateMessages(cachedMsgs);
+            });
           }
         } catch (e) {}
       }
 
-      // 2. Fetch fresh with timeout
+      // 0. Quick Resolve Fallback: If we only have an Mx address and NO public key, try a quick resolve
+      // This helps when the contact state hasn't finished loading or resolving yet
+      let resolvedKey: string | null = contact?.publickey || null;
+      if (
+        !resolvedKey &&
+        address &&
+        (address.startsWith("Mx") || address.startsWith("MX"))
+      ) {
+        const safeAddr = address.replace(/'/g, "''");
+        const resolveSql = `SELECT PUBLICKEY FROM DISCOVERED_PEERS WHERE ADDRESS = '${safeAddr}' OR ADDRESS LIKE '%${safeAddr}%' LIMIT 1`;
+        const res: any = await MDS.sql(resolveSql);
+        if (res.status && res.rows && res.rows.length > 0) {
+          resolvedKey = res.rows[0].PUBLICKEY;
+          console.log(`🔍 [CHAT] Quick-resolved identity for query: ${resolvedKey}`);
+        }
+      }
+
+      const fetchKeys = [address, resolvedKey].filter(Boolean) as string[];
+      console.log(`🔄 [CHAT] Fetching messages from DB for: ${fetchKeys.join(", ")}`);
       const rawMessages: any = await withTimeout(
-        minimaService.getMessages(targetKey),
+        minimaService.getMessages(fetchKeys),
         5000,
       ).catch(() => null);
 
       if (Array.isArray(rawMessages)) {
         const parsedMessages = rawMessages.map((row: any) => {
-          const isCharm = row.TYPE === "charm";
-          const isToken = row.TYPE === "token";
-          const charmObj = isCharm ? { id: row.MESSAGE } : null;
+          // Normalització de claus de la DB (poden venir en majúscules de H2)
+          const type = row.TYPE || row.type;
+          const rowMessage = row.MESSAGE || row.message;
+          const isCharm = type === "charm";
+          const isToken = type === "token";
+          const charmObj = isCharm ? { id: rowMessage } : null;
 
           let tokenAmount: { amount: string; tokenName: string } | undefined;
           let displayText: string | null = null;
 
           if (isToken) {
             try {
-              const tokenData = JSON.parse(row.MESSAGE || "{}");
+              const tokenData = JSON.parse(rowMessage || "{}");
               tokenAmount = {
                 amount: tokenData.amount,
                 tokenName: tokenData.tokenName,
@@ -1135,14 +1172,14 @@ function ChatPage() {
               displayText = `${Number(tokenData.amount)} ${tokenData.tokenName}`;
             } catch (err) {
               console.error("❌ [CHAT-DB] Token parse error:", err);
-              displayText = row.MESSAGE || "";
+              displayText = rowMessage || "";
             }
           } else if (!isCharm) {
-            displayText = row.MESSAGE || "";
+            displayText = rowMessage || "";
           }
 
           // Safer status parsing - do NOT default to 'sent' blindly
-          let parsedStatus: any = row.STATE;
+          let parsedStatus: any = row.STATE || row.state;
 
           if (
             !parsedStatus ||
@@ -1257,12 +1294,16 @@ function ChatPage() {
           }),
         );
 
-        const deduplicatedMessages = deduplicateMessages(finalMessages);
-        setMessages(deduplicatedMessages);
+        // Merge DB results with current state to avoid race condition:
+        // If the EVENT path (NEW_CHAT_MESSAGE) just added a message to state,
+        // but the DB query is stale (SW hasn't finished saving yet), a plain
+        // setMessages(dbResult) would overwrite and lose the EVENT-added message.
+        // Using the functional form merges DB (authoritative) + prev state (optimistic).
+        setMessages((prev) => deduplicateMessages([...finalMessages, ...prev]));
 
         // Cache the LAST 50 messages to save space for offline use
         try {
-          const toCache = deduplicatedMessages.slice(-50);
+          const toCache = deduplicateMessages([...finalMessages]).slice(-50);
           localStorage.setItem(
             `cached_msgs_${targetKey}`,
             JSON.stringify(toCache),
@@ -1361,7 +1402,7 @@ function ChatPage() {
       // 1. Check if user is "Known" (in Discovery or Contacts)
       // This determines if they fall back to 'offline' or 'not_found' on timeout
       const safeKey = contact.publickey.replace(/'/g, "''");
-      const discoverySql = `SELECT * FROM DISCOVERED_PEERS WHERE publickey='${safeKey}'`;
+      const discoverySql = `SELECT * FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('${safeKey}')`;
 
       let isKnownUser = false;
 
@@ -1609,6 +1650,47 @@ function ChatPage() {
         return;
       }
 
+      // Event-driven UI: Handle full message payload from SW
+      if (payload.type === "NEW_CHAT_MESSAGE") {
+        const msg = payload.message;
+
+        // Verify it belongs to this chat (Case-insensitive Hex comparison)
+        const isTarget =
+          msg.publickey &&
+          (msg.publickey.toUpperCase() === address.toUpperCase() ||
+            msg.publickey === address);
+
+        if (isTarget) {
+          console.log("🚀 [CHAT] Receiving message via EVENT payload:", msg);
+
+          // Parse and append to state immediately
+          const newParsed: ParsedMessage = {
+            id: msg.id,
+            text: msg.message,
+            fromMe: msg.username === "Me",
+            charm: msg.type === "charm" ? { id: msg.message } : null,
+            amount: msg.amount || null,
+            timestamp: msg.date,
+            status: msg.state,
+            type: msg.type,
+            filedata: msg.filedata,
+            sender_seq: msg.sender_seq,
+            customid: msg.customid,
+            originalTimestamp: msg.original_timestamp,
+            forwarded: msg.forwarded,
+          };
+
+          setMessages((prev) => deduplicateMessages([...prev, newParsed]));
+
+          // Mark as read in DB and trigger checkmarks
+          if (address && !address.startsWith("Mx")) {
+            minimaService.sendReadReceipt(address);
+            minimaService.markChatAsOpened(address);
+          }
+          return;
+        }
+      }
+
       // Handle Sync Completion and Generic List Updates from SW
       if (
         payload.type === "CHAT_LIST_UPDATE" ||
@@ -1622,11 +1704,12 @@ function ChatPage() {
           syncTimeoutRef.current = null;
         }
         setIsSyncing(false);
+        // NO DELAY for CHAT_LIST_UPDATE because SW sends it AFTER DB insert
         loadMessagesFromDB();
         return;
       }
 
-      // Only reload for actual new messages
+      // Only reload for actual new messages (Legacy Fallback)
       const contentTypes = [
         "text",
         "image",
@@ -1641,8 +1724,12 @@ function ChatPage() {
       ];
 
       if (contentTypes.includes(payload.type)) {
-        loadMessagesFromDB().then(() => {
-          if (contact.publickey) {
+        console.log(
+          `📨 [CHAT] New ${payload.type} message event. Reloading with race-condition guard (200ms)...`,
+        );
+        // Add 200ms delay to handle race condition with SW insert
+        loadMessagesFromDB(200).then(() => {
+          if (contact && contact.publickey) {
             minimaService.sendReadReceipt(contact.publickey);
             minimaService.markChatAsOpened(contact.publickey);
           }
@@ -1720,6 +1807,9 @@ function ChatPage() {
   ---------------------------------------------------------------------------- */
 
   const handleSendMessage = async () => {
+    // Guard to prevent concurrent sends
+    if (isSendingRef.current) return;
+
     if (blockReason !== "none") return; // Cannot send while blocked
     if (!input.trim()) return;
     if (!contact?.currentaddress && !contact?.publickey) {
@@ -1729,37 +1819,41 @@ function ChatPage() {
       return;
     }
 
-    // Use sender's name (from context) for payload, recipient's name for roomname
-    const senderName = userName || "Me";
-    const recipientName = contact?.extradata?.name || "Unknown";
-    const messageToSend = input; // Capture input for async call
-
-    let targetApp = "metachain";
-
-    // Handle "Dapp not detected" case
-    if (appStatus === "not_found") {
-      const proceed = confirm(
-        "⚠️ The recipient doesn't seem to have MetaChain installed.\n\nDo you want to send this as a standard Maxima message (MaxSolo)?",
-      );
-      if (!proceed) return;
-      targetApp = "maxima";
-    }
-
-    const timestamp = Date.now();
-    const newMsg: ParsedMessage = {
-      text: input,
-      fromMe: true,
-      charm: null,
-      amount: null,
-      timestamp,
-      status: "sent",
-    };
-    setMessages((prev) => [...prev, newMsg]);
-
-    // OPTIMISTIC UPDATE: Clear input immediately to make UI feel responsive
-    setInput("");
-
+    isSendingRef.current = true;
     try {
+      // Use sender's name (from context) for payload, recipient's name for roomname
+      const senderName = userName || "Me";
+      const recipientName = contact?.extradata?.name || "Unknown";
+      const messageToSend = input; // Capture input for async call
+
+      let targetApp = "metachain";
+
+      // Handle "Dapp not detected" case
+      if (appStatus === "not_found") {
+        const proceed = confirm(
+          "⚠️ The recipient doesn't seem to have MetaChain installed.\n\nDo you want to send this as a standard Maxima message (MaxSolo)?",
+        );
+        if (!proceed) {
+          isSendingRef.current = false;
+          return;
+        }
+        targetApp = "maxima";
+      }
+
+      const timestamp = Date.now();
+      const newMsg: ParsedMessage = {
+        text: input,
+        fromMe: true,
+        charm: null,
+        amount: null,
+        timestamp,
+        status: "sent",
+      };
+      setMessages((prev) => [...prev, newMsg]);
+
+      // OPTIMISTIC UPDATE: Clear input immediately to make UI feel responsive
+      setInput("");
+
       // FIX: Use publickey (0x) for reliable DB storage, fallback to currentaddress for network
       // This ensures messages are always stored with the same key format as the URL param
       // FIX: Pass timestamp to prevent flicker (optimistic UI vs DB re-fetch mismatch)
@@ -1778,6 +1872,8 @@ function ChatPage() {
       console.error("[Send] Error sending message:", err);
       // Optional: Restore input on failure? Or just show toast.
       // setInput(messageToSend); // Only restore if critical failure
+    } finally {
+      isSendingRef.current = false;
     }
   };
 
@@ -1929,7 +2025,7 @@ function ChatPage() {
         const now = Date.now();
         const systemMsgSql = `
             INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp)
-            VALUES('', '${safePk}', 'System', 'system', 'Chat request accepted', '', 'sent', 0, ${now}, NULL, ${now})
+            VALUES('', UPPER('${safePk}'), 'System', 'system', 'Chat request accepted', '', 'sent', 0, ${now}, NULL, ${now})
         `;
         await minimaService.runSQL(systemMsgSql);
 
@@ -1995,7 +2091,7 @@ function ChatPage() {
         const safePk = contactRequest.FROM_PUBLICKEY.replace(/'/g, "''");
         const systemMsgSql = `
             INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp)
-            VALUES('', '${safePk}', 'System', 'system', 'Chat request declined', '', 'sent', 0, ${now}, NULL, ${now})
+            VALUES('', UPPER('${safePk}'), 'System', 'system', 'Chat request declined', '', 'sent', 0, ${now}, NULL, ${now})
          `;
         await minimaService.runSQL(systemMsgSql);
 
@@ -2178,7 +2274,7 @@ function ChatPage() {
     const escapedTokenData = tokenData.replace(/'/g, "''");
 
     // Note: Include all required columns (roomname, type, filedata) matching chat.service.ts pattern
-    const insertSql = `INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq) VALUES ('', '${contact.publickey}', 'Me', 'token', '${escapedTokenData}', '', 'pending', ${amount}, ${tempTimestamp}, ${tokenSeq})`;
+    const insertSql = `INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq) VALUES ('', UPPER('${contact.publickey}'), 'Me', 'token', '${escapedTokenData}', '', 'pending', ${amount}, ${tempTimestamp}, ${tokenSeq})`;
 
     await new Promise<void>((resolve) => {
       MDS.sql(insertSql, async (res: any) => {
@@ -2286,7 +2382,7 @@ function ChatPage() {
 
       // Now we must manually update the optimistic message with the TXPOWID and 'sent' state
       if (txpowid) {
-        const updateSql = `UPDATE CHAT_MESSAGES SET state='sent', txpowid='${txpowid}' WHERE sender_seq=${tokenSeq} AND publickey='${contact.publickey}'`;
+        const updateSql = `UPDATE CHAT_MESSAGES SET state='sent', txpowid='${txpowid}' WHERE sender_seq=${tokenSeq} AND UPPER(publickey)=UPPER('${contact.publickey}')`;
         await new Promise<void>((resolve) =>
           MDS.sql(updateSql, () => resolve()),
         );
@@ -3045,7 +3141,7 @@ function ChatPage() {
                                 // Insert system message optimistically
                                 const systemMsgSql = `
                                     INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp)
-                                    VALUES('', '${validPk}', 'System', 'system', 'Maxima contact accepted', '', 'sent', 0, ${now}, NULL, ${now})
+                                    VALUES('', UPPER('${validPk}'), 'System', 'system', 'Maxima contact accepted', '', 'sent', 0, ${now}, NULL, ${now})
                                 `;
                                 await minimaService.runSQL(systemMsgSql);
 
@@ -3482,7 +3578,7 @@ function ChatPage() {
             disabled={isBlocked || blockedByThem || blockReason !== "none"}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
+              if (e.key === "Enter" && !e.shiftKey && !isSendingRef.current) {
                 e.preventDefault();
                 handleSendMessage();
               }

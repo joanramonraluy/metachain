@@ -22,6 +22,64 @@ const networkLog = (...args: any[]) => {
 ---------------------------------------------------------------------------- */
 const CONTACT_STATUS_CACHE: Record<string, boolean> = {};
 
+/* ----------------------------------------------------------------------------
+   SESSION CACHE: My Profile Info (Avatar, Maxima Address)
+---------------------------------------------------------------------------- */
+const SESSION_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+let _cachedMyAvatar: string = "";
+let _cachedMyAddress: string = "";
+let _cacheTimestamp = 0;
+
+async function getMySessionInfo(): Promise<{ avatar: string; address: string }> {
+  const now = Date.now();
+  if (_cacheTimestamp > 0 && now - _cacheTimestamp < SESSION_CACHE_TTL_MS) {
+    return { avatar: _cachedMyAvatar, address: _cachedMyAddress };
+  }
+  try {
+    const avatarRes = await MDS.keypair.get("profile_avatar");
+    if (avatarRes && avatarRes.status && avatarRes.value)
+      _cachedMyAvatar = avatarRes.value;
+    const myInfo = await MDS.cmd.maxima({ params: { action: "info" } });
+    _cachedMyAddress = (myInfo.response as any).contact || "";
+  } catch (e) {
+    console.warn("⚠️ [CACHE] Failed to refresh session info:", e);
+  }
+  _cacheTimestamp = Date.now();
+  return { avatar: _cachedMyAvatar, address: _cachedMyAddress };
+}
+
+/**
+ * Invalidate the session info cache (call when user updates profile)
+ */
+export function invalidateMessagingCache() {
+  _cacheTimestamp = 0;
+}
+
+/**
+ * Resolve Hex Public Key from any Maxima address
+ */
+export async function resolveHexFromAddress(
+  mxAddress: string,
+): Promise<string | null> {
+  const safeMx = mxAddress.replace(/'/g, "''");
+  const sql = `SELECT PUBLICKEY FROM DISCOVERED_PEERS WHERE UPPER(ADDRESS) LIKE UPPER('%${safeMx}%') LIMIT 1`;
+  try {
+    const res = await runSQL(sql);
+    if (res.rows && res.rows.length > 0) {
+      return res.rows[0].PUBLICKEY;
+    }
+    // Fallback to Contacts
+    const contacts = await MDS.cmd.maxcontacts({ params: { action: "list" } });
+    const contactList = (contacts.response as unknown as any[]) || [];
+    const contact = contactList.find(
+      (c: any) => c.currentaddress === mxAddress || c.address === mxAddress,
+    );
+    return contact?.publickey || null;
+  } catch (e) {
+    return null;
+  }
+}
+
 /**
  * Clear a peer's contact status from the cache (e.g. when a request is accepted)
  */
@@ -113,7 +171,7 @@ async function resolveMaximaAddressFromPubkey(
   if (!publicKey.startsWith("0x")) return null;
 
   const safeKey = publicKey.replace(/'/g, "''");
-  const peerSql = `SELECT ADDRESS FROM DISCOVERED_PEERS WHERE PUBLICKEY='${safeKey}' AND ADDRESS IS NOT NULL LIMIT 1`;
+  const peerSql = `SELECT ADDRESS FROM DISCOVERED_PEERS WHERE UPPER(PUBLICKEY)=UPPER('${safeKey}') AND ADDRESS IS NOT NULL LIMIT 1`;
 
   try {
     const peerRes = await runSQL(peerSql);
@@ -159,7 +217,7 @@ export async function sendMessage(
 
     if (toPublicKey.startsWith("Mx") || toPublicKey.startsWith("MX")) {
       try {
-        const discoverySql = `SELECT PUBLICKEY FROM DISCOVERED_PEERS WHERE ADDRESS LIKE '%${safeMxAddress}%' LIMIT 1`;
+        const discoverySql = `SELECT PUBLICKEY FROM DISCOVERED_PEERS WHERE UPPER(ADDRESS) LIKE UPPER('%${safeMxAddress}%') LIMIT 1`;
         const discoveryRes = await runSQL(discoverySql);
 
         if (discoveryRes.rows && discoveryRes.rows.length > 0) {
@@ -185,9 +243,9 @@ export async function sendMessage(
 
         // LAZY MIGRATION
         if (databasePublicKey !== toPublicKey) {
-          const migrateChatSql = `UPDATE CHAT_MESSAGES SET publickey='${databasePublicKey}' WHERE publickey='${safeMxAddress}'`;
+          const migrateChatSql = `UPDATE CHAT_MESSAGES SET publickey=UPPER('${databasePublicKey}') WHERE UPPER(publickey)=UPPER('${safeMxAddress}')`;
           await runSQL(migrateChatSql);
-          const migrateReqSql = `UPDATE CONTACT_REQUESTS SET to_publickey='${databasePublicKey}' WHERE to_publickey='${safeMxAddress}'`;
+          const migrateReqSql = `UPDATE CONTACT_REQUESTS SET to_publickey=UPPER('${databasePublicKey}') WHERE UPPER(to_publickey)=UPPER('${safeMxAddress}')`;
           await runSQL(migrateReqSql);
         }
       } catch (err) {
@@ -199,17 +257,7 @@ export async function sendMessage(
     }
 
     // 2. PREPARE PAYLOAD
-    let myAvatar = "";
-    let myAddress = "";
-    try {
-      const avatarRes = await MDS.keypair.get("profile_avatar");
-      if (avatarRes && avatarRes.status && avatarRes.value)
-        myAvatar = avatarRes.value;
-      const myInfo = await MDS.cmd.maxima({ params: { action: "info" } });
-      myAddress = (myInfo.response as any).contact;
-    } catch (e) {
-      console.warn("⚠️ [MAXIMA] Failed to fetch profile info:", e);
-    }
+    const { avatar: myAvatar, address: myAddress } = await getMySessionInfo();
 
     let seq = 0;
     if (overrideSeq !== undefined) {
@@ -342,7 +390,7 @@ export async function sendMessage(
 
         const safeKey = toPublicKey.replace(/'/g, "''");
         // Inline resolve query or call helper if available. runSQL is imported.
-        const peerSql = `SELECT ADDRESS FROM DISCOVERED_PEERS WHERE PUBLICKEY='${safeKey}' LIMIT 1`;
+        const peerSql = `SELECT ADDRESS FROM DISCOVERED_PEERS WHERE UPPER(PUBLICKEY)=UPPER('${safeKey}') LIMIT 1`;
         try {
           const peerRes = await runSQL(peerSql);
 
@@ -475,10 +523,7 @@ export async function retryMessage(data: {
     `📤 [RETRY] Target for send: ${target.substring(0, 30)}... (type: ${target.startsWith("Mx") ? "address" : "publickey"})`,
   );
 
-  const myInfo = await MDS.cmd.maxima({ params: { action: "info" } });
-  const myAddress = (myInfo.response as any).contact;
-  const avatarRes = await MDS.keypair.get("profile_avatar");
-  const myAvatar = avatarRes && avatarRes.status ? avatarRes.value : "";
+  const { avatar: myAvatar, address: myAddress } = await getMySessionInfo();
 
   const payload: any = {
     message: data.message,
@@ -531,7 +576,7 @@ export async function retryMessage(data: {
     if (dbKey.startsWith("Mx")) {
       const safeMx = dbKey.replace(/'/g, "''");
       const r = await runSQL(
-        `SELECT PUBLICKEY FROM DISCOVERED_PEERS WHERE ADDRESS LIKE '%${safeMx}%' LIMIT 1`,
+        `SELECT PUBLICKEY FROM DISCOVERED_PEERS WHERE UPPER(ADDRESS) LIKE UPPER('%${safeMx}%') LIMIT 1`,
       );
       if (r.rows?.[0]?.PUBLICKEY) dbKey = r.rows[0].PUBLICKEY;
     }
@@ -556,7 +601,7 @@ export async function retryMessage(data: {
       );
 
       const safeKey = data.publickey.replace(/'/g, "''");
-      const peerSql = `SELECT ADDRESS FROM DISCOVERED_PEERS WHERE PUBLICKEY='${safeKey}' LIMIT 1`;
+      const peerSql = `SELECT ADDRESS FROM DISCOVERED_PEERS WHERE UPPER(PUBLICKEY)=UPPER('${safeKey}') LIMIT 1`;
 
       const peerRes = await runSQL(peerSql);
 
@@ -652,8 +697,16 @@ export async function sendReadReceipt(toPublicKey: string) {
     networkLog("✅ [READ-RECEIPT] Sent successfully");
 
     // Mark received messages as read locally
+    // CRITICAL: Resolve Hex key for DB query
+    let dbKey = toPublicKey;
+    if (toPublicKey.startsWith("Mx") || toPublicKey.startsWith("MX")) {
+      const hex = await resolveHexFromAddress(toPublicKey);
+      if (hex) dbKey = hex;
+    }
+
     // CRITICAL: Don't mark as 'read' if the message has an active transaction (pending/sent)
-    const sql = `UPDATE CHAT_MESSAGES SET state = 'read' WHERE publickey = '${toPublicKey}' AND username != 'Me' AND state != 'read' AND state != 'pending' AND state != 'sent' AND state != 'confirmed'`;
+    // Use UPPER() for case-insensitivity
+    const sql = `UPDATE CHAT_MESSAGES SET state = 'read' WHERE UPPER(publickey) = UPPER('${dbKey}') AND username != 'Me' AND state != 'read' AND state != 'pending' AND state != 'sent' AND state != 'confirmed'`;
     MDS.sql(sql, (res: any) => {
       console.log("✅ [DB] Marked received messages as read locally:", res);
     });
@@ -830,9 +883,15 @@ export async function sendInvitation(
 export async function requestChatHistory(toPublicKey: string) {
   console.log("🔄 [HISTORY-SYNC] Requesting from", toPublicKey);
   try {
+    // RESOLVE HEX KEY FOR DB QUERY
+    let dbKey = toPublicKey;
+    if (toPublicKey.startsWith("Mx") || toPublicKey.startsWith("MX")) {
+      const hex = await resolveHexFromAddress(toPublicKey);
+      if (hex) dbKey = hex;
+    }
+
     // Get the timestamp of the last message we have for this contact
-    const lastMessageTime =
-      await chatService.getLastMessageTimestamp(toPublicKey);
+    const lastMessageTime = await chatService.getLastMessageTimestamp(dbKey);
 
     // If we have no messages, request last 7 days. Otherwise, request from last message.
     const sinceTimestamp =

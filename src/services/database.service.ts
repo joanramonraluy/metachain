@@ -115,7 +115,7 @@ export async function initDB(): Promise<void> {
                 amount DECIMAL(30,8) DEFAULT 0,
                 date BIGINT NOT NULL,
                 txpowid VARCHAR(256),
-                customid VARCHAR(128)
+                customid VARCHAR(512)
             )`;
 
     MDS.sql(createMessagesTable, (res: any) => {
@@ -159,12 +159,26 @@ export async function initDB(): Promise<void> {
 
         // Migration: Add customid column for deduplication
         const alterSql4 =
-          "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS customid VARCHAR(128)";
+          "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS customid VARCHAR(512)";
         MDS.sql(alterSql4, (alterRes: any) => {
           if (alterRes.status)
             console.log(
               "📂 [DB] customid column added/verified in CHAT_MESSAGES",
             );
+            // Force upgrade length if already exists
+            MDS.sql(
+              "ALTER TABLE CHAT_MESSAGES ALTER COLUMN customid SET DATA TYPE VARCHAR(512)",
+              () => {},
+            );
+        });
+
+        // Migration: Add virtual column for case-insensitive publickey lookup
+        const alterSql5 =
+          "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS publickey_upper VARCHAR(512) AS UPPER(publickey)";
+        MDS.sql(alterSql5, () => {
+          console.log(
+            "📂 [DB] virtual publickey_upper column added to CHAT_MESSAGES",
+          );
         });
       }
     });
@@ -237,6 +251,15 @@ export async function initDB(): Promise<void> {
           if (alterRes.status)
             console.log("📂 [DB] blocked_by_them column added/verified");
         });
+
+        // Migration: Add virtual column for case-insensitive publickey lookup
+        const alterSql9 =
+          "ALTER TABLE CHAT_STATUS ADD COLUMN IF NOT EXISTS publickey_upper VARCHAR(512) AS UPPER(publickey)";
+        MDS.sql(alterSql9, () => {
+          console.log(
+            "📂 [DB] virtual publickey_upper column added to CHAT_STATUS",
+          );
+        });
       }
     });
 
@@ -252,7 +275,7 @@ export async function initDB(): Promise<void> {
                 created_at BIGINT NOT NULL,
                 updated_at BIGINT NOT NULL,
                 metadata TEXT,
-                pendinguid VARCHAR(128)
+                pendinguid VARCHAR(512)
             )`;
 
     MDS.sql(createTransactionsTable, (res: any) => {
@@ -267,11 +290,20 @@ export async function initDB(): Promise<void> {
 
         // Migration 1: Add pendinguid column if it doesn't exist
         const alterSql1 =
-          "ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS pendinguid VARCHAR(128)";
+          "ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS pendinguid VARCHAR(512)";
         MDS.sql(alterSql1, (alterRes: any) => {
           if (alterRes.status) {
             console.log("📂 [DB] pendinguid column added/verified");
           }
+
+          // Migration: Add virtual column for case-insensitive publickey lookup
+          const alterSql2 =
+            "ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS publickey_upper VARCHAR(512) AS UPPER(publickey)";
+          MDS.sql(alterSql2, () => {
+            console.log(
+              "📂 [DB] virtual publickey_upper column added to TRANSACTIONS",
+            );
+          });
 
           // Create PROFILES table for local storage of extended profile data
           const createProfilesTable = `
@@ -444,12 +476,17 @@ export async function initDB(): Promise<void> {
 
                     // Migration: Add customid column for deduplication (same as CHAT_MESSAGES)
                     const alterCustomIdSql =
-                      "ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS customid VARCHAR(128)";
+                      "ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS customid VARCHAR(512)";
                     MDS.sql(alterCustomIdSql, (customRes: any) => {
                       if (customRes.status)
                         console.log(
                           "📂 [DB] customid column added/verified in GROUP_MESSAGES",
                         );
+                      // Force upgrade length if already exists
+                      MDS.sql(
+                        "ALTER TABLE GROUP_MESSAGES ALTER COLUMN customid SET DATA TYPE VARCHAR(512)",
+                        () => {},
+                      );
                     });
 
                     // Create GROUP_MSG_COUNTERS table for per-sender sequence tracking
@@ -520,6 +557,14 @@ export async function initDB(): Promise<void> {
                       console.log("📂 [DB] CONTACT_REQUESTS table initialized");
                     }
 
+                    // Migration: Add virtual column for case-insensitive publickey lookup
+                    const vCol1 =
+                      "ALTER TABLE CONTACT_REQUESTS ADD COLUMN IF NOT EXISTS from_publickey_upper VARCHAR(512) AS UPPER(from_publickey)";
+                    const vCol2 =
+                      "ALTER TABLE CONTACT_REQUESTS ADD COLUMN IF NOT EXISTS to_publickey_upper VARCHAR(512) AS UPPER(to_publickey)";
+                    MDS.sql(vCol1, () => {});
+                    MDS.sql(vCol2, () => {});
+
                     // Add from_address column if it doesn't exist (for existing tables)
                     const addFromAddressColumn = `ALTER TABLE CONTACT_REQUESTS ADD COLUMN IF NOT EXISTS from_address VARCHAR(1024)`;
                     MDS.sql(addFromAddressColumn, (res: any) => {
@@ -533,6 +578,15 @@ export async function initDB(): Promise<void> {
                           "📂 [DB] from_address column added/verified",
                         );
                       }
+
+                      // Migration: Add virtual column for case-insensitive publickey lookup
+                      const vCol1 =
+                        "ALTER TABLE METACHAIN_USERS ADD COLUMN IF NOT EXISTS publickey_upper VARCHAR(512) AS UPPER(publickey)";
+                      MDS.sql(vCol1, () => {
+                        console.log(
+                          "📂 [DB] virtual publickey_upper column added to METACHAIN_USERS",
+                        );
+                      });
                     });
 
                     // Create table for Maxima contact requests
@@ -557,6 +611,14 @@ export async function initDB(): Promise<void> {
                         console.log(
                           "📂 [DB] MAXIMA_CONTACT_REQUESTS table initialized",
                         );
+
+                        // Migration: Add virtual column for case-insensitive publickey lookup
+                        const vCol1 =
+                          "ALTER TABLE MAXIMA_CONTACT_REQUESTS ADD COLUMN IF NOT EXISTS from_publickey_upper VARCHAR(512) AS UPPER(from_publickey)";
+                        const vCol2 =
+                          "ALTER TABLE MAXIMA_CONTACT_REQUESTS ADD COLUMN IF NOT EXISTS to_publickey_upper VARCHAR(512) AS UPPER(to_publickey)";
+                        MDS.sql(vCol1, () => {});
+                        MDS.sql(vCol2, () => {});
 
                         // Ensure DISCOVERED_PEERS has allow_non_contact_chats (Crucial for contact info perm detection)
                         // This is also done in SW, but we must ensure it exists here too if SW hasn't run.
@@ -733,6 +795,15 @@ export async function initDB(): Promise<void> {
                         );
                     },
                   );
+
+                  // Migration: Add virtual column for case-insensitive publickey lookup
+                  const vCol1 =
+                    "ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS publickey_upper VARCHAR(512) AS UPPER(publickey)";
+                  MDS.sql(vCol1, () => {
+                    console.log(
+                      "📂 [DB] virtual publickey_upper column added to DISCOVERED_PEERS",
+                    );
+                  });
                 }
 
                 // Create METACHAIN_USERS table
@@ -839,7 +910,7 @@ export async function resolveMaximaAddress(
 ): Promise<string | null> {
   return new Promise((resolve) => {
     const safePubkey = escapeSql(publicKey);
-    const sql = `SELECT address FROM DISCOVERED_PEERS WHERE publickey='${safePubkey}'`;
+    const sql = `SELECT address FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('${safePubkey}')`;
 
     MDS.sql(sql, (res: any) => {
       if (res.status && res.rows && res.rows.length > 0) {
@@ -876,7 +947,7 @@ export function getAndIncrementSequenceNumber(
       const safePubkey = escapeSql(publicKey);
 
       // Step 1: Check if counter exists
-      const checkSql = `SELECT next_seq FROM MESSAGE_COUNTERS WHERE publickey='${safePubkey}'`;
+      const checkSql = `SELECT next_seq FROM MESSAGE_COUNTERS WHERE UPPER(publickey)=UPPER('${safePubkey}')`;
 
       MDS.sql(checkSql, (res: any) => {
         if (res.status && res.rows && res.rows.length > 0) {
@@ -884,7 +955,7 @@ export function getAndIncrementSequenceNumber(
           const currentSeq = parseInt(res.rows[0].NEXT_SEQ);
 
           // Step 2: Increment atomically
-          const updateSql = `UPDATE MESSAGE_COUNTERS SET next_seq = next_seq + 1 WHERE publickey='${safePubkey}'`;
+          const updateSql = `UPDATE MESSAGE_COUNTERS SET next_seq = next_seq + 1 WHERE UPPER(publickey)=UPPER('${safePubkey}')`;
 
           MDS.sql(updateSql, (updateRes: any) => {
             if (updateRes.status) {
@@ -948,12 +1019,12 @@ export function getAndIncrementChannelSequenceNumber(
       const safeChannelId = escapeSql(channelId);
       const safePubkey = escapeSql(publicKey);
 
-      const checkSql = `SELECT my_next_seq FROM CHANNEL_MSG_COUNTERS WHERE channel_id='${safeChannelId}' AND sender_publickey='${safePubkey}'`;
+      const checkSql = `SELECT my_next_seq FROM CHANNEL_MSG_COUNTERS WHERE channel_id='${safeChannelId}' AND UPPER(sender_publickey)=UPPER('${safePubkey}')`;
 
       MDS.sql(checkSql, (res: any) => {
         if (res.status && res.rows && res.rows.length > 0) {
           const currentSeq = parseInt(res.rows[0].MY_NEXT_SEQ);
-          const updateSql = `UPDATE CHANNEL_MSG_COUNTERS SET my_next_seq = my_next_seq + 1 WHERE channel_id='${safeChannelId}' AND sender_publickey='${safePubkey}'`;
+          const updateSql = `UPDATE CHANNEL_MSG_COUNTERS SET my_next_seq = my_next_seq + 1 WHERE channel_id='${safeChannelId}' AND UPPER(sender_publickey)=UPPER('${safePubkey}')`;
 
           MDS.sql(updateSql, (updateRes: any) => {
             if (updateRes.status) {
@@ -986,7 +1057,7 @@ export function getAndIncrementChannelSequenceNumber(
 export function getNextSequenceNumber(publicKey: string): Promise<number> {
   return new Promise((resolve) => {
     const safePubkey = escapeSql(publicKey);
-    const sql = `SELECT next_seq FROM MESSAGE_COUNTERS WHERE publickey='${safePubkey}'`;
+    const sql = `SELECT next_seq FROM MESSAGE_COUNTERS WHERE UPPER(publickey)=UPPER('${safePubkey}')`;
 
     MDS.sql(sql, (res: any) => {
       if (res.status && res.rows && res.rows.length > 0) {
@@ -1009,12 +1080,12 @@ export function incrementSequenceNumber(publicKey: string): Promise<void> {
     const safePubkey = escapeSql(publicKey);
 
     // Try to update existing first
-    const checkSql = `SELECT next_seq FROM MESSAGE_COUNTERS WHERE publickey='${safePubkey}'`;
+    const checkSql = `SELECT next_seq FROM MESSAGE_COUNTERS WHERE UPPER(publickey)=UPPER('${safePubkey}')`;
 
     MDS.sql(checkSql, (res: any) => {
       if (res.status && res.rows && res.rows.length > 0) {
         // Update
-        const updateSql = `UPDATE MESSAGE_COUNTERS SET next_seq = next_seq + 1 WHERE publickey='${safePubkey}'`;
+        const updateSql = `UPDATE MESSAGE_COUNTERS SET next_seq = next_seq + 1 WHERE UPPER(publickey)=UPPER('${safePubkey}')`;
         MDS.sql(updateSql, () => resolve());
       } else {
         // Insert (start at 2, since we just used 1)

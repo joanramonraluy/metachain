@@ -182,9 +182,9 @@ function saveBeaconListings(beacon, now) {
       var upsertSql =
         "MERGE INTO DISCOVERED_LISTINGS (owner_publickey, listings, timestamp, last_seen) " +
         "KEY (owner_publickey) " +
-        "VALUES ('" +
+        "VALUES (UPPER('" +
         safePk +
-        "', '" +
+        "'), '" +
         listingsJson +
         "', " +
         incomingTimestamp +
@@ -397,19 +397,30 @@ function saveBeaconWithBio(
       }
 
       // Proceed with full profile MERGE
+      // Task 4: Proactive cleanup for direct communications
+      var isDirect = source === "P2P" || source === "MAXIMA" || source === "SELF" || source === "BOOTSTRAP";
+      var deleteOldSql = "DELETE FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('" + beacon.pubkey + "')";
+      
+      // Task 3: Conditional LAST_SEEN logic
+      var lastSeenToSave = now; // Default for direct
+      if (source === "GOSSIP") {
+        lastSeenToSave = incomingTimestamp > 0 ? incomingTimestamp : now;
+        MDS.log("🗣️ [GOSSIP-TIME] Using original timestamp " + lastSeenToSave + " for " + beacon.alias);
+      }
+
       var discoverySql =
         "MERGE INTO DISCOVERED_PEERS (publickey, alias, bio, address, last_seen, source, allow_non_contact_chats, extra_data) " +
         "KEY (publickey) " +
-        "VALUES ('" +
+        "VALUES (UPPER('" +
         beacon.pubkey +
-        "', '" +
+        "'), '" +
         escapedAlias +
         "', '" +
         escapedBio +
         "', '" +
         cleanAddress +
         "', " +
-        now +
+        lastSeenToSave +
         ", '" +
         source +
         "', " +
@@ -418,25 +429,33 @@ function saveBeaconWithBio(
         extraData +
         "')";
 
-      MDS.sql(discoverySql, function (res) {
-        if (res.status) {
-          MDS.log("✅ [BEACON] Saved: " + beacon.alias);
-          promoteToUserRegistry(beacon, now);
-
-          // Reactive gossip
-          if ((source === "P2P" || source === "MAXIMA") && !hasExisting) {
-            sendWelcomePackage(beacon.pubkey, beacon.alias, cleanAddress);
-            askPeers([beacon.pubkey]);
-          } else if (source === "P2P" || source === "MAXIMA") {
-            MDS.log(
-              "⏭️ [GOSSIP] Welcome Package skipped for existing peer: " +
-                beacon.alias,
-            );
+      // If it's a direct message, we clean up first to ensure we have exactly one fresh entry with the validated IP
+      if (isDirect) {
+        MDS.sql(deleteOldSql, function() {
+          MDS.sql(discoverySql, function (res) {
+            if (res.status) {
+              MDS.log("✅ [BEACON-DIRECT] Validated IP & Saved: " + beacon.alias + " (" + cleanAddress + ")");
+              promoteToUserRegistry(beacon, now);
+              
+              // Reactive gossip
+              if ((source === "P2P" || source === "MAXIMA") && !hasExisting) {
+                sendWelcomePackage(beacon.pubkey, beacon.alias, cleanAddress);
+                askPeers([beacon.pubkey]);
+              }
+            }
+          });
+        });
+      } else {
+        // For GOSSIP, just merge (Task 3 applies via lastSeenToSave)
+        MDS.sql(discoverySql, function (res) {
+          if (res.status) {
+            MDS.log("✅ [BEACON] Saved: " + beacon.alias);
+            promoteToUserRegistry(beacon, now);
+          } else {
+            MDS.log("❌ [BEACON] Save failed: " + JSON.stringify(res));
           }
-        } else {
-          MDS.log("❌ [BEACON] Save failed: " + JSON.stringify(res));
-        }
-      });
+        });
+      }
     },
   );
 }
@@ -446,7 +465,7 @@ function promoteToUserRegistry(beacon, now) {
   var escapedAlias = escapeSql(beacon.alias);
 
   MDS.sql(
-    "SELECT * FROM METACHAIN_USERS WHERE user_id='" + user_id + "'",
+    "SELECT * FROM METACHAIN_USERS WHERE UPPER(user_id)=UPPER('" + user_id + "')",
     function (res) {
       if (res.status && res.rows && res.rows.length > 0) {
         // Update existing
@@ -457,19 +476,19 @@ function promoteToUserRegistry(beacon, now) {
           (beacon.address || "") +
           "', last_updated=" +
           now +
-          " WHERE user_id='" +
+          " WHERE UPPER(user_id)=UPPER('" +
           user_id +
-          "'";
+          "')";
         MDS.sql(updateSql);
       } else {
         // Insert new
         var insertSql =
           "INSERT INTO METACHAIN_USERS (user_id, publickey, alias, address, first_seen, last_updated) " +
-          "VALUES ('" +
+          "VALUES (UPPER('" +
           user_id +
-          "', '" +
+          "'), UPPER('" +
           beacon.pubkey +
-          "', '" +
+          "'), '" +
           escapedAlias +
           "', '" +
           (beacon.address || "") +

@@ -146,6 +146,7 @@ function safeDecode(str) {
 function escapeSql(str) {
     return (str || '').replace(/'/g, "''");
 }
+
 /**
  * Log to both SW and Frontend (via solo comms)
  */
@@ -160,4 +161,100 @@ function logToUI(msg) {
             }));
         }
     } catch (e) { }
+}
+
+/**
+ * Helper to clean Maxima Address specifically for the port issue
+ */
+function cleanMaximaAddress(addr) {
+    if (!addr) return "";
+
+    // 1. Basic trim
+    var s = String(addr).trim();
+
+    // 2. CRITICAL: Remove ALL whitespace first to prevent Java NumberFormatException
+    s = s.replace(/\s+/g, "");
+
+    // 3. Split by Last Colon (Host:Port)
+    var idx = s.lastIndexOf(":");
+
+    if (idx !== -1) {
+        var base = s.substring(0, idx);
+        var port = s.substring(idx + 1);
+
+        // 4. AGGRESSIVE CLEANING
+        // Remove all whitespace and invalid chars from base
+        var cleanBase = base.replace(/[^a-zA-Z0-9@._-]/g, "");
+
+        // Remove everything except numbers from port
+        var cleanPort = port.replace(/[^0-9]/g, "");
+
+        if (cleanBase && cleanPort) {
+            return cleanBase + ":" + cleanPort;
+        }
+    }
+
+    // Fallback: Just remove all whitespace and invalid chars
+    return s.replace(/\s/g, "").replace(/[^a-zA-Z0-9@:._-]/g, "");
+}
+
+/**
+ * Smart Send Helper - Resolves Address from DISCOVERED_PEERS for non-contacts
+ * 
+ * @param {string} pubkey - Target public key
+ * @param {string} application - Maxima application name
+ * @param {string} hexData - Hex-encoded data
+ * @param {string} logTag - Tag for logging
+ * @param {boolean} usePoll - Whether to use polling (default false)
+ * @param {string} forcedAddress - Optional Mx address to use directly (bypasses DB lookup)
+ */
+function smartSend(pubkey, application, hexData, logTag, usePoll, forcedAddress) {
+    var pollStr = usePoll === true ? " poll:true" : " poll:false";
+    
+    // 1. If we have a forced address, use it immediately
+    if (forcedAddress) {
+        var cleanAddr = cleanMaximaAddress(forcedAddress);
+        if (cleanAddr && (cleanAddr.startsWith("Mx") || cleanAddr.startsWith("MX"))) {
+            var sendCmd = "maxima action:send to:" + cleanAddr + " application:" + application + " data:" + hexData + pollStr;
+            MDS.log("🔍 [" + logTag + "] Sending via FORCED address: " + cleanAddr.substring(0, 15) + "...");
+            MDS.cmd(sendCmd, function(res) {
+                if (res.status) {
+                    MDS.log("✅ [" + logTag + "] Sent to " + pubkey.substring(0, 10));
+                } else {
+                    // If forced address fails, we could fallback to publickey, but usually if forced it fails for good reasons
+                    MDS.log("⚠️ [" + logTag + "] Forced send failed, trying publickey: " + res.error);
+                    MDS.cmd("maxima action:send publickey:" + pubkey + " application:" + application + " data:" + hexData + pollStr);
+                }
+            });
+            return;
+        }
+    }
+
+    var safeKey = escapeSql(pubkey);
+    var peerSql = "SELECT ADDRESS FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('" + safeKey + "') AND ADDRESS IS NOT NULL LIMIT 1";
+
+    MDS.sql(peerSql, function (peerRes) {
+        var sendCmd;
+        if (peerRes && peerRes.status && peerRes.rows && peerRes.rows.length > 0) {
+            var rawMx = peerRes.rows[0].ADDRESS || peerRes.rows[0].address;
+            var mxAddress = rawMx ? cleanMaximaAddress(rawMx) : null;
+
+            if (mxAddress && (mxAddress.startsWith("Mx") || mxAddress.startsWith("MX"))) {
+                sendCmd = "maxima action:send to:" + mxAddress + " application:" + application + " data:" + hexData + pollStr;
+                MDS.log("🔍 [" + logTag + "] Optimized send via address resolution: " + mxAddress.substring(0, 15) + "...");
+            } else {
+                sendCmd = "maxima action:send publickey:" + pubkey + " application:" + application + " data:" + hexData + pollStr;
+            }
+        } else {
+            sendCmd = "maxima action:send publickey:" + pubkey + " application:" + application + " data:" + hexData + pollStr;
+        }
+
+        MDS.cmd(sendCmd, function (res) {
+            if (res.status) {
+                MDS.log("✅ [" + logTag + "] Sent to " + pubkey.substring(0, 10));
+            } else {
+                MDS.log("⚠️ [" + logTag + "] Failed send to " + pubkey.substring(0, 10) + ": " + res.error);
+            }
+        });
+    });
 }

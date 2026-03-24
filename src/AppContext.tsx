@@ -250,6 +250,8 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
             await minimaService.initProfile();
             console.log("🧹 [AppContext] Running legacy chat migration...");
             await minimaService.migrateLegacyChats();
+            console.log("🧹 [AppContext] Normalizing identities...");
+            await minimaService.normalizeIdentities();
 
             // NOTE: Confirmation Checker is DELAYED until final step to avoid traffic
 

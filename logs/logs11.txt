@@ -1,0 +1,302 @@
+user1:
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MDS_TIMER_10SECONDS', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MDSCOMMS', from: undefined, application: undefined}
+index-D0bndtk5.js:18 🚀 [SERVICE] Solo message received from SW: {minidapp: 'MetaChain', public: false, message: '{"type":"SW_LOG","message":"📨 [MAXIMA] Event rece…hain From: 0x30819F30","timestamp":1774340262544}'}
+index-D0bndtk5.js:18 📡 [SW-LOG] 📨 [MAXIMA] Event received. App: metachain From: 0x30819F30
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MDS_TIMER_60SECONDS', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MDS_TIMER_10SECONDS', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📊 [SEQ-MUTEX] Created counter for 0X30819F300D06092A86..., returning 1
+index-D0bndtk5.js:18 📥 [CHAT-DB] Inserting message: {type: 'text', seq: 1, customid: '8c8a4be8-8cd3-4cec-a755-361efd56243a', roomname: 'user2', publickey: '0X30819F300D06092A864886F70D010101050003818D003081…A6F04272F3E051A31A6D052D777C5D9EFE8D7CD0203010001'}
+index-D0bndtk5.js:18 ✅ [CHAT-DB] Insert success: {status: true, customid: '8c8a4be8-8cd3-4cec-a755-361efd56243a', publickey: '0X30819F300D06092A864886F70D010101050003818D003081…A6F04272F3E051A31A6D052D777C5D9EFE8D7CD0203010001'}
+index-D0bndtk5.js:18 📤 [MAXIMA] Sending type=text customid=8c8a4be8-8cd3-4cec-a755-361efd56243a to=0X30819F300D06092A864886F70D010101050003818D0030818902818100988AE5B6EFC396D2D19A92BD5B714350572C5B86662C3B99BEF10D2E69572B5C7D95D2CD5CCA75142AC9160B2AB705A9CB917053D72CAC27F3B15699B944737F0319E75FF4E5EFD4AF6912D9127824BFC6FEDC64C954A760F945102AD559FA3C5827DA200E673B6B7FF01BC16A6F04272F3E051A31A6D052D777C5D9EFE8D7CD0203010001 age_ms=0
+index-D0bndtk5.js:18 ⚠️ [MAXIMA] Target not in contacts. Attempting to resolve address from Discovery...
+index-D0bndtk5.js:18 🔍 [MAXIMA] Found Mx address for non-contact: MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60G13UMGN07QYV4RZUWA33M01Y4CAJ2Y8TNJUN74C0A4HYJWNWYTCQ1QR0Z55EE3MZAJ1JJ07EFTB2TC6K91W889EY5ZJZEVD2N87PHE99E05TPGP72EAD7UNFBUJSVV1G33A1BZJD8HK2YHKQYFBCD7HTP53FTV6E4ZG0SG82EJD2SQGFJ53U17Q3162GZR8B028E0ZMJQZPU554106080075NWBEM@10.0.0.11:9001. Updating cache and retrying...
+index-D0bndtk5.js:18 ✅ [MAXIMA] Message sent successfully via Mx address (fallback). customid=8c8a4be8-8cd3-4cec-a755-361efd56243a
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'NOTIFYCASCADEBLOCK', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'NOTIFYCASCADEBLOCK', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'NOTIFYCASCADEBLOCK', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'NEWBLOCK', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINING', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINING', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'NEWBLOCK', from: undefined, application: undefined}
+index-D0bndtk5.js:18 ⚠️ [CHAT] Profile request failed: Error: Profile request timed out
+    at index-D0bndtk5.js:18:329467
+(anonymous) @ index-D0bndtk5.js:18
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MDS_TIMER_10SECONDS', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 🔥 [AppContext] RAW MAXIMA EVENT: {event: 'MAXIMA', data: {…}}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MAXIMA', from: '0x30819F30', application: 'metachain'}
+index-D0bndtk5.js:18 ✉️ [MDS] MAXIMA event detected: {event: 'MAXIMA', data: {…}}
+index-D0bndtk5.js:18 📨 [MAXIMA] Event received: {from: '0x30819F300D06092A864886F70D010101050003818D003081…6CEDE65BC146C192B40C09C7C2D09F631BE6E350203010001', application: 'metachain', data: '0x7B22617070223A226D657461636861696E222C2274797065…D657374616D70223A313737343334303134363238317D5D7D'}
+index-D0bndtk5.js:18 📨[MAXIMA - DEBUG] Processing msg type: peers_response, from: 0x30819F300D06092A864886F70D010101050003818D0030818902818100A269FBE25C01C146FFA3C7B137215E69EC0463ECD38FB3227824B79F055CAA3D7D9B91FEC330DB4785670EE9790E238C37BB7D1F4D9A1B17CBB29F3E1F06236F2FE63E95C92F717FA497806CEC31CB70DC120D4CEBB7D349929B82CAEBD94D9BCC168EF508E29ED262B49BABB6CEDE65BC146C192B40C09C7C2D09F631BE6E350203010001
+index-D0bndtk5.js:18 📨[MAXIMA - DEBUG] Full Payload:  {app: 'metachain', type: 'peers_response', peers: Array(2)}
+index-D0bndtk5.js:18 🗣 [GOSSIP] Received peer list from 0x30819F300D06092A864886F70D010101050003818D0030818902818100A269FBE25C01C146FFA3C7B137215E69EC0463ECD38FB3227824B79F055CAA3D7D9B91FEC330DB4785670EE9790E238C37BB7D1F4D9A1B17CBB29F3E1F06236F2FE63E95C92F717FA497806CEC31CB70DC120D4CEBB7D349929B82CAEBD94D9BCC168EF508E29ED262B49BABB6CEDE65BC146C192B40C09C7C2D09F631BE6E350203010001
+index-D0bndtk5.js:18 🗣[GOSSIP] Processing 2 peers...
+index-D0bndtk5.js:18 ✅[GOSSIP] Saved peer: user2
+index-D0bndtk5.js:18 ✅[GOSSIP] Saved peer: user1
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 🔥 [AppContext] RAW MAXIMA EVENT: {event: 'MAXIMA', data: {…}}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MAXIMA', from: '0x30819F30', application: 'metachain'}
+index-D0bndtk5.js:18 ✉️ [MDS] MAXIMA event detected: {event: 'MAXIMA', data: {…}}
+index-D0bndtk5.js:18 📨 [MAXIMA] Event received: {from: '0x30819F300D06092A864886F70D010101050003818D003081…6CEDE65BC146C192B40C09C7C2D09F631BE6E350203010001', application: 'metachain', data: '0x7B22617070223A226D657461636861696E222C2274797065…7383750403138352E3133322E39302E39383A39303031227D'}
+index-D0bndtk5.js:18 📨[MAXIMA - DEBUG] Processing msg type: get_peers, from: 0x30819F300D06092A864886F70D010101050003818D0030818902818100A269FBE25C01C146FFA3C7B137215E69EC0463ECD38FB3227824B79F055CAA3D7D9B91FEC330DB4785670EE9790E238C37BB7D1F4D9A1B17CBB29F3E1F06236F2FE63E95C92F717FA497806CEC31CB70DC120D4CEBB7D349929B82CAEBD94D9BCC168EF508E29ED262B49BABB6CEDE65BC146C192B40C09C7C2D09F631BE6E350203010001
+index-D0bndtk5.js:18 📨[MAXIMA - DEBUG] Full Payload:  {app: 'metachain', type: 'get_peers', alias: 'user1', address: 'MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60…BNW8E0FKDUPJRYFS10608004FNW87P@185.132.90.98:9001'}
+index-D0bndtk5.js:18 ℹ️ [MAXIMA] Ignoring non-chat type: get_peers
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+User2:
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MDS_TIMER_10SECONDS', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MDS_TIMER_60SECONDS', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MDSCOMMS', from: undefined, application: undefined}
+index-D0bndtk5.js:18 🚀 [SERVICE] Solo message received from SW: {minidapp: 'MetaChain', public: false, message: '{"type":"SW_LOG","message":"📨 [MAXIMA] Event rece…hain From: 0x30819F30","timestamp":1774340267669}'}
+index-D0bndtk5.js:18 📡 [SW-LOG] 📨 [MAXIMA] Event received. App: metachain From: 0x30819F30
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MDSCOMMS', from: undefined, application: undefined}
+index-D0bndtk5.js:18 🚀 [SERVICE] Solo message received from SW: {minidapp: 'MetaChain', public: false, message: '{"type":"SW_LOG","message":"📨 [MAXIMA] Event rece…hain From: 0x30819F30","timestamp":1774340267671}'}
+index-D0bndtk5.js:18 📡 [SW-LOG] 📨 [MAXIMA] Event received. App: metachain From: 0x30819F30
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINING', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MDS_TIMER_10SECONDS', from: undefined, application: undefined}
+index-D0bndtk5.js:18 🔥 [AppContext] RAW MAXIMA EVENT: {event: 'MAXIMA', data: {…}}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MAXIMA', from: '0x30819F30', application: 'metachain'}
+index-D0bndtk5.js:18 ✉️ [MDS] MAXIMA event detected: {event: 'MAXIMA', data: {…}}
+index-D0bndtk5.js:18 📨 [MAXIMA] Event received: {from: '0x30819F300D06092A864886F70D010101050003818D003081…6CEDE65BC146C192B40C09C7C2D09F631BE6E350203010001', application: 'metachain', data: '0x7B226D657373616765223A226D6973736174676531222C22…36571223A312C22666F72776172646564223A66616C73657D'}
+index-D0bndtk5.js:18 📨[MAXIMA - DEBUG] Processing msg type: text, from: 0x30819F300D06092A864886F70D010101050003818D0030818902818100A269FBE25C01C146FFA3C7B137215E69EC0463ECD38FB3227824B79F055CAA3D7D9B91FEC330DB4785670EE9790E238C37BB7D1F4D9A1B17CBB29F3E1F06236F2FE63E95C92F717FA497806CEC31CB70DC120D4CEBB7D349929B82CAEBD94D9BCC168EF508E29ED262B49BABB6CEDE65BC146C192B40C09C7C2D09F631BE6E350203010001
+index-D0bndtk5.js:18 📨[MAXIMA - DEBUG] Full Payload:  {message: 'missatge1', type: 'text', username: 'user1', filedata: '', timestamp: 1774340271996, …}
+index-D0bndtk5.js:18 ✅ [MAXIMA] Message received (saved by SW): missatge1
+index-D0bndtk5.js:18 📣 [CHAT-UI] Notifying UI of new message: type=text, from=0x30819F30
+index-D0bndtk5.js:18 🔴 [NOTIFICATIONS] Unread count: 0
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINING', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'NOTIFYCASCADEBLOCK', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'NOTIFYCASCADEBLOCK', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'NOTIFYCASCADEBLOCK', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'NEWBLOCK', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'NEWBLOCK', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MDS_TIMER_10SECONDS', from: undefined, application: undefined}
+index-D0bndtk5.js:18 🔥 [AppContext] RAW MAXIMA EVENT: {event: 'MAXIMA', data: {…}}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MAXIMA', from: '0x30819F30', application: 'metachain'}
+index-D0bndtk5.js:18 ✉️ [MDS] MAXIMA event detected: {event: 'MAXIMA', data: {…}}
+index-D0bndtk5.js:18 📨 [MAXIMA] Event received: {from: '0x30819F300D06092A864886F70D010101050003818D003081…6CEDE65BC146C192B40C09C7C2D09F631BE6E350203010001', application: 'metachain', data: '0x7B22617070223A226D657461636861696E222C2274797065…7383750403138352E3133322E39302E39383A39303031227D'}
+index-D0bndtk5.js:18 📨[MAXIMA - DEBUG] Processing msg type: get_peers, from: 0x30819F300D06092A864886F70D010101050003818D0030818902818100A269FBE25C01C146FFA3C7B137215E69EC0463ECD38FB3227824B79F055CAA3D7D9B91FEC330DB4785670EE9790E238C37BB7D1F4D9A1B17CBB29F3E1F06236F2FE63E95C92F717FA497806CEC31CB70DC120D4CEBB7D349929B82CAEBD94D9BCC168EF508E29ED262B49BABB6CEDE65BC146C192B40C09C7C2D09F631BE6E350203010001
+index-D0bndtk5.js:18 📨[MAXIMA - DEBUG] Full Payload:  {app: 'metachain', type: 'get_peers', alias: 'user1', address: 'MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60…BNW8E0FKDUPJRYFS10608004FNW87P@185.132.90.98:9001'}
+index-D0bndtk5.js:18 ℹ️ [MAXIMA] Ignoring non-chat type: get_peers
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 🔥 [AppContext] RAW MAXIMA EVENT: {event: 'MAXIMA', data: {…}}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MAXIMA', from: '0x30819F30', application: 'metachain'}
+index-D0bndtk5.js:18 ✉️ [MDS] MAXIMA event detected: {event: 'MAXIMA', data: {…}}
+index-D0bndtk5.js:18 📨 [MAXIMA] Event received: {from: '0x30819F300D06092A864886F70D010101050003818D003081…A6F04272F3E051A31A6D052D777C5D9EFE8D7CD0203010001', application: 'metachain', data: '0x7B22617070223A226D657461636861696E222C2274797065…7383750403138352E3133322E39302E39383A39303031227D'}
+index-D0bndtk5.js:18 📨[MAXIMA - DEBUG] Processing msg type: get_peers, from: 0x30819F300D06092A864886F70D010101050003818D0030818902818100988AE5B6EFC396D2D19A92BD5B714350572C5B86662C3B99BEF10D2E69572B5C7D95D2CD5CCA75142AC9160B2AB705A9CB917053D72CAC27F3B15699B944737F0319E75FF4E5EFD4AF6912D9127824BFC6FEDC64C954A760F945102AD559FA3C5827DA200E673B6B7FF01BC16A6F04272F3E051A31A6D052D777C5D9EFE8D7CD0203010001
+index-D0bndtk5.js:18 📨[MAXIMA - DEBUG] Full Payload:  {app: 'metachain', type: 'get_peers', alias: 'user2', address: 'MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60…BNW8E0FKDUPJRYFS10608004FNW87P@185.132.90.98:9001'}
+index-D0bndtk5.js:18 ℹ️ [MAXIMA] Ignoring non-chat type: get_peers
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MDS_TIMER_10SECONDS', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINING', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINING', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'NEWBLOCK', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'NOTIFYCASCADEBLOCK', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'NOTIFYCASCADEBLOCK', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'NOTIFYCASCADEBLOCK', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'NEWBLOCK', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MDS_TIMER_10SECONDS', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MDSCOMMS', from: undefined, application: undefined}
+index-D0bndtk5.js:18 🚀 [SERVICE] Solo message received from SW: {minidapp: 'MetaChain', public: false, message: '{"type":"SW_LOG","message":"📨 [MAXIMA] Event rece…hain From: 0x30819F30","timestamp":1774340307912}'}
+index-D0bndtk5.js:18 📡 [SW-LOG] 📨 [MAXIMA] Event received. App: metachain From: 0x30819F30
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MDSCOMMS', from: undefined, application: undefined}
+index-D0bndtk5.js:18 🚀 [SERVICE] Solo message received from SW: {minidapp: 'MetaChain', public: false, message: '{"type":"SW_LOG","message":"📨 [MAXIMA] Event rece…hain From: 0x30819F30","timestamp":1774340307916}'}
+index-D0bndtk5.js:18 📡 [SW-LOG] 📨 [MAXIMA] Event received. App: metachain From: 0x30819F30
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MINIMALOG', from: undefined, application: undefined}
+index-D0bndtk5.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MDS_TIMER_10SECONDS', from: undefined, application: undefined}
+User1:
+Minima @ 24/03/2026 09:18:02 [108,3 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ✅ [GOSSIP] Sent 2 peers to MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60G17D9TPD0R9AC9DS958UHDTTR419GV7JJ7TFN0NY69KD3E5V89PK1A4ANW4D3SBPWRTAUMA3QB3EC0AD3NR3CEKE90UZNV7S68FCN4VD0D5H7FYJAAZPPZYZQHYK25VU8WDZVPUPDBBGSCSA0PZFAQEN329TYQ2VYUB8HMA7CH7C6J8VEHPWBWAM9QBFQ3KBNW8E0FKDUPJRYFS10608004FNW87P@185.132.90.98:9001
+Minima @ 24/03/2026 09:18:02 [108,6 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🔍 [GOSSIP-REPLY] Optimized send via address resolution: MxG18HGG6FJ0386...
+Minima @ 24/03/2026 09:18:02 [155,5 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ✅ [GOSSIP-REPLY] Sent to 0x30819F30
+Minima @ 24/03/2026 09:18:02 [156,0 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🗣️ [GOSSIP] Starting discovery...
+Minima @ 24/03/2026 09:18:02 [156,2 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🗣️ [GOSSIP] Asking 2 discovered peers...
+Minima @ 24/03/2026 09:18:02 [156,4 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🔍 [GOSSIP-ASK] Optimized send via address resolution: MxG18HGG6FJ0386...
+Minima @ 24/03/2026 09:18:02 [73,4 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ✅ [GOSSIP-ASK] Sent to 0X30819F30
+Minima @ 24/03/2026 09:18:02 [73,8 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🔍 [GOSSIP-ASK] Optimized send via address resolution: MxG18HGG6FJ0386...
+Minima @ 24/03/2026 09:18:02 [91,0 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ✅ [GOSSIP-ASK] Sent to 0X30819F30
+Minima @ 24/03/2026 09:18:02 [91,2 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📡 [BG-BEACON] Preparing beacon...
+Minima @ 24/03/2026 09:18:02 [93,2 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📡 [BG-BEACON] P2P broadcast sent
+Minima @ 24/03/2026 09:18:07 [119,4 MB] : 8LBHVF4957P95:0x7B22617070223A226D657461636861696E222C2274797065223A22424541434F4E222C2276223A312C227075626B6579223A223078333038313946333030443036303932413836343838364637304430313031303130353030303338313844303033303831383930323831383130303938384145354236454643333936443244313941393242443542373134333530353732433542383636363243334239394245463130443245363935373242354337443935443243443543434137353134324143393136304232414237303541394342393137303533443732434143323746334231353639394239343437333746303331394537354646344535454644344146363931324439313237383234424643364645444336344339353441373630463934353130324144353539464133433538323744413230304536373342364237464630314243313641364630343237324633453035314133314136443035324437373743354439454645384437434430323033303130303031222C22616C696173223A227573657232222C2262696F223A22222C2261646472657373223A224D7847313848474736464A3033383631345938435734365553364732303831304B30303730434430305A3833323832473630473133554D474E303751595634525A55574133334D3031593443414A325938544E4A554E37344330413448594A574E5759544351315152305A35354545334D5A414A314A4A303745465442325443364B3931573838394559355A4A5A455644324E3837504845393945303554504750373245414437554E4642554A535656314733334131425A4A4438484B3259484B5159464243443748545035334654563645345A473053473832454A4432535147464A35335531375133313632475A52384230323845305A4D4A515A50553535343130363038303037354E5742454D4031302E302E302E31313A39303031222C22616C6C6F774E6F6E436F6E746163744368617473223A747275652C22636F756E747279223A22222C226C616E677561676573223A5B5D2C226D696E696D6161646472657373223A224D7847303833565143474B313352593131513250374B374D394D43445541335A534D544856395042505A4B3134394E484B32334B36485559554A5136593037222C22617661746172223A2230783030222C226C697374696E6773223A5B5D2C2274696D657374616D70223A313737343334303238373838327D
+Minima @ 24/03/2026 09:18:22 [188,6 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ✅ [BEACON-MLS] Beacon sent to MLS
+Minima @ 24/03/2026 09:18:22 [188,7 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📡 [BEACON] user1 from SELF
+Minima @ 24/03/2026 09:18:22 [189,0 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ✅ [LISTINGS] Updated listings for 0x30819F30
+Minima @ 24/03/2026 09:18:22 [189,2 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ✅ [BEACON] Saved: user1
+Minima @ 24/03/2026 09:18:22 [189,5 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🔍 [SW-TX] Checking pending transactions...
+Minima @ 24/03/2026 09:18:22 [189,5 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ✅ [SW-TX] No pending transactions in DB
+Minima @ 24/03/2026 09:18:22 [189,5 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🔍 [SW-TX-CONFIRM] Checking SENT transactions...
+Minima @ 24/03/2026 09:18:22 [190,1 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📨 [MAXIMA] RAW DATA: App=metachain From=0x30819F30 DataLen=716
+Minima @ 24/03/2026 09:18:22 [190,1 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📨 [MAXIMA] Event received. App: metachain From: 0x30819F30
+Minima @ 24/03/2026 09:18:22 [190,6 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🔍 [MAXIMA-DEBUG-ALL] App: metachain Type: get_peers From: 0x30819F30
+Minima @ 24/03/2026 09:18:22 [190,6 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📨 [MAXIMA] Full JSON Payload: {"app":"metachain","type":"get_peers","alias":"user2","address":"MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60G17D9TPD0R9AC9DS958UHDTTR419GV7JJ7TFN0NY69KD3E5V89PK1A4ANW4D3SBPWRTAUMA3QB3EC0AD3NR3CEKE90UZNV7S68FCN4VD0D5H7FYJAAZPPZYZQHYK25VU8WDZVPUPDBBGSCSA0PZFAQEN329TYQ2VYUB8HMA7CH7C6J8VEHPWBWAM9QBFQ3KBNW8E0FKDUPJRYFS10608004FNW87P@185.132.90.98:9001"}
+Minima @ 24/03/2026 09:18:22 [190,7 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📨 [MAXIMA-GOSSIP] get_peers request from 0x30819F30
+Minima @ 24/03/2026 09:18:22 [190,7 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🗣️ [GOSSIP] Peer request from user2
+Minima @ 24/03/2026 09:18:42 [120,4 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ✅ [GOSSIP] Sent 2 peers to MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60G17D9TPD0R9AC9DS958UHDTTR419GV7JJ7TFN0NY69KD3E5V89PK1A4ANW4D3SBPWRTAUMA3QB3EC0AD3NR3CEKE90UZNV7S68FCN4VD0D5H7FYJAAZPPZYZQHYK25VU8WDZVPUPDBBGSCSA0PZFAQEN329TYQ2VYUB8HMA7CH7C6J8VEHPWBWAM9QBFQ3KBNW8E0FKDUPJRYFS10608004FNW87P@185.132.90.98:9001
+Minima @ 24/03/2026 09:18:42 [120,8 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🔍 [GOSSIP-REPLY] Optimized send via address resolution: MxG18HGG6FJ0386...
+Minima @ 24/03/2026 09:18:42 [175,0 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ✅ [GOSSIP-REPLY] Sent to 0x30819F30
+Minima @ 24/03/2026 09:18:42 [178,5 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📡 [P2P] Beacon: user2
+Minima @ 24/03/2026 09:18:42 [178,6 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📡 [BEACON] user2 from P2P
+Minima @ 24/03/2026 09:18:42 [178,8 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ✅ [LISTINGS] Updated listings for 0x30819F30
+Minima @ 24/03/2026 09:18:42 [179,2 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ✅ [BEACON] Saved: user2
+Minima @ 24/03/2026 09:18:42 [182,6 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ⏭️ [GOSSIP] Welcome Package skipped for existing peer: user2
+Minima @ 24/03/2026 09:18:42 [182,8 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🗣️ [GOSSIP] Starting discovery...
+Minima @ 24/03/2026 09:18:42 [183,0 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🗣️ [GOSSIP] Asking 2 discovered peers...
+Minima @ 24/03/2026 09:18:42 [186,4 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🔍 [GOSSIP-ASK] Optimized send via address resolution: MxG18HGG6FJ0386...
+Minima @ 24/03/2026 09:18:42 [150,7 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ✅ [GOSSIP-ASK] Sent to 0X30819F30
+Minima @ 24/03/2026 09:18:42 [150,9 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 🔍 [GOSSIP-ASK] Optimized send via address resolution: MxG18HGG6FJ0386...
+Minima @ 24/03/2026 09:18:42 [81,7 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > ✅ [GOSSIP-ASK] Sent to 0X30819F30
+Minima @ 24/03/2026 09:18:42 [82,5 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📡 [BG-BEACON] Preparing beacon...
+Minima @ 24/03/2026 09:18:42 [86,6 MB] : MDS_MetaChain_0xF5EB62918A233C0F4465787927BD3128253C733ED83E7B15BBDF7BFD969C3449 > 📡 [BG-BEACON] P2P broadcast sent
+Minima @ 24/03/2026 09:18:48 [108,0 MB] : 8LBHVF4957P95:0x7B22617070223A226D657461636861696E222C2274797065223A22424541434F4E222C2276223A312C227075626B6579223A223078333038313946333030443036303932413836343838364637304430313031303130353030303338313844303033303831383930323831383130303938384145354236454643333936443244313941393242443542373134333530353732433542383636363243334239394245463130443245363935373242354337443935443243443543434137353134324143393136304232414237303541394342393137303533443732434143323746334231353639394239343437333746303331394537354646344535454644344146363931324439313237383234424643364645444336344339353441373630463934353130324144353539464133433538323744413230304536373342364237464630314243313641364630343237324633453035314133314136443035324437373743354439454645384437434430323033303130303031222C22616C696173223A227573657232222C2262696F223A22222C2261646472657373223A224D7847313848474736464A3033383631345938435734365553364732303831304B30303730434430305A3833323832473630473133554D474E303751595634525A55574133334D3031593443414A325938544E4A554E37344330413448594A574E5759544351315152305A35354545334D5A414A314A4A303745465442325443364B3931573838394559355A4A5A455644324E3837504845393945303554504750373245414437554E4642554A535656314733334131425A4A4438484B3259484B5159464243443748545035334654563645345A473053473832454A4432535147464A35335531375133313632475A52384230323845305A4D4A515A50553535343130363038303037354E5742454D4031302E302E302E31313A39303031222C22616C6C6F774E6F6E436F6E746163744368617473223A747275652C22636F756E747279223A22222C226C616E677561676573223A5B5D2C226D696E696D6161646472657373223A224D7847303833565143474B313352593131513250374B374D394D43445541335A534D544856395042505A4B3134394E484B32334B36485559554A5136593037222C22617661746172223A2230783030222C226C697374696E6773223A5B5D2C2274696D657374616D70223A313737343334303332383034347D
+User2:
+Minima @ 24/03/2026 09:18:02 [97,7 MB] : FHA0OUUILVQNT:0x7B22617070223A226D657461636861696E222C2274797065223A22424541434F4E222C2276223A312C227075626B6579223A223078333038313946333030443036303932413836343838364637304430313031303130353030303338313844303033303831383930323831383130304132363946424532354330314331343646464133433742313337323135453639454330343633454344333846423332323738323442373946303535434141334437443942393146454333333044423437383536373045453937393045323338433337424237443146344439413142313743424232394633453146303632333646324645363345393543393246373137464134393738303643454333314342373044433132304434434542423744333439393239423832434145424439344439424343313638454635303845323945443236324234394241424236434544453635424331343643313932423430433039433743324430394636333142453645333530323033303130303031222C22616C696173223A227573657231222C2262696F223A22222C2261646472657373223A224D7847313848474736464A3033383631345938435734365553364732303831304B30303730434430305A383332383247363047313556514A35424B433330323935483759475943544752474D33544B575A5736314546373154544151464D5A4537514A3844363952574230575656555543384E374E57504B4D46545459574B50534E515A4E54383232524550474B35564D48544845385453504E30463746505534374736345456564A5943355533394A35524251383141545A434D4159505634535A36394733303031574454524834553944334A554647534547485A52304334414737384E3455544341453750463453435654563743344B3931303543455A59533130363038303036554B53354A4A4031302E302E302E31313A39303031222C22616C6C6F774E6F6E436F6E746163744368617473223A747275652C22636F756E747279223A22222C226C616E677561676573223A5B5D2C226D696E696D6161646472657373223A224D7847303833523046433931553132395455505332454D30374A444D3352323035304A435A3357324438574651513235434D414A4D4555365157395231474B222C22617661746172223A2230783030222C226C697374696E6773223A5B5D2C2274696D657374616D70223A313737343334303238323637347D
+Minima @ 24/03/2026 09:18:07 [105,7 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [GOSSIP] Sent 2 peers to MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60G17D9TPD0R9AC9DS958UHDTTR419GV7JJ7TFN0NY69KD3E5V89PK1A4ANW4D3SBPWRTAUMA3QB3EC0AD3NR3CEKE90UZNV7S68FCN4VD0D5H7FYJAAZPPZYZQHYK25VU8WDZVPUPDBBGSCSA0PZFAQEN329TYQ2VYUB8HMA7CH7C6J8VEHPWBWAM9QBFQ3KBNW8E0FKDUPJRYFS10608004FNW87P@185.132.90.98:9001
+Minima @ 24/03/2026 09:18:07 [106,1 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔍 [GOSSIP-REPLY] Optimized send via address resolution: MxG18HGG6FJ0386...
+Minima @ 24/03/2026 09:18:07 [113,8 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [GOSSIP-REPLY] Sent to 0x30819F30
+Minima @ 24/03/2026 09:18:07 [114,0 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📡 [P2P] Beacon: user1
+Minima @ 24/03/2026 09:18:07 [114,1 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📡 [BEACON] user1 from P2P
+Minima @ 24/03/2026 09:18:07 [114,5 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [LISTINGS] Updated listings for 0x30819F30
+Minima @ 24/03/2026 09:18:07 [114,7 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [BEACON] Saved: user1
+Minima @ 24/03/2026 09:18:07 [114,9 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ⏭️ [GOSSIP] Welcome Package skipped for existing peer: user1
+Minima @ 24/03/2026 09:18:07 [115,2 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🗣️ [GOSSIP] Starting discovery...
+Minima @ 24/03/2026 09:18:07 [115,4 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🗣️ [GOSSIP] Asking 2 discovered peers...
+Minima @ 24/03/2026 09:18:07 [117,7 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔍 [GOSSIP-ASK] Optimized send via address resolution: MxG18HGG6FJ0386...
+Minima @ 24/03/2026 09:18:07 [112,1 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [GOSSIP-ASK] Sent to 0X30819F30
+Minima @ 24/03/2026 09:18:07 [112,4 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔍 [GOSSIP-ASK] Optimized send via address resolution: MxG18HGG6FJ0386...
+Minima @ 24/03/2026 09:18:07 [90,3 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [GOSSIP-ASK] Sent to 0X30819F30
+Minima @ 24/03/2026 09:18:07 [90,6 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📡 [BG-BEACON] Preparing beacon...
+Minima @ 24/03/2026 09:18:07 [92,7 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📡 [BG-BEACON] P2P broadcast sent
+Minima @ 24/03/2026 09:18:27 [116,1 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [BEACON-MLS] Beacon sent to MLS
+Minima @ 24/03/2026 09:18:27 [116,3 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📡 [BEACON] user2 from SELF
+Minima @ 24/03/2026 09:18:27 [116,6 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [LISTINGS] Updated listings for 0x30819F30
+Minima @ 24/03/2026 09:18:27 [116,8 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [BEACON] Saved: user2
+Minima @ 24/03/2026 09:18:27 [117,1 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔍 [SW-TX] Checking pending transactions...
+Minima @ 24/03/2026 09:18:27 [117,1 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [SW-TX] No pending transactions in DB
+Minima @ 24/03/2026 09:18:27 [117,2 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔍 [SW-TX-CONFIRM] Checking SENT transactions...
+Minima @ 24/03/2026 09:18:27 [119,5 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📨 [MAXIMA] RAW DATA: App=metachain From=0x30819F30 DataLen=3212
+Minima @ 24/03/2026 09:18:27 [119,5 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📨 [MAXIMA] Event received. App: metachain From: 0x30819F30
+Minima @ 24/03/2026 09:18:27 [120,0 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔍 [MAXIMA-DEBUG-ALL] App: metachain Type: peers_response From: 0x30819F30
+Minima @ 24/03/2026 09:18:27 [120,0 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📨 [MAXIMA] Full JSON Payload: {"app":"metachain","type":"peers_response","peers":[{"pubkey":"0X30819F300D06092A864886F70D010101050003818D0030818902818100988AE5B6EFC396D2D19A92BD5B714350572C5B86662C3B99BEF10D2E69572B5C7D95D2CD5CCA75142AC9160B2AB705A9CB917053D72CAC27F3B15699B944737F0319E75FF4E5EFD4AF6912D9127824BFC6FEDC64C954A760F945102AD559FA3C5827DA200E673B6B7FF01BC16A6F04272F3E051A31A6D052D777C5D9EFE8D7CD0203010001","alias":"user2","bio":"","address":"MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60G13UMGN07QYV4RZUWA33M01Y4CAJ2Y8TNJUN74C0A4HYJWNWYTCQ1QR0Z55EE3MZAJ1JJ07EFTB2TC6K91W889EY5ZJZEVD2N87PHE99E05TPGP72EAD7UNFBUJSVV1G33A1BZJD8HK2YHKQYFBCD7HTP53FTV6E4ZG0SG82EJD2SQGFJ53U17Q3162GZR8B028E0ZMJQZPU554106080075NWBEM@10.0.0.11:9001","allowNonContactChats":true,"avatar":"0x00","country":"","languages":[],"listings":[],"timestamp":1774340146281},{"pubkey":"0X30819F300D06092A864886F70D010101050003818D0030818902818100A269FBE25C01C146FFA3C7B137215E69EC0463ECD38FB3227824B79F055CAA3D7D9B91FEC330DB4785670EE9790E238C37BB7D1F4D9A1B17CBB29F3E1F06236F2FE63E95C92F717FA497806CEC31CB70DC120D4CEBB7D349929B82CAEBD94D9BCC168EF508E29ED262B49BABB6CEDE65BC146C192B40C09C7C2D09F631BE6E350203010001","alias":"user1","bio":"","address":"MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60G15VQJ5BKC30295H7YGYCTGRGM3TKWZW61EF71TTAQFMZE7QJ8D69RWB0WVVUUC8N7NWPKMFTTYWKPSNQZNT822REPGK5VMHTHE8TSPN0F7FPU47G64TVVJYC5U39J5RBQ81ATZCMAYPV4SZ69G3001WDTRH4U9D3JUFGSEGHZR0C4AG78N4UTCAE7PF4SCVTV7C4K9105CEZYS10608006UKS5JJ@10.0.0.11:9001","allowNonContactChats":true,"avatar":"0x00","country":"","languages":[],"listings":[],"timestamp":1774340100946}]}
+Minima @ 24/03/2026 09:18:27 [120,1 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📨 [MAXIMA-GOSSIP] peers_response from 0x30819F30
+Minima @ 24/03/2026 09:18:27 [120,1 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📥 [GOSSIP] Received 2 peers from 0x30819F30
+Minima @ 24/03/2026 09:18:27 [120,1 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔍 [GOSSIP-PEER] 1/2: user2 (0X30819F30...)
+Minima @ 24/03/2026 09:18:27 [120,1 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [GOSSIP-PEER] Processing beacon for: user2
+Minima @ 24/03/2026 09:18:27 [120,2 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📡 [BEACON] user2 from GOSSIP
+Minima @ 24/03/2026 09:18:27 [122,6 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ⏭️ [BEACON] Skipping profile overwrite for user2 — stored beacon is newer (1774340287882 > 1774340146281). Touching last_seen only.
+Minima @ 24/03/2026 09:18:27 [122,9 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [BEACON] Touched last_seen for: user2
+Minima @ 24/03/2026 09:18:27 [122,9 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔍 [GOSSIP-PEER] 2/2: user1 (0X30819F30...)
+Minima @ 24/03/2026 09:18:27 [123,0 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [GOSSIP-PEER] Processing beacon for: user1
+Minima @ 24/03/2026 09:18:27 [123,4 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📡 [BEACON] user1 from GOSSIP
+Minima @ 24/03/2026 09:18:27 [124,2 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ⏭️ [BEACON] Skipping profile overwrite for user1 — stored beacon is newer (1774340181856 > 1774340100946). Touching last_seen only.
+Minima @ 24/03/2026 09:18:27 [124,5 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [BEACON] Touched last_seen for: user1
+Minima @ 24/03/2026 09:18:27 [124,6 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📊 [GOSSIP] Summary: 2 processed, 0 skipped
+Minima @ 24/03/2026 09:18:27 [125,1 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📨 [MAXIMA] RAW DATA: App=metachain From=0x30819F30 DataLen=716
+Minima @ 24/03/2026 09:18:27 [125,1 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📨 [MAXIMA] Event received. App: metachain From: 0x30819F30
+Minima @ 24/03/2026 09:18:27 [127,4 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔍 [MAXIMA-DEBUG-ALL] App: metachain Type: get_peers From: 0x30819F30
+Minima @ 24/03/2026 09:18:27 [127,4 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📨 [MAXIMA] Full JSON Payload: {"app":"metachain","type":"get_peers","alias":"user2","address":"MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60G17D9TPD0R9AC9DS958UHDTTR419GV7JJ7TFN0NY69KD3E5V89PK1A4ANW4D3SBPWRTAUMA3QB3EC0AD3NR3CEKE90UZNV7S68FCN4VD0D5H7FYJAAZPPZYZQHYK25VU8WDZVPUPDBBGSCSA0PZFAQEN329TYQ2VYUB8HMA7CH7C6J8VEHPWBWAM9QBFQ3KBNW8E0FKDUPJRYFS10608004FNW87P@185.132.90.98:9001"}
+Minima @ 24/03/2026 09:18:27 [127,4 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📨 [MAXIMA-GOSSIP] get_peers request from 0x30819F30
+Minima @ 24/03/2026 09:18:27 [127,4 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🗣️ [GOSSIP] Peer request from user2
+Minima @ 24/03/2026 09:18:42 [102,6 MB] : FHA0OUUILVQNT:0x7B22617070223A226D657461636861696E222C2274797065223A22424541434F4E222C2276223A312C227075626B6579223A223078333038313946333030443036303932413836343838364637304430313031303130353030303338313844303033303831383930323831383130304132363946424532354330314331343646464133433742313337323135453639454330343633454344333846423332323738323442373946303535434141334437443942393146454333333044423437383536373045453937393045323338433337424237443146344439413142313743424232394633453146303632333646324645363345393543393246373137464134393738303643454333314342373044433132304434434542423744333439393239423832434145424439344439424343313638454635303845323945443236324234394241424236434544453635424331343643313932423430433039433743324430394636333142453645333530323033303130303031222C22616C696173223A227573657231222C2262696F223A22222C2261646472657373223A224D7847313848474736464A3033383631345938435734365553364732303831304B30303730434430305A383332383247363047313556514A35424B433330323935483759475943544752474D33544B575A5736314546373154544151464D5A4537514A3844363952574230575656555543384E374E57504B4D46545459574B50534E515A4E54383232524550474B35564D48544845385453504E30463746505534374736345456564A5943355533394A35524251383141545A434D4159505634535A36394733303031574454524834553944334A554647534547485A52304334414737384E3455544341453750463453435654563743344B3931303543455A59533130363038303036554B53354A4A4031302E302E302E31313A39303031222C22616C6C6F774E6F6E436F6E746163744368617473223A747275652C22636F756E747279223A22222C226C616E677561676573223A5B5D2C226D696E696D6161646472657373223A224D7847303833523046433931553132395455505332454D30374A444D3352323035304A435A3357324438574651513235434D414A4D4555365157395231474B222C22617661746172223A2230783030222C226C697374696E6773223A5B5D2C2274696D657374616D70223A313737343334303332323937387D
+Minima @ 24/03/2026 09:18:47 [180,6 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [GOSSIP] Sent 2 peers to MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60G17D9TPD0R9AC9DS958UHDTTR419GV7JJ7TFN0NY69KD3E5V89PK1A4ANW4D3SBPWRTAUMA3QB3EC0AD3NR3CEKE90UZNV7S68FCN4VD0D5H7FYJAAZPPZYZQHYK25VU8WDZVPUPDBBGSCSA0PZFAQEN329TYQ2VYUB8HMA7CH7C6J8VEHPWBWAM9QBFQ3KBNW8E0FKDUPJRYFS10608004FNW87P@185.132.90.98:9001
+Minima @ 24/03/2026 09:18:47 [181,1 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔍 [GOSSIP-REPLY] Optimized send via address resolution: MxG18HGG6FJ0386...
+Minima @ 24/03/2026 09:18:47 [65,9 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [GOSSIP-REPLY] Sent to 0x30819F30
+Minima @ 24/03/2026 09:18:47 [66,4 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🗣️ [GOSSIP] Starting discovery...
+Minima @ 24/03/2026 09:18:47 [67,6 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🗣️ [GOSSIP] Asking 2 discovered peers...
+Minima @ 24/03/2026 09:18:47 [68,7 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔍 [GOSSIP-ASK] Optimized send via address resolution: MxG18HGG6FJ0386...
+Minima @ 24/03/2026 09:18:48 [147,8 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [GOSSIP-ASK] Sent to 0X30819F30
+Minima @ 24/03/2026 09:18:48 [148,2 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 🔍 [GOSSIP-ASK] Optimized send via address resolution: MxG18HGG6FJ0386...
+Minima @ 24/03/2026 09:18:48 [179,9 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > ✅ [GOSSIP-ASK] Sent to 0X30819F30
+Minima @ 24/03/2026 09:18:48 [180,0 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📡 [BG-BEACON] Preparing beacon...
+Minima @ 24/03/2026 09:18:48 [181,7 MB] : MDS_MetaChain_0x736FF54B66C5FD59252DB5A336A6293FE55B58CE269A3202351452E4AD386E72 > 📡 [BG-BEACON] P2P broadcast sent

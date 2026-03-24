@@ -43,10 +43,10 @@ function initDatabase() {
     var sql =
       "CREATE TABLE IF NOT EXISTS TRANSACTIONS ( " +
       "  id BIGINT AUTO_INCREMENT PRIMARY KEY, " +
-      "  txpowid VARCHAR(128) NOT NULL, " +
+      "  txpowid VARCHAR(512) NOT NULL, " +
       "  date BIGINT NOT NULL, " +
       "  amount VARCHAR(64) NOT NULL, " +
-      "  tokenid VARCHAR(128) NOT NULL, " +
+      "  tokenid VARCHAR(512) NOT NULL, " +
       "  message VARCHAR(255), " +
       "  status VARCHAR(32) DEFAULT 'pending' " +
       " )";
@@ -71,11 +71,14 @@ function initDatabase() {
           "ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS metadata CLOB",
         ),
         runSQL(
-          "ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS pendinguid VARCHAR(128)",
+          "ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS pendinguid VARCHAR(512)",
         ),
         // FORCE ADD DATE COLUMN IF MISSING (Fix for 'Column DATE not found')
         runSQL("ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS date BIGINT"),
         runSQL("ALTER TABLE TRANSACTIONS ALTER COLUMN date SET NOT NULL"), // Enforce not null if possible, or ignore
+        runSQL(
+          "ALTER TABLE TRANSACTIONS ALTER COLUMN pendinguid SET DATA TYPE VARCHAR(512)",
+        ),
       ]);
     });
   });
@@ -91,8 +94,8 @@ function initDatabase() {
       "  type varchar(64) NOT NULL, " +
       "  message varchar(512) NOT NULL, " +
       "  filedata clob(256K) NOT NULL, " +
-      "  customid varchar(128) NOT NULL DEFAULT '0x00', " +
-      "  state varchar(128) NOT NULL DEFAULT '', " +
+      "  customid VARCHAR(512) NOT NULL DEFAULT '0x00', " +
+      "  state VARCHAR(512) NOT NULL DEFAULT '', " +
       "  read int NOT NULL DEFAULT 0, " +
       "  amount int NOT NULL DEFAULT 0, " +
       "  date bigint NOT NULL " +
@@ -111,16 +114,25 @@ function initDatabase() {
           "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS original_timestamp BIGINT",
         ),
         runSQL(
-          "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS txpowid VARCHAR(128)",
+          "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS txpowid VARCHAR(512)",
         ),
         runSQL(
           "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS sender_seq INT DEFAULT 0",
         ),
         runSQL(
-          "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS customid VARCHAR(128)",
+          "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS customid VARCHAR(512)",
         ),
         runSQL(
           "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS forwarded INT DEFAULT 0",
+        ),
+        runSQL(
+          "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS publickey_upper VARCHAR(512) AS UPPER(publickey)",
+        ),
+        runSQL(
+          "ALTER TABLE CHAT_MESSAGES ALTER COLUMN customid SET DATA TYPE VARCHAR(512)",
+        ),
+        runSQL(
+          "ALTER TABLE CHAT_MESSAGES ALTER COLUMN txpowid SET DATA TYPE VARCHAR(512)",
         ),
       ]);
     });
@@ -148,6 +160,9 @@ function initDatabase() {
         ),
         runSQL(
           "ALTER TABLE CHAT_STATUS ADD COLUMN IF NOT EXISTS blocked_by_them BOOLEAN NOT NULL DEFAULT FALSE",
+        ),
+        runSQL(
+          "ALTER TABLE CHAT_STATUS ADD COLUMN IF NOT EXISTS publickey_upper VARCHAR(512) AS UPPER(publickey)",
         ),
       ]);
     });
@@ -241,7 +256,7 @@ function initDatabase() {
 
       return Promise.all([
         runSQL(
-          "ALTER TABLE GROUP_MESSAGES ADD COLUMN propagated INTEGER DEFAULT 0",
+          "ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS propagated INTEGER DEFAULT 0",
         ),
         runSQL(
           "ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS forwarded INT DEFAULT 0",
@@ -270,7 +285,7 @@ function initDatabase() {
       );
 
       return runSQL(
-        "ALTER TABLE GROUP_BANS ADD COLUMN username VARCHAR(255) DEFAULT 'Unknown'",
+        "ALTER TABLE GROUP_BANS ADD COLUMN IF NOT EXISTS username VARCHAR(255) DEFAULT 'Unknown'",
       );
     });
   });
@@ -295,6 +310,11 @@ function initDatabase() {
           ? "📂 [DB] GROUP_JOIN_REQUESTS checked/init"
           : "❌ [DB] GROUP_JOIN_REQUESTS init failed: " + res.error,
       );
+      return Promise.all([
+        runSQL(
+          "ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS publickey_upper VARCHAR(512) AS UPPER(publickey)",
+        ),
+      ]);
     });
   });
 
@@ -329,21 +349,21 @@ function initDatabase() {
     return runSQL(sql).then(function () {
       runSQL("INSERT IGNORE INTO MY_PROFILE (id) VALUES (1)");
       return Promise.all([
-        runSQL("ALTER TABLE MY_PROFILE ADD COLUMN phone TEXT"),
-        runSQL("ALTER TABLE MY_PROFILE ADD COLUMN email TEXT"),
-        runSQL("ALTER TABLE MY_PROFILE ADD COLUMN website TEXT"),
-        runSQL("ALTER TABLE MY_PROFILE ADD COLUMN country TEXT"),
-        runSQL("ALTER TABLE MY_PROFILE ADD COLUMN languages TEXT"),
+        runSQL("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS phone TEXT"),
+        runSQL("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS email TEXT"),
+        runSQL("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS website TEXT"),
+        runSQL("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS country TEXT"),
+        runSQL("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS languages TEXT"),
         runSQL(
-          "ALTER TABLE MY_PROFILE ADD COLUMN allow_non_contact_chats BOOLEAN DEFAULT TRUE",
+          "ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS allow_non_contact_chats BOOLEAN DEFAULT TRUE",
         ),
         runSQL(
-          "ALTER TABLE MY_PROFILE ADD COLUMN privacy_l2 VARCHAR(20) DEFAULT 'public'",
+          "ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS privacy_l2 VARCHAR(20) DEFAULT 'public'",
         ),
         runSQL(
-          "ALTER TABLE MY_PROFILE ADD COLUMN privacy_l3 VARCHAR(20) DEFAULT 'contacts'",
+          "ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS privacy_l3 VARCHAR(20) DEFAULT 'contacts'",
         ),
-        runSQL("ALTER TABLE MY_PROFILE ADD COLUMN minimaaddress TEXT"),
+        runSQL("ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS minimaaddress TEXT"),
       ]);
     });
   });
@@ -367,9 +387,17 @@ function initDatabase() {
           ? "📂 [DB] CONTACT_REQUESTS checked/init"
           : "❌ [DB] CONTACT_REQUESTS init failed",
       );
-      return runSQL(
-        "ALTER TABLE CONTACT_REQUESTS ADD COLUMN from_address VARCHAR(1024)",
-      );
+      return Promise.all([
+        runSQL(
+          "ALTER TABLE CONTACT_REQUESTS ADD COLUMN IF NOT EXISTS from_address VARCHAR(1024)",
+        ),
+        runSQL(
+          "ALTER TABLE CONTACT_REQUESTS ADD COLUMN IF NOT EXISTS from_publickey_upper VARCHAR(512) AS UPPER(from_publickey)",
+        ),
+        runSQL(
+          "ALTER TABLE CONTACT_REQUESTS ADD COLUMN IF NOT EXISTS to_publickey_upper VARCHAR(512) AS UPPER(to_publickey)",
+        ),
+      ]);
     });
   });
 
@@ -391,17 +419,26 @@ function initDatabase() {
           : "❌ [DB] DISCOVERED_PEERS init failed: " + res.error,
       );
       return Promise.all([
-        runSQL("ALTER TABLE DISCOVERED_PEERS ADD COLUMN bio VARCHAR(512)"),
         runSQL(
-          "ALTER TABLE DISCOVERED_PEERS ADD COLUMN allow_non_contact_chats BOOLEAN DEFAULT TRUE",
-        ),
-        runSQL("ALTER TABLE DISCOVERED_PEERS ADD COLUMN extra_data CLOB"),
-        runSQL("ALTER TABLE DISCOVERED_PEERS ADD COLUMN avatar TEXT"),
-        runSQL(
-          "ALTER TABLE DISCOVERED_PEERS ADD COLUMN minimaaddress VARCHAR(512)",
+          "ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS bio VARCHAR(512)",
         ),
         runSQL(
-          "ALTER TABLE DISCOVERED_PEERS ADD COLUMN source VARCHAR(20) DEFAULT 'P2P'",
+          "ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS allow_non_contact_chats BOOLEAN DEFAULT TRUE",
+        ),
+        runSQL(
+          "ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS extra_data CLOB",
+        ),
+        runSQL(
+          "ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS avatar TEXT",
+        ),
+        runSQL(
+          "ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS minimaaddress VARCHAR(512)",
+        ),
+        runSQL(
+          "ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS source VARCHAR(20) DEFAULT 'P2P'",
+        ),
+        runSQL(
+          "ALTER TABLE DISCOVERED_PEERS ADD COLUMN IF NOT EXISTS publickey_upper VARCHAR(512) AS UPPER(publickey)",
         ),
       ]);
     });
@@ -455,7 +492,16 @@ function initDatabase() {
       "  created_at BIGINT NOT NULL, " +
       "  updated_at BIGINT " +
       " )";
-    return runSQL(sql);
+    return runSQL(sql).then(function (res) {
+      return Promise.all([
+        runSQL(
+          "ALTER TABLE MAXIMA_CONTACT_REQUESTS ADD COLUMN IF NOT EXISTS from_publickey_upper VARCHAR(512) AS UPPER(from_publickey)",
+        ),
+        runSQL(
+          "ALTER TABLE MAXIMA_CONTACT_REQUESTS ADD COLUMN IF NOT EXISTS to_publickey_upper VARCHAR(512) AS UPPER(to_publickey)",
+        ),
+      ]);
+    });
   });
 
   // 9. METACHAIN_USERS
@@ -477,8 +523,15 @@ function initDatabase() {
       );
       return Promise.all([
         // Schema parity with Frontend variant
-        runSQL("ALTER TABLE METACHAIN_USERS ADD COLUMN avatar TEXT"),
-        runSQL("ALTER TABLE METACHAIN_USERS ADD COLUMN last_seen BIGINT"),
+        runSQL(
+          "ALTER TABLE METACHAIN_USERS ADD COLUMN IF NOT EXISTS avatar TEXT",
+        ),
+        runSQL(
+          "ALTER TABLE METACHAIN_USERS ADD COLUMN IF NOT EXISTS last_seen BIGINT",
+        ),
+        runSQL(
+          "ALTER TABLE METACHAIN_USERS ADD COLUMN IF NOT EXISTS publickey_upper VARCHAR(512) AS UPPER(publickey)",
+        ),
       ]);
     });
   });
@@ -588,6 +641,76 @@ function initDatabase() {
           ? "📊 [DB] CHANNEL_MSG_COUNTERS checked/init"
           : "❌ [DB] CHANNEL_MSG_COUNTERS init failed",
       );
+    });
+  });
+
+  // 11. IDENTITY MIGRATION (Mx -> Hex)
+  chain = chain.then(function () {
+    MDS.log("🔄 [DB] Starting Identity Migration (Mx -> Hex)...");
+    return runSQL("SELECT publickey, address FROM DISCOVERED_PEERS").then(function (
+      res
+    ) {
+      if (res.status && res.rows && res.rows.length > 0) {
+        var migrationPromises = res.rows.map(function (peer) {
+          var hex = peer.PUBLICKEY;
+          var mx = peer.ADDRESS.replace(/'/g, "''");
+
+          return Promise.all([
+            runSQL(
+              "UPDATE CHAT_MESSAGES SET publickey='" +
+                hex +
+                "' WHERE publickey='" +
+                mx +
+                "'",
+            ),
+            runSQL(
+              "UPDATE CONTACT_REQUESTS SET to_publickey='" +
+                hex +
+                "' WHERE to_publickey='" +
+                mx +
+                "'",
+            ),
+            runSQL(
+              "UPDATE CONTACT_REQUESTS SET from_publickey='" +
+                hex +
+                "' WHERE from_publickey='" +
+                mx +
+                "'",
+            ),
+            runSQL(
+              "UPDATE MAXIMA_CONTACT_REQUESTS SET to_publickey='" +
+                hex +
+                "' WHERE to_publickey='" +
+                mx +
+                "'",
+            ),
+            runSQL(
+              "UPDATE MAXIMA_CONTACT_REQUESTS SET from_publickey='" +
+                hex +
+                "' WHERE from_publickey='" +
+                mx +
+                "'",
+            ),
+            runSQL(
+              "UPDATE CHAT_STATUS SET publickey='" +
+                hex +
+                "' WHERE publickey='" +
+                mx +
+                "'",
+            ),
+            runSQL(
+              "UPDATE MESSAGE_COUNTERS SET publickey='" +
+                hex +
+                "' WHERE publickey='" +
+                mx +
+                "'",
+            ),
+          ]);
+        });
+        return Promise.all(migrationPromises).then(function () {
+          MDS.log("✅ [DB] Identity Migration complete.");
+        });
+      }
     });
   });
 

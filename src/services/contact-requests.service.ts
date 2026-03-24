@@ -27,18 +27,27 @@ async function getMyMaximaAddress(): Promise<string> {
 }
 
 async function resolveHexPublicKey(address: string): Promise<string> {
-    if (!address.startsWith("Mx") && !address.startsWith("MX")) {
+    if (!address || (!address.startsWith("Mx") && !address.startsWith("MX"))) {
         return address;
     }
 
     try {
+        const safeAddress = escapeSql(address);
+        // Canonical resolution: look for exact uppercase match of address in Discovery
+        const discoverySql = `SELECT publickey FROM DISCOVERED_PEERS WHERE UPPER(address) = UPPER('${safeAddress}') LIMIT 1`;
+        const discoveryRes = await runSQL(discoverySql);
+        if (discoveryRes.rows && discoveryRes.rows.length > 0) {
+            return discoveryRes.rows[0].PUBLICKEY;
+        }
+
+        // Fallback: search for prefix (legacy)
         const parts = address.split('@');
         if (parts.length > 0) {
             const encoded = parts[0].substring(2);
-            const discoverySql = `SELECT PUBLICKEY FROM DISCOVERED_PEERS WHERE ADDRESS LIKE '%${escapeSql(encoded)}%' LIMIT 1`;
-            const discoveryRes = await runSQL(discoverySql);
-            if (discoveryRes.rows && discoveryRes.rows.length > 0) {
-                return discoveryRes.rows[0].PUBLICKEY;
+            const fallbackSql = `SELECT publickey FROM DISCOVERED_PEERS WHERE address LIKE '%${escapeSql(encoded)}%' LIMIT 1`;
+            const fallbackRes = await runSQL(fallbackSql);
+            if (fallbackRes.rows && fallbackRes.rows.length > 0) {
+                return fallbackRes.rows[0].PUBLICKEY;
             }
         }
     } catch (err) {
@@ -49,10 +58,10 @@ async function resolveHexPublicKey(address: string): Promise<string> {
 }
 
 async function resolveMaximaAddress(publicKey: string): Promise<string | null> {
-    if (!publicKey.startsWith('0x')) return publicKey;
+    if (!publicKey || !publicKey.startsWith('0x')) return publicKey;
 
     const safeKey = escapeSql(publicKey);
-    const sql = `SELECT ADDRESS FROM DISCOVERED_PEERS WHERE PUBLICKEY='${safeKey}' AND ADDRESS IS NOT NULL LIMIT 1`;
+    const sql = `SELECT address FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('${safeKey}') AND address IS NOT NULL LIMIT 1`;
 
     try {
         const res = await runSQL(sql);
@@ -101,7 +110,7 @@ export async function getContactChatPermission(contactPublicKey: string): Promis
         console.log(`🔍 [CHAT-PERM] Checking permission for contact: ${contactPublicKey.substring(0, 10)}...`);
 
         const safeKey = escapeSql(contactPublicKey);
-        const sql = `SELECT allow_non_contact_chats FROM DISCOVERED_PEERS WHERE publickey='${safeKey}'`;
+        const sql = `SELECT allow_non_contact_chats FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('${safeKey}')`;
 
         const res = await runSQL(sql);
         console.log(`📊 [CHAT-PERM] Query result:`, res);
@@ -154,7 +163,7 @@ export async function sendChatRequest(toAddress: string, myName: string, myAvata
             action: "send",
             application: "metachain",
             data: hexData,
-            poll: true,
+            poll: false,
         };
 
         // Use provided publickey if available, otherwise try to resolve
@@ -182,7 +191,7 @@ export async function sendChatRequest(toAddress: string, myName: string, myAvata
         // Insert system message
         const insertChatSql = `
             INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp)
-            VALUES ('', '${safeHexPublicKey}', 'System', 'system', 'Chat request sent', '', 'sent', 0, ${now}, NULL, ${now})
+            VALUES ('', UPPER('${safeHexPublicKey}'), 'System', 'system', 'Chat request sent', '', 'sent', 0, ${now}, NULL, ${now})
         `;
         await runSQL(insertChatSql);
         console.log("✅ [Contact Request] Chat entry created for outgoing request");
@@ -194,7 +203,7 @@ export async function sendChatRequest(toAddress: string, myName: string, myAvata
         const insertRequestSql = `
             MERGE INTO CONTACT_REQUESTS (from_publickey, to_publickey, from_name, status, created_at, updated_at)
             KEY(from_publickey, to_publickey)
-            VALUES ('${safeMyPublicKey}', '${safeHexPublicKey}', '${escapeSql(myName)}', 'pending', ${now}, ${now})
+            VALUES (UPPER('${safeMyPublicKey}'), UPPER('${safeHexPublicKey}'), '${escapeSql(myName)}', 'pending', ${now}, ${now})
         `;
         await runSQL(insertRequestSql);
         console.log(`✅ [Contact Request] Outgoing request saved`);
@@ -222,13 +231,13 @@ export async function saveChatRequest(fromPublicKey: string, fromName: string, f
         const safeFromAddress = fromAddress ? escapeSql(fromAddress) : '';
 
         // Delete any existing request for this pair
-        const deleteSql = `DELETE FROM CONTACT_REQUESTS WHERE from_publickey='${safeFromPublicKey}' AND to_publickey='${safeToPublicKey}'`;
+        const deleteSql = `DELETE FROM CONTACT_REQUESTS WHERE UPPER(from_publickey)=UPPER('${safeFromPublicKey}') AND UPPER(to_publickey)=UPPER('${safeToPublicKey}')`;
         await runSQL(deleteSql);
 
         console.log("✅ [Contact Request] Inserting fresh request");
         await runSQL(`
             INSERT INTO CONTACT_REQUESTS (from_publickey, from_name, from_avatar, to_publickey, from_address, status, created_at, updated_at)
-            VALUES ('${safeFromPublicKey}', '${safeFromName}', '${safeFromAvatar}', '${safeToPublicKey}', '${safeFromAddress}', 'pending', ${now}, ${now})
+            VALUES (UPPER('${safeFromPublicKey}'), '${safeFromName}', '${safeFromAvatar}', UPPER('${safeToPublicKey}'), '${safeFromAddress}', 'pending', ${now}, ${now})
         `);
         console.log("✅ [Contact Request] Saved to database");
 
@@ -247,7 +256,7 @@ export async function saveChatRequest(fromPublicKey: string, fromName: string, f
                 publickey: safeFromPublicKey,
                 application: "metachain",
                 data: confirmHexData,
-                poll: true
+                poll: false
             } as any
         });
         console.log("✅ [Contact Request] Delivery confirmation sent");
@@ -276,12 +285,12 @@ export async function checkPendingChatRequest(publickey: string): Promise<boolea
         const safeMyPublicKey = escapeSql(myPublicKey);
 
         let sql = `SELECT * FROM CONTACT_REQUESTS 
-                   WHERE from_publickey = '${safeMyPublicKey}' 
-                   AND (to_publickey = '${safePublicKey}'`;
+                   WHERE UPPER(from_publickey) = UPPER('${safeMyPublicKey}') 
+                   AND (UPPER(to_publickey) = UPPER('${safePublicKey}')`;
 
         if (checkAddress) {
             const safeMaximaAddress = escapeSql(checkAddress);
-            sql += ` OR to_publickey = '${safeMaximaAddress}'`;
+            sql += ` OR UPPER(to_publickey) = UPPER('${safeMaximaAddress}')`;
         }
 
         sql += `) AND status = 'pending'`;
@@ -307,8 +316,8 @@ export async function checkIncomingChatRequest(fromPublickey: string): Promise<b
         const safeMyPublicKey = escapeSql(myPublicKey);
 
         const sql = `SELECT * FROM CONTACT_REQUESTS 
-                     WHERE from_publickey = '${safeFromPublicKey}' 
-                     AND to_publickey = '${safeMyPublicKey}' 
+                     WHERE UPPER(from_publickey) = UPPER('${safeFromPublicKey}') 
+                     AND UPPER(to_publickey) = UPPER('${safeMyPublicKey}') 
                      AND status = 'pending'`;
 
         contactReqLog(`🔍 [checkIncomingContactRequest] SQL:`, sql);
@@ -328,7 +337,7 @@ export async function getChatRequests(myPublicKey: string): Promise<any[]> {
     try {
         console.log("🔍 [Contact Request] Getting requests for:", myPublicKey);
         const safePublicKey = escapeSql(myPublicKey);
-        const sql = `SELECT * FROM CONTACT_REQUESTS WHERE to_publickey='${safePublicKey}' AND status='pending' ORDER BY created_at DESC`;
+        const sql = `SELECT * FROM CONTACT_REQUESTS WHERE UPPER(to_publickey)=UPPER('${safePublicKey}') AND status='pending' ORDER BY created_at DESC`;
         console.log("🔍 [Contact Request] SQL:", sql);
         const result = await runSQL(sql);
         console.log("🔍 [Contact Request] Result:", result);
@@ -376,7 +385,7 @@ export async function acceptChatRequest(fromPublicKey: string, fromAddress: stri
 
         // Update request status
         // We call the helper or just do it here. Doing it here ensures we don't break existing flow if helper changes.
-        const updateSql = `UPDATE CONTACT_REQUESTS SET status='accepted', updated_at=${now} WHERE from_publickey='${safeFromPublicKey}' AND status='pending'`;
+        const updateSql = `UPDATE CONTACT_REQUESTS SET status='accepted', updated_at=${now} WHERE UPPER(from_publickey)=UPPER('${safeFromPublicKey}') AND status='pending'`;
         await runSQL(updateSql);
 
         // Send acceptance message
@@ -395,7 +404,7 @@ export async function acceptChatRequest(fromPublicKey: string, fromAddress: stri
             action: "send",
             application: "metachain",
             data: hexData,
-            poll: true,
+            poll: false,
         };
 
         if (senderAddress && (senderAddress.startsWith("Mx") || senderAddress.startsWith("MX"))) {
@@ -410,13 +419,13 @@ export async function acceptChatRequest(fromPublicKey: string, fromAddress: stri
 
         // Save system message locally (unless skipped)
         if (!options?.skipMessageInsert) {
-            const checkDupSql = `SELECT * FROM CHAT_MESSAGES WHERE publickey='${safeFromPublicKey}' AND message='Chat request accepted' AND date > ${now - 10000}`;
+            const checkDupSql = `SELECT * FROM CHAT_MESSAGES WHERE UPPER(publickey)=UPPER('${safeFromPublicKey}') AND message='Chat request accepted' AND date > ${now - 10000}`;
             const dupRes = await runSQL(checkDupSql);
 
             if (!dupRes.rows || dupRes.rows.length === 0) {
                 const insertMsgSql = `
                     INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp)
-                    VALUES ('', '${safeFromPublicKey}', 'System', 'system', 'Chat request accepted', '', 'sent', 0, ${now}, NULL, ${now})
+                    VALUES ('', UPPER('${safeFromPublicKey}'), 'System', 'system', 'Chat request accepted', '', 'sent', 0, ${now}, NULL, ${now})
                 `;
                 await runSQL(insertMsgSql);
             }
@@ -433,15 +442,15 @@ export async function declineChatRequest(fromPublicKey: string, options?: { skip
         const now = Date.now();
         const safeFromPublicKey = escapeSql(fromPublicKey);
 
-        const sql = `UPDATE CONTACT_REQUESTS SET status = 'declined', updated_at = ${now} WHERE from_publickey = '${safeFromPublicKey}' AND status = 'pending'`;
-        await runSQL(sql);
+        const updateSql = `UPDATE CONTACT_REQUESTS SET status = 'declined', updated_at = ${now} WHERE UPPER(from_publickey) = UPPER('${safeFromPublicKey}') AND status = 'pending'`;
+        await runSQL(updateSql);
         console.log("✅ [Contact Request] Request declined");
 
         // Add system message (unless skipped)
         if (!options?.skipMessageInsert) {
             const chatMessageSql = `
                 INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp)
-                VALUES('', '${safeFromPublicKey}', 'System', 'system', 'Chat request declined', '', 'sent', 0, ${now}, NULL, ${now})
+                VALUES('', UPPER('${safeFromPublicKey}'), 'System', 'system', 'Chat request declined', '', 'sent', 0, ${now}, NULL, ${now})
             `;
             await runSQL(chatMessageSql);
         }
@@ -460,7 +469,7 @@ export async function declineChatRequest(fromPublicKey: string, options?: { skip
             action: "send",
             application: "metachain",
             data: hexData,
-            poll: true
+            poll: false
         };
 
         if (mxAddress) {
@@ -496,8 +505,8 @@ export async function cancelChatRequest(toPublicKey: string): Promise<void> {
 
         // Find and delete the pending request
         const selectSql = `SELECT * FROM CONTACT_REQUESTS 
-                           WHERE from_publickey='${safeMyPublicKey}' 
-                           AND (to_publickey='${safeToPublicKey}' ${safeToAddress ? `OR to_publickey='${safeToAddress}'` : ''})
+                           WHERE UPPER(from_publickey)=UPPER('${safeMyPublicKey}') 
+                           AND (UPPER(to_publickey)=UPPER('${safeToPublicKey}') ${safeToAddress ? `OR UPPER(to_publickey)=UPPER('${safeToAddress}')` : ''})
                            AND status='pending'`;
 
         const pendingRows = await runSQL(selectSql);
@@ -506,8 +515,8 @@ export async function cancelChatRequest(toPublicKey: string): Promise<void> {
             const foundToPk = pendingRows.rows[0].TO_PUBLICKEY;
 
             const deleteSql = `DELETE FROM CONTACT_REQUESTS 
-                               WHERE from_publickey='${safeMyPublicKey}' 
-                               AND to_publickey='${escapeSql(foundToPk)}' 
+                               WHERE UPPER(from_publickey)=UPPER('${safeMyPublicKey}') 
+                               AND UPPER(to_publickey)=UPPER('${escapeSql(foundToPk)}') 
                                AND status='pending'`;
 
             await runSQL(deleteSql);
@@ -526,7 +535,7 @@ export async function cancelChatRequest(toPublicKey: string): Promise<void> {
             action: "send",
             application: "metachain",
             data: hexData,
-            poll: true
+            poll: false
         };
 
         if (toPublicKey.startsWith("Mx") || toPublicKey.startsWith("MX")) {
@@ -547,7 +556,7 @@ export async function cancelChatRequest(toPublicKey: string): Promise<void> {
         // Add system message
         const chatMessageSql = `
             INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp)
-            VALUES('', '${safeToPublicKey}', 'System', 'system', 'Chat request cancelled', '', 'sent', 0, ${now}, NULL, ${now})
+            VALUES('', UPPER('${safeToPublicKey}'), 'System', 'system', 'Chat request cancelled', '', 'sent', 0, ${now}, NULL, ${now})
         `;
         await runSQL(chatMessageSql);
         console.log("✅ [Contact Request] Added cancellation message to chat");
@@ -605,7 +614,7 @@ export async function sendMaximaContactRequest(toAddress: string, toPublicKey?: 
             action: "send",
             application: "metachain",
             data: hexData,
-            poll: true,
+            poll: false,
             to: toAddress.replace(/\s/g, "")
         };
 
@@ -619,15 +628,15 @@ export async function sendMaximaContactRequest(toAddress: string, toPublicKey?: 
 
         // Insert system message
         const chatSql = `INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp) 
-                         VALUES('${safeMyName}', '${safeRecipPk}', 'System', 'system', 'Maxima contact request sent', '', 'sent', 0, ${now}, NULL, ${now})`;
+                         VALUES('${safeMyName}', UPPER('${safeRecipPk}'), 'System', 'system', 'Maxima contact request sent', '', 'sent', 0, ${now}, NULL, ${now})`;
         await runSQL(chatSql);
 
-        const deleteSql = `DELETE FROM MAXIMA_CONTACT_REQUESTS WHERE from_publickey='${safeMyPk}' AND to_publickey='${safeRecipPk}'`;
+        const deleteSql = `DELETE FROM MAXIMA_CONTACT_REQUESTS WHERE UPPER(from_publickey)=UPPER('${safeMyPk}') AND UPPER(to_publickey)=UPPER('${safeRecipPk}')`;
         await runSQL(deleteSql);
 
         const insertSql = `
             INSERT INTO MAXIMA_CONTACT_REQUESTS (from_publickey, from_name, to_publickey, status, created_at, updated_at)
-            VALUES ('${safeMyPk}', '${safeMyName}', '${safeRecipPk}', 'pending', ${now}, ${now})
+            VALUES (UPPER('${safeMyPk}'), '${safeMyName}', UPPER('${safeRecipPk}'), 'pending', ${now}, ${now})
         `;
         await runSQL(insertSql);
 
@@ -657,7 +666,7 @@ export async function acceptMaximaContactRequest(fromPublicKey: string, fromAddr
         const now = Date.now();
         const safeFromPk = escapeSql(fromPublicKey);
 
-        const updateSql = `UPDATE MAXIMA_CONTACT_REQUESTS SET status='accepted', updated_at=${now} WHERE from_publickey='${safeFromPk}' AND status='pending'`;
+        const updateSql = `UPDATE MAXIMA_CONTACT_REQUESTS SET status='accepted', updated_at=${now} WHERE UPPER(from_publickey)=UPPER('${safeFromPk}') AND status='pending'`;
         await runSQL(updateSql);
         // NOTE: Do NOT update CONTACT_REQUESTS here - keep the two request types separate
 
@@ -667,7 +676,7 @@ export async function acceptMaximaContactRequest(fromPublicKey: string, fromAddr
         if (!options?.skipMessageInsert) {
             const insertMsgSql = `
                 INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp)
-                VALUES ('', '${safeFromPk}', 'System', 'system', 'Maxima contact accepted', '', 'sent', 0, ${now}, NULL, ${now})
+                VALUES ('', UPPER('${safeFromPk}'), 'System', 'system', 'Maxima contact accepted', '', 'sent', 0, ${now}, NULL, ${now})
             `;
             await runSQL(insertMsgSql);
         }
@@ -685,7 +694,7 @@ export async function acceptMaximaContactRequest(fromPublicKey: string, fromAddr
             action: "send",
             application: "metachain",
             data: hexData,
-            poll: true
+            poll: false
         };
 
         if (fromAddress.startsWith("Mx") || fromAddress.startsWith("MX")) {
@@ -709,14 +718,14 @@ export async function declineMaximaContactRequest(fromPublicKey: string, _fromAd
         const now = Date.now();
         const safeFromPk = escapeSql(fromPublicKey);
 
-        const updateSql = `UPDATE MAXIMA_CONTACT_REQUESTS SET status='declined', updated_at=${now} WHERE from_publickey='${safeFromPk}' AND status='pending'`;
+        const updateSql = `UPDATE MAXIMA_CONTACT_REQUESTS SET status='declined', updated_at=${now} WHERE UPPER(from_publickey)=UPPER('${safeFromPk}') AND status='pending'`;
         await runSQL(updateSql);
 
         // Save system message locally (unless skipped)
         if (!options?.skipMessageInsert) {
             const insertMsgSql = `
                 INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp)
-                VALUES ('', '${safeFromPk}', 'System', 'system', 'Maxima contact declined', '', 'sent', 0, ${now}, NULL, ${now})
+                VALUES ('', UPPER('${safeFromPk}'), 'System', 'system', 'Maxima contact declined', '', 'sent', 0, ${now}, NULL, ${now})
             `;
             await runSQL(insertMsgSql);
         }
@@ -735,7 +744,7 @@ export async function declineMaximaContactRequest(fromPublicKey: string, _fromAd
             action: "send",
             application: "metachain",
             data: hexData,
-            poll: true
+            poll: false
         };
 
         if (mxAddress) {
@@ -770,8 +779,8 @@ export async function cancelMaximaContactRequest(toPublicKey: string): Promise<v
 
         // Find and delete
         const selectSql = `SELECT * FROM MAXIMA_CONTACT_REQUESTS 
-                           WHERE from_publickey='${safeMyPk}' 
-                           AND (to_publickey='${safeToPk}' ${safeToAddress ? `OR to_publickey='${safeToAddress}'` : ''})
+                           WHERE UPPER(from_publickey)=UPPER('${safeMyPk}') 
+                           AND (UPPER(to_publickey)=UPPER('${safeToPk}') ${safeToAddress ? `OR UPPER(to_publickey)=UPPER('${safeToAddress}')` : ''})
                            AND status='pending'`;
 
         const pendingRows = await runSQL(selectSql);
@@ -780,8 +789,8 @@ export async function cancelMaximaContactRequest(toPublicKey: string): Promise<v
             const foundToPk = pendingRows.rows[0].TO_PUBLICKEY;
 
             const deleteSql = `DELETE FROM MAXIMA_CONTACT_REQUESTS 
-                               WHERE from_publickey='${safeMyPk}' 
-                               AND to_publickey='${escapeSql(foundToPk)}' 
+                               WHERE UPPER(from_publickey)=UPPER('${safeMyPk}') 
+                               AND UPPER(to_publickey)=UPPER('${escapeSql(foundToPk)}') 
                                AND status='pending'`;
 
             await runSQL(deleteSql);
@@ -800,7 +809,7 @@ export async function cancelMaximaContactRequest(toPublicKey: string): Promise<v
             action: "send",
             application: "metachain",
             data: hexData,
-            poll: true
+            poll: false
         };
 
         if (toPublicKey.startsWith("Mx") || toPublicKey.startsWith("MX")) {
@@ -818,7 +827,7 @@ export async function cancelMaximaContactRequest(toPublicKey: string): Promise<v
             // Insert visual system message locally
             const now = Date.now();
             const sqlLocal = `INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp) 
-                              VALUES('', '${safeToPk}', 'System', 'system', 'Maxima contact request cancelled', '', 'sent', 0, ${now}, NULL, ${now})`;
+                              VALUES('', UPPER('${safeToPk}'), 'System', 'system', 'Maxima contact request cancelled', '', 'sent', 0, ${now}, NULL, ${now})`;
             await runSQL(sqlLocal);
 
         } catch (sendErr) {
@@ -835,7 +844,7 @@ export async function getMaximaContactRequests(myPublicKey: string): Promise<any
     try {
         const safePk = escapeSql(myPublicKey);
 
-        const sql = `SELECT * FROM MAXIMA_CONTACT_REQUESTS WHERE to_publickey='${safePk}' AND status='pending' ORDER BY created_at DESC`;
+        const sql = `SELECT * FROM MAXIMA_CONTACT_REQUESTS WHERE UPPER(to_publickey)=UPPER('${safePk}') AND status='pending' ORDER BY created_at DESC`;
         const result = await runSQL(sql);
         return result.rows || [];
     } catch (err) {
@@ -855,12 +864,12 @@ export async function saveMaximaContactRequest(fromPublicKey: string, fromName: 
         const safeFromName = escapeSql(fromName);
         const safeMyPk = escapeSql(myPublicKey);
 
-        const deleteSql = `DELETE FROM MAXIMA_CONTACT_REQUESTS WHERE from_publickey='${safeFromPk}' AND to_publickey='${safeMyPk}'`;
+        const deleteSql = `DELETE FROM MAXIMA_CONTACT_REQUESTS WHERE UPPER(from_publickey)=UPPER('${safeFromPk}') AND UPPER(to_publickey)=UPPER('${safeMyPk}')`;
         await runSQL(deleteSql);
 
         const insertSql = `
             INSERT INTO MAXIMA_CONTACT_REQUESTS (from_publickey, from_name, to_publickey, status, created_at, updated_at)
-            VALUES ('${safeFromPk}', '${safeFromName}', '${safeMyPk}', 'pending', ${now}, ${now})
+            VALUES (UPPER('${safeFromPk}'), '${safeFromName}', UPPER('${safeMyPk}'), 'pending', ${now}, ${now})
         `;
         await runSQL(insertSql);
 

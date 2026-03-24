@@ -32,7 +32,7 @@ export const personalContactsService = {
      */
     async isPersonalContact(publickey: string): Promise<boolean> {
         try {
-            const sql = `SELECT * FROM PERSONAL_CONTACTS WHERE publickey='${publickey}'`;
+            const sql = `SELECT * FROM PERSONAL_CONTACTS WHERE UPPER(publickey)=UPPER('${publickey}')`;
             const result = await minimaService.runSQL(sql);
             return result && result.rows && result.rows.length > 0;
         } catch (e) {
@@ -48,7 +48,7 @@ export const personalContactsService = {
         try {
             // Insert into SQL
             const cleanKey = publickey.replace(/'/g, "''");
-            const sql = `INSERT IGNORE INTO PERSONAL_CONTACTS (publickey, created_at) VALUES ('${cleanKey}', ${Date.now()})`;
+            const sql = `INSERT IGNORE INTO PERSONAL_CONTACTS (publickey, created_at) VALUES (UPPER('${cleanKey}'), ${Date.now()})`;
 
             await minimaService.runSQL(sql);
 
@@ -70,7 +70,7 @@ export const personalContactsService = {
     async removePersonalContact(publickey: string): Promise<boolean> {
         try {
             const cleanKey = publickey.replace(/'/g, "''");
-            const sql = `DELETE FROM PERSONAL_CONTACTS WHERE publickey='${cleanKey}'`;
+            const sql = `DELETE FROM PERSONAL_CONTACTS WHERE UPPER(publickey)=UPPER('${cleanKey}')`;
 
             await minimaService.runSQL(sql);
 

@@ -169,7 +169,7 @@ class MinimaService {
     return chatService.insertMessage(msg);
   }
 
-  getMessages(publickey: string): Promise<ChatMessage[]> {
+  getMessages(publickey: string | string[]): Promise<ChatMessage[]> {
     return chatService.getMessages(publickey);
   }
 
@@ -405,7 +405,7 @@ SELECT * FROM TRANSACTIONS
 
               const sql = `MERGE INTO DISCOVERED_PEERS(publickey, alias, bio, address, last_seen, source, allow_non_contact_chats)
 KEY(publickey)
-VALUES('${peer.pubkey}', '${escapedAlias}', '${escapedBio}', '${peer.address}', ${now}, 'GOSSIP', ${allowChats})`;
+VALUES(UPPER('${peer.pubkey}'), '${escapedAlias}', '${escapedBio}', '${peer.address}', ${now}, 'GOSSIP', ${allowChats})`;
 
               MDS.sql(sql, (res: any) => {
                 if (res.status) {
@@ -449,7 +449,7 @@ VALUES('${peer.pubkey}', '${escapedAlias}', '${escapedBio}', '${peer.address}', 
 
             const sql = `MERGE INTO DISCOVERED_PEERS(publickey, alias, bio, address, last_seen, source, allow_non_contact_chats)
 KEY(publickey)
-VALUES('${peer.pubkey}', '${escapedAlias}', '${escapedBio}', '${peer.address}', ${now}, 'P2P', ${allowChats})`;
+VALUES(UPPER('${peer.pubkey}'), '${escapedAlias}', '${escapedBio}', '${peer.address}', ${now}, 'P2P', ${allowChats})`;
 
             MDS.sql(sql, (res: any) => {
               if (res.status) {
@@ -533,9 +533,26 @@ VALUES('${peer.pubkey}', '${escapedAlias}', '${escapedBio}', '${peer.address}', 
         }
 
         if (json.type === "profile_response") {
+          const requestId = json.requestId || "legacy";
+          console.log(
+            `[PROFILE FLOW] Step 4 - profile_response received requestId=${requestId} from ${from.substring(0, 10)}`,
+          );
           console.log(
             `👤 [PROFILE] Response received from ${from} - saving to Discovery DB`,
           );
+
+          // FETCH EXISTING ADDRESS (Crucial because DISCOVERED_PEERS.ADDRESS is NOT NULL)
+          let existingAddress = null;
+          try {
+            const res = await this.runSQL(
+              `SELECT address FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('${from}')`,
+            );
+            if (res.rows && res.rows.length > 0) {
+              existingAddress = res.rows[0].ADDRESS;
+            }
+          } catch (e) {
+            console.warn("⚠️ [PROFILE] Failed to fetch existing address:", e);
+          }
 
           // SAVE TO DISCOVERED_PEERS (Fix for "Unknown User")
           const now = Date.now();
@@ -555,23 +572,29 @@ VALUES('${peer.pubkey}', '${escapedAlias}', '${escapedBio}', '${peer.address}', 
           const escapedExtraData = extraData.replace(/'/g, "''");
 
           // CRITICAL: We MUST save the 'extra_data' column because that's where 'minimaaddress' lives!
-          const updateProfileSql = `MERGE INTO DISCOVERED_PEERS(publickey, alias, bio, extra_data, last_seen, source, allow_non_contact_chats)
-                                              KEY(publickey)
-                                              VALUES('${from}', '${escapedAlias}', '${escapedBio}', '${escapedExtraData}', ${now}, 'PROFILE_RESPONSE', ${allowChats})`;
+          // We also MUST provide the address if it was found, or skip if NOT NULL constraint would fail
+          if (existingAddress) {
+            const updateProfileSql = `MERGE INTO DISCOVERED_PEERS(publickey, alias, bio, address, extra_data, last_seen, source, allow_non_contact_chats)
+                                                KEY(publickey)
+                                                VALUES(UPPER('${from}'), '${escapedAlias}', '${escapedBio}', '${existingAddress}', '${escapedExtraData}', ${now}, 'PROFILE_RESPONSE', ${allowChats})`;
 
-          try {
-            await this.runSQL(updateProfileSql);
-            console.log(`✅ [PROFILE] Saved ${json.name} to Discovery DB`);
+            try {
+              await this.runSQL(updateProfileSql);
+              console.log(`✅ [PROFILE] Saved ${json.name} to Discovery DB`);
 
-            // Notify UI via event so ChatPage can update immediately without waiting for timeout
-            // Re-using 'peer_updated' event which ChatPage might listen to or we can add listener
-            window.dispatchEvent(
-              new CustomEvent("peer_updated", {
-                detail: { ...json, publickey: from, alias: json.name },
-              }),
+              // Notify UI via event so ChatPage can update immediately without waiting for timeout
+              window.dispatchEvent(
+                new CustomEvent("peer_updated", {
+                  detail: { ...json, publickey: from, alias: json.name },
+                }),
+              );
+            } catch (err) {
+              console.error("❌ [PROFILE] Failed to save profile to DB:", err);
+            }
+          } else {
+            console.warn(
+              `⚠️ [PROFILE] Skipping Discovery DB update for ${from} (Address not found)`,
             );
-          } catch (err) {
-            console.error("❌ [PROFILE] Failed to save profile to DB:", err);
           }
 
           console.log(`👤 [PROFILE] Forwarding to ProfileService`);
@@ -609,11 +632,11 @@ VALUES('${peer.pubkey}', '${escapedAlias}', '${escapedBio}', '${peer.address}', 
             );
 
             // Migrate CHAT_MESSAGES
-            const migrateChatSql = `UPDATE CHAT_MESSAGES SET publickey = '${from}' WHERE publickey = '${fromAddress}'`;
+            const migrateChatSql = `UPDATE CHAT_MESSAGES SET publickey = UPPER('${from}') WHERE UPPER(publickey) = UPPER('${fromAddress}')`;
             await this.runSQL(migrateChatSql);
 
             // Migrate CONTACT_REQUESTS (outgoing from us to them)
-            const migrateReqSql = `UPDATE CONTACT_REQUESTS SET to_publickey = '${from}' WHERE to_publickey = '${fromAddress}'`;
+            const migrateReqSql = `UPDATE CONTACT_REQUESTS SET to_publickey = UPPER('${from}') WHERE UPPER(to_publickey) = UPPER('${fromAddress}')`;
             await this.runSQL(migrateReqSql);
 
             console.log(`✅[MIGRATION] Complete for ${fromAddress}`);
@@ -636,11 +659,11 @@ VALUES('${peer.pubkey}', '${escapedAlias}', '${escapedBio}', '${peer.address}', 
           const safeMyKey = escapeSql(myPublicKey);
 
           const updateReqSql = `UPDATE CONTACT_REQUESTS SET status = 'accepted', updated_at = ${Date.now()}
-                                          WHERE (from_publickey = '${safeMyKey}' AND to_publickey = '${safeFrom}')
-                                             OR (from_publickey = '${safeFrom}' AND to_publickey = '${safeMyKey}')`;
+                                          WHERE (UPPER(from_publickey) = UPPER('${safeMyKey}') AND UPPER(to_publickey) = UPPER('${safeFrom}'))
+                                             OR (UPPER(from_publickey) = UPPER('${safeFrom}') AND UPPER(to_publickey) = UPPER('${safeMyKey}'))`;
 
           const checkRes = await this.runSQL(
-            `SELECT count(*) as count FROM CONTACT_REQUESTS WHERE (from_publickey = '${safeMyKey}' AND to_publickey = '${safeFrom}') OR (from_publickey = '${safeFrom}' AND to_publickey = '${safeMyKey}')`,
+            `SELECT count(*) as count FROM CONTACT_REQUESTS WHERE (UPPER(from_publickey) = UPPER('${safeMyKey}') AND UPPER(to_publickey) = UPPER('${safeFrom}')) OR (UPPER(from_publickey) = UPPER('${safeFrom}') AND UPPER(to_publickey) = UPPER('${safeMyKey}'))`,
           );
           const count =
             checkRes && checkRes.rows && checkRes.rows[0]
@@ -655,7 +678,7 @@ VALUES('${peer.pubkey}', '${escapedAlias}', '${escapedBio}', '${peer.address}', 
               "⚠️ [CONTACTS] No pending request found - Creating new ACCEPTED record",
             );
             const insertReqSql = `INSERT INTO CONTACT_REQUESTS (from_publickey, to_publickey, status, created_at, updated_at)
-                                              VALUES ('${safeMyKey}', '${safeFrom}', 'accepted', ${Date.now()}, ${Date.now()})`;
+                                              VALUES (UPPER('${safeMyKey}'), UPPER('${safeFrom}'), 'accepted', ${Date.now()}, ${Date.now()})`;
             await this.runSQL(insertReqSql);
           }
 
@@ -676,17 +699,17 @@ VALUES('${peer.pubkey}', '${escapedAlias}', '${escapedBio}', '${peer.address}', 
 
           // ROBUST FIX: Attempt to resolve Maxima Address from Public Key
           // to ensure we update the request regardless of how it was sent (Hex vs Mx Address).
-          let addressClause = `to_publickey = '${safeFrom}'`;
+          let addressClause = `UPPER(to_publickey) = UPPER('${safeFrom}')`;
 
           try {
-            const discoverySql = `SELECT ADDRESS FROM DISCOVERED_PEERS WHERE PUBLICKEY = '${safeFrom}' LIMIT 1`;
+            const discoverySql = `SELECT ADDRESS FROM DISCOVERED_PEERS WHERE UPPER(PUBLICKEY) = UPPER('${safeFrom}') LIMIT 1`;
             const discoveryRes = await this.runSQL(discoverySql);
             if (discoveryRes.rows && discoveryRes.rows.length > 0) {
               const mxAddress = discoveryRes.rows[0].ADDRESS;
               console.log(
                 `🔍[CONTACTS] Resolved decline sender to Maxima Address: ${mxAddress} `,
               );
-              addressClause += ` OR to_publickey = '${escapeSql(mxAddress)}'`;
+              addressClause += ` OR UPPER(to_publickey) = UPPER('${escapeSql(mxAddress)}')`;
             }
           } catch (e) {
             console.warn(
@@ -697,7 +720,7 @@ VALUES('${peer.pubkey}', '${escapedAlias}', '${escapedBio}', '${peer.address}', 
 
           // Update local DB immediately with robust check
           const updateReqSql = `UPDATE CONTACT_REQUESTS SET status = 'declined', updated_at = ${Date.now()}
-WHERE(${addressClause}) AND status = 'pending'`;
+WHERE (${addressClause}) AND status = 'pending'`;
 
           await this.runSQL(updateReqSql);
           console.log("✅ [CONTACTS] Local request status updated to declined");
@@ -745,7 +768,7 @@ WHERE(${addressClause}) AND status = 'pending'`;
           const safeMyKey = escapeSql(myPublicKey);
 
           const updateReqSql = `UPDATE MAXIMA_CONTACT_REQUESTS SET status = 'accepted', updated_at = ${Date.now()}
-                                          WHERE from_publickey = '${safeMyKey}' AND to_publickey = '${safeFrom}'`;
+                                          WHERE UPPER(from_publickey) = UPPER('${safeMyKey}') AND UPPER(to_publickey) = UPPER('${safeFrom}')`;
           await this.runSQL(updateReqSql);
 
           chatService.notifyNewMessage({
@@ -763,7 +786,7 @@ WHERE(${addressClause}) AND status = 'pending'`;
           const safeFrom = escapeSql(from);
 
           const updateReqSql = `UPDATE MAXIMA_CONTACT_REQUESTS SET status = 'declined', updated_at = ${Date.now()}
-                                          WHERE to_publickey = '${safeFrom}' AND status = 'pending'`;
+                                          WHERE UPPER(to_publickey) = UPPER('${safeFrom}') AND status = 'pending'`;
           await this.runSQL(updateReqSql);
 
           chatService.notifyNewMessage({
@@ -777,9 +800,8 @@ WHERE(${addressClause}) AND status = 'pending'`;
         if (json.type === "contact_blocked") {
           console.log("🚫 [CONTACTS] Blocked by", from);
           // Update local DB
-          const escapeSql = (str: string) => str.replace(/'/g, "''");
-          const safeFrom = escapeSql(from);
-          const updateSql = `MERGE INTO CHAT_STATUS (publickey, blocked_by_them) KEY(publickey) VALUES('${safeFrom}', TRUE)`;
+          const safeFrom = from.replace(/'/g, "''");
+          const updateSql = `MERGE INTO CHAT_STATUS (publickey, blocked_by_them) KEY(publickey) VALUES(UPPER('${safeFrom}'), TRUE)`;
           await this.runSQL(updateSql);
 
           // Notify UI
@@ -794,43 +816,8 @@ WHERE(${addressClause}) AND status = 'pending'`;
         if (json.type === "contact_unblocked") {
           console.log("🔓 [CONTACTS] Unblocked by", from);
           // Update local DB
-          const escapeSql = (str: string) => str.replace(/'/g, "''");
-          const safeFrom = escapeSql(from);
-          const updateSql = `UPDATE CHAT_STATUS SET blocked_by_them=FALSE WHERE publickey='${safeFrom}'`;
-          await this.runSQL(updateSql);
-
-          // Notify UI
-          chatService.notifyNewMessage({
-            ...json,
-            type: "contact_unblocked",
-            from,
-          });
-          return;
-        }
-
-        if (json.type === "contact_blocked") {
-          console.log("🚫 [CONTACTS] Blocked by", from);
-          // Update local DB
-          const escapeSql = (str: string) => str.replace(/'/g, "''");
-          const safeFrom = escapeSql(from);
-          const updateSql = `MERGE INTO CHAT_STATUS (publickey, blocked_by_them) KEY(publickey) VALUES('${safeFrom}', TRUE)`;
-          await this.runSQL(updateSql);
-
-          // Notify UI
-          chatService.notifyNewMessage({
-            ...json,
-            type: "contact_blocked",
-            from,
-          });
-          return;
-        }
-
-        if (json.type === "contact_unblocked") {
-          console.log("🔓 [CONTACTS] Unblocked by", from);
-          // Update local DB
-          const escapeSql = (str: string) => str.replace(/'/g, "''");
-          const safeFrom = escapeSql(from);
-          const updateSql = `UPDATE CHAT_STATUS SET blocked_by_them=FALSE WHERE publickey='${safeFrom}'`;
+          const safeFrom = from.replace(/'/g, "''");
+          const updateSql = `UPDATE CHAT_STATUS SET blocked_by_them=FALSE WHERE UPPER(publickey)=UPPER('${safeFrom}')`;
           await this.runSQL(updateSql);
 
           // Notify UI
@@ -851,7 +838,7 @@ WHERE(${addressClause}) AND status = 'pending'`;
           const safePublicKey = escapeSql(from);
           const updateSql = `UPDATE CHAT_MESSAGES
                                        SET state = 'delivered'
-                                       WHERE publickey = '${safePublicKey}'
+                                        WHERE UPPER(publickey) = UPPER('${safePublicKey}')
                                        AND type = 'system'
                                        AND message = 'Contact request sent'`;
           this.runSQL(updateSql)
@@ -939,7 +926,7 @@ WHERE(${addressClause}) AND status = 'pending'`;
         // We only need to notify the UI
 
         // Notify UI to refresh
-        chatService.notifyNewMessage(json);
+        chatService.notifyNewMessage({ ...json, from });
 
         // Update Badge Count (Live update)
         chatService.updateUnreadNotification();
@@ -1018,7 +1005,7 @@ WHERE(${addressClause}) AND status = 'pending'`;
     const sql = `
             UPDATE CHAT_MESSAGES
             SET ${setClause}
-            WHERE publickey = '${publickey}' AND date = ${timestamp}
+            WHERE UPPER(publickey) = UPPER('${publickey}') AND date = ${timestamp}
 `;
 
     console.log(
@@ -1380,7 +1367,7 @@ WHERE(${addressClause}) AND status = 'pending'`;
   }
 
   async getPendingMessages(publickey: string) {
-    const sql = `SELECT * FROM CHAT_MESSAGES WHERE publickey = '${publickey}' AND state = 'pending'`;
+    const sql = `SELECT * FROM CHAT_MESSAGES WHERE UPPER(publickey) = UPPER('${publickey}') AND state = 'pending'`;
     try {
       const res = await this.runSQL(sql);
       return res.rows;
@@ -1795,6 +1782,12 @@ WHERE(${addressClause}) AND status = 'pending'`;
   }
 
   processEvent(event: any) {
+    console.log("📡 [MINIMA-EVENT] Event received from MDS:", {
+      event: event.event,
+      from: event.data?.from?.substring(0, 10),
+      application: event.data?.application,
+    });
+
     if (this.isReconnectEvent(event)) {
       console.log("🔄 [MDS] RECONNECTED signal detected from service worker");
       offlineQueueService.triggerImmediateRetry("MDS event");
@@ -1846,18 +1839,25 @@ WHERE(${addressClause}) AND status = 'pending'`;
       this.handlePendingEvent(event.data);
     }
 
-    // Handle MDS_SOLO from service worker
-    if (event.event === "MDS_SOLO") {
+    // Handle MDSCOMMS from service worker (MDS.comms.solo() fires MDSCOMMS event, data is at event.data.message)
+    if (event.event === "MDSCOMMS") {
       console.log("🚀 [SERVICE] Solo message received from SW:", event.data);
       try {
-        const msg = event.data;
+        const msg = event.data?.message ?? event.data;
+        if (!msg) return;
         if (msg === "CHAT_LIST_UPDATE") {
           this.notifyChatListUpdate();
           this.notifyNewMessage({ type: "CHAT_LIST_UPDATE" });
+          // Also update unread count as this signal confirms DB persistence is done
+          chatService.updateUnreadNotification();
         } else {
           const parsedMsg = JSON.parse(msg);
           if (parsedMsg.type === "SW_LOG") {
             console.log(`📡 [SW-LOG] ${parsedMsg.message}`);
+          } else if (parsedMsg.type === "NEW_CHAT_MESSAGE") {
+            // Direct message payload from SW — relay to UI without DB round-trip
+            console.log(`💬 [SERVICE] NEW_CHAT_MESSAGE from SW for ${parsedMsg.message?.publickey?.substring(0, 10)}`);
+            this.notifyNewMessage(parsedMsg);
           } else if (
             parsedMsg.type === "group_update" ||
             parsedMsg.type === "group_join_requests_update" ||
@@ -1899,7 +1899,7 @@ WHERE(${addressClause}) AND status = 'pending'`;
    */
   async sendSyncStatusCheck(publickey: string) {
     // Query max sender_seq from this peer
-    const sql = `SELECT MAX(sender_seq) as last_seq FROM CHAT_MESSAGES WHERE publickey='${publickey}'`;
+    const sql = `SELECT MAX(sender_seq) as last_seq FROM CHAT_MESSAGES WHERE UPPER(publickey)=UPPER('${publickey}')`;
 
     try {
       const res = await this.runSQL(sql);
@@ -1951,7 +1951,7 @@ WHERE(${addressClause}) AND status = 'pending'`;
             );
 
             // Attempt 2: Resolve Address locally
-            const peerSql = `SELECT address FROM DISCOVERED_PEERS WHERE publickey='${publickey}' LIMIT 1`;
+            const peerSql = `SELECT address FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('${publickey}') LIMIT 1`;
             const peerRes = await this.runSQL(peerSql);
 
             if (
@@ -2261,7 +2261,7 @@ WHERE(${addressClause}) AND status = 'pending'`;
     if (!publicKey.startsWith("0x")) return publicKey; // Already an address or name?
 
     const safeKey = publicKey.replace(/'/g, "''");
-    const sql = `SELECT ADDRESS FROM DISCOVERED_PEERS WHERE PUBLICKEY='${safeKey}' AND ADDRESS IS NOT NULL LIMIT 1`;
+    const sql = `SELECT ADDRESS FROM DISCOVERED_PEERS WHERE UPPER(PUBLICKEY)=UPPER('${safeKey}') AND ADDRESS IS NOT NULL LIMIT 1`;
 
     try {
       const res = await this.runSQL(sql);
@@ -2517,6 +2517,166 @@ WHERE(${addressClause}) AND status = 'pending'`;
     }
   }
 
+  /**
+   * Comprehensive migration to deduplicate identity tables and enforce uppercase keys.
+   * Fixes the "duplicate chat" issue by merging records for the same publickey (regardless of case).
+   */
+  async normalizeIdentities(): Promise<void> {
+    console.log("🧹 [MIGRATION] Normalizing identities and deduplicating...");
+
+    try {
+      // 1. CHAT_MESSAGES & TRANSACTIONS: Simple uppercase update
+      await this.runSQL("UPDATE CHAT_MESSAGES SET publickey = UPPER(publickey)");
+      await this.runSQL("UPDATE TRANSACTIONS SET publickey = UPPER(publickey)");
+
+      // 2. CHAT_STATUS Deduplication
+      const statusRes = await this.runSQL(
+        "SELECT UPPER(publickey) as pk_upper, COUNT(*) as cnt FROM CHAT_STATUS GROUP BY pk_upper HAVING cnt > 1",
+      );
+      if (statusRes.rows && statusRes.rows.length > 0) {
+        console.log(
+          `🧹 [MIGRATION] Found ${statusRes.rows.length} duplicate identities in CHAT_STATUS. Merging...`,
+        );
+        for (const dup of statusRes.rows) {
+          const pk = dup.PK_UPPER || dup.pk_upper;
+          const rowsRes = await this.runSQL(
+            `SELECT * FROM CHAT_STATUS WHERE UPPER(publickey) = '${pk}' ORDER BY last_opened DESC`,
+          );
+          if (rowsRes.rows && rowsRes.rows.length > 1) {
+            const master = rowsRes.rows[0];
+            // Merge flags (archived | favorite | blocked)
+            let archived = master.ARCHIVED === 1 || master.ARCHIVED === true;
+            let favorite = master.FAVORITE === 1 || master.FAVORITE === true;
+            let blocked = master.BLOCKED === 1 || master.BLOCKED === true;
+            let blockedByThem =
+              master.BLOCKED_BY_THEM === 1 || master.BLOCKED_BY_THEM === true;
+
+            for (let i = 1; i < rowsRes.rows.length; i++) {
+              const other = rowsRes.rows[i];
+              if (other.ARCHIVED === 1 || other.ARCHIVED === true)
+                archived = true;
+              if (other.FAVORITE === 1 || other.FAVORITE === true)
+                favorite = true;
+              if (other.BLOCKED === 1 || other.BLOCKED === true) blocked = true;
+              if (
+                other.BLOCKED_BY_THEM === 1 ||
+                other.BLOCKED_BY_THEM === true
+              )
+                blockedByThem = true;
+            }
+
+            // Delete all and insert normalized
+            await this.runSQL(
+              `DELETE FROM CHAT_STATUS WHERE UPPER(publickey) = '${pk}'`,
+            );
+            await this.runSQL(`
+              INSERT INTO CHAT_STATUS (publickey, archived, archived_date, last_opened, favorite, blocked, blocked_by_them)
+              VALUES ('${pk}', ${archived ? "TRUE" : "FALSE"}, ${master.ARCHIVED_DATE || 0}, ${master.LAST_OPENED || 0}, ${favorite ? "TRUE" : "FALSE"}, ${blocked ? "TRUE" : "FALSE"}, ${blockedByThem ? "TRUE" : "FALSE"})
+            `);
+          }
+        }
+      }
+
+      // 3. DISCOVERED_PEERS Deduplication
+      const peerRes = await this.runSQL(
+        "SELECT UPPER(publickey) as pk_upper, COUNT(*) as cnt FROM DISCOVERED_PEERS GROUP BY pk_upper HAVING cnt > 1",
+      );
+      if (peerRes.rows && peerRes.rows.length > 0) {
+        console.log(
+          `🧹 [MIGRATION] Found ${peerRes.rows.length} duplicate identities in DISCOVERED_PEERS. Merging...`,
+        );
+        for (const dup of peerRes.rows) {
+          const pk = dup.PK_UPPER || dup.pk_upper;
+          const rowsRes = await this.runSQL(
+            `SELECT * FROM DISCOVERED_PEERS WHERE UPPER(publickey) = '${pk}' ORDER BY last_seen DESC`,
+          );
+          if (rowsRes.rows && rowsRes.rows.length > 1) {
+            const master = rowsRes.rows[0];
+            // Delete all and re-insert master record normalized
+            await this.runSQL(
+              `DELETE FROM DISCOVERED_PEERS WHERE UPPER(publickey) = '${pk}'`,
+            );
+            const sql = `INSERT INTO DISCOVERED_PEERS (publickey, alias, bio, address, last_seen, source, allow_non_contact_chats, extra_data, avatar, minimaaddress)
+                         VALUES ('${pk}', '${this.escapeSql(master.ALIAS || master.alias)}', '${this.escapeSql(master.BIO || master.bio || "")}', '${master.ADDRESS || master.address}', ${master.LAST_SEEN || 0}, '${master.SOURCE || master.source || "P2P"}', ${master.ALLOW_NON_CONTACT_CHATS === 0 ? "FALSE" : "TRUE"}, '${this.escapeSql(master.EXTRA_DATA || master.extra_data || "")}', '${this.escapeSql(master.AVATAR || master.avatar || "")}', '${this.escapeSql(master.MINIMAADDRESS || master.minimaaddress || "")}')`;
+            await this.runSQL(sql);
+          }
+        }
+      }
+
+      // 4. METACHAIN_USERS Deduplication
+      const userRes = await this.runSQL(
+        "SELECT UPPER(publickey) as pk_upper, COUNT(*) as cnt FROM METACHAIN_USERS GROUP BY pk_upper HAVING cnt > 1",
+      );
+      if (userRes.rows && userRes.rows.length > 0) {
+        console.log(
+          `🧹 [MIGRATION] Found ${userRes.rows.length} duplicate identities in METACHAIN_USERS. Merging...`,
+        );
+        for (const dup of userRes.rows) {
+          const pk = dup.PK_UPPER || dup.pk_upper;
+          const rowsRes = await this.runSQL(
+            `SELECT * FROM METACHAIN_USERS WHERE UPPER(publickey) = '${pk}' ORDER BY last_updated DESC`,
+          );
+          if (rowsRes.rows && rowsRes.rows.length > 1) {
+            const master = rowsRes.rows[0];
+            await this.runSQL(
+              `DELETE FROM METACHAIN_USERS WHERE UPPER(publickey) = '${pk}'`,
+            );
+            const sql = `INSERT INTO METACHAIN_USERS (user_id, publickey, alias, address, first_seen, last_updated, avatar, last_seen)
+                         VALUES ('${pk}', '${pk}', '${this.escapeSql(master.ALIAS || master.alias)}', '${master.ADDRESS || master.address}', ${master.FIRST_SEEN || 0}, ${master.LAST_UPDATED || 0}, '${this.escapeSql(master.AVATAR || master.avatar || "")}', ${master.LAST_SEEN || 0})`;
+            await this.runSQL(sql);
+          }
+        }
+      }
+
+      // 5. DISCOVERED_LISTINGS Deduplication
+      const listingRes = await this.runSQL(
+        "SELECT UPPER(owner_publickey) as pk_upper, COUNT(*) as cnt FROM DISCOVERED_LISTINGS GROUP BY pk_upper HAVING cnt > 1",
+      );
+      if (listingRes.rows && listingRes.rows.length > 0) {
+        console.log(
+          `🧹 [MIGRATION] Found ${listingRes.rows.length} duplicate identities in DISCOVERED_LISTINGS. Merging...`,
+        );
+        for (const dup of listingRes.rows) {
+          const pk = dup.PK_UPPER || dup.pk_upper;
+          const rowsRes = await this.runSQL(
+            `SELECT * FROM DISCOVERED_LISTINGS WHERE UPPER(owner_publickey) = '${pk}' ORDER BY timestamp DESC`,
+          );
+          if (rowsRes.rows && rowsRes.rows.length > 1) {
+            const master = rowsRes.rows[0];
+            await this.runSQL(
+              `DELETE FROM DISCOVERED_LISTINGS WHERE UPPER(owner_publickey) = '${pk}'`,
+            );
+            const sql = `INSERT INTO DISCOVERED_LISTINGS (owner_publickey, listings, timestamp, last_seen)
+                         VALUES ('${pk}', '${this.escapeSql(master.LISTINGS || master.listings || "[]")}', ${master.TIMESTAMP || 0}, ${master.LAST_SEEN || 0})`;
+            await this.runSQL(sql);
+          }
+        }
+      }
+
+      // Final pass: Ensure all primary identities are UPPERCASE even if they weren't duplicates
+      await this.runSQL("UPDATE CHAT_STATUS SET publickey = UPPER(publickey)");
+      await this.runSQL(
+        "UPDATE DISCOVERED_PEERS SET publickey = UPPER(publickey)",
+      );
+      await this.runSQL(
+        "UPDATE METACHAIN_USERS SET publickey = UPPER(publickey), user_id = UPPER(user_id)",
+      );
+      await this.runSQL(
+        "UPDATE DISCOVERED_LISTINGS SET owner_publickey = UPPER(owner_publickey)",
+      );
+
+      console.log("✅ [MIGRATION] Identity normalization complete.");
+    } catch (err) {
+      console.error("❌ [MIGRATION] Error normalizing identities:", err);
+    }
+  }
+
+  private escapeSql(str: string): string {
+    if (!str) return "";
+    return str.replace(/'/g, "''");
+  }
+
+
   private async performChatMigration(
     oldKey: string,
     newKey: string,
@@ -2526,12 +2686,12 @@ WHERE(${addressClause}) AND status = 'pending'`;
     );
 
     // Update Messages
-    const msgSql = `UPDATE CHAT_MESSAGES SET publickey = '${newKey}' WHERE publickey = '${oldKey}'`;
+    const msgSql = `UPDATE CHAT_MESSAGES SET publickey = UPPER('${newKey}') WHERE UPPER(publickey) = UPPER('${oldKey}')`;
     await this.runSQL(msgSql);
 
     // Update Status (Archived, Muted, etc) - Handle Conflicts
     // If status exists for newKey, we might overwrite or merge. Simplest is DELETE old if NEW exists, else UPDATE.
-    const checkSql = `SELECT * FROM CHAT_STATUS WHERE publickey = '${newKey}'`;
+    const checkSql = `SELECT * FROM CHAT_STATUS WHERE UPPER(publickey) = UPPER('${newKey}')`;
     const checkRes = await this.runSQL(checkSql);
 
     if (checkRes.rows && checkRes.rows.length > 0) {
@@ -2540,12 +2700,12 @@ WHERE(${addressClause}) AND status = 'pending'`;
         `ℹ️ [MIGRATION] Status for ${newKey} already exists. Deleting status for ${oldKey}.`,
       );
       await this.runSQL(
-        `DELETE FROM CHAT_STATUS WHERE publickey = '${oldKey}'`,
+        `DELETE FROM CHAT_STATUS WHERE UPPER(publickey) = UPPER('${oldKey}')`,
       );
     } else {
       console.log(`ℹ️ [MIGRATION] Moving status from ${oldKey} to ${newKey}.`);
       await this.runSQL(
-        `UPDATE CHAT_STATUS SET publickey = '${newKey}' WHERE publickey = '${oldKey}'`,
+        `UPDATE CHAT_STATUS SET publickey = UPPER('${newKey}') WHERE UPPER(publickey) = UPPER('${oldKey}')`,
       );
     }
 
