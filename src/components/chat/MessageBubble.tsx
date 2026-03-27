@@ -138,9 +138,7 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
 
   if (currentStatus === 'failed') {
     bubbleColor = "bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/50 shadow-sm opacity-90";
-  } else if (isCharm) {
-    bubbleColor = "bg-transparent shadow-none border-none p-0 overflow-visible";
-  } else if (isTokenTransfer) {
+  } else if (isCharm || isTokenTransfer) {
     bubbleColor = "bg-gradient-to-br from-gray-50 via-white to-gray-50 dark:from-gray-800 dark:via-gray-700 dark:to-gray-800 border border-gray-200 dark:border-gray-600 shadow-md";
   } else if (fromMe) {
     // Channel-style primary (sky-blue/primary)
@@ -222,7 +220,7 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
         {/* The Bubble */}
         <div className="relative max-w-full">
           <AnimatePresence>
-            {isTokenTransfer && currentStatus === 'pending' && (
+            {(isTokenTransfer || isCharm) && currentStatus === 'pending' && (
               <>
                 {[...Array(5)].map((_, i) => (
                   <FlyingMoney key={i} delay={i * 0.1} />
@@ -247,7 +245,7 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
 
           <div
             ref={actionsRef}
-            onClick={() => !isTokenTransfer && setShowActions(!showActions)}
+            onClick={() => !isTokenTransfer && !isCharm && setShowActions(!showActions)}
             className={`relative px-4 py-2.5 ${borderRadius} ${bubbleColor} ${textColor} min-w-[80px] shadow-sm transition-all duration-200 ${!isTokenTransfer ? 'cursor-pointer hover:shadow-md' : ''} ${showActions ? 'ring-2 ring-primary-400 ring-opacity-50' : ''}`}
           >
             {/* Forwarded Indicator */}
@@ -319,39 +317,52 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
                 </motion.div>
               )}
             </AnimatePresence>
-            {/* Token Transfer Content */}
-            {isTokenTransfer && (
+            {/* Unified Transfer / Charm Card */}
+            {(isTokenTransfer || isCharm) && (
               <div className="flex flex-col gap-1 min-w-[200px] max-w-full p-1">
+                {/* Header */}
                 <div className="flex items-center justify-between border-b border-gray-100 dark:border-gray-700 pb-2 mb-1">
                   <span className="text-[10px] uppercase tracking-widest text-gray-400 dark:text-gray-500 font-bold flex items-center gap-1">
-                    <span>💸</span> TRANSFER
+                    <span>{isCharm ? '✨' : '💸'}</span>
+                    {isCharm ? 'CHARM' : 'TRANSFER'}
                   </span>
-                  <div className="flex items-center gap-1">
-                    {currentStatus === 'confirmed' ? (
-                      <span className="text-[10px] font-bold text-emerald-600">CONFIRMED</span>
-                    ) : (
-                      <span className="text-[10px] font-medium text-orange-600">PROCESSING</span>
-                    )}
-                  </div>
+                  {fromMe && (
+                    <div className="flex items-center gap-1">
+                      {currentStatus === 'confirmed' ? (
+                        <span className="text-[10px] font-bold text-emerald-600">CONFIRMED</span>
+                      ) : currentStatus === 'failed' ? (
+                        <span className="text-[10px] font-bold text-red-500">FAILED</span>
+                      ) : (
+                        <span className="text-[10px] font-medium text-orange-600 animate-pulse">PROCESSING</span>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <div className="py-2 flex items-baseline gap-1.5 justify-center">
-                  <span className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-br from-cyan-600 to-blue-600 dark:from-cyan-400 dark:to-blue-400">
-                    {tokenAmount.amount}
-                  </span>
-                  <span className="text-sm font-bold text-gray-400 uppercase">{tokenAmount.tokenName}</span>
-                </div>
-              </div>
-            )}
 
-            {/* Charm Content */}
-            {isCharm && animationData && (
-              <div className="flex flex-col items-center">
-                <div className="w-32 h-32">
-                  <Lottie animationData={animationData} loop={true} />
-                </div>
-                {amount != null && (
-                  <div className="text-sm font-bold bg-white/50 dark:bg-black/20 px-3 py-1 rounded-full mt-2">
-                    💎 {amount} MINIMA
+                {/* Token amount */}
+                {isTokenTransfer && (
+                  <div className="py-2 flex items-baseline gap-1.5 justify-center">
+                    <span className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-br from-cyan-600 to-blue-600 dark:from-cyan-400 dark:to-blue-400">
+                      {tokenAmount!.amount}
+                    </span>
+                    <span className="text-sm font-bold text-gray-400 uppercase">{tokenAmount!.tokenName}</span>
+                  </div>
+                )}
+
+                {/* Charm animation */}
+                {isCharm && animationData && (
+                  <div className="flex flex-col items-center py-2">
+                    <div className="w-32 h-32">
+                      <Lottie animationData={animationData} loop={true} />
+                    </div>
+                    {amount != null && amount > 0 && (
+                      <div className="flex items-baseline gap-1.5 mt-2">
+                        <span className="text-xl font-black text-transparent bg-clip-text bg-gradient-to-br from-cyan-600 to-blue-600 dark:from-cyan-400 dark:to-blue-400">
+                          {amount}
+                        </span>
+                        <span className="text-xs font-bold text-gray-400 uppercase">Minima</span>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -388,7 +399,7 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
             )}
 
             {/* Status Footer */}
-            {fromMe && !isCharm && (
+            {fromMe && (
               <div className="flex items-center justify-end gap-1 mt-1 opacity-60">
                 <span className="text-[9px]">
                   {status === 'pending' && <span className="animate-pulse">⌛</span>}
