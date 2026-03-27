@@ -1,6 +1,6 @@
 1 # AGENTS.md - MetaChain Engineering Guide
 
-Last reviewed against codebase: 2026-03-24 (commit `v0.9` + Profile Bug Revert + MLS Auto-Bootstrap Removal)
+Last reviewed against codebase: 2026-03-27 (commit `87b1b2be` + Transaction/Charm fixes + Profile forwarding)
 Scope: `/home/joanramon/Minima/metachain`
 
 ## 1) Project Intent
@@ -69,7 +69,7 @@ SW `handleBeacon` (`public/service-workers/handlers/beacon.handler.js`) currentl
 - self-beacon ignore by comparing `MY_MAXIMA_PK` (except `source === SELF` so the node can persist itself)
 - profile overwrite protection: if incoming `timestamp` is missing and a profile already exists, only `last_seen` is updated
 - persistence into `DISCOVERED_PEERS` with `allow_non_contact_chats` and `extra_data`
-- public listings sync: `listings` array (max 10, types `group`/`channel`) cached in `DISCOVERED_LISTINGS`, updated only when beacon `timestamp` is newer
+- public listings sync: `listings` array (max 10, types `group`/`channel`) cached in `DISCOVERED_LISTINGS`, updated only when beacon `timestamp` is newer. Both groups and public channels are listed here; handlers must normalize both types.
 - promotion into stable `METACHAIN_USERS`
 - reactive relay: when source is `P2P` or `MAXIMA`, calls `sendWelcomePackage` + `askPeers` only when the peer is newly discovered (not already in `DISCOVERED_PEERS`)
 
@@ -213,10 +213,12 @@ To reduce RPC latency and "No Contact found" error noise, both FE and SW impleme
 - SW -> FE:
   - `MDS.comms.solo("CHAT_LIST_UPDATE")`
   - reconnect signal via `MDS.comms.solo(JSON.stringify({ type: 'RECONNECTED', ... }))`
+  - `MDS.comms.solo(JSON.stringify({ type: 'profile_response', publickey, data }))` — SW forwards received profile_response to FE so `ProfileService` can resolve pending promises
 - FE internal browser events:
   - `peer_updated`
   - `DISCOVERY_UPDATE`
   - `minima_balance_update`
+  - `profile_response_received` — dispatched by `minima.service.ts` when a forwarded profile_response arrives; detail: `{ publickey, profile }`
 
 Bridge caveat:
 - `CHAT_LIST_UPDATE` is consumed through `MDS.init` event handling (`minimaService.processEvent`) and also legacy `window.MDS_SOLO_LISTENER` usage in `ChatsAndGroups`.
@@ -253,7 +255,7 @@ Do not create independent history merge algorithms in FE.
 | `delivery_receipt`, `read` | SW `chat.handler.js` | SW | `CHAT_MESSAGES` | `onNewMessage` |
 | `contact_request` domain | SW `contact.handler.js` | SW | `CONTACT_REQUESTS`, `CHAT_MESSAGES` | `onNewMessage` |
 | `maxima_contact_*` domain | SW `contact.handler.js` | SW | `MAXIMA_CONTACT_REQUESTS`, `CHAT_MESSAGES` | `onNewMessage` |
-| `profile_request`, `profile_response` | SW `profile.handler.js` (both request and response) | SW (authoritative), FE may cache | `DISCOVERED_PEERS`, `MY_PROFILE` | `peer_updated` |
+| `profile_request`, `profile_response` | SW `profile.handler.js` (both request and response) | SW (authoritative), FE may cache | `DISCOVERED_PEERS`, `MY_PROFILE` | `peer_updated` + `profile_response` forwarded to FE via `MDS.comms.solo` |
 | `chat_history_*`, `sync_status_*` | SW `chat.handler.js` | SW | `CHAT_MESSAGES`, `MESSAGE_COUNTERS` | `CHAT_LIST_UPDATE`, `history_sync` |
 | reconnect signal (`RECONNECTED`) | SW `main.js` | FE queue state | local queue/cache | offline queue + chat refresh |
 
@@ -308,6 +310,18 @@ For token/charm lifecycle, keep `txpowid` synchronized in both:
 
 Confirmation/recovery logic depends on that coupling.
 
+### 7.4 History dedup strategy
+`checkByContentAndTime()` in `chat.handler.js` deduplicates messages using **timestamp window + type only** — NOT message content. Reason: token and charm messages differ between sender (`message` includes `tokenid`) and receiver (no `tokenid`), so content-based matching caused false negatives and duplicate insertions. The current query matches:
+```sql
+WHERE publickey='...' AND username='Me'/'...'
+AND type='<type>'
+AND (original_timestamp BETWEEN <min> AND <max>)
+```
+Do not add a `message=` clause back to this query.
+
+### 7.5 History processing concurrency
+`_historyProcessingLock` in `chat.handler.js` is a per-peer mutex (plain object). When a `chat_history_response` arrives, the lock prevents parallel processing for the same peer, which would cause duplicate inserts. The lock is released in the final batch completion callback (`processHistoryMessage` when `index >= messages.length`) and on empty-history early-return. Always preserve this lock pattern when refactoring history processing.
+
 ## 8) SQL and Data Conventions (Production Guardrails)
 
 1. Always escape interpolated user values (`escapeSql()` or equivalent safe transform).
@@ -321,10 +335,16 @@ Confirmation/recovery logic depends on that coupling.
 Never add a new column in only one runtime.
 
 6. Schema parity for shared tables must keep minimum compatible columns across both runtimes:
-- `DISCOVERED_PEERS`: `publickey`, `address`, `alias`, `last_seen`, `source`, `allow_non_contact_chats`
+- `DISCOVERED_PEERS`: `publickey`, `address`, `alias`, `last_seen`, `source`, `allow_non_contact_chats`, `bio`, `extra_data`, `avatar`, `minimaaddress`
 - `DISCOVERED_LISTINGS`: `owner_publickey`, `listings`, `timestamp`, `last_seen`
 - `METACHAIN_USERS`: `publickey`, `alias` (plus SW registry fields used by discovery merge)
 - `MESSAGE_COUNTERS`: `publickey`, `next_seq`
+
+  **`DISCOVERED_PEERS` extended columns** (added via `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`):
+  - `bio` — profile bio cached from beacon payload (`p2p_bio` keypair)
+  - `extra_data` — JSON blob with additional profile fields (avatar URL, etc.)
+  - `avatar` — avatar URL cached directly for quick access
+  - `minimaaddress` — Minima wallet address, populated from profile_response (not beacon)
 
 If one runtime extends a shared table, add backward-compatible `ALTER TABLE ... ADD COLUMN IF NOT EXISTS ...` in both runtimes.
 
@@ -453,3 +473,7 @@ Expected: permission gate behavior changes accordingly and beacon updates propag
 | # | Component | Description |
 |---|---|---|
 | A | Profile Request Bug | Auto-MLS bootstrap and aggressive requestId + SQL lookup in profile requests caused timeouts and blocking sends. Reverted both the FE and SW to simple, direct routing with typed `MDS.cmd.maxima()` and regex address validation. Service Worker no longer auto-attempts static MLS or calls `bootstrapFromMLS()` on reconnection. |
+| B | Profile Response Not Resolving | SW received `profile_response` and saved it to DB but never notified the FE, so `ProfileService` promises timed out after 30s. Fix: SW `profile.handler.js` now forwards the response via `MDS.comms.solo({ type: 'profile_response', publickey, data })`. FE `minima.service.ts` routes it to `profileService.handleProfileResponse()` and dispatches `profile_response_received`. `ProfileService` adds in-flight deduplication and 30s throttle per peer. |
+| C | History Dedup False Negatives (Tokens/Charms) | `checkByContentAndTime()` matched on `message = 'content'` which failed for token and charm messages because the sender includes `tokenid` in the message but the receiver does not. Result: duplicate messages after history sync. Fix: dedup now matches on `type + timestamp window` only, without content comparison. See section 7.4. |
+| D | Charm UI (status + animation) | Charm messages used `bg-transparent` bubble and showed no PROCESSING/CONFIRMED/FAILED status. Also, `FlyingMoney` animation only fired for token transfers, not charms. Fix: charm and token transfer now share a unified card component in `MessageBubble.tsx` with consistent bubble style, status badge, and pending animation. |
+| E | Profile Response Silent Fail | SW `profile.handler.js` called `MDS.comms.solo(payload, callback)` with a second callback argument. Per section 11.12, this causes the notification to fail silently, meaning the FE never received the forwarded profile_response. Fix: removed callback; call is now fire-and-forget `MDS.comms.solo(forwardPayload)`. |

@@ -563,7 +563,7 @@ MDS.init(function (msg) {
           if (!hexMatch) return;
 
           var hexData = hexMatch[1].substring(2);
-          var jsonStr = hexToUtf8Simple(hexData);
+          var jsonStr = hexToUtf8(hexData);
           jsonStr = jsonStr.replace(/[\x00-\x1F\x7F-\x9F]/g, "").trim();
           var beacon = JSON.parse(jsonStr);
 

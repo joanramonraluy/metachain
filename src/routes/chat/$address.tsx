@@ -3626,7 +3626,7 @@ function ChatPage() {
         </div>
 
         <button
-          className={`p-2 rounded-full transition-all duration-200 shadow-sm
+          className={`ml-1 p-2 rounded-full transition-all duration-200 shadow-sm
             ${
               input.trim() &&
               blockReason === "none" &&

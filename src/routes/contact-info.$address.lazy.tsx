@@ -65,7 +65,7 @@ function ContactInfoPage() {
     // Tab State
     const [activeTab, setActiveTab] = useState<ContactTab>('profile');
     const [showConfirmDelete, setShowConfirmDelete] = useState(false);
-    const [isCheckingProfile, setIsCheckingProfile] = useState(false);
+    const [isCheckingProfile, setIsCheckingProfile] = useState(true);
 
     // Sync active tab with search params
     useEffect(() => {
@@ -404,9 +404,8 @@ function ContactInfoPage() {
         setExtendedProfile(null);
         setProfileLoaded(false);
         setProfileError(null);
+        setIsCheckingProfile(true);
         profileRequestedRef.current = false;
-        // User allows non-contact chats probably needs reset too if it depends on profile
-        // setUserAllowsNonContactChats(false); // Or undef/default - wait, this is state?
     }, [address]);
 
     // Auto-request extended profile when contact loads
@@ -953,7 +952,12 @@ function ContactInfoPage() {
                             </p>
 
                             {/* Extended Profile Details */}
-                            {profileLoaded && (
+                            {isCheckingProfile && (
+                                <div className="w-full border-t border-gray-100 dark:border-gray-700 pt-6 mt-2 flex justify-center">
+                                    <div className="animate-spin h-6 w-6 border-4 border-primary-500 border-t-transparent rounded-full" />
+                                </div>
+                            )}
+                            {!isCheckingProfile && profileLoaded && (
                                 <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-4 text-left border-t border-gray-100 dark:border-gray-700 pt-6 mt-2">
 
                                     {/* Level 2 Privacy Warning */}
@@ -1192,7 +1196,7 @@ function ContactInfoPage() {
 
                                 {/* Minima Address */}
                                 {contact?.extradata?.minimaaddress && (
-                                    <div className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors group">
+                                    <div className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors group border-b border-gray-100 dark:border-gray-700">
                                         <div className="flex items-center justify-between mb-1">
                                             <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Minima Address</span>
                                             <button
@@ -1204,6 +1208,77 @@ function ContactInfoPage() {
                                             </button>
                                         </div>
                                         <p className="text-sm font-mono text-gray-800 dark:text-gray-200 break-all">{contact.extradata.minimaaddress}</p>
+                                    </div>
+                                )}
+
+                                {/* Maxima Address */}
+                                {contact?.currentaddress && (
+                                    <div className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors group border-b border-gray-100 dark:border-gray-700">
+                                        <div className="flex items-center justify-between mb-1">
+                                            <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Maxima Address</span>
+                                            <button
+                                                onClick={() => copyToClipboard(contact.currentaddress, 'maxima')}
+                                                className="text-primary-600 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-primary-50 rounded"
+                                                title="Copy"
+                                            >
+                                                {copiedField === 'maxima' ? <Check size={16} /> : <Copy size={16} />}
+                                            </button>
+                                        </div>
+                                        <p className="text-sm font-mono text-gray-800 dark:text-gray-200 break-all">{contact.currentaddress}</p>
+                                    </div>
+                                )}
+
+                                {/* My Address */}
+                                {contact?.myaddress && (
+                                    <div className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors group border-b border-gray-100 dark:border-gray-700">
+                                        <div className="flex items-center justify-between mb-1">
+                                            <span className="text-sm font-medium text-gray-500 dark:text-gray-400">My Address (for this contact)</span>
+                                            <button
+                                                onClick={() => copyToClipboard(contact.myaddress || "", 'myaddr')}
+                                                className="text-primary-600 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-primary-50 rounded"
+                                                title="Copy"
+                                            >
+                                                {copiedField === 'myaddr' ? <Check size={16} /> : <Copy size={16} />}
+                                            </button>
+                                        </div>
+                                        <p className="text-sm font-mono text-gray-800 dark:text-gray-200 break-all">{contact.myaddress}</p>
+                                    </div>
+                                )}
+
+                                {/* Last Seen */}
+                                {contact?.lastseen && (
+                                    <div className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors group border-b border-gray-100 dark:border-gray-700">
+                                        <div className="flex items-center justify-between mb-1">
+                                            <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Last Seen</span>
+                                        </div>
+                                        <p className="text-sm text-gray-800 dark:text-gray-200">{new Date(contact.lastseen).toLocaleString()}</p>
+                                        <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{contact.lastseen} ms</p>
+                                    </div>
+                                )}
+
+                                {/* Same Chain */}
+                                {contact?.samechain !== undefined && (
+                                    <div className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors group border-b border-gray-100 dark:border-gray-700">
+                                        <div className="flex items-center justify-between mb-1">
+                                            <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Same Chain</span>
+                                        </div>
+                                        <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full ${contact.samechain ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'}`}>
+                                            <span className={`w-1.5 h-1.5 rounded-full ${contact.samechain ? 'bg-green-500' : 'bg-orange-500'}`} />
+                                            {contact.samechain ? 'Yes' : 'No'}
+                                        </span>
+                                    </div>
+                                )}
+
+                                {/* Chat Permissions */}
+                                {profileLoaded && (
+                                    <div className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors group">
+                                        <div className="flex items-center justify-between mb-1">
+                                            <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Direct Chats</span>
+                                        </div>
+                                        <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full ${userAllowsNonContactChats ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'}`}>
+                                            <span className={`w-1.5 h-1.5 rounded-full ${userAllowsNonContactChats ? 'bg-green-500' : 'bg-gray-400'}`} />
+                                            {userAllowsNonContactChats ? 'Open to everyone' : 'Contacts only'}
+                                        </span>
                                     </div>
                                 )}
                             </div>

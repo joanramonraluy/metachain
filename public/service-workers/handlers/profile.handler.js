@@ -235,8 +235,7 @@ function handleProfileResponse(pubkey, maxjson) {
             publickey: pubkey,
             data: maxjson
         });
-        MDS.comms.solo(forwardPayload, function () {
-            MDS.log("📤 [PROFILE] Forwarded response to frontend for " + pubkey.substring(0, 15) + "...");
-        });
+        MDS.log("📤 [PROFILE] Forwarding response to frontend for " + pubkey.substring(0, 15) + "...");
+        MDS.comms.solo(forwardPayload);
     });
 }
