@@ -1877,6 +1877,16 @@ WHERE (${addressClause}) AND status = 'pending'`;
                 detail: { publickey: parsedMsg.publickey, profile: parsedMsg.data },
               }),
             );
+            // Also dispatch peer_updated so open chat pages refresh contact data (including minimaaddress)
+            window.dispatchEvent(
+              new CustomEvent("peer_updated", {
+                detail: {
+                  publickey: parsedMsg.publickey,
+                  minimaaddress: parsedMsg.data?.minimaaddress,
+                  name: parsedMsg.data?.name,
+                },
+              }),
+            );
           } else if (
             parsedMsg.type &&
             typeof parsedMsg.type === "string" &&

@@ -100,10 +100,9 @@ export async function insertTransaction(
 }
 
 export async function updateTransactionStatus(txpowid: string, status: 'pending' | 'sent' | 'confirmed' | 'rejected'): Promise<void> {
-    const now = Date.now();
     const sql = `
         UPDATE TRANSACTIONS
-        SET status='${status}', updated_at=${now}
+        SET status='${status}'
         WHERE txpowid='${txpowid}'
     `;
 
@@ -153,8 +152,7 @@ export async function updateTransactionTxpowid(pendinguid: string, txpowid: stri
 }
 
 export async function updateTransactionStatusByPendingUid(pendinguid: string, status: 'pending' | 'sent' | 'confirmed' | 'rejected'): Promise<void> {
-    const now = Date.now();
-    const sql = `UPDATE TRANSACTIONS SET status='${status}', updated_at=${now} WHERE pendinguid='${pendinguid}'`;
+    const sql = `UPDATE TRANSACTIONS SET status='${status}' WHERE pendinguid='${pendinguid}'`;
     try {
         await runSQL(sql);
         console.log(`✅ [TX] Updated status for pendinguid ${pendinguid} to ${status}`);
@@ -883,6 +881,12 @@ export async function updateMessageState(publickey: string, timestamp: number, s
             state: state,
             timestamp: timestamp
         });
+
+        // For terminal states, also fire minima_balance_update so the chat reloads
+        // (delivery_receipt is suppressed in the chat to avoid noise, but confirmed/failed need a reload)
+        if (state === 'confirmed' || state === 'failed') {
+            window.dispatchEvent(new CustomEvent('minima_balance_update'));
+        }
 
         return result;
     } catch (err) {

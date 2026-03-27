@@ -167,26 +167,27 @@ function ChatPage() {
         a.sender_seq != null &&
         b.sender_seq != null
       ) {
-        // If either sequence is 0 (pending), treat it specially:
-        // - 0 means "most recent pending", should come AFTER all confirmed messages
-        // - Compare by timestamp if BOTH are 0 (multiple pending items)
-        if (a.sender_seq === 0 && b.sender_seq === 0) {
-          // Both pending - sort by timestamp
-          const timeA =
-            a.originalTimestamp && a.originalTimestamp > 0
-              ? a.originalTimestamp
-              : a.timestamp || 0;
-          const timeB =
-            b.originalTimestamp && b.originalTimestamp > 0
-              ? b.originalTimestamp
-              : b.timestamp || 0;
+        // seq=0 as "most recent pending" only applies to MY outgoing messages.
+        // For received messages (fromMe=false), seq=0 just means unknown — sort by timestamp.
+        const aSeqUnknown = a.sender_seq === 0 && a.fromMe;
+        const bSeqUnknown = b.sender_seq === 0 && b.fromMe;
+
+        if (aSeqUnknown && bSeqUnknown) {
+          // Both my pending — sort by timestamp
+          const timeA = a.originalTimestamp && a.originalTimestamp > 0 ? a.originalTimestamp : a.timestamp || 0;
+          const timeB = b.originalTimestamp && b.originalTimestamp > 0 ? b.originalTimestamp : b.timestamp || 0;
           return timeA - timeB;
-        } else if (a.sender_seq === 0) {
-          return 1; // a (pending) comes after b (confirmed)
-        } else if (b.sender_seq === 0) {
-          return -1; // b (pending) comes after a (confirmed)
+        } else if (aSeqUnknown) {
+          return 1; // my pending goes after confirmed
+        } else if (bSeqUnknown) {
+          return -1;
+        } else if (a.sender_seq === 0 || b.sender_seq === 0) {
+          // Received message with seq=0: fall back to timestamp
+          const timeA = a.originalTimestamp && a.originalTimestamp > 0 ? a.originalTimestamp : a.timestamp || 0;
+          const timeB = b.originalTimestamp && b.originalTimestamp > 0 ? b.originalTimestamp : b.timestamp || 0;
+          return timeA - timeB;
         } else {
-          // Both confirmed - normal sequence comparison
+          // Both have valid seq — normal sequence comparison
           return a.sender_seq - b.sender_seq;
         }
       }
@@ -516,7 +517,25 @@ function ChatPage() {
 
         if (c) {
           console.log("✅ [CHAT] User found in Contact cache");
+
+          // Maxima contacts don't carry minimaaddress — enrich from DISCOVERED_PEERS
+          if (!c.extradata?.minimaaddress && c.publickey) {
+            try {
+              const safeKey = c.publickey.replace(/'/g, "''");
+              const dpRes: any = await withTimeout(
+                MDS.sql(`SELECT MINIMAADDRESS FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('${safeKey}') LIMIT 1`),
+                2000,
+              ).catch(() => ({ status: false }));
+              if (dpRes.status && dpRes.rows?.length > 0 && dpRes.rows[0].MINIMAADDRESS) {
+                if (!c.extradata) (c as any).extradata = {};
+                c.extradata = { ...c.extradata, minimaaddress: dpRes.rows[0].MINIMAADDRESS };
+                console.log("✅ [CHAT] Enriched maxcontact with minimaaddress from DISCOVERED_PEERS");
+              }
+            } catch (e) { /* ignore */ }
+          }
+
           setContact(c);
+          localStorage.setItem(cacheKey, JSON.stringify(c));
           // Preserve icon if we have one in cache AND we are offline/slow
           if (c.extradata?.icon) {
             console.log("🖼️ [CHAT] Preserving avatar from cache.");
@@ -1271,6 +1290,9 @@ function ChatPage() {
                   );
                   finalStatus = "pending";
                 }
+              } else if (finalStatus === "pending") {
+                // No pending/sent transaction found — this message is already confirmed
+                finalStatus = "confirmed";
               }
             }
 
@@ -1283,6 +1305,8 @@ function ChatPage() {
               timestamp: msg.timestamp, // Already a number now
               status: finalStatus,
               tokenAmount: msg.tokenAmount,
+              isCharm: msg.isCharm,
+              isToken: msg.isToken,
               sender_seq: msg.sender_seq,
               customid: msg.customid,
               originalTimestamp: msg.originalTimestamp,
@@ -1746,9 +1770,17 @@ function ChatPage() {
     // Subscribe to new messages
     minimaService.onNewMessage(handleNewMessage);
 
+    // Reload messages when a pending transaction is accepted/denied
+    const handleBalanceUpdate = () => {
+      console.log("💰 [CHAT] Balance update — reloading messages for pending tx state change");
+      loadMessagesFromDB();
+    };
+    window.addEventListener("minima_balance_update", handleBalanceUpdate);
+
     // Cleanup: remove listener when component unmounts or dependencies change
     return () => {
       minimaService.removeNewMessageCallback(handleNewMessage);
+      window.removeEventListener("minima_balance_update", handleBalanceUpdate);
     };
   }, [contact?.publickey, address, navigate, sendPingThrottled]); // Re-run only when peer changes
 

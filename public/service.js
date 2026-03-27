@@ -4740,10 +4740,20 @@ function sendChatHistoryResponse(toPubkey, messages) {
   smartSend(toPubkey, "metachain", hexData, "HISTORY-RESP", false);
 }
 
+var _historyProcessingLock = {};
+
 function handleChatHistoryResponse(pubkey, maxjson) {
+  // Prevent parallel processing for the same peer (race condition causes duplicates)
+  if (_historyProcessingLock[pubkey]) {
+    MDS.log("⏭️ [HISTORY-RESP] Already processing history from " + pubkey.substring(0, 10) + ", skipping duplicate response");
+    return;
+  }
+  _historyProcessingLock[pubkey] = true;
+
   var messages = maxjson.messages;
   if (!messages || messages.length === 0) {
     MDS.log("🔄 [HISTORY-RESP] Received empty history from " + pubkey);
+    delete _historyProcessingLock[pubkey];
     return;
   }
 
@@ -4754,14 +4764,14 @@ function handleChatHistoryResponse(pubkey, maxjson) {
     pubkey,
   );
   var safePubkey = escapeSql(pubkey);
-  processHistoryMessage(safePubkey, messages, 0);
+  processHistoryMessage(safePubkey, pubkey, messages, 0);
 }
 
-function processHistoryMessage(safePubkey, messages, index) {
+function processHistoryMessage(safePubkey, originalPubkey, messages, index) {
   if (index >= messages.length) {
     MDS.log("✅ [HISTORY-RESP] Completed processing batch");
-    // Notify frontend to reload chat list
-    // MDS.comms.solo sends a message to the frontend
+    // Release lock so future history responses from this peer can be processed
+    if (originalPubkey) delete _historyProcessingLock[originalPubkey];
     MDS.comms.solo("CHAT_LIST_UPDATE");
     return;
   }
@@ -4854,7 +4864,7 @@ function processHistoryMessage(safePubkey, messages, index) {
               // Fallback log if insert fails
               MDS.log("❌ [HISTORY-SYNC] Insert failed: " + insRes.error);
             }
-            processHistoryMessage(safePubkey, messages, index + 1);
+            processHistoryMessage(safePubkey, originalPubkey, messages, index + 1);
           });
         },
       );
@@ -4898,13 +4908,13 @@ function processHistoryMessage(safePubkey, messages, index) {
           "✅ [HISTORY-SYNC] Recovered message: " + content.substring(0, 20),
         );
       }
-      processHistoryMessage(safePubkey, messages, index + 1);
+      processHistoryMessage(safePubkey, originalPubkey, messages, index + 1);
     });
   };
 
   var tryUpdate = function (existingId) {
     if (!msg.txpowid) {
-      processHistoryMessage(safePubkey, messages, index + 1);
+      processHistoryMessage(safePubkey, originalPubkey, messages, index + 1);
       return;
     }
 
@@ -4924,7 +4934,7 @@ function processHistoryMessage(safePubkey, messages, index) {
         existingId +
         " with txpowid/state",
       );
-      processHistoryMessage(safePubkey, messages, index + 1);
+      processHistoryMessage(safePubkey, originalPubkey, messages, index + 1);
     });
   };
 
@@ -4939,7 +4949,7 @@ function processHistoryMessage(safePubkey, messages, index) {
         if (msg.txpowid) {
           tryUpdate(res.rows[0].ID);
         } else {
-          processHistoryMessage(safePubkey, messages, index + 1);
+          processHistoryMessage(safePubkey, originalPubkey, messages, index + 1);
         }
       } else {
         // Not found by UUID -> proceed to TxPoWID check
@@ -4960,7 +4970,7 @@ function processHistoryMessage(safePubkey, messages, index) {
       MDS.sql(txCheckSql, function (res) {
         if (res.status && res.rows && res.rows.length > 0) {
           // Exact match found by ID - skip
-          processHistoryMessage(safePubkey, messages, index + 1);
+          processHistoryMessage(safePubkey, originalPubkey, messages, index + 1);
         } else {
           // Not found by ID - Fallback to Content/Time check
           checkByContentAndTime();
@@ -4983,10 +4993,12 @@ function processHistoryMessage(safePubkey, messages, index) {
     var checkSql = "";
 
     if (isIncoming) {
+      // Incoming messages: match by timestamp + type only (message content may include/exclude tokenid)
       checkSql =
         "SELECT * FROM CHAT_MESSAGES WHERE publickey='" +
         safePubkey +
         "' AND username!='Me' " +
+        "AND type='" + type + "' " +
         "AND (original_timestamp BETWEEN " +
         minTime +
         " AND " +
@@ -4995,15 +5007,14 @@ function processHistoryMessage(safePubkey, messages, index) {
         minTime +
         " AND " +
         maxTime +
-        ") " +
-        "AND message='" +
-        content +
-        "'";
+        ")";
     } else {
+      // Outgoing messages: match by timestamp + type only (message content may differ, e.g. tokenid present in one but not the other)
       checkSql =
         "SELECT * FROM CHAT_MESSAGES WHERE publickey='" +
         safePubkey +
         "' AND username='Me' " +
+        "AND type='" + type + "' " +
         "AND (original_timestamp BETWEEN " +
         minTime +
         " AND " +
@@ -5012,10 +5023,7 @@ function processHistoryMessage(safePubkey, messages, index) {
         minTime +
         " AND " +
         maxTime +
-        ") " +
-        "AND message='" +
-        content +
-        "'";
+        ")";
     }
 
     MDS.sql(checkSql, function (res) {
@@ -5024,7 +5032,7 @@ function processHistoryMessage(safePubkey, messages, index) {
         if (msg.txpowid) {
           tryUpdate(res.rows[0].ID);
         } else {
-          processHistoryMessage(safePubkey, messages, index + 1);
+          processHistoryMessage(safePubkey, originalPubkey, messages, index + 1);
         }
       } else {
         // Not found by either method -> Insert

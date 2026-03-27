@@ -511,7 +511,7 @@ class ChatService {
       const sql = `
                 SELECT * FROM CHAT_MESSAGES
                 WHERE (${conditions.join(" OR ")})
-                ORDER BY COALESCE(original_timestamp, date) ASC, sender_seq ASC, id ASC
+                ORDER BY COALESCE(original_timestamp, date) ASC, CASE WHEN sender_seq > 0 THEN sender_seq ELSE 999999 END ASC, id ASC
             `;
 
       console.log(`🔍 [DB] Fetching messages for keys: ${validKeys.join(", ")}`);
