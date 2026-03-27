@@ -35,6 +35,9 @@ const pendingRequests = new Map<string, {
     reject: (error: Error) => void;
     timeout: NodeJS.Timeout;
 }>();
+const inFlightRequests = new Map<string, Promise<ExtendedProfile>>();
+const lastProfileRequestAt = new Map<string, number>();
+const PROFILE_REQUEST_THROTTLE_MS = 30000;
 
 /**
  * Request extended profile from a discovered peer
@@ -58,9 +61,25 @@ export async function requestProfile(
     peerPublicKey: string,  // Add publickey parameter
     timeout: number = 30000 // Increased to 30s for better reliability
 ): Promise<ExtendedProfile> {
+    const normalizedKey = normalizeKey(peerPublicKey);
+
+    // If already in flight, return the same promise (deduplication)
+    const existingRequest = inFlightRequests.get(normalizedKey);
+    if (existingRequest) {
+        return existingRequest;
+    }
+
+    // Throttle: don't re-request the same peer within 30s
+    const now = Date.now();
+    const lastRequestAt = lastProfileRequestAt.get(normalizedKey) || 0;
+    if (now - lastRequestAt < PROFILE_REQUEST_THROTTLE_MS) {
+        return Promise.reject(new Error('Profile request throttled'));
+    }
+    lastProfileRequestAt.set(normalizedKey, now);
+
     console.log(`[ProfileService] Requesting profile from ${peerAddress.substring(0, 20)}...`);
 
-    return new Promise((resolve, reject) => {
+    const requestPromise = new Promise<ExtendedProfile>((resolve, reject) => {
         // Get my Maxima info
         MDS.cmd.maxima({ params: { action: 'info' } }, (infoRes: any) => {
             if (!infoRes.status) {
@@ -88,7 +107,6 @@ export async function requestProfile(
             }, timeout);
 
             // Store pending request (use publickey as key for response matching)
-            const normalizedKey = normalizeKey(peerPublicKey);
             pendingRequests.set(normalizedKey, {
                 resolve,
                 reject,
@@ -120,6 +138,11 @@ export async function requestProfile(
                 console.log(`[ProfileService] ✅ Profile request sent successfully`);
             });
         });
+    });
+
+    inFlightRequests.set(normalizedKey, requestPromise);
+    return requestPromise.finally(() => {
+        inFlightRequests.delete(normalizedKey);
     });
 }
 

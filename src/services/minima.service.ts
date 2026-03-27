@@ -1868,6 +1868,15 @@ WHERE (${addressClause}) AND status = 'pending'`;
             window.dispatchEvent(
               new CustomEvent("GROUP_UPDATE", { detail: parsedMsg }),
             );
+          } else if (parsedMsg.type === "profile_response") {
+            // Forwarded from SW — resolve pending ProfileService promise AND notify UI
+            console.log(`👤 [SERVICE] profile_response forwarded from SW for ${parsedMsg.publickey?.substring(0, 15)}`);
+            profileService.handleProfileResponse(parsedMsg.publickey, parsedMsg.data);
+            window.dispatchEvent(
+              new CustomEvent("profile_response_received", {
+                detail: { publickey: parsedMsg.publickey, profile: parsedMsg.data },
+              }),
+            );
           } else if (
             parsedMsg.type &&
             typeof parsedMsg.type === "string" &&

@@ -228,5 +228,15 @@ function handleProfileResponse(pubkey, maxjson) {
         if (res.status) {
             MDS.log("✅ [PROFILE] Extended profile saved for " + pubkey.substring(0, 15) + "... (allowNonContactChats: " + allowNonContactChats + ")");
         }
+
+        // Forward profile_response to frontend so ProfileService can resolve pending promises
+        var forwardPayload = JSON.stringify({
+            type: "profile_response",
+            publickey: pubkey,
+            data: maxjson
+        });
+        MDS.comms.solo(forwardPayload, function () {
+            MDS.log("📤 [PROFILE] Forwarded response to frontend for " + pubkey.substring(0, 15) + "...");
+        });
     });
 }
