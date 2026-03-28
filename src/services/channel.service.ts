@@ -365,7 +365,11 @@ class ChannelService {
       const res = await this.runSQL(`
                 SELECT cs.*, COALESCE(d.alias, cs.username) as resolved_name
                 FROM CHANNEL_SUBSCRIBERS cs
-                LEFT JOIN DISCOVERED_PEERS d ON UPPER(cs.publickey) = UPPER(d.publickey)
+                LEFT JOIN (
+                    SELECT UPPER(publickey) AS pubkey_upper, MIN(alias) AS alias
+                    FROM DISCOVERED_PEERS
+                    GROUP BY UPPER(publickey)
+                ) d ON UPPER(cs.publickey) = d.pubkey_upper
                 WHERE UPPER(cs.channel_id) = UPPER('${channelId}')
                 ORDER BY cs.joined_date ASC
             `);
