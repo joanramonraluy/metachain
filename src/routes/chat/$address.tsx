@@ -281,7 +281,8 @@ function ChatPage() {
       }
       lastProfileRequestAtRef.current.set(targetPubkey, now);
       try {
-        await requestProfile(targetAddress, targetPubkey);
+        // force: true bypasses module-level throttle since component-level ref already guards
+        await requestProfile(targetAddress, targetPubkey, 30000, true);
       } catch (err) {
         console.warn("⚠️ [CHAT] Profile request failed:", err);
       }

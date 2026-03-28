@@ -5340,6 +5340,18 @@ function handleContactRequest(pubkey, maxjson) {
     smartSend(pubkey, "metachain", confirmHex, "CONTACTS-CONFIRM", false);
 }
 
+function handleContactRequestReceived(pubkey) {
+    MDS.log("✅ [CONTACTS] Request delivery confirmed by " + pubkey);
+
+    var safeFrom = escapeSql(pubkey);
+    var updateSql = "UPDATE CHAT_MESSAGES SET state='delivered' WHERE UPPER(publickey)=UPPER('" + safeFrom + "') AND type='system' AND message='Chat request sent'";
+    MDS.sql(updateSql, function(res) {
+        if (res.status) {
+            MDS.log("✅ [CONTACTS] Message state updated to delivered");
+        }
+    });
+}
+
 function handleContactDeclined(pubkey) {
     MDS.log("🚫 [CONTACTS] Request declined by " + pubkey);
 
@@ -7701,6 +7713,11 @@ MDS.init(function (msg) {
         // ================== CONTACT REQUESTS ==================
         if (maxjson.type === "contact_request") {
           handleContactRequest(pubkey, maxjson);
+          return;
+        }
+
+        if (maxjson.type === "contact_request_received") {
+          handleContactRequestReceived(pubkey);
           return;
         }
 
