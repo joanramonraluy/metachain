@@ -6,7 +6,7 @@ import {
   DiscoveredListing,
   UserWithStatus,
 } from "../services/discovery.service";
-import { Search, Globe, Info, RefreshCw, X, Filter } from "lucide-react";
+import { Search, Globe, Info, RefreshCw, X, Filter, Menu } from "lucide-react";
 import { channelService } from "../services/channel.service";
 import { groupService } from "../services/group.service";
 
@@ -291,6 +291,13 @@ function DiscoveryPage() {
       {/* Header */}
       <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 shadow-sm flex justify-between items-center sticky top-0 z-10 transition-colors">
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => window.dispatchEvent(new Event("open-sidebar"))}
+            className="p-2 -ml-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition md:hidden"
+            aria-label="Menu"
+          >
+            <Menu size={24} className="text-gray-700 dark:text-gray-200" />
+          </button>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
             <Globe className="text-primary-600" />
             P2P Discovery
