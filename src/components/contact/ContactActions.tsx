@@ -102,7 +102,7 @@ const ContactActions: React.FC<ContactActionsProps> = ({
                         )}
 
                         {/* Consolidated Action Logic */}
-                        {((userAllowsNonContactChats || requestStatus === 'accepted' || hasChatHistory || maximaIncomingRequest) && requestStatus !== 'declined') ? (
+                        {(userAllowsNonContactChats || ((requestStatus === 'accepted' || hasChatHistory || maximaIncomingRequest) && requestStatus !== 'declined')) ? (
                             /* Case 1: Chat is Enabled (Open or Accepted or History or Incoming Request) */
                             <>
                                 <button

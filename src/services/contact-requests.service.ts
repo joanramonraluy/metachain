@@ -58,7 +58,7 @@ async function resolveHexPublicKey(address: string): Promise<string> {
 }
 
 async function resolveMaximaAddress(publicKey: string): Promise<string | null> {
-    if (!publicKey || !publicKey.startsWith('0x')) return publicKey;
+    if (!publicKey || !publicKey.toLowerCase().startsWith('0x')) return null;
 
     const safeKey = escapeSql(publicKey);
     const sql = `SELECT address FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('${safeKey}') AND address IS NOT NULL LIMIT 1`;
@@ -463,7 +463,25 @@ export async function declineChatRequest(fromPublicKey: string, options?: { skip
         const jsonStr = JSON.stringify(payload);
         const hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
 
-        const mxAddress = await resolveMaximaAddress(fromPublicKey);
+        let mxAddress = await resolveMaximaAddress(fromPublicKey);
+
+        // Fallback: check the from_address stored in the CONTACT_REQUESTS table
+        // (the sender includes their Mx address in the contact_request payload)
+        if (!mxAddress) {
+            try {
+                const addrSql = `SELECT from_address FROM CONTACT_REQUESTS WHERE UPPER(from_publickey) = UPPER('${safeFromPublicKey}') AND from_address IS NOT NULL AND from_address <> '' LIMIT 1`;
+                const addrRes = await runSQL(addrSql);
+                if (addrRes.rows && addrRes.rows.length > 0) {
+                    const storedAddr = addrRes.rows[0].FROM_ADDRESS;
+                    if (storedAddr && (storedAddr.startsWith('Mx') || storedAddr.startsWith('MX'))) {
+                        console.log(`🔍 [Contact Request] Resolved sender address from CONTACT_REQUESTS: ${storedAddr.substring(0, 10)}...`);
+                        mxAddress = storedAddr;
+                    }
+                }
+            } catch (e) {
+                console.warn("⚠️ [Contact Request] Failed to resolve from_address from CONTACT_REQUESTS:", e);
+            }
+        }
 
         const sendParams: any = {
             action: "send",
