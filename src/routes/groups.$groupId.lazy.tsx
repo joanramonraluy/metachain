@@ -1016,7 +1016,7 @@ function ChatPage() {
         </div>
 
         <button
-          className={`p-2 rounded-full transition-all duration-200 shadow-sm
+          className={`ml-1 p-2 rounded-full transition-all duration-200 shadow-sm
             ${input.trim() ? 'bg-primary-600 text-white hover:bg-primary-700 transform hover:scale-105' : 'bg-gray-200 text-gray-400 cursor-default'}`}
           onClick={handleSendMessage}
           disabled={!input.trim()}

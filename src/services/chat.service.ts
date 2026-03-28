@@ -608,11 +608,15 @@ class ChatService {
                     )
                 ) latest
                 LEFT JOIN CHAT_STATUS s ON UPPER(latest.publickey) = UPPER(s.publickey)
-                LEFT JOIN DISCOVERED_PEERS d ON UPPER(latest.publickey) = UPPER(d.publickey)
+                LEFT JOIN (
+                    SELECT UPPER(publickey) AS pubkey_upper, MIN(alias) AS alias, MIN(avatar) AS avatar, MIN(address) AS address
+                    FROM DISCOVERED_PEERS
+                    GROUP BY UPPER(publickey)
+                ) d ON UPPER(latest.publickey) = d.pubkey_upper
                 LEFT JOIN METACHAIN_USERS u ON UPPER(latest.publickey) = UPPER(u.publickey)
                 LEFT JOIN (
                     SELECT
-                        cm.publickey,
+                        UPPER(cm.publickey) AS pubkey_upper,
                         SUM(
                             CASE
                                 WHEN cm.username <> 'Me' AND (s2.last_opened IS NULL OR cm.date > s2.last_opened) THEN 1
@@ -621,16 +625,16 @@ class ChatService {
                         ) AS unread_count
                     FROM CHAT_MESSAGES cm
                     LEFT JOIN CHAT_STATUS s2 ON UPPER(cm.publickey) = UPPER(s2.publickey)
-                    GROUP BY cm.publickey
-                ) unread ON UPPER(latest.publickey) = UPPER(unread.publickey)
+                    GROUP BY UPPER(cm.publickey)
+                ) unread ON UPPER(latest.publickey) = unread.pubkey_upper
                 LEFT JOIN (
                     SELECT
-                        publickey,
+                        UPPER(publickey) AS pubkey_upper,
                         MAX(COALESCE(original_timestamp, date)) AS last_received_date
                     FROM CHAT_MESSAGES
                     WHERE username <> 'Me'
-                    GROUP BY publickey
-                ) last_incoming ON UPPER(latest.publickey) = UPPER(last_incoming.publickey)
+                    GROUP BY UPPER(publickey)
+                ) last_incoming ON UPPER(latest.publickey) = last_incoming.pubkey_upper
                 ORDER BY COALESCE(latest.original_timestamp, latest.date) DESC, latest.sender_seq DESC, latest.id DESC
             `;
 

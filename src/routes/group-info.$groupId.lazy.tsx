@@ -179,13 +179,22 @@ function GroupInfoPage() {
         };
       });
 
+      // Deduplicate by normalized public key (DB may return same member with 0X and 0x casing)
+      const seen = new Set<string>();
+      const dedupedMembers = mappedMembers.filter((m) => {
+        const normalized = (m.publickey || "").toLowerCase();
+        if (seen.has(normalized)) return false;
+        seen.add(normalized);
+        return true;
+      });
+
       // Sort: Creator > Admin > Member
-      mappedMembers.sort((a, b) => {
+      dedupedMembers.sort((a, b) => {
         const rolePriority = { creator: 0, admin: 1, member: 2 };
         return (rolePriority[a.role] ?? 2) - (rolePriority[b.role] ?? 2);
       });
 
-      setMembers(mappedMembers);
+      setMembers(dedupedMembers);
 
       // Fetch banned members if creator
       const bans = await groupService.getGroupBans(groupId);

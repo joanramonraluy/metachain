@@ -628,7 +628,7 @@ function DiscoveryPage() {
                     {filteredGroups.length}
                   </span>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 px-6 pb-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 px-6 pb-6">
                   {filteredGroups.map((listing) => (
                     <div
                       key={`${listing.owner_publickey}-${listing.id}`}
@@ -694,7 +694,7 @@ function DiscoveryPage() {
                     {filteredChannels.length}
                   </span>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 px-6 pb-10">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 px-6 pb-10">
                   {filteredChannels.map((listing) => (
                     <div
                       key={`${listing.owner_publickey}-${listing.id}`}

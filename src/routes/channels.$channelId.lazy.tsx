@@ -678,7 +678,7 @@ function ChannelPage() {
                     <button
                         onClick={handleSend}
                         disabled={!input.trim() || sending}
-                        className="w-10 h-10 bg-primary-600 flex-shrink-0 rounded-full flex items-center justify-center hover:bg-primary-700 transition-colors disabled:bg-gray-300 dark:disabled:bg-gray-600 disabled:cursor-not-allowed shadow-md"
+                        className="ml-1 w-10 h-10 bg-primary-600 flex-shrink-0 rounded-full flex items-center justify-center hover:bg-primary-700 transition-colors disabled:bg-gray-300 dark:disabled:bg-gray-600 disabled:cursor-not-allowed shadow-md"
                     >
                         <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />

@@ -1844,7 +1844,7 @@ function requestGroupHistoryFromSW(groupId) {
           var memberPk = row.PUBLICKEY;
           if (memberPk === myPubkey) continue;
           // Use smartSend for robust delivery to group members
-          smartSend(memberPk, "metachain-group", hexData, "GROUP-HISTORY-SYNC", false, addr);
+          smartSend(memberPk, "metachain-group", hexData, "GROUP-HISTORY-SYNC", false, row.ADDRESS);
           sentCount++;
         }
 
@@ -2012,7 +2012,7 @@ function handleGroupMessage(pubkey, maxjson) {
 
   // Migration: Ensure propagated column exists
   var migrationSql =
-    "ALTER TABLE GROUP_MESSAGES ADD COLUMN propagated INT DEFAULT 0";
+    "ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS propagated INT DEFAULT 0";
   MDS.sql(migrationSql, function (migRes) {
     var safeGroupId = escapeSql(maxjson.groupId || "");
     var encoded = escapeSql(maxjson.message || "");
@@ -2065,13 +2065,13 @@ function processGroupMessage(
 ) {
   var incomingSeq = maxjson.seq ? parseInt(maxjson.seq) : 0;
 
-  // Check for duplicates
+  // Check for duplicates (case-insensitive publickey to handle 0x vs 0X)
   var checkSql =
     "SELECT id, propagated FROM GROUP_MESSAGES WHERE group_id='" +
     safeGroupId +
-    "' AND sender_publickey='" +
+    "' AND UPPER(sender_publickey)=UPPER('" +
     originalSender +
-    "' AND (date=" +
+    "') AND (date=" +
     messageTimestamp +
     " OR (customid IS NOT NULL AND customid != '' AND customid='" +
     escapeSql(maxjson.customid || "") +
@@ -2202,8 +2202,11 @@ function processGroupMessage(
       });
     }
 
-    if (shouldPropagate) {
+    // Do NOT propagate if already forwarded — prevents exponential storm
+    if (shouldPropagate && !maxjson.forwarded) {
       propagateGroupMessage(pubkey, maxjson);
+    } else if (shouldPropagate && maxjson.forwarded) {
+      MDS.log("ℹ️ [GROUP-MSG] Forwarded copy — skipping re-propagation.");
     }
   });
 }
@@ -2223,7 +2226,10 @@ function propagateGroupMessage(pubkey, maxjson) {
     var members = memberRes.rows;
     MDS.cmd("maxima", function (maximaRes) {
       var myPubkey = maximaRes.response.publickey;
-      var jsonStr = JSON.stringify(maxjson);
+      // Mark as forwarded so recipients do NOT re-propagate (prevents storm)
+      var forwardedMsg = JSON.parse(JSON.stringify(maxjson));
+      forwardedMsg.forwarded = true;
+      var jsonStr = JSON.stringify(forwardedMsg);
       var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
       var propagatedCount = 0;
 
@@ -2406,8 +2412,7 @@ function handleGroupInvite(pubkey, maxjson) {
               }
 
               var addMemberSql =
-                "INSERT INTO GROUP_MEMBERS (group_id, publickey, username, joined_date, role) VALUES " +
-                "('" +
+                "INSERT INTO GROUP_MEMBERS (group_id, publickey, username, joined_date, role) SELECT '" +
                 safeGroupId +
                 "','" +
                 safeMemberPubkey +
@@ -2417,7 +2422,11 @@ function handleGroupInvite(pubkey, maxjson) {
                 safeTimestamp +
                 ",'" +
                 role +
-                "')";
+                "' WHERE NOT EXISTS (SELECT 1 FROM GROUP_MEMBERS WHERE group_id='" +
+                safeGroupId +
+                "' AND UPPER(publickey)=UPPER('" +
+                safeMemberPubkey +
+                "'))";
 
               MDS.sql(addMemberSql, function () {
                 // Seed DISCOVERED_PEERS with this member's Mx address if provided
@@ -2529,6 +2538,24 @@ function handleGroupMemberUpdate(pubkey, maxjson) {
         );
         return;
       }
+      // 🚫 Block duplicate insert if already a member (case-insensitive)
+      var checkAlreadyMemberSql =
+        "SELECT * FROM GROUP_MEMBERS WHERE group_id='" +
+        safeGroupId +
+        "' AND UPPER(publickey)=UPPER('" +
+        safeMemberPublickey +
+        "')";
+      MDS.sql(checkAlreadyMemberSql, function (alreadyRes) {
+        if (alreadyRes.status && alreadyRes.rows && alreadyRes.rows.length > 0) {
+          MDS.log(
+            "ℹ️ [GROUP-MEMBER] Already a member, skipping duplicate insert: " +
+            safeMemberPublickey.substring(0, 10),
+          );
+          MDS.comms.solo(
+            JSON.stringify({ type: "group_update", groupId: safeGroupId }),
+          );
+          return;
+        }
       var addMemberSql =
         "INSERT INTO GROUP_MEMBERS (group_id, publickey, username, joined_date, role) VALUES " +
         "('" +
@@ -2572,6 +2599,7 @@ function handleGroupMemberUpdate(pubkey, maxjson) {
           );
         }
       });
+      }); // end checkAlreadyMemberSql
     });
   } else {
     MDS.cmd("maxima", function (maximaRes) {
@@ -3117,7 +3145,7 @@ function executeJoinRequestAuth(
                 );
                 var now = Date.now();
                 var addMemberSql =
-                  "INSERT INTO GROUP_MEMBERS (group_id, publickey, username, joined_date, role) VALUES ('" +
+                  "INSERT INTO GROUP_MEMBERS (group_id, publickey, username, joined_date, role) SELECT '" +
                   safeGroupId +
                   "', '" +
                   requesterPubkey +
@@ -3125,7 +3153,11 @@ function executeJoinRequestAuth(
                   requesterName +
                   "', " +
                   now +
-                  ", 'member')";
+                  ", 'member' WHERE NOT EXISTS (SELECT 1 FROM GROUP_MEMBERS WHERE group_id='" +
+                  safeGroupId +
+                  "' AND UPPER(publickey)=UPPER('" +
+                  requesterPubkey +
+                  "'))";
 
                 MDS.sql(addMemberSql, function (addRes) {
                   if (addRes.status) {
@@ -3271,13 +3303,13 @@ function executeJoinRequestAuth(
               );
             };
 
-            // Check if already a member
+            // Check if already a member (case-insensitive to handle 0X vs 0x casing)
             var checkMemberSql =
               "SELECT * FROM GROUP_MEMBERS WHERE group_id='" +
               safeGroupId +
-              "' AND publickey='" +
+              "' AND UPPER(publickey)=UPPER('" +
               requesterPubkey +
-              "'";
+              "')";
             MDS.sql(checkMemberSql, function (memberRes) {
               try {
                 if (
