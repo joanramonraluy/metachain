@@ -59,7 +59,8 @@ function utf8ToHex(str: string): string {
 export async function requestProfile(
     peerAddress: string,
     peerPublicKey: string,  // Add publickey parameter
-    timeout: number = 30000 // Increased to 30s for better reliability
+    timeout: number = 30000, // Increased to 30s for better reliability
+    force: boolean = false   // Bypass throttle for explicit user navigations
 ): Promise<ExtendedProfile> {
     const normalizedKey = normalizeKey(peerPublicKey);
 
@@ -69,13 +70,15 @@ export async function requestProfile(
         return existingRequest;
     }
 
-    // Throttle: don't re-request the same peer within 30s
-    const now = Date.now();
-    const lastRequestAt = lastProfileRequestAt.get(normalizedKey) || 0;
-    if (now - lastRequestAt < PROFILE_REQUEST_THROTTLE_MS) {
-        return Promise.reject(new Error('Profile request throttled'));
+    // Throttle: don't re-request the same peer within 30s (unless forced)
+    if (!force) {
+        const now = Date.now();
+        const lastRequestAt = lastProfileRequestAt.get(normalizedKey) || 0;
+        if (now - lastRequestAt < PROFILE_REQUEST_THROTTLE_MS) {
+            return Promise.reject(new Error('Profile request throttled'));
+        }
     }
-    lastProfileRequestAt.set(normalizedKey, now);
+    lastProfileRequestAt.set(normalizedKey, Date.now());
 
     console.log(`[ProfileService] Requesting profile from ${peerAddress.substring(0, 20)}...`);
 

@@ -443,7 +443,8 @@ function ContactInfoPage() {
             // Use dynamic import for code splitting
             const { requestProfile } = await import("../services/profile.service");
             // Use Maxima address for sending, publickey for response matching
-            const profile = await requestProfile(contact.currentaddress, contact.publickey);
+            // force=true bypasses throttle since this is an explicit page navigation
+            const profile = await requestProfile(contact.currentaddress, contact.publickey, 30000, true);
             console.log("🔍 [UI] Profile received, checking fields:", {
                 email: profile.email || 'NOT PRESENT',
                 phone: profile.phone || 'NOT PRESENT',

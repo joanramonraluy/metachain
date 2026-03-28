@@ -725,6 +725,17 @@ WHERE (${addressClause}) AND status = 'pending'`;
           await this.runSQL(updateReqSql);
           console.log("✅ [CONTACTS] Local request status updated to declined");
 
+          // Insert system message so the requester sees "Chat request declined"
+          const now = Date.now();
+          const checkDupSql = `SELECT * FROM CHAT_MESSAGES WHERE UPPER(publickey)=UPPER('${safeFrom}') AND message='Chat request declined' AND date > ${now - 10000}`;
+          const dupRes = await this.runSQL(checkDupSql);
+          if (!dupRes.rows || dupRes.rows.length === 0) {
+            const insertMsgSql = `INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp)
+VALUES('', UPPER('${safeFrom}'), 'System', 'system', 'Chat request declined', '', 'sent', 0, ${now}, NULL, ${now})`;
+            await this.runSQL(insertMsgSql);
+            console.log("✅ [CONTACTS] System message 'Chat request declined' inserted for requester");
+          }
+
           // Notify UI
           chatService.notifyNewMessage({
             ...json,
@@ -784,10 +795,21 @@ WHERE (${addressClause}) AND status = 'pending'`;
 
           const escapeSql = (str: string) => str.replace(/'/g, "''");
           const safeFrom = escapeSql(from);
+          const now = Date.now();
 
-          const updateReqSql = `UPDATE MAXIMA_CONTACT_REQUESTS SET status = 'declined', updated_at = ${Date.now()}
+          const updateReqSql = `UPDATE MAXIMA_CONTACT_REQUESTS SET status = 'declined', updated_at = ${now}
                                           WHERE UPPER(to_publickey) = UPPER('${safeFrom}') AND status = 'pending'`;
           await this.runSQL(updateReqSql);
+
+          // Insert system message so the requester sees "Maxima contact declined"
+          const checkDupSql = `SELECT * FROM CHAT_MESSAGES WHERE UPPER(publickey)=UPPER('${safeFrom}') AND message='Maxima contact declined' AND date > ${now - 10000}`;
+          const dupRes = await this.runSQL(checkDupSql);
+          if (!dupRes.rows || dupRes.rows.length === 0) {
+            const insertMsgSql = `INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp)
+VALUES('', UPPER('${safeFrom}'), 'System', 'system', 'Maxima contact declined', '', 'sent', 0, ${now}, NULL, ${now})`;
+            await this.runSQL(insertMsgSql);
+            console.log("✅ [MAXIMA CONTACT] System message 'Maxima contact declined' inserted for requester");
+          }
 
           chatService.notifyNewMessage({
             ...json,
