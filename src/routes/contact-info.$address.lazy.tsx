@@ -576,6 +576,17 @@ function ContactInfoPage() {
                 setMaximaRequestPending(false);
             }
 
+            // Check if Maxima contact request was already accepted (in either direction)
+            const maxAcceptedSql = `SELECT * FROM MAXIMA_CONTACT_REQUESTS
+                                    WHERE ((UPPER(from_publickey)=UPPER('${myPublicKey}') AND UPPER(to_publickey)=UPPER('${contact.publickey}'))
+                                    OR (UPPER(from_publickey)=UPPER('${contact.publickey}') AND UPPER(to_publickey)=UPPER('${myPublicKey}')))
+                                    AND status='accepted' LIMIT 1`;
+            const maxAcceptedRes = await minimaService.runSQL(maxAcceptedSql);
+            if (maxAcceptedRes && maxAcceptedRes.rows && maxAcceptedRes.rows.length > 0) {
+                console.log("✅ [CONTACT] Maxima contact request already accepted");
+                setIsMaximaContact(true);
+            }
+
             // Check for INCOMING requests (they sent to me)
             const maxIncomingSql = `SELECT * FROM MAXIMA_CONTACT_REQUESTS 
                                     WHERE UPPER(from_publickey)=UPPER('${contact.publickey}') 

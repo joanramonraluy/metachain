@@ -443,6 +443,11 @@ MDS.init(function (msg) {
           return;
         }
 
+        if (maxjson.type === "contact_request_received") {
+          handleContactRequestReceived(pubkey);
+          return;
+        }
+
         if (maxjson.type === "contact_declined") {
           handleContactDeclined(pubkey);
           return;

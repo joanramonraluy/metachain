@@ -101,12 +101,12 @@ export default function CheckContacts() {
 
       // 3. Fetch Chats and filter for non-contacts
       const chats = await chatService.getRecentChats();
-      const contactPublicKeys = new Set(enrichedList.map(c => c.publickey).filter(Boolean));
+      const contactPublicKeys = new Set(enrichedList.map(c => c.publickey?.toUpperCase()).filter(Boolean));
 
       const chatOnlyList: Contact[] = chats
         .filter(chat =>
           chat.publickey &&
-          !contactPublicKeys.has(chat.publickey) &&
+          !contactPublicKeys.has(chat.publickey.toUpperCase()) &&
           !chat.roomname.startsWith("Group: ") // Filter out group chats if needed, or keep them? Usually contacts are individuals.
           // Note: chatService might return groups too if they are just in message list.
           // For now, let's include them if they have a publickey that looks like a user one (Group IDs are usually different format if logic separates them).

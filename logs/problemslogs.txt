@@ -1,0 +1,14 @@
+1. Reload loop a `checkPending` (important)**
+Lines 515, 519, 970, 974: "requestPending detected, reloading" es repeteix en bucle. Després del decline i del segon request, el chat page detecta canvi d'estat → recarrega → torna a detectar → recarrega. La stack trace (lines 880-927) mostra un cascade de re-renders de React (`ke`, `y4` repetits ~20 vegades). Això consumeix recursos innecessàriament.
+
+**2. `contact_request_received` no gestionat al Service Worker**
+Lines 3148, 3336: El SW del sender rep `contact_request_received` però logeja `"Unhandled type"`. El handler només existeix al frontend. Si l'app no està oberta quan arriba, el missatge es perd — el state de "delivered" no s'actualitzaria.
+
+**3. Profile request throttled al chat page**
+Lines 246, 831, 1175, 1491: Cada vegada que s'obre el chat, el profile request falla per throttle. El `force: true` es va afegir a contact-info, però el chat page segueix rebent throttle quan es navega ràpidament (contact-info → chat en <30s).
+
+**4. Duplicate `checkPending` executions**
+Lines 508+514, 962+969: La mateixa lògica de blocking s'executa dues vegades seguides amb resultats idèntics. Probablement dos triggers (mount + event) sense debounce.
+
+**5. Notifications permission denied (menor)**
+Lines 1777, 1879: En alguna pestanya/dispositiu les notificacions es deneguen. No crític però l'usuari no rebria notificacions push.

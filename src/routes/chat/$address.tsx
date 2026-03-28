@@ -391,6 +391,7 @@ function ChatPage() {
     useContext(appContext);
   const isLoadingMessages = useRef(false); // Flag to prevent simultaneous loads
   const pendingReload = useRef(false); // Flag to queue a reload if one is requested while loading
+  const requestPendingHandled = useRef(false); // Ensure requestPending search param only triggers once
 
   // Contact request state
   const [contactRequest, setContactRequest] = useState<any | null>(null);
@@ -993,8 +994,9 @@ function ChatPage() {
       }
     }
 
-    // If we just sent a request, reload messages to show the system message
-    if ((searchParams as any)?.requestPending) {
+    // If we just sent a request, reload messages to show the system message (once only)
+    if ((searchParams as any)?.requestPending && !requestPendingHandled.current) {
+      requestPendingHandled.current = true;
       console.log("🔍 [CHAT] requestPending detected, reloading.");
       loadMessagesFromDB();
     }
@@ -1530,9 +1532,23 @@ function ChatPage() {
         payload.type === "maxima_contact_declined"
       ) {
         console.log("🚫 [CHAT] Contact request declined, refreshing UI...");
-        checkPending();
-        loadContactRequest();
         loadMessagesFromDB(); // Force reload to show "Declined" system message
+        loadContactRequest();
+
+        // Request fresh profile then re-evaluate blocking state
+        if (contact && contact.publickey) {
+          requestProfileThrottled(
+            contact.currentaddress,
+            contact.publickey,
+            "contact-declined",
+          ).finally(() => {
+            console.log("🔄 [CHAT] Profile refresh attempted after decline");
+            checkPending();
+          });
+        } else {
+          checkPending();
+        }
+        return;
       }
 
       // Handle contact accepted - CRITICAL for unblocking sender's chat
@@ -1596,27 +1612,7 @@ function ChatPage() {
         return;
       }
 
-      // Handle contact declined - re-evaluate blocking state
-      if (payload.type === "contact_declined") {
-        console.log("🚫 [CHAT] Contact request declined");
-
-        // Refresh messages to show the system message
-        loadMessagesFromDB();
-
-        // CRITICAL: Refresh the pending status to remove the banner and update blocking
-        if (contact && contact.publickey) {
-          // CRITICAL: Request fresh profile to ensure allowNonContactChats is up-to-date
-          requestProfileThrottled(
-            contact.currentaddress,
-            contact.publickey,
-            "contact-declined",
-          ).finally(() => {
-            console.log("🔄 [CHAT] Profile refresh attempted after decline");
-            checkPending();
-          });
-        }
-        return;
-      }
+      // NOTE: contact_declined is already handled above (with maxima_contact_declined)
 
       // Suppress reloads for read/delivery receipts (checkmarks)
       // The Service Worker has already updated the DB.
