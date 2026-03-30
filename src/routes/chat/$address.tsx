@@ -1376,26 +1376,23 @@ function ChatPage() {
 
       // TRIGGER SYNC: Request history from peer to catch up on missed messages
       if (contact?.publickey) {
-        // Guarded history sync inside initChat (can also be called by useEffect, this is a fallback)
-        if (historyRequestedFor.current !== contact.publickey) {
-          historyRequestedFor.current = contact.publickey;
+        // Normalize pubkey to avoid 0X vs 0x guard bypass
+        const normPk = contact.publickey.toUpperCase();
+        if (historyRequestedFor.current !== normPk) {
+          historyRequestedFor.current = normPk;
           console.log(
             "🔄 [CHAT] Triggering history sync (init) with",
             contact.publickey,
           );
           setIsSyncing(true);
-          // Auto-clear after 15 seconds if no response
+          // Auto-clear after 15 seconds if no SW response
           if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
           syncTimeoutRef.current = setTimeout(() => {
             setIsSyncing(false);
             syncTimeoutRef.current = null;
           }, 15000);
 
-          minimaService
-            .requestChatHistory(contact.publickey)
-            .catch((err) =>
-              console.error("❌ [CHAT] Sync request failed:", err),
-            );
+          (window as any).MDS?.cmd("service:CHAT_SYNC:" + normPk, function () {});
         }
       }
     };
@@ -1447,23 +1444,22 @@ function ChatPage() {
       sendPingThrottled(contact.publickey, "chat-open");
 
       // Request chat history synchronization (GUARDED)
-      // Only request if we haven't requested for this specific key yet in this session
-      if (historyRequestedFor.current !== contact.publickey) {
-        historyRequestedFor.current = contact.publickey;
+      // Normalize pubkey to avoid 0X vs 0x guard bypass
+      const normPkForSync = contact.publickey.toUpperCase();
+      if (historyRequestedFor.current !== normPkForSync) {
+        historyRequestedFor.current = normPkForSync;
         console.log(
           `🔄 [CHAT] Triggering history sync for: ${contact.publickey}`,
         );
         setIsSyncing(true);
-        // Auto-clear after 15 seconds if no response
+        // Auto-clear after 15 seconds if no SW response
         if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
         syncTimeoutRef.current = setTimeout(() => {
           setIsSyncing(false);
           syncTimeoutRef.current = null;
         }, 15000);
 
-        minimaService
-          .requestChatHistory(contact.publickey)
-          .catch(console.error);
+        (window as any).MDS?.cmd("service:CHAT_SYNC:" + normPkForSync, function () {});
 
         // SMART SYNC: Trigger Status Check (Phase 1/2)
         minimaService
@@ -1651,9 +1647,10 @@ function ChatPage() {
           syncTimeoutRef.current = null;
         }, 15000);
 
-        minimaService
-          .requestChatHistory(contact.publickey)
-          .catch(console.error);
+        (window as any).MDS?.cmd(
+          "service:CHAT_SYNC:" + contact.publickey.toUpperCase(),
+          function () {},
+        );
         return;
       }
 

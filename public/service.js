@@ -4926,7 +4926,31 @@ function sendChatHistoryResponse(toPubkey, messages) {
 
 var _historyProcessingLock = {};
 
+// ─── Chat sync guard ────────────────────────────────────────────────────────
+// Prevents multiple concurrent history requests to the same peer.
+// Keys are normalized to uppercase. Cleared on response or timeout.
+var _pendingChatSyncs = {}; // normPk -> startedAt (Date.now())
+var CHAT_SYNC_TIMEOUT_MS = 30000;
+
+/**
+ * Called from MDS_TIMER_10SECONDS in main.js.
+ * Clears stale guards so a new sync can be triggered after timeout.
+ */
+function checkChatSyncTimeouts() {
+  var now = Date.now();
+  for (var pk in _pendingChatSyncs) {
+    if (!_pendingChatSyncs.hasOwnProperty(pk)) continue;
+    if (now - _pendingChatSyncs[pk] > CHAT_SYNC_TIMEOUT_MS) {
+      MDS.log("⏱️ [CHAT-SYNC] Timeout for " + pk.substring(0, 10) + ". Clearing guard.");
+      delete _pendingChatSyncs[pk];
+    }
+  }
+}
+
 function handleChatHistoryResponse(pubkey, maxjson) {
+  // Clear sync guard — response received from this peer
+  delete _pendingChatSyncs[pubkey ? pubkey.toUpperCase() : pubkey];
+
   // Prevent parallel processing for the same peer (race condition causes duplicates)
   if (_historyProcessingLock[pubkey]) {
     MDS.log("⏭️ [HISTORY-RESP] Already processing history from " + pubkey.substring(0, 10) + ", skipping duplicate response");
@@ -5262,55 +5286,47 @@ function requestHistoryFromRecentContacts() {
 }
 
 function requestChatHistory(toPublicKey, toAddress) {
-  var payload = {
-    message: "",
-    type: "chat_history_request",
-    username: "Me",
-    filedata: "",
-    timestamp: Date.now() - 7 * 24 * 60 * 60 * 1000,
-  };
+  var normPk = toPublicKey ? toPublicKey.toUpperCase() : toPublicKey;
 
-  var jsonStr = JSON.stringify(payload);
-  var hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
-
-  // Use specific address if known, otherwise fall back to resolution logic
-  if (toAddress && (toAddress.startsWith("Mx") || toAddress.startsWith("MX"))) {
-    // Use new robust cleaner
-    var cleanAddress = cleanMaximaAddress(toAddress);
-
-    // EXTRA DEBUG: Log address transformation
-    MDS.log(
-      "🔍 [ADDR-DEBUG] Raw: '" +
-      toAddress +
-      "' -> Clean: '" +
-      cleanAddress +
-      "'",
-    );
-
-    var sendCmd =
-      "maxima action:send to:" +
-      cleanAddress +
-      " application:metachain data:" +
-      hexData +
-      " poll:false";
-
-    // DEBUG: Print EXACT command to see what Minima receives
-    MDS.log("🔍 [CMD-DEBUG-V3] " + sendCmd);
-
-    MDS.cmd(sendCmd, function (res) {
-      if (!res.status) {
-        MDS.log(
-          "⚠️ [HISTORY-SYNC] Failed to ask via address " +
-          cleanAddress.substring(0, 10) +
-          " Err: " +
-          res.error,
-        );
-      }
-    });
-  } else {
-    // Fallback to resolving via DB or publickey
-    smartSend(toPublicKey, "metachain", hexData, "HISTORY-SYNC", false);
+  // Guard: skip if sync already in flight for this peer
+  if (_pendingChatSyncs[normPk]) {
+    MDS.log("ℹ️ [CHAT-SYNC] Already in flight for " + normPk.substring(0, 10) + ". Skipping.");
+    return;
   }
+  _pendingChatSyncs[normPk] = Date.now();
+
+  // Query last message timestamp from DB (same peer, both directions)
+  var lastSql = "SELECT date FROM CHAT_MESSAGES WHERE UPPER(publickey)=UPPER('" +
+    escapeSql(toPublicKey) + "') ORDER BY date DESC LIMIT 1";
+  MDS.sql(lastSql, function (lastRes) {
+    var since = (lastRes.status && lastRes.rows && lastRes.rows.length > 0)
+      ? Number(lastRes.rows[0].DATE || lastRes.rows[0].date || 0)
+      : Date.now() - 7 * 24 * 60 * 60 * 1000;
+
+    var payload = {
+      message: "",
+      type: "chat_history_request",
+      username: "Me",
+      filedata: "",
+      timestamp: since,
+    };
+    var hexData = "0x" + utf8ToHex(JSON.stringify(payload)).toUpperCase();
+
+    if (toAddress && (toAddress.toLowerCase().startsWith("mx"))) {
+      var cleanAddress = cleanMaximaAddress(toAddress);
+      MDS.cmd(
+        "maxima action:send to:" + cleanAddress + " application:metachain data:" + hexData + " poll:false",
+        function (res) {
+          if (!res.status) {
+            MDS.log("⚠️ [CHAT-SYNC] Failed via address. Falling back to publickey.");
+            smartSend(toPublicKey, "metachain", hexData, "CHAT-HISTORY-SYNC", false);
+          }
+        }
+      );
+    } else {
+      smartSend(toPublicKey, "metachain", hexData, "CHAT-HISTORY-SYNC", false);
+    }
+  });
 }
 
 // (cleanMaximaAddress and smartSend are provided by utils.js)
@@ -7548,6 +7564,15 @@ MDS.init(function (msg) {
           .catch(function (err) {
             MDS.log("⚠️ [SERVICE] Coin discovery error: " + err);
           });
+      }
+    }
+    // Frontend requests individual chat history sync — centralized in SW
+    // Format: service:CHAT_SYNC:<pubkey>
+    else if (msg.data && typeof msg.data.service === "string" && msg.data.service.indexOf("CHAT_SYNC:") === 0) {
+      var syncPubkey = msg.data.service.substring("CHAT_SYNC:".length);
+      if (syncPubkey && typeof requestChatHistory === "function") {
+        MDS.log("🔄 [SERVICE] Chat sync requested from frontend for " + syncPubkey.substring(0, 10));
+        requestChatHistory(syncPubkey);
       }
     }
     // Frontend requests group history sync — centralized in SW

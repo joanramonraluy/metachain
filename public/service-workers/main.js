@@ -125,6 +125,15 @@ MDS.init(function (msg) {
           });
       }
     }
+    // Frontend requests individual chat history sync — centralized in SW
+    // Format: service:CHAT_SYNC:<pubkey>
+    else if (msg.data && typeof msg.data.service === "string" && msg.data.service.indexOf("CHAT_SYNC:") === 0) {
+      var syncPubkey = msg.data.service.substring("CHAT_SYNC:".length);
+      if (syncPubkey && typeof requestChatHistory === "function") {
+        MDS.log("🔄 [SERVICE] Chat sync requested from frontend for " + syncPubkey.substring(0, 10));
+        requestChatHistory(syncPubkey);
+      }
+    }
     // Frontend requests group history sync — centralized in SW
     // Format: service:GROUP_SYNC:<groupId>
     else if (msg.data && typeof msg.data.service === "string" && msg.data.service.indexOf("GROUP_SYNC:") === 0) {
