@@ -1,6 +1,6 @@
 1 # AGENTS.md - MetaChain Engineering Guide
 
-Last reviewed against codebase: 2026-03-28 (commit `9f318729` + Contact request fixes + Reload loop fixes)
+Last reviewed against codebase: 2026-03-30 (commit `629615c8` + Group sync redesign: timer fix, pubkey normalization, SW-centralized sync)
 Scope: `/home/joanramon/Minima/metachain`
 
 ## 1) Project Intent
@@ -239,6 +239,7 @@ SW handles:
 - gap detection by `sender_seq`
 - `sync_status_check` / `sync_status_report`
 - group/channel history request fanout and `*_SYNC_START`/`*_SYNC_END` signaling, including immediate `*_SYNC_END` when there are no remote peers (or only self)
+- group sync timeout and retry via `checkSyncTimeouts()` (hooked to `MDS_TIMER_10SECONDS`)
 
 FE handles:
 - triggering sync requests from open chats
@@ -257,6 +258,7 @@ Do not create independent history merge algorithms in FE.
 | `maxima_contact_*` domain | SW `contact.handler.js` | SW | `MAXIMA_CONTACT_REQUESTS`, `CHAT_MESSAGES` | `onNewMessage` |
 | `profile_request`, `profile_response` | SW `profile.handler.js` (both request and response) | SW (authoritative), FE may cache | `DISCOVERED_PEERS`, `MY_PROFILE` | `peer_updated` + `profile_response` forwarded to FE via `MDS.comms.solo` |
 | `chat_history_*`, `sync_status_*` | SW `chat.handler.js` | SW | `CHAT_MESSAGES`, `MESSAGE_COUNTERS` | `CHAT_LIST_UPDATE`, `history_sync` |
+| `history_request` / `history_response` (groups) | SW `group.handler.js` | SW | `GROUP_MESSAGES` | `GROUP_SYNC_START`, `GROUP_SYNC_END` via `MDS.comms.solo` |
 | reconnect signal (`RECONNECTED`) | SW `main.js` | FE queue state | local queue/cache | offline queue + chat refresh |
 
 ### 6.5 Single Owner Per Flow (Do Not Duplicate)
@@ -394,6 +396,10 @@ When changing protocol code, log:
 20. **Public Key Case Inconsistency (`0x` vs `0X`)**: Minima/Maxima returns public keys with lowercase `0x` prefix, but DB `UPPER()` calls and some internal flows store them with uppercase `0X`. Any code that uses `startsWith('0x')` or `Set.has(publickey)` for comparison MUST be case-insensitive (use `.toLowerCase().startsWith('0x')` or normalize both sides with `.toUpperCase()`). This caused silent Maxima send failures and contact list duplication.
 15. **SW/FE Race Condition**: Maxima events trigger reloads in both SW (persistence) and FE (UI). FE must use a small delay (e.g. 200ms) for `MAXIMA` content reloads to ensure SW has finished its DB work. `CHAT_LIST_UPDATE` signals from SW are deterministic and do not require a delay.
 18. **`MDSCOMMS` not `MDS_SOLO`**: `MDS.comms.solo()` in the SW fires a **`MDSCOMMS`** event at the frontend, NOT `MDS_SOLO`. The event data structure is `{ event: "MDSCOMMS", data: { public: false, message: "<string>" } }` — the payload string is at `event.data.message`, not `event.data`. In `processEvent` (minima.service.ts), always check `event.event === "MDSCOMMS"` and extract `event.data?.message ?? event.data`. Using the wrong event name means `NEW_CHAT_MESSAGE` and `CHAT_LIST_UPDATE` signals from the SW are silently dropped, causing messages to not appear in the UI unless a MAXIMA fallback fires.
+21. **`MDS.cmd("timer X", callback)` fires immediately in Rhino**: In the Minima Service Worker (Rhino/Nashorn engine), `MDS.cmd("timer 30000", cb)` calls `cb` immediately with the command result — it does NOT wait X milliseconds. Use `MDS_TIMER_10SECONDS` (fires every ~10s reliably) combined with `Date.now()` timestamps for real elapsed-time checks. Pattern: store `startedAt: Date.now()` in state, check `Date.now() - startedAt >= threshold` inside a `checkXxxTimeouts()` function called from `MDS_TIMER_10SECONDS` handler. See `checkSyncTimeouts()` in `group.handler.js`.
+
+22. **Group sync pubkey case normalization**: Public keys stored in `GROUP_MEMBERS` come from SQL as uppercase (`0X30819F...`), but Maxima `msg.data.from` delivers them lowercase (`0x30819f...`). Any `pending`/`paginating` tracking object that uses pubkeys as keys MUST normalize with `.toUpperCase()` on both write and read. Failure causes `delete pending[pubkey]` to silently no-op, leaving remaining count stuck and sync completing only via timeout.
+
 19. **Profile Request/Response Simplicity**: Profile request/response must NOT use `MDS.executeRaw` SQL lookup or add requestId tracing. The FE uses `MDS.cmd.maxima()` to send directly to `peerAddress`; the SW sends the response via `MDS.cmd()` directly to `requesterAddress` (validating the Mx prefix). Avoid complexity: keep the flow straightforward with regex address validation and fallback-to-publickey logic. Intricate routing or SQL DB lookups in the send path add latency and cause profile request timeouts.
 
 ## 12) Pre-merge Checklist (Mandatory for protocol/state changes)
@@ -483,3 +489,6 @@ Expected: permission gate behavior changes accordingly and beacon updates propag
 | H | Chat page reload loop on `contact_declined` | Two separate handlers processed the same `contact_declined` event (lines 1528 and 1600) without a `return` in the first. Result: 2x `checkPending()` + 2x `loadMessagesFromDB()` per event. Also, `searchParams.requestPending` was never cleared, causing every `checkPending()` call to re-trigger `loadMessagesFromDB()`. Fix: consolidated into single handler with `return`, added `requestPendingHandled` ref to fire once. |
 | I | Duplicate contacts after Maxima contact accept | `CheckContacts.tsx` dedup used case-sensitive `Set.has()` to filter chat-only contacts. `maxcontacts` returns `0x...` but `CHAT_MESSAGES` stores `0X...`, so the same user appeared twice. Fix: normalize both sides with `.toUpperCase()` before comparison. |
 | J | Contact-info shows "Request Maxima Contact" for existing contacts | `isMaximaContact` was set once on mount via `fetchContact()` and never re-checked. Fix: `checkStatus()` now queries `MAXIMA_CONTACT_REQUESTS` for `status='accepted'` in both directions and sets `isMaximaContact(true)` if found. |
+| K | Group sync timer fires immediately in Rhino | `MDS.cmd("timer 30000", cb)` was used for retry/timeout logic in `startSyncTimer()`. In the Rhino SW engine, this calls `cb` immediately (not after 30s), causing all 3 retry attempts within 1-2 seconds and the sync completing before any peer responses arrived. Fix: removed `startSyncTimer()`; added `startedAt: Date.now()` to `_pendingSyncs` state and `checkSyncTimeouts()` called from the `MDS_TIMER_10SECONDS` event handler. See section 11.21. |
+| L | Group sync peer tracking broken by pubkey case mismatch | `_pendingSyncs[groupId].pending` was keyed with SQL-uppercase pubkeys (`0X...`), but `markSyncPeerDone()` received Maxima lowercase pubkeys (`0x...`). `delete pending[pubkey]` was a no-op, so `remaining` never reached 0 and syncs always completed via timeout (30-40s) even when all peers had responded. Fix: `.toUpperCase()` normalization at all write/read points for `pending`/`paginating` objects. See section 11.22. |
+| M | Group sync centralized in SW; frontend delegates via service command | Frontend previously ran its own history request logic in `group.service.ts` with empty `senderPublickey` (filled-by comment but never actually filled). Sync was not guarded against concurrent calls. Fix: SW owns all group sync logic via `requestGroupHistoryFromSW(groupId)`; frontend sends `service:GROUP_SYNC:<groupId>` via `(window as any).MDS?.cmd()` to delegate. SW guards against concurrent syncs per group via `_pendingSyncs[groupId]` check. |

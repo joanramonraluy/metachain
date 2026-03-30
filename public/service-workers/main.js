@@ -97,6 +97,16 @@ MDS.init(function (msg) {
     }
   }
 
+  // Periodic 10-second timer — used for sync timeout checks
+  else if (msg.event == "MDS_TIMER_10SECONDS") {
+    if (typeof checkSyncTimeouts === "function") {
+      checkSyncTimeouts();
+    }
+    if (typeof checkChannelSyncTimeouts === "function") {
+      checkChannelSyncTimeouts();
+    }
+  }
+
   // Service commands from frontend
   else if (msg.event == "MDS_SERVICECMD") {
     if (msg.data && msg.data.service === "COINDISC") {
@@ -113,6 +123,15 @@ MDS.init(function (msg) {
           .catch(function (err) {
             MDS.log("⚠️ [SERVICE] Coin discovery error: " + err);
           });
+      }
+    }
+    // Frontend requests group history sync — centralized in SW
+    // Format: service:GROUP_SYNC:<groupId>
+    else if (msg.data && typeof msg.data.service === "string" && msg.data.service.indexOf("GROUP_SYNC:") === 0) {
+      var syncGroupId = msg.data.service.substring("GROUP_SYNC:".length);
+      if (syncGroupId && typeof requestGroupHistoryFromSW === "function") {
+        MDS.log("🔄 [SERVICE] Group sync requested from frontend for " + syncGroupId);
+        requestGroupHistoryFromSW(syncGroupId);
       }
     }
   }

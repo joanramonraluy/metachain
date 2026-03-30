@@ -1779,21 +1779,110 @@ function handleGroupAddressBeacon(pubkey, maxjson) {
   });
 }
 
-/**
- * SW-side group history request.
- * Sends a history_request to all known members of a group.
- * Used for gap detection and startup sync.
- */
-function requestGroupHistoryFromSW(groupId) {
-  MDS.log("🔄 [GROUP-SYNC] Requesting history for group " + groupId + "...");
+// ─── Sync state tracking ───────────────────────────────────────────────────
+// _pendingSyncs[groupId] = {
+//   syncId:     unique id for this sync session,
+//   expected:   number of peers we asked,
+//   pending:    { pubkey: true } — peers that haven't responded yet,
+//   paginating: { pubkey: true } — peers fetching next pages,
+//   retryCount: number,
+//   startedAt:  Date.now() — used by checkSyncTimeouts() for elapsed-time checks
+// }
+// NOTE: Uses plain objects (no ES6 Set) and MDS_TIMER_10SECONDS event for timeouts
+// (MDS.cmd("timer") callback fires immediately in Rhino — not usable for delays).
+var _pendingSyncs = {};
+var _syncIdCounter = 0;
+var HISTORY_PAGE_SIZE = 50;
+var HISTORY_SYNC_TIMEOUT_MS = 30000; // 30s timeout waiting for all peers
+var HISTORY_SYNC_MAX_RETRIES = 2;
 
-  // Signal sync start
+function _objSize(obj) {
+  var count = 0;
+  for (var k in obj) { if (obj.hasOwnProperty(k)) count++; }
+  return count;
+}
+
+/**
+ * Called when a peer finishes responding (no more pages).
+ * Emits GROUP_SYNC_END only when ALL peers are done.
+ */
+function markSyncPeerDone(groupId, peerPubkey) {
+  var sync = _pendingSyncs[groupId];
+  if (!sync) return;
+
+  var normPk = peerPubkey ? peerPubkey.toUpperCase() : peerPubkey;
+  delete sync.pending[normPk];
+  delete sync.paginating[normPk];
+  var remaining = _objSize(sync.pending) + _objSize(sync.paginating);
+  MDS.log("🔄 [GROUP-SYNC] Peer done: " + peerPubkey.substring(0, 10) + " (" + remaining + " remaining)");
+
+  if (remaining === 0) {
+    finishSync(groupId);
+  }
+}
+
+function finishSync(groupId) {
+  delete _pendingSyncs[groupId];
+  MDS.log("✅ [GROUP-SYNC] Sync complete for " + groupId);
   MDS.comms.solo(
     JSON.stringify({
-      type: "GROUP_SYNC_START",
+      type: "GROUP_SYNC_END",
       groupId: groupId,
     })
   );
+}
+
+/**
+ * Check all pending syncs for timeouts.
+ * Called periodically from MDS_TIMER_10SECONDS event in main.js.
+ * Uses Date.now() comparison instead of MDS.cmd("timer") which fires immediately.
+ */
+function checkSyncTimeouts() {
+  var now = Date.now();
+  for (var groupId in _pendingSyncs) {
+    if (!_pendingSyncs.hasOwnProperty(groupId)) continue;
+    var sync = _pendingSyncs[groupId];
+    var elapsed = now - sync.startedAt;
+
+    if (elapsed < HISTORY_SYNC_TIMEOUT_MS) continue;
+
+    var pendingCount = _objSize(sync.pending);
+    if (pendingCount === sync.expected && sync.retryCount < HISTORY_SYNC_MAX_RETRIES) {
+      MDS.log("⚠️ [GROUP-SYNC] No responses for " + groupId + " after " + elapsed + "ms. Retrying...");
+      delete _pendingSyncs[groupId];
+      requestGroupHistoryFromSW(groupId, sync.retryCount + 1);
+    } else {
+      MDS.log("⏱️ [GROUP-SYNC] Timeout for " + groupId + " (" + pendingCount + " peers still pending). Finishing.");
+      finishSync(groupId);
+    }
+  }
+}
+
+/**
+ * SW-side group history request.
+ * Sends a history_request to all known members of a group.
+ * Guards against concurrent syncs for the same group.
+ */
+function requestGroupHistoryFromSW(groupId, retryCount) {
+  retryCount = retryCount || 0;
+
+  // Guard: if sync is already in progress for this group, skip
+  if (_pendingSyncs[groupId] && retryCount === 0) {
+    MDS.log("ℹ️ [GROUP-SYNC] Sync already in progress for " + groupId + ". Skipping.");
+    return;
+  }
+
+  MDS.log("🔄 [GROUP-SYNC] Requesting history for group " + groupId + " (attempt " + (retryCount + 1) + ")...");
+
+  // Signal sync start only on first attempt
+  if (retryCount === 0) {
+    MDS.comms.solo(
+      JSON.stringify({
+        type: "GROUP_SYNC_START",
+        groupId: groupId,
+      })
+    );
+  }
 
   MDS.cmd("maxima action:info", function (maxInfo) {
     if (!maxInfo.status) return;
@@ -1830,36 +1919,72 @@ function requestGroupHistoryFromSW(groupId) {
         "'";
       MDS.sql(memberSql, function (memberRes) {
         if (!memberRes.status || !memberRes.rows) {
-          MDS.comms.solo(
-            JSON.stringify({
-              type: "GROUP_SYNC_END",
-              groupId: groupId,
-            })
-          );
+          finishSync(groupId);
           return;
         }
-        var sentCount = 0;
+
+        var pendingPeers = {};
+        var peerCount = 0;
         for (var i = 0; i < memberRes.rows.length; i++) {
           var row = memberRes.rows[i];
-          var memberPk = row.PUBLICKEY;
-          if (memberPk === myPubkey) continue;
-          // Use smartSend for robust delivery to group members
+          var memberPk = (row.PUBLICKEY || "").toUpperCase();
+          if (memberPk === myPubkey.toUpperCase()) continue;
           smartSend(memberPk, "metachain-group", hexData, "GROUP-HISTORY-SYNC", false, row.ADDRESS);
-          sentCount++;
+          pendingPeers[memberPk] = true;
+          peerCount++;
         }
 
-        // No eligible remote peers (or only self): finish immediately.
-        if (sentCount === 0) {
+        if (peerCount === 0) {
           MDS.log("ℹ️ [GROUP-SYNC] No remote members to request history from.");
-          MDS.comms.solo(
-            JSON.stringify({
-              type: "GROUP_SYNC_END",
-              groupId: groupId,
-            })
-          );
+          finishSync(groupId);
+          return;
         }
+
+        // Track this sync with a unique syncId and startedAt timestamp
+        _syncIdCounter++;
+        _pendingSyncs[groupId] = {
+          syncId: _syncIdCounter,
+          expected: peerCount,
+          pending: pendingPeers,
+          paginating: {},
+          retryCount: retryCount,
+          startedAt: Date.now(),
+        };
       });
     });
+  });
+}
+
+/**
+ * Request the next history page from a SINGLE peer.
+ * Used when a peer's response contained a full page (HISTORY_PAGE_SIZE messages).
+ */
+function requestNextPageFromPeer(groupId, peerPubkey, sinceTimestamp) {
+  MDS.log("🔄 [GROUP-SYNC] Requesting next page from " + peerPubkey.substring(0, 10) + " for " + groupId + " since " + sinceTimestamp);
+
+  var sync = _pendingSyncs[groupId];
+  if (sync) {
+    sync.paginating[peerPubkey] = true;
+  }
+
+  MDS.cmd("maxima action:info", function (maxInfo) {
+    if (!maxInfo.status) return;
+    var myPubkey = maxInfo.response.publickey;
+
+    var requestPayload = {
+      app: "metachain-group",
+      messageType: "history_request",
+      groupId: groupId,
+      groupName: "SYNC",
+      senderPublickey: myPubkey,
+      senderUsername: "",
+      timestamp: Date.now(),
+      historySince: sinceTimestamp,
+    };
+    var hexData =
+      "0x" + utf8ToHex(JSON.stringify(requestPayload)).toUpperCase();
+
+    smartSend(peerPubkey, "metachain-group", hexData, "GROUP-HISTORY-PAGE", false);
   });
 }
 
@@ -1895,7 +2020,7 @@ function handleGroupHistoryRequest(pubkey, maxjson) {
       escapeSql(groupId) +
       "' AND date > " +
       since +
-      " ORDER BY date ASC LIMIT 50";
+      " ORDER BY date ASC LIMIT " + HISTORY_PAGE_SIZE;
     MDS.sql(sql, function (res) {
       var historyMessages = [];
       if (res.status && res.rows && res.rows.length > 0) {
@@ -1910,6 +2035,7 @@ function handleGroupHistoryRequest(pubkey, maxjson) {
             filedata: row.FILEDATA || row.filedata,
             date: Number(row.DATE || row.date),
             sender_seq: Number(row.SENDER_SEQ || row.sender_seq || 0),
+            customid: row.CUSTOMID || row.customid || "",
             forwarded: row.FORWARDED === true || row.FORWARDED === 'true' || row.FORWARDED === 1,
           });
         }
@@ -1948,15 +2074,23 @@ function handleGroupHistoryResponse(pubkey, maxjson) {
 
   // Filter and Save them
   var savedCount = 0;
+  var latestTimestamp = 0;
   var processNext = function (index) {
     if (index >= messages.length) {
-      // Signal sync end via solo and UI update
-      MDS.comms.solo(
-        JSON.stringify({
-          type: "GROUP_SYNC_END",
-          groupId: groupId,
-        })
-      );
+      // Pagination: if we got a full page, request the next one from THIS peer only
+      if (messages.length >= HISTORY_PAGE_SIZE && latestTimestamp > 0) {
+        MDS.log(
+          "🔄 [GROUP-SYNC] Full page from " + pubkey.substring(0, 10) +
+          ". Requesting next page since " + latestTimestamp,
+        );
+        // Move peer from pending to paginating (first response arrived, more coming)
+        var sync = _pendingSyncs[groupId];
+        if (sync) delete sync.pending[pubkey.toUpperCase()];
+        requestNextPageFromPeer(groupId, pubkey, latestTimestamp);
+      } else {
+        // No more pages from this peer — mark done
+        markSyncPeerDone(groupId, pubkey);
+      }
       return;
     }
 
@@ -1964,18 +2098,30 @@ function handleGroupHistoryResponse(pubkey, maxjson) {
     var timestamp = Number(msg.date);
     var sender = msg.sender_publickey;
 
-    // Duplicate check
+    // Track the latest timestamp for pagination
+    if (timestamp > latestTimestamp) {
+      latestTimestamp = timestamp;
+    }
+
+    // Ensure customid exists for dedup
+    var msgCustomId = msg.customid || ("hist_" + escapeSql(groupId) + "_" + timestamp + "_" + index);
+
+    // Duplicate check: customid first, then fallback to (sender, date)
     var checkSql =
       "SELECT id FROM GROUP_MESSAGES WHERE group_id='" +
       escapeSql(groupId) +
-      "' AND sender_publickey='" +
+      "' AND (customid='" +
+      escapeSql(msgCustomId) +
+      "' OR (UPPER(sender_publickey)=UPPER('" +
       escapeSql(sender) +
-      "' AND date=" +
-      timestamp;
+      "') AND date=" +
+      timestamp +
+      "))";
     MDS.sql(checkSql, function (checkRes) {
       if (checkRes.status && checkRes.rows && checkRes.rows.length > 0) {
         processNext(index + 1);
       } else {
+        savedCount++;
         var insSql =
           "INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read, propagated, sender_seq, customid, forwarded) VALUES " +
           "('" +
@@ -1995,7 +2141,7 @@ function handleGroupHistoryResponse(pubkey, maxjson) {
           ", 0, 1, " +
           (msg.sender_seq || 0) +
           ", '" +
-          escapeSql(msg.customid || "") +
+          escapeSql(msgCustomId) +
           "', " + (msg.forwarded ? 1 : 0) + ")";
         MDS.sql(insSql, function () {
           processNext(index + 1);
@@ -2065,17 +2211,23 @@ function processGroupMessage(
 ) {
   var incomingSeq = maxjson.seq ? parseInt(maxjson.seq) : 0;
 
-  // Check for duplicates (case-insensitive publickey to handle 0x vs 0X)
+  // Ensure every message has a customid (generate one if sender didn't provide it)
+  if (!maxjson.customid) {
+    maxjson.customid = "sw_" + safeGroupId + "_" + messageTimestamp + "_" + Math.random().toString(36).substr(2, 9);
+  }
+
+  // Check for duplicates: customid is the primary dedup key, timestamp is fallback
+  var safeCustomId = escapeSql(maxjson.customid);
   var checkSql =
     "SELECT id, propagated FROM GROUP_MESSAGES WHERE group_id='" +
     safeGroupId +
-    "' AND UPPER(sender_publickey)=UPPER('" +
+    "' AND (customid='" +
+    safeCustomId +
+    "' OR (UPPER(sender_publickey)=UPPER('" +
     originalSender +
-    "') AND (date=" +
+    "') AND date=" +
     messageTimestamp +
-    " OR (customid IS NOT NULL AND customid != '' AND customid='" +
-    escapeSql(maxjson.customid || "") +
-    "'))";
+    "))";
 
   MDS.sql(checkSql, function (checkRes) {
     var shouldPropagate = false;
@@ -7370,6 +7522,16 @@ MDS.init(function (msg) {
     }
   }
 
+  // Periodic 10-second timer — used for sync timeout checks
+  else if (msg.event == "MDS_TIMER_10SECONDS") {
+    if (typeof checkSyncTimeouts === "function") {
+      checkSyncTimeouts();
+    }
+    if (typeof checkChannelSyncTimeouts === "function") {
+      checkChannelSyncTimeouts();
+    }
+  }
+
   // Service commands from frontend
   else if (msg.event == "MDS_SERVICECMD") {
     if (msg.data && msg.data.service === "COINDISC") {
@@ -7386,6 +7548,15 @@ MDS.init(function (msg) {
           .catch(function (err) {
             MDS.log("⚠️ [SERVICE] Coin discovery error: " + err);
           });
+      }
+    }
+    // Frontend requests group history sync — centralized in SW
+    // Format: service:GROUP_SYNC:<groupId>
+    else if (msg.data && typeof msg.data.service === "string" && msg.data.service.indexOf("GROUP_SYNC:") === 0) {
+      var syncGroupId = msg.data.service.substring("GROUP_SYNC:".length);
+      if (syncGroupId && typeof requestGroupHistoryFromSW === "function") {
+        MDS.log("🔄 [SERVICE] Group sync requested from frontend for " + syncGroupId);
+        requestGroupHistoryFromSW(syncGroupId);
       }
     }
   }

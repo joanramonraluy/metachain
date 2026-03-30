@@ -1449,95 +1449,20 @@ class GroupService {
       HISTORY SYNC
     ---------------------------------------------------------------------------- */
   async requestGroupHistory(groupId: string): Promise<void> {
-    console.log(`🔄 [HISTORY-SYNC] Requesting history for group ${groupId}...`);
+    console.log(`🔄 [HISTORY-SYNC] Delegating sync to Service Worker for group ${groupId}`);
 
-    // Signal sync start to UI
-    MDS.comms.solo(
-      JSON.stringify({
-        type: "GROUP_SYNC_START",
-        groupId: groupId,
-      }),
-      () => {},
-    );
-
-    // NEW: Direct dispatch for immediate UI feedback (MDS_SOLO from DApp doesn't reflect back)
+    // Dispatch immediate UI feedback (SW will emit GROUP_SYNC_START/END via comms.solo)
     window.dispatchEvent(
       new CustomEvent("GROUP_UPDATE", {
         detail: { type: "GROUP_SYNC_START", groupId: groupId },
       }),
     );
 
-    try {
-      // 1. Get last message timestamp
-      const lastMsgSql = `SELECT date FROM GROUP_MESSAGES WHERE group_id = '${groupId}' ORDER BY date DESC LIMIT 1`;
-      const res = await this.runSQL(lastMsgSql);
-      const lastTimestamp =
-        res.rows && res.rows.length > 0 ? res.rows[0].DATE : 0;
-
-      // 2. Prepare Request Message
-      const requestMsg: GroupMaximaMessage = {
-        messageType: "history_request",
-        groupId: groupId,
-        groupName: "SYNC", // Placeholder
-        senderPublickey: "", // Filled by sendMaximaMessage
-        senderUsername: "", // Filled by sendMaximaMessage
-        timestamp: Date.now(),
-        historySince: Number(lastTimestamp),
-      };
-
-      // 3. Get Members
-      const members = await this.getGroupMembers(groupId);
-
-      // 4. Send Request to ALL members (Mesh Sync — no Maxima contact required)
-      const { myPublicKey } = await this.getIdentity();
-
-      let sentCount = 0;
-      for (const member of members) {
-        const memberPubkey = String(
-          (member as any).PUBLICKEY || (member as any).publickey || "",
-        ).trim();
-
-        if (!memberPubkey) {
-          console.warn(
-            "⚠️ [HISTORY-SYNC] Skipping member with blank publickey",
-          );
-          continue;
-        }
-
-        // Skip myself
-        if (memberPubkey.toUpperCase() === myPublicKey.toUpperCase()) continue;
-
-        try {
-          await this.sendMaximaMessage(memberPubkey, requestMsg);
-          sentCount++;
-        } catch (err) {
-          console.warn(
-            `⚠️ [HISTORY-SYNC] Failed to ask history from ${memberPubkey.substring(0, 10)}...`,
-          );
-        }
-      }
-
-      console.log(
-        `📤 [GROUP-SYNC] Requested history from ${sentCount} peers (poll:true).`,
-      );
-
-      if (sentCount === 0) {
-        console.log(
-          "ℹ️ [GROUP-SYNC] No peers to request history from. Stopping.",
-        );
-        this.notifyGroupSyncEnd(groupId);
-      }
-    } catch (err) {
-      console.error("❌ [HISTORY-SYNC] Failed to request history:", err);
-      this.notifyGroupSyncEnd(groupId);
-    }
+    // Delegate to Service Worker — single source of truth for sync
+    // Use window.MDS (global) because the imported MDS SDK doesn't expose generic .cmd()
+    (window as any).MDS?.cmd("service:GROUP_SYNC:" + groupId, function() {});
   }
 
-  private notifyGroupSyncEnd(groupId: string) {
-    const detail = { type: "GROUP_SYNC_END", groupId: groupId };
-    MDS.comms.solo(JSON.stringify(detail), () => {});
-    window.dispatchEvent(new CustomEvent("GROUP_UPDATE", { detail }));
-  }
 
   /* ----------------------------------------------------------------------------
       UTILITIES
