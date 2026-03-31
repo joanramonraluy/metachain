@@ -4115,47 +4115,44 @@ function handleChannelHistoryRequest(pubkey, maxjson) {
     "🔄 [CHANNEL-SYNC] History requested for " + channelId + " since " + since,
   );
 
-  MDS.cmd("maxima action:info", function (info) {
-    var myPubkey = info.response.publickey;
-    var sql =
-      "SELECT * FROM CHANNEL_MESSAGES WHERE channel_id='" +
-      escapeSql(channelId) +
-      "' AND date > " +
-      since +
-      " ORDER BY date ASC LIMIT 50";
-    MDS.sql(sql, function (res) {
-      var historyMessages = [];
-      if (res.status && res.rows && res.rows.length > 0) {
-        for (var i = 0; i < res.rows.length; i++) {
-          var row = res.rows[i];
-          historyMessages.push({
-            messageType: "channel_message",
-            channelId: channelId,
-            channelName: "",
-            senderPublickey: row.SENDER_PUBLICKEY || row.sender_publickey,
-            senderUsername: row.SENDER_USERNAME || row.sender_username,
-            message: row.MESSAGE || row.message,
-            messageContentType: row.TYPE || row.type,
-            filedata: row.FILEDATA || row.filedata,
-            timestamp: Number(row.DATE || row.date),
-            sender_seq: Number(row.SENDER_SEQ || row.sender_seq || 0),
-            forwarded: row.FORWARDED === true || row.FORWARDED === 'true' || row.FORWARDED === 1,
-          });
-        }
+  var sql =
+    "SELECT * FROM CHANNEL_MESSAGES WHERE channel_id='" +
+    escapeSql(channelId) +
+    "' AND date > " +
+    since +
+    " ORDER BY date ASC LIMIT 50";
+  MDS.sql(sql, function (res) {
+    var historyMessages = [];
+    if (res.status && res.rows && res.rows.length > 0) {
+      for (var i = 0; i < res.rows.length; i++) {
+        var row = res.rows[i];
+        historyMessages.push({
+          messageType: "channel_message",
+          channelId: channelId,
+          channelName: "",
+          senderPublickey: row.SENDER_PUBLICKEY || row.sender_publickey,
+          senderUsername: row.SENDER_USERNAME || row.sender_username,
+          message: row.MESSAGE || row.message,
+          messageContentType: row.TYPE || row.type,
+          filedata: row.FILEDATA || row.filedata,
+          timestamp: Number(row.DATE || row.date),
+          sender_seq: Number(row.SENDER_SEQ || row.sender_seq || 0),
+          forwarded: row.FORWARDED === true || row.FORWARDED === 'true' || row.FORWARDED === 1,
+        });
       }
+    }
 
-      var responsePayload = {
-        app: "metachain-channel",
-        messageType: "channel_history_response",
-        channelId: channelId,
-        channelName: "",
-        timestamp: Date.now(),
-        historyMessages: historyMessages,
-      };
+    var responsePayload = {
+      app: "metachain-channel",
+      messageType: "channel_history_response",
+      channelId: channelId,
+      channelName: "",
+      timestamp: Date.now(),
+      historyMessages: historyMessages,
+    };
 
-      // Send history response with Address Resolution
-      smartSend(pubkey, "metachain-channel", hexData, "CHANNEL-HISTORY-RESP", false);
-    });
+    var hexData = "0x" + utf8ToHex(JSON.stringify(responsePayload)).toUpperCase();
+    smartSend(pubkey, "metachain-channel", hexData, "CHANNEL-HISTORY-RESP", false);
   });
 }
 
@@ -4461,6 +4458,7 @@ function handleChannelJoinRequest(pubkey, maxjson) {
             };
 
             // 3. Send INVITE back (as "acceptance") via smartSend
+            var hexData = "0x" + utf8ToHex(JSON.stringify(invitePayload)).toUpperCase();
             smartSend(pubkey, "metachain-channel", hexData, "CHANNEL-JOIN-ACCEPT", false, requesterAddress);
 
             // 4. Send SYSTEM MESSAGE locally
