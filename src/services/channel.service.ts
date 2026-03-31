@@ -435,7 +435,7 @@ class ChannelService {
     };
     for (const sub of subs) {
       const pk = (sub as any).PUBLICKEY || sub.publickey;
-      if (pk && pk !== myPublicKey && pk !== subscriberPublicKey) {
+      if (pk && pk.toUpperCase() !== myPublicKey.toUpperCase() && pk.toUpperCase() !== subscriberPublicKey.toUpperCase()) {
         await this.sendMaximaMessage(pk, addedPayload).catch(() => {});
       }
     }
@@ -471,7 +471,7 @@ class ChannelService {
     const subs = await this.getChannelSubscribers(channelId);
     for (const sub of subs) {
       const pk = (sub as any).PUBLICKEY || sub.publickey;
-      if (pk && pk !== myPublicKey) {
+      if (pk && pk.toUpperCase() !== myPublicKey.toUpperCase()) {
         await this.sendMaximaMessage(pk, payload).catch(() => {});
       }
     }
@@ -534,7 +534,7 @@ class ChannelService {
     const subs = await this.getChannelSubscribers(channelId);
     for (const sub of subs) {
       const pk = (sub as any).PUBLICKEY || sub.publickey;
-      if (pk && pk !== myPublicKey) {
+      if (pk && pk.toUpperCase() !== myPublicKey.toUpperCase()) {
         await this.sendMaximaMessage(pk, maximaMsg).catch((err) => {
           console.error(`❌ [CHANNEL] Failed to send to ${pk}:`, err);
         });

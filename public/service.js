@@ -3838,6 +3838,28 @@ function channelRunSQL(query, callback) {
 
 // (Using shared helpers from utils.js)
 
+// ─── Channel sync guard ─────────────────────────────────────────────────────
+// Prevents multiple concurrent history requests for the same channel.
+// Cleared on first response received or after timeout.
+var _pendingChannelSyncs = {}; // channelId -> startedAt (Date.now())
+var CHANNEL_SYNC_TIMEOUT_MS = 30000;
+
+/**
+ * Called from MDS_TIMER_10SECONDS in main.js.
+ * Clears stale guards so a new sync can be triggered after timeout.
+ */
+function checkChannelSyncTimeouts() {
+  var now = Date.now();
+  for (var channelId in _pendingChannelSyncs) {
+    if (!_pendingChannelSyncs.hasOwnProperty(channelId)) continue;
+    if (now - _pendingChannelSyncs[channelId] > CHANNEL_SYNC_TIMEOUT_MS) {
+      MDS.log("⏱️ [CHANNEL-SYNC] Timeout for " + channelId + ". Clearing guard.");
+      delete _pendingChannelSyncs[channelId];
+      MDS.comms.solo(JSON.stringify({ type: "CHANNEL_SYNC_END", channelId: channelId }));
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // channel_invite
 // ---------------------------------------------------------------------------
@@ -3906,15 +3928,24 @@ function handleChannelInvite(pubkey, maxjson) {
                 MDS.log(
                   "✅ [CHANNEL] Successfully joined channel " + channelId,
                 );
-                MDS.comms.solo(
-                  JSON.stringify({
-                    type: "CHANNEL_UPDATE",
-                    channelId: channelId,
-                  }),
-                );
 
-                // 4. Request history immediately after joining
-                requestChannelHistoryFromSW(channelId);
+                // 4. Insert admin as subscriber so history sync can reach them
+                var adminUsername = (maxjson.adminUsername || "Admin").replace(/'/g, "''");
+                var insAdmin =
+                  "MERGE INTO CHANNEL_SUBSCRIBERS (channel_id, publickey, username, joined_date, role) " +
+                  "KEY (channel_id, publickey) " +
+                  "VALUES ('" + channelId + "', UPPER('" + adminPublickey + "'), '" + adminUsername + "', " + Date.now() + ", 'admin')";
+                channelRunSQL(insAdmin, function () {
+                  MDS.comms.solo(
+                    JSON.stringify({
+                      type: "CHANNEL_UPDATE",
+                      channelId: channelId,
+                    }),
+                  );
+
+                  // 5. Request history immediately after joining
+                  requestChannelHistoryFromSW(channelId);
+                });
               }
             });
           }
@@ -3972,9 +4003,9 @@ function handleChannelMessage(senderPublickey, maxjson, skipNotify) {
       var checkSql =
         "SELECT id FROM CHANNEL_MESSAGES WHERE channel_id='" +
         channelId +
-        "' AND sender_publickey='" +
+        "' AND UPPER(sender_publickey)=UPPER('" +
         senderPublickey +
-        "' AND date=" +
+        "') AND date=" +
         date;
       MDS.sql(checkSql, function (checkRes) {
         if (checkRes.status && checkRes.rows && checkRes.rows.length > 0) {
@@ -3986,9 +4017,9 @@ function handleChannelMessage(senderPublickey, maxjson, skipNotify) {
         var counterSql =
           "SELECT last_seen_seq FROM CHANNEL_MSG_COUNTERS WHERE channel_id='" +
           channelId +
-          "' AND sender_publickey='" +
+          "' AND UPPER(sender_publickey)=UPPER('" +
           senderPublickey +
-          "'";
+          "')";
 
         MDS.sql(counterSql, function (counterRes) {
           var lastSeen =
@@ -4035,15 +4066,15 @@ function handleChannelMessage(senderPublickey, maxjson, skipNotify) {
               // 5. Update Counter
               if (senderSeq > lastSeen) {
                 var upCounterSql =
-                  "INSERT INTO CHANNEL_MSG_COUNTERS (channel_id, sender_publickey, last_seen_seq) VALUES ('" +
+                  "MERGE INTO CHANNEL_MSG_COUNTERS (channel_id, sender_publickey, last_seen_seq) " +
+                  "KEY (channel_id, sender_publickey) " +
+                  "VALUES ('" +
                   channelId +
-                  "', '" +
+                  "', UPPER('" +
                   senderPublickey +
-                  "', " +
+                  "'), " +
                   senderSeq +
-                  ") " +
-                  "ON CONFLICT(channel_id, sender_publickey) DO UPDATE SET last_seen_seq = " +
-                  senderSeq;
+                  ")";
                 MDS.sql(upCounterSql);
               }
 
@@ -4130,6 +4161,9 @@ function handleChannelHistoryRequest(pubkey, maxjson) {
 
 function handleChannelHistoryResponse(pubkey, maxjson) {
   var channelId = maxjson.channelId;
+  // Clear sync guard — response received
+  delete _pendingChannelSyncs[channelId];
+
   var messages = maxjson.historyMessages || [];
 
   MDS.log(
@@ -4161,6 +4195,13 @@ function handleChannelHistoryResponse(pubkey, maxjson) {
 }
 
 function requestChannelHistoryFromSW(channelId) {
+  // Guard: skip if sync already in flight for this channel
+  if (_pendingChannelSyncs[channelId]) {
+    MDS.log("ℹ️ [CHANNEL-SYNC] Already in flight for " + channelId + ". Skipping.");
+    return;
+  }
+  _pendingChannelSyncs[channelId] = Date.now();
+
   MDS.log(
     "🔄 [CHANNEL-SYNC] Requesting history for channel " + channelId + "...",
   );
@@ -4204,6 +4245,7 @@ function requestChannelHistoryFromSW(channelId) {
         "'";
       MDS.sql(subSql, function (subRes) {
         if (!subRes.status || !subRes.rows) {
+          delete _pendingChannelSyncs[channelId];
           MDS.comms.solo(
             JSON.stringify({
               type: "CHANNEL_SYNC_END",
@@ -4216,7 +4258,7 @@ function requestChannelHistoryFromSW(channelId) {
         for (var i = 0; i < subRes.rows.length; i++) {
           var row = subRes.rows[i];
           var subPk = row.PUBLICKEY || row.publickey;
-          if (subPk === myPubkey) continue;
+          if (subPk && myPubkey && subPk.toUpperCase() === myPubkey.toUpperCase()) continue;
           var addr = row.ADDRESS || row.address;
           // Use smartSend for address resolution fallback
           smartSend(subPk, "metachain-channel", hexData, "CHANNEL-HISTORY-SYNC", false, addr);
@@ -4228,6 +4270,7 @@ function requestChannelHistoryFromSW(channelId) {
           MDS.log(
             "ℹ️ [CHANNEL-SYNC] No remote subscribers to request history from.",
           );
+          delete _pendingChannelSyncs[channelId];
           MDS.comms.solo(
             JSON.stringify({
               type: "CHANNEL_SYNC_END",
@@ -4444,6 +4487,44 @@ function handleChannelJoinRequest(pubkey, maxjson) {
       );
     });
   } catch (err) { }
+}
+
+// ---------------------------------------------------------------------------
+// channel_subscriber_added / channel_subscriber_removed
+// Called from main.js when the channel admin broadcasts a membership change.
+// ---------------------------------------------------------------------------
+
+function handleChannelSubscriberAdded(pubkey, maxjson) {
+  var channelId = maxjson.channelId;
+  var newPubkey = maxjson.subscriberPublickey || maxjson.publickey;
+  var newUsername = maxjson.subscriberUsername || maxjson.username || "Unknown";
+  if (!channelId || !newPubkey) return;
+
+  MDS.log("📢 [CHANNEL] Subscriber added to " + channelId + ": " + newPubkey.substring(0, 10));
+
+  var upsertSql =
+    "MERGE INTO CHANNEL_SUBSCRIBERS (channel_id, publickey, username, role) " +
+    "KEY (channel_id, publickey) " +
+    "VALUES ('" + escapeSql(channelId) + "', '" + escapeSql(newPubkey) + "', '" +
+    escapeSql(newUsername) + "', 'subscriber')";
+  MDS.sql(upsertSql, function () {
+    MDS.comms.solo(JSON.stringify({ type: "CHANNEL_UPDATE", channelId: channelId }));
+  });
+}
+
+function handleChannelSubscriberRemoved(pubkey, maxjson) {
+  var channelId = maxjson.channelId;
+  var removedPubkey = maxjson.subscriberPublickey || maxjson.publickey;
+  if (!channelId || !removedPubkey) return;
+
+  MDS.log("📢 [CHANNEL] Subscriber removed from " + channelId + ": " + removedPubkey.substring(0, 10));
+
+  var delSql =
+    "DELETE FROM CHANNEL_SUBSCRIBERS WHERE channel_id='" + escapeSql(channelId) +
+    "' AND UPPER(publickey)=UPPER('" + escapeSql(removedPubkey) + "')";
+  MDS.sql(delSql, function () {
+    MDS.comms.solo(JSON.stringify({ type: "CHANNEL_UPDATE", channelId: channelId }));
+  });
 }
 
 /**
