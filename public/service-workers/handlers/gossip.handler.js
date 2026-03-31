@@ -176,7 +176,7 @@ function startGossip() {
 
   // Try discovered peers first
   MDS.sql(
-    "SELECT * FROM DISCOVERED_PEERS ORDER BY last_seen DESC LIMIT 5",
+    "SELECT * FROM DISCOVERED_PEERS ORDER BY last_seen DESC LIMIT " + (typeof DISCOVERY_LIMIT !== "undefined" ? DISCOVERY_LIMIT : 5),
     function (res) {
       if (res.status && res.rows && res.rows.length > 0) {
         MDS.log(

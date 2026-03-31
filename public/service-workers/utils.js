@@ -11,7 +11,8 @@ var LAST_GOSSIP = 0;
 var BEACON_INTERVAL = 60000; // 1 minute
 var MY_MAXIMA_PK = "";
 var BEACON_CACHE = {};
-var GOSSIP_INTERVAL = 30000; // 30 seconds
+var GOSSIP_INTERVAL = 30000; // 30 seconds (overridable via keypair discovery_interval, in seconds)
+var DISCOVERY_LIMIT = 5;    // peers per gossip cycle (overridable via keypair discovery_limit)
 var LAST_BEACON_TIME = 0;
 
 // ============================================================================

@@ -34,6 +34,26 @@ MDS.init(function (msg) {
     MDS.notify("MetaChain Service Worker Started");
     MDS.log("⏰ [SW] Starting Database Initialization...");
     initDatabase();
+
+    // Load user-configurable discovery settings from keypair
+    MDS.keypair.get("discovery_interval", function (res) {
+      if (res && res.status && res.value) {
+        var secs = parseInt(res.value) || 30;
+        if (secs >= 30) {
+          GOSSIP_INTERVAL = secs * 1000;
+          MDS.log("⚙️ [SETTINGS] GOSSIP_INTERVAL=" + GOSSIP_INTERVAL + "ms");
+        }
+      }
+    });
+    MDS.keypair.get("discovery_limit", function (res) {
+      if (res && res.status && res.value) {
+        var lim = parseInt(res.value) || 5;
+        if (lim >= 1 && lim <= 50) {
+          DISCOVERY_LIMIT = lim;
+          MDS.log("⚙️ [SETTINGS] DISCOVERY_LIMIT=" + DISCOVERY_LIMIT);
+        }
+      }
+    });
   }
 
   // Periodic tasks via NEWBLOCK

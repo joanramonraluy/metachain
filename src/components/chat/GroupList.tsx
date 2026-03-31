@@ -26,21 +26,16 @@ export default function GroupList() {
             // Get unread count for each group
             const groupsWithUnread = await Promise.all(
                 groupsList.map(async (group: any) => {
-                    const messages = await groupService.getGroupMessages(group.GROUP_ID);
-                    const unreadCount = messages.filter((m: any) => m.READ === 0).length;
+                    const messages = await groupService.getGroupMessages(group.group_id);
+                    const unreadCount = messages.filter((m: any) => m.READ === 0 || m.read === 0).length;
 
                     // Get last message date
                     const lastMessageDate = messages.length > 0
-                        ? (messages[messages.length - 1] as any).DATE
-                        : group.CREATED_DATE;
+                        ? Number((messages[messages.length - 1] as any).DATE || (messages[messages.length - 1] as any).date || 0)
+                        : group.created_date;
 
                     return {
-                        group_id: group.GROUP_ID,
-                        name: group.NAME,
-                        creator_publickey: group.CREATOR_PUBLICKEY,
-                        created_date: group.CREATED_DATE,
-                        avatar: group.AVATAR,
-                        description: group.DESCRIPTION,
+                        ...group,
                         unreadCount,
                         lastMessageDate
                     };
@@ -137,7 +132,7 @@ export default function GroupList() {
                                     {/* Group Avatar */}
                                     <div className="relative flex-shrink-0">
                                         <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white font-bold text-lg">
-                                            {group.name.charAt(0).toUpperCase()}
+                                            {(group.name || "G").charAt(0).toUpperCase()}
                                         </div>
                                     </div>
 

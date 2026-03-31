@@ -11,7 +11,8 @@ var LAST_GOSSIP = 0;
 var BEACON_INTERVAL = 60000; // 1 minute
 var MY_MAXIMA_PK = "";
 var BEACON_CACHE = {};
-var GOSSIP_INTERVAL = 30000; // 30 seconds
+var GOSSIP_INTERVAL = 30000; // 30 seconds (overridable via keypair discovery_interval, in seconds)
+var DISCOVERY_LIMIT = 5;    // peers per gossip cycle (overridable via keypair discovery_limit)
 var LAST_BEACON_TIME = 0;
 
 // ============================================================================
@@ -7356,7 +7357,7 @@ function startGossip() {
 
   // Try discovered peers first
   MDS.sql(
-    "SELECT * FROM DISCOVERED_PEERS ORDER BY last_seen DESC LIMIT 5",
+    "SELECT * FROM DISCOVERED_PEERS ORDER BY last_seen DESC LIMIT " + (typeof DISCOVERY_LIMIT !== "undefined" ? DISCOVERY_LIMIT : 5),
     function (res) {
       if (res.status && res.rows && res.rows.length > 0) {
         MDS.log(
@@ -7554,6 +7555,26 @@ MDS.init(function (msg) {
     MDS.notify("MetaChain Service Worker Started");
     MDS.log("⏰ [SW] Starting Database Initialization...");
     initDatabase();
+
+    // Load user-configurable discovery settings from keypair
+    MDS.keypair.get("discovery_interval", function (res) {
+      if (res && res.status && res.value) {
+        var secs = parseInt(res.value) || 30;
+        if (secs >= 30) {
+          GOSSIP_INTERVAL = secs * 1000;
+          MDS.log("⚙️ [SETTINGS] GOSSIP_INTERVAL=" + GOSSIP_INTERVAL + "ms");
+        }
+      }
+    });
+    MDS.keypair.get("discovery_limit", function (res) {
+      if (res && res.status && res.value) {
+        var lim = parseInt(res.value) || 5;
+        if (lim >= 1 && lim <= 50) {
+          DISCOVERY_LIMIT = lim;
+          MDS.log("⚙️ [SETTINGS] DISCOVERY_LIMIT=" + DISCOVERY_LIMIT);
+        }
+      }
+    });
   }
 
   // Periodic tasks via NEWBLOCK

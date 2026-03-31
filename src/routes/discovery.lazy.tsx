@@ -22,6 +22,7 @@ function DiscoveryPage() {
   const [previousCount, setPreviousCount] = useState(0);
   const [showNotification, setShowNotification] = useState(false);
   const [notificationMessage, setNotificationMessage] = useState("");
+  const [toastError, setToastError] = useState(false);
   const [totalFound, setTotalFound] = useState(0);
 
   // Search & Filter State
@@ -179,32 +180,36 @@ function DiscoveryPage() {
     }
   };
 
+  const showToast = (message: string, isError = false) => {
+    setToastError(isError);
+    setNotificationMessage(message);
+    setShowNotification(true);
+    setTimeout(() => setShowNotification(false), 3000);
+  };
+
   const handleJoinListing = async (listing: DiscoveredListing) => {
-    if (!listing.link) {
-      alert("No join link available for this listing.");
-      return;
-    }
+    if (!listing.link) return;
     try {
       if (listing.type === "group") {
         await groupService.sendJoinRequest(listing.link);
-        alert("Join request sent.");
+        showToast("Join request sent.");
       } else {
         await channelService.joinViaInviteLink(listing.link);
-        alert("Join request sent.");
+        // Channels are always public — no confirmation needed
       }
     } catch (err) {
       console.error("❌ [DISCOVERY] Join failed:", err);
-      alert("Failed to join. Please try again.");
+      showToast("Failed to join. Please try again.", true);
     }
   };
 
   const handleCopyLink = async (link: string) => {
     try {
       await navigator.clipboard.writeText(link);
-      alert("Join link copied.");
+      showToast("Join link copied.");
     } catch (err) {
       console.error("❌ [DISCOVERY] Copy failed:", err);
-      alert("Failed to copy link.");
+      showToast("Failed to copy link.", true);
     }
   };
 
@@ -762,7 +767,7 @@ function DiscoveryPage() {
 
       {/* Toast Notification */}
       {showNotification && (
-        <div className="fixed bottom-4 right-4 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-2 animate-slide-up z-50">
+        <div className={`fixed bottom-4 right-4 ${toastError ? "bg-red-600" : "bg-green-600"} text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-2 animate-slide-up z-50`}>
           <span>{notificationMessage}</span>
         </div>
       )}

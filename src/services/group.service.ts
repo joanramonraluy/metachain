@@ -698,7 +698,7 @@ class GroupService {
           try {
             await this.sendMemberAddedNotification(
               groupId,
-              (group as any).NAME,
+              group.name,
               publickey,
               username,
               memberAddress,
@@ -728,13 +728,13 @@ class GroupService {
 
       await this.sendGroupInvite(
         groupId,
-        (group as any).NAME,
-        (group as any).DESCRIPTION || "",
+        group.name,
+        group.description || "",
         publickey,
         myPublicKey,
         myUsername,
         members,
-        Number((group as any).CREATED_DATE || Date.now()),
+        Number(group.created_date || Date.now()),
         creatorPub,
         creatorName,
       );
@@ -791,7 +791,7 @@ class GroupService {
         try {
           await this.sendMemberRemovedNotification(
             groupId,
-            (group as any).NAME,
+            group.name,
             publickey,
             memberUsername,
             (m as any).PUBLICKEY,
@@ -835,7 +835,7 @@ class GroupService {
       try {
         await this.sendMemberRemovedNotification(
           groupId,
-          (group as any).NAME,
+          group.name,
           myPublicKey,
           myUsername,
           (m as any).PUBLICKEY,
@@ -891,7 +891,7 @@ class GroupService {
         app: "metachain-group",
         messageType: "group_member_unbanned",
         groupId,
-        groupName: (group as any).NAME,
+        groupName: group.name,
         senderPublickey: senderPub,
         senderUsername: senderName,
         timestamp: Date.now(),
@@ -1063,7 +1063,7 @@ class GroupService {
       const maximaMessage: GroupMaximaMessage = {
         messageType: "group_message",
         groupId,
-        groupName: (group as any).NAME,
+        groupName: group.name,
         senderPublickey: myPublicKey,
         senderUsername: myUsername,
         timestamp: now,
