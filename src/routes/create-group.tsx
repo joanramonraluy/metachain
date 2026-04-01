@@ -38,6 +38,7 @@ function CreateGroupPage() {
     "all",
   );
   const [isPublic, setIsPublic] = useState(false);
+  const [autoApprove, setAutoApprove] = useState(false);
   const [publicCount, setPublicCount] = useState(0);
   const [publicError, setPublicError] = useState("");
   const navigate = useNavigate();
@@ -134,6 +135,7 @@ function CreateGroupPage() {
         myPublicKey,
         userName,
         isPublic,
+        autoApprove,
       );
 
       console.log("✅ [CreateGroup] Group created:", groupId);
@@ -266,6 +268,31 @@ function CreateGroupPage() {
             )}
             <div className="text-xs text-gray-500 dark:text-gray-400">
               Public listings used: {publicCount}/{LISTINGS_PUBLIC_LIMIT}
+            </div>
+
+            <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
+              <div className="flex flex-col">
+                <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                  Automatic Approval
+                </span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  Users with link join instantly
+                </span>
+              </div>
+              <button
+                onClick={() => setAutoApprove(!autoApprove)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                  autoApprove
+                    ? "bg-primary-600"
+                    : "bg-gray-300 dark:bg-gray-600"
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    autoApprove ? "translate-x-6" : "translate-x-1"
+                  }`}
+                />
+              </button>
             </div>
           </div>
 

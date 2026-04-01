@@ -398,14 +398,26 @@ function saveBeaconWithBio(
 
       // Proceed with full profile MERGE
       // Task 4: Proactive cleanup for direct communications
-      var isDirect = source === "P2P" || source === "MAXIMA" || source === "SELF" || source === "BOOTSTRAP";
-      var deleteOldSql = "DELETE FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('" + beacon.pubkey + "')";
-      
+      var isDirect =
+        source === "P2P" ||
+        source === "MAXIMA" ||
+        source === "SELF" ||
+        source === "BOOTSTRAP";
+      var deleteOldSql =
+        "DELETE FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('" +
+        beacon.pubkey +
+        "')";
+
       // Task 3: Conditional LAST_SEEN logic
       var lastSeenToSave = now; // Default for direct
       if (source === "GOSSIP") {
         lastSeenToSave = incomingTimestamp > 0 ? incomingTimestamp : now;
-        MDS.log("🗣️ [GOSSIP-TIME] Using original timestamp " + lastSeenToSave + " for " + beacon.alias);
+        MDS.log(
+          "🗣️ [GOSSIP-TIME] Using original timestamp " +
+            lastSeenToSave +
+            " for " +
+            beacon.alias,
+        );
       }
 
       var discoverySql =
@@ -431,12 +443,18 @@ function saveBeaconWithBio(
 
       // If it's a direct message, we clean up first to ensure we have exactly one fresh entry with the validated IP
       if (isDirect) {
-        MDS.sql(deleteOldSql, function() {
+        MDS.sql(deleteOldSql, function () {
           MDS.sql(discoverySql, function (res) {
             if (res.status) {
-              MDS.log("✅ [BEACON-DIRECT] Validated IP & Saved: " + beacon.alias + " (" + cleanAddress + ")");
+              MDS.log(
+                "✅ [BEACON-DIRECT] Validated IP & Saved: " +
+                  beacon.alias +
+                  " (" +
+                  cleanAddress +
+                  ")",
+              );
               promoteToUserRegistry(beacon, now);
-              
+
               // Reactive gossip
               if ((source === "P2P" || source === "MAXIMA") && !hasExisting) {
                 sendWelcomePackage(beacon.pubkey, beacon.alias, cleanAddress);
@@ -465,7 +483,9 @@ function promoteToUserRegistry(beacon, now) {
   var escapedAlias = escapeSql(beacon.alias);
 
   MDS.sql(
-    "SELECT * FROM METACHAIN_USERS WHERE UPPER(user_id)=UPPER('" + user_id + "')",
+    "SELECT * FROM METACHAIN_USERS WHERE UPPER(user_id)=UPPER('" +
+      user_id +
+      "')",
     function (res) {
       if (res.status && res.rows && res.rows.length > 0) {
         // Update existing

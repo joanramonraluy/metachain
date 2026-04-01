@@ -1882,9 +1882,11 @@ VALUES('', UPPER('${safeFrom}'), 'System', 'system', 'Maxima contact declined', 
             this.notifyNewMessage(parsedMsg);
           } else if (
             parsedMsg.type === "group_update" ||
+            parsedMsg.type === "group_list_updated" ||
             parsedMsg.type === "group_join_requests_update" ||
             parsedMsg.type === "GROUP_SYNC_START" ||
-            parsedMsg.type === "GROUP_SYNC_END"
+            parsedMsg.type === "GROUP_SYNC_END" ||
+            parsedMsg.type === "group_sync_start"
           ) {
             console.log(`🚀 [SERVICE] Group event received: ${parsedMsg.type}`);
             window.dispatchEvent(

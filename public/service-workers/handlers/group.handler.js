@@ -54,10 +54,10 @@ function sendGroupAddressBeacon() {
                   var cleanAddr = cleanMaximaAddress(addr);
                   MDS.cmd(
                     "maxima action:send to:" +
-                    cleanAddr +
-                    " application:metachain-group data:" +
-                    hexData +
-                    " poll:false",
+                      cleanAddr +
+                      " application:metachain-group data:" +
+                      hexData +
+                      " poll:false",
                   );
                 }
               }
@@ -119,7 +119,9 @@ var HISTORY_SYNC_MAX_RETRIES = 2;
 
 function _objSize(obj) {
   var count = 0;
-  for (var k in obj) { if (obj.hasOwnProperty(k)) count++; }
+  for (var k in obj) {
+    if (obj.hasOwnProperty(k)) count++;
+  }
   return count;
 }
 
@@ -135,7 +137,13 @@ function markSyncPeerDone(groupId, peerPubkey) {
   delete sync.pending[normPk];
   delete sync.paginating[normPk];
   var remaining = _objSize(sync.pending) + _objSize(sync.paginating);
-  MDS.log("🔄 [GROUP-SYNC] Peer done: " + peerPubkey.substring(0, 10) + " (" + remaining + " remaining)");
+  MDS.log(
+    "🔄 [GROUP-SYNC] Peer done: " +
+      peerPubkey.substring(0, 10) +
+      " (" +
+      remaining +
+      " remaining)",
+  );
 
   if (remaining === 0) {
     finishSync(groupId);
@@ -149,7 +157,7 @@ function finishSync(groupId) {
     JSON.stringify({
       type: "GROUP_SYNC_END",
       groupId: groupId,
-    })
+    }),
   );
 }
 
@@ -168,12 +176,27 @@ function checkSyncTimeouts() {
     if (elapsed < HISTORY_SYNC_TIMEOUT_MS) continue;
 
     var pendingCount = _objSize(sync.pending);
-    if (pendingCount === sync.expected && sync.retryCount < HISTORY_SYNC_MAX_RETRIES) {
-      MDS.log("⚠️ [GROUP-SYNC] No responses for " + groupId + " after " + elapsed + "ms. Retrying...");
+    if (
+      pendingCount === sync.expected &&
+      sync.retryCount < HISTORY_SYNC_MAX_RETRIES
+    ) {
+      MDS.log(
+        "⚠️ [GROUP-SYNC] No responses for " +
+          groupId +
+          " after " +
+          elapsed +
+          "ms. Retrying...",
+      );
       delete _pendingSyncs[groupId];
       requestGroupHistoryFromSW(groupId, sync.retryCount + 1);
     } else {
-      MDS.log("⏱️ [GROUP-SYNC] Timeout for " + groupId + " (" + pendingCount + " peers still pending). Finishing.");
+      MDS.log(
+        "⏱️ [GROUP-SYNC] Timeout for " +
+          groupId +
+          " (" +
+          pendingCount +
+          " peers still pending). Finishing.",
+      );
       finishSync(groupId);
     }
   }
@@ -189,11 +212,19 @@ function requestGroupHistoryFromSW(groupId, retryCount) {
 
   // Guard: if sync is already in progress for this group, skip
   if (_pendingSyncs[groupId] && retryCount === 0) {
-    MDS.log("ℹ️ [GROUP-SYNC] Sync already in progress for " + groupId + ". Skipping.");
+    MDS.log(
+      "ℹ️ [GROUP-SYNC] Sync already in progress for " + groupId + ". Skipping.",
+    );
     return;
   }
 
-  MDS.log("🔄 [GROUP-SYNC] Requesting history for group " + groupId + " (attempt " + (retryCount + 1) + ")...");
+  MDS.log(
+    "🔄 [GROUP-SYNC] Requesting history for group " +
+      groupId +
+      " (attempt " +
+      (retryCount + 1) +
+      ")...",
+  );
 
   // Signal sync start only on first attempt
   if (retryCount === 0) {
@@ -201,7 +232,7 @@ function requestGroupHistoryFromSW(groupId, retryCount) {
       JSON.stringify({
         type: "GROUP_SYNC_START",
         groupId: groupId,
-      })
+      }),
     );
   }
 
@@ -250,7 +281,14 @@ function requestGroupHistoryFromSW(groupId, retryCount) {
           var row = memberRes.rows[i];
           var memberPk = (row.PUBLICKEY || "").toUpperCase();
           if (memberPk === myPubkey.toUpperCase()) continue;
-          smartSend(memberPk, "metachain-group", hexData, "GROUP-HISTORY-SYNC", false, row.ADDRESS);
+          smartSend(
+            memberPk,
+            "metachain-group",
+            hexData,
+            "GROUP-HISTORY-SYNC",
+            false,
+            row.ADDRESS,
+          );
           pendingPeers[memberPk] = true;
           peerCount++;
         }
@@ -281,7 +319,14 @@ function requestGroupHistoryFromSW(groupId, retryCount) {
  * Used when a peer's response contained a full page (HISTORY_PAGE_SIZE messages).
  */
 function requestNextPageFromPeer(groupId, peerPubkey, sinceTimestamp) {
-  MDS.log("🔄 [GROUP-SYNC] Requesting next page from " + peerPubkey.substring(0, 10) + " for " + groupId + " since " + sinceTimestamp);
+  MDS.log(
+    "🔄 [GROUP-SYNC] Requesting next page from " +
+      peerPubkey.substring(0, 10) +
+      " for " +
+      groupId +
+      " since " +
+      sinceTimestamp,
+  );
 
   var sync = _pendingSyncs[groupId];
   if (sync) {
@@ -305,7 +350,13 @@ function requestNextPageFromPeer(groupId, peerPubkey, sinceTimestamp) {
     var hexData =
       "0x" + utf8ToHex(JSON.stringify(requestPayload)).toUpperCase();
 
-    smartSend(peerPubkey, "metachain-group", hexData, "GROUP-HISTORY-PAGE", false);
+    smartSend(
+      peerPubkey,
+      "metachain-group",
+      hexData,
+      "GROUP-HISTORY-PAGE",
+      false,
+    );
   });
 }
 
@@ -341,7 +392,8 @@ function handleGroupHistoryRequest(pubkey, maxjson) {
       escapeSql(groupId) +
       "' AND date > " +
       since +
-      " ORDER BY date ASC LIMIT " + HISTORY_PAGE_SIZE;
+      " ORDER BY date ASC LIMIT " +
+      HISTORY_PAGE_SIZE;
     MDS.sql(sql, function (res) {
       var historyMessages = [];
       if (res.status && res.rows && res.rows.length > 0) {
@@ -357,7 +409,10 @@ function handleGroupHistoryRequest(pubkey, maxjson) {
             date: Number(row.DATE || row.date),
             sender_seq: Number(row.SENDER_SEQ || row.sender_seq || 0),
             customid: row.CUSTOMID || row.customid || "",
-            forwarded: row.FORWARDED === true || row.FORWARDED === 'true' || row.FORWARDED === 1,
+            forwarded:
+              row.FORWARDED === true ||
+              row.FORWARDED === "true" ||
+              row.FORWARDED === 1,
           });
         }
       }
@@ -377,7 +432,13 @@ function handleGroupHistoryRequest(pubkey, maxjson) {
         "0x" + utf8ToHex(JSON.stringify(responsePayload)).toUpperCase();
 
       // Send history response with Address Resolution
-      smartSend(pubkey, "metachain-group", hexData, "GROUP-HISTORY-RESP", false);
+      smartSend(
+        pubkey,
+        "metachain-group",
+        hexData,
+        "GROUP-HISTORY-RESP",
+        false,
+      );
     });
   });
 }
@@ -388,9 +449,9 @@ function handleGroupHistoryResponse(pubkey, maxjson) {
 
   MDS.log(
     "🔄 [GROUP-SYNC] Received " +
-    messages.length +
-    " history messages for " +
-    groupId,
+      messages.length +
+      " history messages for " +
+      groupId,
   );
 
   // Filter and Save them
@@ -401,8 +462,10 @@ function handleGroupHistoryResponse(pubkey, maxjson) {
       // Pagination: if we got a full page, request the next one from THIS peer only
       if (messages.length >= HISTORY_PAGE_SIZE && latestTimestamp > 0) {
         MDS.log(
-          "🔄 [GROUP-SYNC] Full page from " + pubkey.substring(0, 10) +
-          ". Requesting next page since " + latestTimestamp,
+          "🔄 [GROUP-SYNC] Full page from " +
+            pubkey.substring(0, 10) +
+            ". Requesting next page since " +
+            latestTimestamp,
         );
         // Move peer from pending to paginating (first response arrived, more coming)
         var sync = _pendingSyncs[groupId];
@@ -425,7 +488,9 @@ function handleGroupHistoryResponse(pubkey, maxjson) {
     }
 
     // Ensure customid exists for dedup
-    var msgCustomId = msg.customid || ("hist_" + escapeSql(groupId) + "_" + timestamp + "_" + index);
+    var msgCustomId =
+      msg.customid ||
+      "hist_" + escapeSql(groupId) + "_" + timestamp + "_" + index;
 
     // Duplicate check: customid first, then fallback to (sender, date)
     var checkSql =
@@ -463,7 +528,9 @@ function handleGroupHistoryResponse(pubkey, maxjson) {
           (msg.sender_seq || 0) +
           ", '" +
           escapeSql(msgCustomId) +
-          "', " + (msg.forwarded ? 1 : 0) + ")";
+          "', " +
+          (msg.forwarded ? 1 : 0) +
+          ")";
         MDS.sql(insSql, function () {
           processNext(index + 1);
         });
@@ -500,7 +567,7 @@ function handleGroupMessage(pubkey, maxjson) {
       if (banRes.status && banRes.rows && banRes.rows.length > 0) {
         MDS.log(
           "🚫 [GROUP-MSG] Discarding message from banned sender: " +
-          originalSender.substring(0, 10),
+            originalSender.substring(0, 10),
         );
         return;
       }
@@ -513,7 +580,7 @@ function handleGroupMessage(pubkey, maxjson) {
         safeType,
         safeFileData,
         pubkey,
-        maxjson
+        maxjson,
       );
     });
   });
@@ -534,7 +601,13 @@ function processGroupMessage(
 
   // Ensure every message has a customid (generate one if sender didn't provide it)
   if (!maxjson.customid) {
-    maxjson.customid = "sw_" + safeGroupId + "_" + messageTimestamp + "_" + Math.random().toString(36).substr(2, 9);
+    maxjson.customid =
+      "sw_" +
+      safeGroupId +
+      "_" +
+      messageTimestamp +
+      "_" +
+      Math.random().toString(36).substr(2, 9);
   }
 
   // Check for duplicates: customid is the primary dedup key, timestamp is fallback
@@ -588,7 +661,9 @@ function processGroupMessage(
         incomingSeq +
         ", '" +
         escapeSql(maxjson.customid || "") +
-        "', " + forwardedVal + ")";
+        "', " +
+        forwardedVal +
+        ")";
 
       MDS.sql(groupMsgSql, function (res) {
         if (res.status) {
@@ -638,11 +713,11 @@ function processGroupMessage(
           var gapSize = incomingSeq - lastSeq - 1;
           MDS.log(
             "⚠️ [GAP-DETECT] Missing " +
-            gapSize +
-            " message(s) from " +
-            originalSender.substring(0, 10) +
-            " in group " +
-            safeGroupId,
+              gapSize +
+              " message(s) from " +
+              originalSender.substring(0, 10) +
+              " in group " +
+              safeGroupId,
           );
           // Trigger history sync to fill the gap
           requestGroupHistoryFromSW(safeGroupId);
@@ -653,22 +728,22 @@ function processGroupMessage(
           if (hasRow) {
             MDS.sql(
               "UPDATE GROUP_MSG_COUNTERS SET last_seen_seq=" +
-              incomingSeq +
-              " WHERE group_id='" +
-              safeGroupId +
-              "' AND sender_publickey='" +
-              originalSender +
-              "'",
+                incomingSeq +
+                " WHERE group_id='" +
+                safeGroupId +
+                "' AND sender_publickey='" +
+                originalSender +
+                "'",
             );
           } else {
             MDS.sql(
               "INSERT INTO GROUP_MSG_COUNTERS (group_id, sender_publickey, last_seen_seq, my_next_seq) VALUES ('" +
-              safeGroupId +
-              "','" +
-              originalSender +
-              "'," +
-              incomingSeq +
-              ",1)",
+                safeGroupId +
+                "','" +
+                originalSender +
+                "'," +
+                incomingSeq +
+                ",1)",
             );
           }
         }
@@ -711,8 +786,8 @@ function propagateGroupMessage(pubkey, maxjson) {
         if (index >= members.length) {
           MDS.log(
             "✅ [GROUP-MSG] Propagation complete. Sent to " +
-            propagatedCount +
-            " members.",
+              propagatedCount +
+              " members.",
           );
           return;
         }
@@ -730,7 +805,13 @@ function propagateGroupMessage(pubkey, maxjson) {
         }
 
         // Look up Mx address in DISCOVERED_PEERS
-        smartSend(memberPubkey, "metachain-group", hexData, "GROUP-PROPAGATE", false);
+        smartSend(
+          memberPubkey,
+          "metachain-group",
+          hexData,
+          "GROUP-PROPAGATE",
+          false,
+        );
         sendToMember(index + 1);
       };
 
@@ -742,13 +823,14 @@ function propagateGroupMessage(pubkey, maxjson) {
 function handleGroupInvite(pubkey, maxjson) {
   var safeGroupId = escapeSql(maxjson.groupId || "");
   var safeGroupName = escapeSql(maxjson.groupName || "");
+  var safeAvatar = escapeSql(maxjson.avatar || "");
   MDS.log(
     "📨 [GROUP-INVITE] Processing invite for group " +
-    safeGroupId +
-    " (" +
-    safeGroupName +
-    ") from " +
-    pubkey.substring(0, 10),
+      safeGroupId +
+      " (" +
+      safeGroupName +
+      ") from " +
+      pubkey.substring(0, 10),
   );
   var safeCreatorPubkey = escapeSql(maxjson.creatorPublickey || pubkey || "");
   var safeDescription = escapeSql(maxjson.description || "");
@@ -768,13 +850,13 @@ function handleGroupInvite(pubkey, maxjson) {
       if (banRes.status && banRes.rows && banRes.rows.length > 0) {
         MDS.log(
           "🚫 [GROUP-INVITE] Ignoring invite: we are banned from group " +
-          safeGroupId,
+            safeGroupId,
         );
         return;
       }
 
       var createGroupSql =
-        "INSERT INTO GROUPS (group_id, name, creator_publickey, created_date, description) VALUES " +
+        "INSERT INTO GROUPS (group_id, name, creator_publickey, created_date, description, avatar) VALUES " +
         "('" +
         safeGroupId +
         "','" +
@@ -785,6 +867,8 @@ function handleGroupInvite(pubkey, maxjson) {
         safeTimestamp +
         ",'" +
         safeDescription +
+        "','" +
+        safeAvatar +
         "')";
 
       MDS.sql(createGroupSql, function (res) {
@@ -828,13 +912,13 @@ function handleGroupInvite(pubkey, maxjson) {
                   MDS.sql(initialMsgSql, function () {
                     // Notify UI that a new group was added
                     MDS.comms.solo(
-                      JSON.stringify({ type: "group_list_updated" })
+                      JSON.stringify({ type: "group_list_updated" }),
                     );
                     MDS.comms.solo(
                       JSON.stringify({
                         type: "group_sync_start",
                         groupId: safeGroupId,
-                      })
+                      }),
                     );
                     // Trigger history sync
                     if (typeof requestGroupHistoryFromSW === "function") {
@@ -844,7 +928,7 @@ function handleGroupInvite(pubkey, maxjson) {
                 } else {
                   // Even if msg exists, notify UI in case it's a new join
                   MDS.comms.solo(
-                    JSON.stringify({ type: "group_list_updated" })
+                    JSON.stringify({ type: "group_list_updated" }),
                   );
                 }
               });
@@ -878,7 +962,7 @@ function handleGroupInvite(pubkey, maxjson) {
               ) {
                 MDS.log(
                   "🚫 [GROUP-INVITE] Skipping banned member: " +
-                  safeMemberPubkey.substring(0, 10),
+                    safeMemberPubkey.substring(0, 10),
                 );
                 addMember(idx + 1);
                 return;
@@ -1007,7 +1091,7 @@ function handleGroupMemberUpdate(pubkey, maxjson) {
       if (addBanRes.status && addBanRes.rows && addBanRes.rows.length > 0) {
         MDS.log(
           "🚫 [GROUP-MEMBER] Blocked re-add of banned member: " +
-          safeMemberPublickey.substring(0, 10),
+            safeMemberPublickey.substring(0, 10),
         );
         return;
       }
@@ -1019,59 +1103,66 @@ function handleGroupMemberUpdate(pubkey, maxjson) {
         safeMemberPublickey +
         "')";
       MDS.sql(checkAlreadyMemberSql, function (alreadyRes) {
-        if (alreadyRes.status && alreadyRes.rows && alreadyRes.rows.length > 0) {
+        if (
+          alreadyRes.status &&
+          alreadyRes.rows &&
+          alreadyRes.rows.length > 0
+        ) {
           MDS.log(
             "ℹ️ [GROUP-MEMBER] Already a member, skipping duplicate insert: " +
-            safeMemberPublickey.substring(0, 10),
+              safeMemberPublickey.substring(0, 10),
           );
           MDS.comms.solo(
             JSON.stringify({ type: "group_update", groupId: safeGroupId }),
           );
           return;
         }
-      var addMemberSql =
-        "INSERT INTO GROUP_MEMBERS (group_id, publickey, username, joined_date, role) VALUES " +
-        "('" +
-        safeGroupId +
-        "','" +
-        safeMemberPublickey +
-        "','" +
-        safeMemberUsername +
-        "'," +
-        safeTimestamp +
-        ",'member')";
-      MDS.sql(addMemberSql, function () {
-        // Seed DISCOVERED_PEERS with new member's Mx address so we can send messages to them
-        if (maxjson.memberAddress) {
-          var safeMemberAddress = escapeSql(maxjson.memberAddress);
-          var now = Date.now();
-          var delPeer =
-            "DELETE FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('" +
-            safeMemberPublickey +
-            "')";
-          MDS.sql(delPeer, function () {
-            var insPeer =
-              "INSERT INTO DISCOVERED_PEERS (publickey, address, source, alias, last_seen, avatar) VALUES ('" +
+        var addMemberSql =
+          "INSERT INTO GROUP_MEMBERS (group_id, publickey, username, joined_date, role) VALUES " +
+          "('" +
+          safeGroupId +
+          "','" +
+          safeMemberPublickey +
+          "','" +
+          safeMemberUsername +
+          "'," +
+          safeTimestamp +
+          ",'member')";
+        MDS.sql(addMemberSql, function () {
+          // Seed DISCOVERED_PEERS with new member's Mx address so we can send messages to them
+          if (maxjson.memberAddress) {
+            var safeMemberAddress = escapeSql(maxjson.memberAddress);
+            var now = Date.now();
+            var delPeer =
+              "DELETE FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('" +
               safeMemberPublickey +
-              "', '" +
-              safeMemberAddress +
-              "', 'GROUP_MEMBER_ADDED', '" +
-              safeMemberUsername +
-              "', " +
-              now +
-              ", '')";
-            MDS.sql(insPeer, function () {
-              MDS.comms.solo(
-                JSON.stringify({ type: "group_update", groupId: safeGroupId }),
-              );
+              "')";
+            MDS.sql(delPeer, function () {
+              var insPeer =
+                "INSERT INTO DISCOVERED_PEERS (publickey, address, source, alias, last_seen, avatar) VALUES ('" +
+                safeMemberPublickey +
+                "', '" +
+                safeMemberAddress +
+                "', 'GROUP_MEMBER_ADDED', '" +
+                safeMemberUsername +
+                "', " +
+                now +
+                ", '')";
+              MDS.sql(insPeer, function () {
+                MDS.comms.solo(
+                  JSON.stringify({
+                    type: "group_update",
+                    groupId: safeGroupId,
+                  }),
+                );
+              });
             });
-          });
-        } else {
-          MDS.comms.solo(
-            JSON.stringify({ type: "group_update", groupId: safeGroupId }),
-          );
-        }
-      });
+          } else {
+            MDS.comms.solo(
+              JSON.stringify({ type: "group_update", groupId: safeGroupId }),
+            );
+          }
+        });
       }); // end checkAlreadyMemberSql
     });
   } else {
@@ -1088,13 +1179,13 @@ function handleGroupMemberUpdate(pubkey, maxjson) {
               function () {
                 MDS.sql(
                   "DELETE FROM GROUP_MESSAGES WHERE group_id='" +
-                  safeGroupId +
-                  "'",
+                    safeGroupId +
+                    "'",
                   function () {
                     MDS.sql(
                       "DELETE FROM GROUP_BANS WHERE group_id='" +
-                      safeGroupId +
-                      "'",
+                        safeGroupId +
+                        "'",
                       function () {
                         MDS.comms.solo(
                           JSON.stringify({
@@ -1174,9 +1265,9 @@ function handleGroupMemberUpdate(pubkey, maxjson) {
 function handleGroupMemberUnbanned(pubkey, maxjson) {
   MDS.log(
     "🔄 [GROUP-UNBAN] Processing unban for " +
-    (maxjson.memberPublickey
-      ? maxjson.memberPublickey.substring(0, 10)
-      : "unknown"),
+      (maxjson.memberPublickey
+        ? maxjson.memberPublickey.substring(0, 10)
+        : "unknown"),
   );
   var safeGroupId = escapeSql(maxjson.groupId || "");
   var safeMemberPublickey = escapeSql(maxjson.memberPublickey || "");
@@ -1197,7 +1288,7 @@ function handleGroupMemberUnbanned(pubkey, maxjson) {
 function handleGroupUpdateDetails(pubkey, maxjson) {
   MDS.log(
     "🔄 [GROUP-UPDATE] Processing details request from " +
-    pubkey.substring(0, 10),
+      pubkey.substring(0, 10),
   );
   var safeGroupId = escapeSql(maxjson.groupId || "");
   var safeNewName = maxjson.newName ? escapeSql(maxjson.newName) : null;
@@ -1225,8 +1316,8 @@ function handleGroupUpdateDetails(pubkey, maxjson) {
     if (!res.status || !res.rows || res.rows.length === 0) {
       MDS.log(
         "⚠️ [GROUP-UPDATE] Group " +
-        safeGroupId +
-        " not found locally or sender is not a member.",
+          safeGroupId +
+          " not found locally or sender is not a member.",
       );
       return;
     }
@@ -1236,9 +1327,9 @@ function handleGroupUpdateDetails(pubkey, maxjson) {
     if (senderRole !== "creator" && senderRole !== "admin") {
       MDS.log(
         "❌ [GROUP-UPDATE] Unauthorized attempt. Sender (" +
-        pubkey.substring(0, 10) +
-        ") has role: " +
-        senderRole,
+          pubkey.substring(0, 10) +
+          ") has role: " +
+          senderRole,
       );
       return;
     }
@@ -1288,7 +1379,7 @@ function handleGroupUpdateDetails(pubkey, maxjson) {
 function handleGroupRoleUpdate(pubkey, maxjson) {
   MDS.log(
     "🔄 [GROUP-ROLE] Processing role update request from " +
-    pubkey.substring(0, 10),
+      pubkey.substring(0, 10),
   );
   var safeGroupId = escapeSql(maxjson.groupId || "");
   var safeTargetPubkey = escapeSql(maxjson.targetPubkey || "");
@@ -1312,7 +1403,7 @@ function handleGroupRoleUpdate(pubkey, maxjson) {
     if (senderRole !== "creator" && senderRole !== "admin") {
       MDS.log(
         "❌ [GROUP-ROLE] Unauthorized role update. Sender role is: " +
-        senderRole,
+          senderRole,
       );
       return;
     }
@@ -1349,9 +1440,9 @@ function handleGroupRoleUpdate(pubkey, maxjson) {
         if (updateRes.status) {
           MDS.log(
             "✅ [DB] Role for " +
-            safeTargetPubkey.substring(0, 10) +
-            " updated to " +
-            safeNewRole,
+              safeTargetPubkey.substring(0, 10) +
+              " updated to " +
+              safeNewRole,
           );
 
           // Notify the frontend via MDS.comms.solo
@@ -1397,7 +1488,7 @@ function handleGroupRoleUpdate(pubkey, maxjson) {
               };
               MDS.log(
                 "📤 [GROUP-ROLE] Sending settings snapshot to promoted admin " +
-                safeTargetPubkey.substring(0, 10),
+                  safeTargetPubkey.substring(0, 10),
               );
               sendMaximaGroupMsg(safeTargetPubkey, snapshot);
             });
@@ -1413,16 +1504,16 @@ function handleGroupRoleUpdate(pubkey, maxjson) {
 function handleGroupJoinRequestEvent(pubkey, maxjson) {
   logToUI(
     "📨 [GROUP-JOIN] Received Join Request Event (Type: " +
-    (maxjson.messageType || maxjson.type) +
-    ") from " +
-    pubkey.substring(0, 10),
+      (maxjson.messageType || maxjson.type) +
+      ") from " +
+      pubkey.substring(0, 10),
   );
   try {
     logToUI(
       "🔄 [GROUP-JOIN] Processing event: " +
-      (maxjson.messageType || maxjson.type) +
-      " from " +
-      pubkey.substring(0, 10),
+        (maxjson.messageType || maxjson.type) +
+        " from " +
+        pubkey.substring(0, 10),
     );
     var safeGroupId = escapeSql(maxjson.groupId || "");
     var safeTimestamp = Number(maxjson.timestamp) || Date.now();
@@ -1487,13 +1578,13 @@ function executeJoinRequestAuth(
     MDS.sql(checkSenderSql, function (resSender) {
       logToUI(
         "📝 [GROUP-JOIN] Membership check result: " +
-        (resSender.status ? "OK" : "ERROR: " + resSender.error),
+          (resSender.status ? "OK" : "ERROR: " + resSender.error),
       );
       try {
         if (!resSender.status) {
           logToUI(
             "❌ [GROUP-JOIN] SQL Error validating group membership: " +
-            resSender.error,
+              resSender.error,
           );
           return;
         }
@@ -1505,32 +1596,33 @@ function executeJoinRequestAuth(
         }
         logToUI(
           "📝 [GROUP-JOIN] Validating admin role for " +
-          localPk.substring(0, 10) +
-          " in " +
-          safeGroupId,
+            localPk.substring(0, 10) +
+            " in " +
+            safeGroupId,
         );
         var myRole = resSender.rows[0].ROLE || resSender.rows[0].role;
         logToUI("📝 [GROUP-JOIN] My role in " + safeGroupId + " is " + myRole);
         if (myRole !== "creator" && myRole !== "admin") {
           logToUI(
             "⚠️ [GROUP-JOIN] Ignored. We are not an admin/creator of group " +
-            safeGroupId +
-            " (Role: " +
-            myRole +
-            ")",
+              safeGroupId +
+              " (Role: " +
+              myRole +
+              ")",
           );
           return;
         }
 
         // Check if auto-approve is enabled for this group
         var checkAutoApproveSql =
-          "SELECT auto_approve, name, description, created_date FROM GROUPS WHERE group_id='" +
+          "SELECT auto_approve, name, description, created_date, avatar FROM GROUPS WHERE group_id='" +
           safeGroupId +
           "'";
         MDS.sql(checkAutoApproveSql, function (groupRes) {
           var autoApproveEnabled = false;
           var groupName = "";
           var groupDesc = "";
+          var groupAvatar = "";
           var groupCreatedDate = Date.now();
           if (groupRes.status && groupRes.rows && groupRes.rows.length > 0) {
             var row = groupRes.rows[0];
@@ -1543,24 +1635,25 @@ function executeJoinRequestAuth(
               String(row.auto_approve).toUpperCase() === "TRUE";
             groupName = row.NAME || row.name || "";
             groupDesc = row.DESCRIPTION || row.description || "";
+            groupAvatar = row.AVATAR || row.avatar || "";
             groupCreatedDate =
               row.CREATED_DATE || row.created_date || Date.now();
             logToUI(
               "📝 [GROUP-JOIN] Found group info: " +
-              groupName +
-              " | auto_approve value: " +
-              (row.AUTO_APPROVE !== undefined
-                ? row.AUTO_APPROVE
-                : row.auto_approve) +
-              " | Type: " +
-              typeof (row.AUTO_APPROVE !== undefined
-                ? row.AUTO_APPROVE
-                : row.auto_approve),
+                groupName +
+                " | auto_approve value: " +
+                (row.AUTO_APPROVE !== undefined
+                  ? row.AUTO_APPROVE
+                  : row.auto_approve) +
+                " | Type: " +
+                typeof (row.AUTO_APPROVE !== undefined
+                  ? row.AUTO_APPROVE
+                  : row.auto_approve),
             );
           }
           logToUI(
             "📝 [GROUP-JOIN] final autoApproveEnabled evaluated to: " +
-            autoApproveEnabled,
+              autoApproveEnabled,
           );
 
           // =========================================================
@@ -1572,10 +1665,10 @@ function executeJoinRequestAuth(
             var requesterAddress = escapeSql(maxjson.requesterAddress || "");
             MDS.log(
               "📝 [GROUP-JOIN] Processing new join request from " +
-              requesterName +
-              " (" +
-              requesterPubkey.substring(0, 10) +
-              ")",
+                requesterName +
+                " (" +
+                requesterPubkey.substring(0, 10) +
+                ")",
             );
 
             // Helper: seed DISCOVERED_PEERS
@@ -1610,7 +1703,7 @@ function executeJoinRequestAuth(
             var handleAutoApproveOrPropagate = function () {
               MDS.log(
                 "📝 [GROUP-JOIN] handleAutoApproveOrPropagate: autoApproveEnabled=" +
-                autoApproveEnabled,
+                  autoApproveEnabled,
               );
               if (autoApproveEnabled) {
                 MDS.log(
@@ -1644,8 +1737,8 @@ function executeJoinRequestAuth(
                     );
                     MDS.sql(
                       "SELECT publickey, username FROM GROUP_MEMBERS WHERE group_id='" +
-                      safeGroupId +
-                      "' AND (role='creator') LIMIT 1",
+                        safeGroupId +
+                        "' AND (role='creator') LIMIT 1",
                       function (creatorRes) {
                         var creatorPk = localPk;
                         var creatorName = "Admin";
@@ -1663,21 +1756,22 @@ function executeJoinRequestAuth(
                         }
                         MDS.sql(
                           "SELECT * FROM GROUP_MEMBERS WHERE group_id='" +
-                          safeGroupId +
-                          "'",
+                            safeGroupId +
+                            "'",
                           function (membersRes) {
                             var members = membersRes.rows || [];
                             sendGroupInviteSW(
                               safeGroupId,
                               groupName,
                               groupDesc,
+                              groupAvatar,
                               requesterPubkey,
                               localPk,
                               "Admin",
                               members,
                               groupCreatedDate,
                               creatorPk,
-                              creatorName
+                              creatorName,
                             );
                           },
                         );
@@ -1694,10 +1788,10 @@ function executeJoinRequestAuth(
                     );
                     MDS.sql(
                       "DELETE FROM GROUP_JOIN_REQUESTS WHERE group_id='" +
-                      safeGroupId +
-                      "' AND publickey='" +
-                      requesterPubkey +
-                      "'",
+                        safeGroupId +
+                        "' AND publickey='" +
+                        requesterPubkey +
+                        "'",
                       function () {
                         MDS.comms.solo(
                           JSON.stringify({
@@ -1731,8 +1825,8 @@ function executeJoinRequestAuth(
             var reSendInviteToMember = function () {
               MDS.sql(
                 "SELECT publickey, username FROM GROUP_MEMBERS WHERE group_id='" +
-                safeGroupId +
-                "' AND (role='creator') LIMIT 1",
+                  safeGroupId +
+                  "' AND (role='creator') LIMIT 1",
                 function (creatorRes) {
                   var creatorPk = localPk;
                   var creatorName = "Admin";
@@ -1750,25 +1844,26 @@ function executeJoinRequestAuth(
                   }
                   MDS.sql(
                     "SELECT * FROM GROUP_MEMBERS WHERE group_id='" +
-                    safeGroupId +
-                    "'",
+                      safeGroupId +
+                      "'",
                     function (membersRes) {
                       var members = membersRes.rows || [];
                       logToUI(
                         "📤 [GROUP-JOIN] Re-sending group invite to " +
-                        requesterPubkey.substring(0, 10),
+                          requesterPubkey.substring(0, 10),
                       );
                       sendGroupInviteSW(
                         safeGroupId,
                         groupName,
                         groupDesc,
+                        groupAvatar,
                         requesterPubkey,
                         localPk,
                         "Admin",
                         members,
                         groupCreatedDate,
                         creatorPk,
-                        creatorName
+                        creatorName,
                       );
                     },
                   );
@@ -1916,7 +2011,7 @@ function executeJoinRequestAuth(
                 if (senderRole !== "admin" && senderRole !== "creator") {
                   MDS.log(
                     "❌ [GROUP-JOIN] Propagated request ignored: sender role is " +
-                    senderRole,
+                      senderRole,
                   );
                   return;
                 }
@@ -2051,15 +2146,21 @@ function broadcastJoinRequestToAdmins(
     if (resolutionStatus) msg.resolutionStatus = resolutionStatus;
     var hexData = "0x" + utf8ToHex(JSON.stringify(msg)).toUpperCase();
     var sendToAdmin = function (index) {
-        if (index >= res.rows.length) return;
-        var adminPk = res.rows[index].PUBLICKEY || res.rows[index].publickey;
-        if (adminPk.toUpperCase() === MY_MAXIMA_PK.toUpperCase()) {
-            sendToAdmin(index + 1);
-            return;
-        }
-
-        smartSend(adminPk, "metachain-group", hexData, "GROUP-ADMIN-NOTIFY", false);
+      if (index >= res.rows.length) return;
+      var adminPk = res.rows[index].PUBLICKEY || res.rows[index].publickey;
+      if (adminPk.toUpperCase() === MY_MAXIMA_PK.toUpperCase()) {
         sendToAdmin(index + 1);
+        return;
+      }
+
+      smartSend(
+        adminPk,
+        "metachain-group",
+        hexData,
+        "GROUP-ADMIN-NOTIFY",
+        false,
+      );
+      sendToAdmin(index + 1);
     };
     sendToAdmin(0);
   });
@@ -2067,7 +2168,12 @@ function broadcastJoinRequestToAdmins(
 
 function sendMaximaGroupMsg(toPk, payloadObj) {
   var hexData = "0x" + utf8ToHex(JSON.stringify(payloadObj)).toUpperCase();
-  logToUI("🚀 [GROUP-MSG] Sending to " + toPk.substring(0, 10) + " type: " + payloadObj.messageType);
+  logToUI(
+    "🚀 [GROUP-MSG] Sending to " +
+      toPk.substring(0, 10) +
+      " type: " +
+      payloadObj.messageType,
+  );
   smartSend(toPk, "metachain-group", hexData, "GROUP-MSG", false);
 }
 
@@ -2110,6 +2216,7 @@ function sendGroupInviteSW(
   groupId,
   groupName,
   groupDesc,
+  groupAvatar,
   toPk,
   myPk,
   myName,
@@ -2134,6 +2241,7 @@ function sendGroupInviteSW(
     groupId: groupId,
     groupName: groupName,
     groupDescription: groupDesc,
+    avatar: groupAvatar || "",
     members: normalizedMembers,
     createdDate: createdDate,
     creatorPublicKey: creatorPk,

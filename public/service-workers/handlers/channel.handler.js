@@ -63,8 +63,12 @@ function handleChannelInvite(pubkey, maxjson) {
       function (res) {
         if (res.rows && res.rows.length > 0) {
           MDS.log(
-            "ℹ️ [CHANNEL] Channel " + channelId + " already exists. Skipping.",
+            "ℹ️ [CHANNEL] Channel " + channelId + " already exists. Firing CHANNEL_UPDATE.",
           );
+          MDS.comms.solo(
+            JSON.stringify({ type: "CHANNEL_UPDATE", channelId: channelId }),
+          );
+          requestChannelHistoryFromSW(channelId);
           return;
         }
 

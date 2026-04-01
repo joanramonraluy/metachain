@@ -115,6 +115,10 @@ export interface GroupMaximaMessage {
   // For group_join_request_resolved
   requesterPubkey?: string;
   resolutionStatus?: "approved" | "denied";
+
+  // For group_role_update
+  targetPubkey?: string;
+  newRole?: "admin" | "member";
 }
 
 type GroupMessageCallback = (msg: GroupMaximaMessage) => void;
@@ -155,6 +159,7 @@ class GroupService {
     myPublicKey: string,
     myUsername: string,
     isPublic: boolean,
+    autoApprove: boolean = false,
   ): Promise<string> {
     const groupId = this.generateGroupId();
     const now = Date.now();
@@ -162,8 +167,8 @@ class GroupService {
     try {
       // 1. Create group in database
       const createGroupSql = `
-                INSERT INTO GROUPS (group_id, name, creator_publickey, created_date, description, is_public)
-                VALUES ('${groupId}', '${name.replace(/'/g, "''")}', UPPER('${myPublicKey}'), ${now}, '${description.replace(/'/g, "''")}', ${isPublic ? 1 : 0})
+                INSERT INTO GROUPS (group_id, name, creator_publickey, created_date, description, is_public, auto_approve)
+                VALUES ('${groupId}', '${name.replace(/'/g, "''")}', UPPER('${myPublicKey}'), ${now}, '${description.replace(/'/g, "''")}', ${isPublic ? 1 : 0}, ${autoApprove ? 1 : 0})
             `;
       await this.runSQL(createGroupSql);
       console.log("✅ [GROUP-MGMT] Created:", groupId);
@@ -196,6 +201,7 @@ class GroupService {
             groupId,
             name,
             description,
+            "",
             memberPubkey,
             myPublicKey,
             myUsername,
@@ -431,51 +437,15 @@ class GroupService {
       if (newDescription !== null) payload.newDescription = newDescription;
       if (avatar !== null) payload.avatar = avatar;
 
-      const members = await this.getGroupMembers(groupId);
-      let propagatedCount = 0;
-
-      // Send to all members (except self)
-      for (const member of members) {
-        const pubkey = (member as any).PUBLICKEY || member.publickey;
-        if (!pubkey || pubkey === myPublicKey) continue;
-
-        try {
-          // Try to resolve Maxima address from DISCOVERED_PEERS
-          const res = await this.runSQL(
-            `SELECT address FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('${pubkey.replace(/'/g, "''")}')`,
-          );
-          if (res.rows && res.rows.length > 0) {
-            const address = res.rows[0].ADDRESS || res.rows[0].address;
-            const jsonStr = JSON.stringify(payload);
-            const hexData =
-              "0x" +
-              Array.from(new TextEncoder().encode(jsonStr))
-                .map((b) => b.toString(16).padStart(2, "0"))
-                .join("")
-                .toUpperCase();
-
-            await MDS.cmd.maxima({
-              params: {
-                action: "send",
-                to: address,
-                application: "metachain-group",
-                data: hexData,
-                poll: false,
-              } as any,
-            });
-            propagatedCount++;
-          } else {
-            console.warn(
-              `[GROUP-RENAME] No address found for member ${pubkey}`,
-            );
-          }
-        } catch (e) {
-          console.error(`[GROUP-RENAME] Failed to send to ${pubkey}:`, e);
-        }
-      }
+      const propagatedCount = await this.broadcastToGroupMembers(
+        groupId,
+        myPublicKey,
+        payload,
+        "[GROUP-UPDATE]",
+      );
 
       console.log(
-        `✅ [GROUP-RENAME] Broadcasted name change to ${propagatedCount} members.`,
+        `✅ [GROUP-UPDATE] Broadcasted details change to ${propagatedCount} members.`,
       );
       this.notifyGroupUpdate(groupId, {
         name: newName || undefined,
@@ -510,45 +480,12 @@ class GroupService {
         auto_approve: autoApprove,
       };
 
-      const members = await this.getGroupMembers(groupId);
-      let propagatedCount = 0;
-
-      for (const member of members) {
-        const pubkey = (member as any).PUBLICKEY || member.publickey;
-        if (!pubkey || pubkey === myPublicKey) continue;
-
-        try {
-          const res = await this.runSQL(
-            `SELECT address FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('${pubkey.replace(/'/g, "''")}')`,
-          );
-          if (res.rows && res.rows.length > 0) {
-            const address = res.rows[0].ADDRESS || res.rows[0].address;
-            const jsonStr = JSON.stringify(payload);
-            const hexData =
-              "0x" +
-              Array.from(new TextEncoder().encode(jsonStr))
-                .map((b) => b.toString(16).padStart(2, "0"))
-                .join("")
-                .toUpperCase();
-
-            await MDS.cmd.maxima({
-              params: {
-                action: "send",
-                to: address,
-                application: "metachain-group",
-                data: hexData,
-                poll: false,
-              } as any,
-            });
-            propagatedCount++;
-          }
-        } catch (e) {
-          console.error(
-            `[GROUP-MGMT] Failed to send auto_approve toggle to ${pubkey}:`,
-            e,
-          );
-        }
-      }
+      const propagatedCount = await this.broadcastToGroupMembers(
+        groupId,
+        myPublicKey,
+        payload,
+        "[GROUP-MGMT]",
+      );
       console.log(
         `✅ [GROUP-MGMT] Broadcasted auto_approve change to ${propagatedCount} members.`,
       );
@@ -581,56 +518,23 @@ class GroupService {
       );
 
       // Construct maxjson payload for broadcast
-      const payload = {
-        app: "metachain-group",
-        type: "group_role_update",
+      const payload: GroupMaximaMessage = {
         messageType: "group_role_update",
         groupId: groupId,
+        groupName: "",
+        senderPublickey: myPublicKey,
+        senderUsername: "",
         targetPubkey: memberPubkey,
         newRole: newRole,
         timestamp: Date.now(),
       };
 
-      const members = await this.getGroupMembers(groupId);
-      let propagatedCount = 0;
-
-      // Send to all members (except self)
-      for (const member of members) {
-        const pubkey = (member as any).PUBLICKEY || member.publickey;
-        if (!pubkey || pubkey === myPublicKey) continue;
-
-        try {
-          // Try to resolve Maxima address from DISCOVERED_PEERS
-          const res = await this.runSQL(
-            `SELECT address FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('${pubkey.replace(/'/g, "''")}')`,
-          );
-          if (res.rows && res.rows.length > 0) {
-            const address = res.rows[0].ADDRESS || res.rows[0].address;
-            const jsonStr = JSON.stringify(payload);
-            const hexData =
-              "0x" +
-              Array.from(new TextEncoder().encode(jsonStr))
-                .map((b) => b.toString(16).padStart(2, "0"))
-                .join("")
-                .toUpperCase();
-
-            await MDS.cmd.maxima({
-              params: {
-                action: "send",
-                to: address,
-                application: "metachain-group",
-                data: hexData,
-                poll: false,
-              } as any,
-            });
-            propagatedCount++;
-          } else {
-            console.warn(`[GROUP-ROLE] No address found for member ${pubkey}`);
-          }
-        } catch (e) {
-          console.error(`[GROUP-ROLE] Failed to send to ${pubkey}:`, e);
-        }
-      }
+      const propagatedCount = await this.broadcastToGroupMembers(
+        groupId,
+        myPublicKey,
+        payload,
+        "[GROUP-ROLE]",
+      );
 
       console.log(
         `✅ [GROUP-ROLE] Broadcasted role change to ${propagatedCount} members.`,
@@ -730,6 +634,7 @@ class GroupService {
         groupId,
         group.name,
         group.description || "",
+        group.avatar || "",
         publickey,
         myPublicKey,
         myUsername,
@@ -1223,10 +1128,38 @@ class GroupService {
     }
   }
 
+  private async broadcastToGroupMembers(
+    groupId: string,
+    myPublicKey: string,
+    payload: GroupMaximaMessage,
+    logPrefix: string,
+  ): Promise<number> {
+    const members = await this.getGroupMembers(groupId);
+    let propagatedCount = 0;
+
+    for (const member of members) {
+      const pubkey = String(
+        (member as any).PUBLICKEY || member.publickey || "",
+      ).trim();
+      if (!pubkey) continue;
+      if (pubkey.toUpperCase() === myPublicKey.toUpperCase()) continue;
+
+      try {
+        await this.sendMaximaMessage(pubkey, payload);
+        propagatedCount++;
+      } catch (e) {
+        console.error(`${logPrefix} Failed to send to ${pubkey}:`, e);
+      }
+    }
+
+    return propagatedCount;
+  }
+
   private async sendGroupInvite(
     groupId: string,
     groupName: string,
     description: string,
+    avatar: string,
     toPublicKey: string,
     myPublicKey: string,
     myUsername: string,
@@ -1278,6 +1211,7 @@ class GroupService {
       senderUsername: myUsername,
       timestamp: createdDate || Date.now(),
       description,
+      avatar,
       creatorPublickey: creatorPub || myPublicKey,
       creatorUsername: creatorName || myUsername,
       members: enrichedMembers,
@@ -1449,7 +1383,9 @@ class GroupService {
       HISTORY SYNC
     ---------------------------------------------------------------------------- */
   async requestGroupHistory(groupId: string): Promise<void> {
-    console.log(`🔄 [HISTORY-SYNC] Delegating sync to Service Worker for group ${groupId}`);
+    console.log(
+      `🔄 [HISTORY-SYNC] Delegating sync to Service Worker for group ${groupId}`,
+    );
 
     // Dispatch immediate UI feedback (SW will emit GROUP_SYNC_START/END via comms.solo)
     window.dispatchEvent(
@@ -1460,9 +1396,8 @@ class GroupService {
 
     // Delegate to Service Worker — single source of truth for sync
     // Use window.MDS (global) because the imported MDS SDK doesn't expose generic .cmd()
-    (window as any).MDS?.cmd("service:GROUP_SYNC:" + groupId, function() {});
+    (window as any).MDS?.cmd("service:GROUP_SYNC:" + groupId, function () {});
   }
-
 
   /* ----------------------------------------------------------------------------
       UTILITIES

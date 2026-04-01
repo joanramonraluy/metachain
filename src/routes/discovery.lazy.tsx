@@ -14,6 +14,15 @@ export const Route = createLazyFileRoute("/discovery")({
   component: DiscoveryPage,
 });
 
+function formatMiddleSegment(value: string, segmentLength: number = 10) {
+  if (!value) return "";
+  if (value.length <= segmentLength + 2) return value;
+
+  const start = Math.max(0, Math.floor((value.length - segmentLength) / 2));
+  const middle = value.slice(start, start + segmentLength);
+  return `...${middle}...`;
+}
+
 function DiscoveryPage() {
   const navigate = useNavigate();
   const [users, setUsers] = useState<UserWithStatus[]>([]);
@@ -562,9 +571,9 @@ function DiscoveryPage() {
                               className="text-xs text-gray-400 font-mono truncate"
                               title={user.publickey || user.user_id || ""}
                             >
-                              {(user.publickey || user.user_id || "").substring(0, 4)}
-                              ...
-                              {(user.publickey || user.user_id || "").slice(-6)}
+                              {formatMiddleSegment(
+                                user.publickey || user.user_id || "",
+                              )}
                             </p>
                           </div>
                         </div>
@@ -767,7 +776,9 @@ function DiscoveryPage() {
 
       {/* Toast Notification */}
       {showNotification && (
-        <div className={`fixed bottom-4 right-4 ${toastError ? "bg-red-600" : "bg-green-600"} text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-2 animate-slide-up z-50`}>
+        <div
+          className={`fixed bottom-4 right-4 ${toastError ? "bg-red-600" : "bg-green-600"} text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-2 animate-slide-up z-50`}
+        >
           <span>{notificationMessage}</span>
         </div>
       )}
