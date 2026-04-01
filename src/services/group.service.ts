@@ -128,7 +128,16 @@ class GroupService {
   private groupMessageCallbacks: GroupMessageCallback[] = [];
   private groupUpdateCallbacks: GroupUpdateCallback[] = [];
 
-  constructor() {}
+  constructor() {
+    if (typeof window !== "undefined") {
+      window.addEventListener("GROUP_UPDATE", (e: Event) => {
+        const ce = e as CustomEvent;
+        if (ce.detail?.type === "group_update") {
+          this.notifyGroupUpdate(ce.detail?.groupId, ce.detail, true);
+        }
+      });
+    }
+  }
 
   /* ----------------------------------------------------------------------------
       UTILITY FUNCTIONS

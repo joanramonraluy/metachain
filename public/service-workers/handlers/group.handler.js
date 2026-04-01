@@ -1308,9 +1308,9 @@ function handleGroupUpdateDetails(pubkey, maxjson) {
   var checkSql =
     "SELECT role FROM GROUP_MEMBERS WHERE group_id='" +
     safeGroupId +
-    "' AND publickey='" +
+    "' AND UPPER(publickey)=UPPER('" +
     pubkey +
-    "'";
+    "')";
 
   MDS.sql(checkSql, function (res) {
     if (!res.status || !res.rows || res.rows.length === 0) {
