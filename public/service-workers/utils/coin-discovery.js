@@ -13,8 +13,6 @@ function discoverOfflineTokens() {
     // Get all unspent coins
     return new Promise(function (resolveMain) {
         MDS.cmd("coins", function (coinsRes) {
-            // Debug: Log full response
-            MDS.log("📦 [COIN-DISCOVERY-DEBUG] Full response: " + JSON.stringify(coinsRes));
 
             if (!coinsRes.status) {
                 MDS.log("⚠️ [COIN-DISCOVERY-DEBUG] Status false. Error: " + (coinsRes.error || "No error message"));
@@ -24,22 +22,19 @@ function discoverOfflineTokens() {
             }
 
             if (!coinsRes.response) {
-                MDS.log("⚠️ [COIN-DISCOVERY-DEBUG] No response object");
-                MDS.log("⚠️ [COIN-DISCOVERY] Failed to get coins");
+                MDS.log("⚠️ [COIN-DISCOVERY] Failed to get coins - no response object");
                 resolveMain(0);
                 return;
             }
 
             // Coins are returned directly in response array, not response.coins
             if (!Array.isArray(coinsRes.response)) {
-                MDS.log("⚠️ [COIN-DISCOVERY-DEBUG] Response is not an array. Type: " + typeof coinsRes.response);
-                MDS.log("⚠️ [COIN-DISCOVERY] Failed to get coins");
+                MDS.log("⚠️ [COIN-DISCOVERY] Failed to get coins - response not an array");
                 resolveMain(0);
                 return;
             }
 
             var allCoins = coinsRes.response;
-            MDS.log("📦 [COIN-DISCOVERY] Scanning " + allCoins.length + " coins...");
 
             // Filter coins with state variables (MetaChain tokens)
             var stateCoins = allCoins.filter(function (coin) {
@@ -95,7 +90,6 @@ function discoverOfflineTokens() {
                     "(original_timestamp >= " + minTime + " AND original_timestamp <= " + maxTime + ") OR " +
                     "txpowid='" + coin.coinid + "'" +
                     ")";
-                MDS.log("🔍 [COIN-DISCOVERY] Dedup check: " + checkSql);
                 MDS.sql(checkSql, function (existing) {
                     if (existing.status && existing.rows && existing.rows.length > 0) {
                         MDS.log("♻️ [COIN-DISCOVERY] Skipping duplicate coin (already exists): " + coin.coinid);
@@ -108,13 +102,9 @@ function discoverOfflineTokens() {
                     // Extract sender publickey: prioritize state[3], fallback to state[1]
                     var senderPubkey = 'UNKNOWN';
                     if (senderKey && senderKey.trim().length > 0) {
-                        // state[3] contains the full sender public key
                         senderPubkey = senderKey.trim();
-                        MDS.log("📤 [COIN-DISCOVERY] Using sender key from state[3]: " + senderPubkey.substring(0, 20) + "...");
                     } else if (senderInfo && senderInfo.trim().length > 0) {
-                        // Fallback to state[1] for backward compatibility
                         senderPubkey = senderInfo.trim();
-                        MDS.log("⚠️ [COIN-DISCOVERY] Fallback to state[1]: " + senderPubkey.substring(0, 20) + "...");
                     } else {
                         MDS.log("❌ [COIN-DISCOVERY] No valid sender key found in state[3] or state[1]!");
                     }

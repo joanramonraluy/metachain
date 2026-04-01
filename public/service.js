@@ -148,21 +148,6 @@ function escapeSql(str) {
     return (str || '').replace(/'/g, "''");
 }
 
-/**
- * Log to both SW and Frontend (via solo comms)
- */
-function logToUI(msg) {
-    MDS.log(msg);
-    try {
-        if (typeof MDS !== 'undefined' && MDS.comms && MDS.comms.solo) {
-            MDS.comms.solo(JSON.stringify({
-                type: "SW_LOG",
-                message: msg,
-                timestamp: Date.now()
-            }));
-        }
-    } catch (e) { }
-}
 
 /**
  * Helper to clean Maxima Address specifically for the port issue
@@ -751,8 +736,6 @@ function discoverOfflineTokens() {
     // Get all unspent coins
     return new Promise(function (resolveMain) {
         MDS.cmd("coins", function (coinsRes) {
-            // Debug: Log full response
-            MDS.log("📦 [COIN-DISCOVERY-DEBUG] Full response: " + JSON.stringify(coinsRes));
 
             if (!coinsRes.status) {
                 MDS.log("⚠️ [COIN-DISCOVERY-DEBUG] Status false. Error: " + (coinsRes.error || "No error message"));
@@ -762,22 +745,19 @@ function discoverOfflineTokens() {
             }
 
             if (!coinsRes.response) {
-                MDS.log("⚠️ [COIN-DISCOVERY-DEBUG] No response object");
-                MDS.log("⚠️ [COIN-DISCOVERY] Failed to get coins");
+                MDS.log("⚠️ [COIN-DISCOVERY] Failed to get coins - no response object");
                 resolveMain(0);
                 return;
             }
 
             // Coins are returned directly in response array, not response.coins
             if (!Array.isArray(coinsRes.response)) {
-                MDS.log("⚠️ [COIN-DISCOVERY-DEBUG] Response is not an array. Type: " + typeof coinsRes.response);
-                MDS.log("⚠️ [COIN-DISCOVERY] Failed to get coins");
+                MDS.log("⚠️ [COIN-DISCOVERY] Failed to get coins - response not an array");
                 resolveMain(0);
                 return;
             }
 
             var allCoins = coinsRes.response;
-            MDS.log("📦 [COIN-DISCOVERY] Scanning " + allCoins.length + " coins...");
 
             // Filter coins with state variables (MetaChain tokens)
             var stateCoins = allCoins.filter(function (coin) {
@@ -833,7 +813,6 @@ function discoverOfflineTokens() {
                     "(original_timestamp >= " + minTime + " AND original_timestamp <= " + maxTime + ") OR " +
                     "txpowid='" + coin.coinid + "'" +
                     ")";
-                MDS.log("🔍 [COIN-DISCOVERY] Dedup check: " + checkSql);
                 MDS.sql(checkSql, function (existing) {
                     if (existing.status && existing.rows && existing.rows.length > 0) {
                         MDS.log("♻️ [COIN-DISCOVERY] Skipping duplicate coin (already exists): " + coin.coinid);
@@ -846,13 +825,9 @@ function discoverOfflineTokens() {
                     // Extract sender publickey: prioritize state[3], fallback to state[1]
                     var senderPubkey = 'UNKNOWN';
                     if (senderKey && senderKey.trim().length > 0) {
-                        // state[3] contains the full sender public key
                         senderPubkey = senderKey.trim();
-                        MDS.log("📤 [COIN-DISCOVERY] Using sender key from state[3]: " + senderPubkey.substring(0, 20) + "...");
                     } else if (senderInfo && senderInfo.trim().length > 0) {
-                        // Fallback to state[1] for backward compatibility
                         senderPubkey = senderInfo.trim();
-                        MDS.log("⚠️ [COIN-DISCOVERY] Fallback to state[1]: " + senderPubkey.substring(0, 20) + "...");
                     } else {
                         MDS.log("❌ [COIN-DISCOVERY] No valid sender key found in state[3] or state[1]!");
                     }
@@ -3182,14 +3157,14 @@ function handleGroupRoleUpdate(pubkey, maxjson) {
 }
 
 function handleGroupJoinRequestEvent(pubkey, maxjson) {
-  logToUI(
+  MDS.log(
     "📨 [GROUP-JOIN] Received Join Request Event (Type: " +
       (maxjson.messageType || maxjson.type) +
       ") from " +
       pubkey.substring(0, 10),
   );
   try {
-    logToUI(
+    MDS.log(
       "🔄 [GROUP-JOIN] Processing event: " +
         (maxjson.messageType || maxjson.type) +
         " from " +
@@ -3256,34 +3231,34 @@ function executeJoinRequestAuth(
       localPk +
       "')";
     MDS.sql(checkSenderSql, function (resSender) {
-      logToUI(
+      MDS.log(
         "📝 [GROUP-JOIN] Membership check result: " +
           (resSender.status ? "OK" : "ERROR: " + resSender.error),
       );
       try {
         if (!resSender.status) {
-          logToUI(
+          MDS.log(
             "❌ [GROUP-JOIN] SQL Error validating group membership: " +
               resSender.error,
           );
           return;
         }
         if (!resSender.rows || resSender.rows.length === 0) {
-          logToUI(
+          MDS.log(
             "⚠️ [GROUP-JOIN] Ignored. We are not in group " + safeGroupId,
           );
           return;
         }
-        logToUI(
+        MDS.log(
           "📝 [GROUP-JOIN] Validating admin role for " +
             localPk.substring(0, 10) +
             " in " +
             safeGroupId,
         );
         var myRole = resSender.rows[0].ROLE || resSender.rows[0].role;
-        logToUI("📝 [GROUP-JOIN] My role in " + safeGroupId + " is " + myRole);
+        MDS.log("📝 [GROUP-JOIN] My role in " + safeGroupId + " is " + myRole);
         if (myRole !== "creator" && myRole !== "admin") {
-          logToUI(
+          MDS.log(
             "⚠️ [GROUP-JOIN] Ignored. We are not an admin/creator of group " +
               safeGroupId +
               " (Role: " +
@@ -3318,7 +3293,7 @@ function executeJoinRequestAuth(
             groupAvatar = row.AVATAR || row.avatar || "";
             groupCreatedDate =
               row.CREATED_DATE || row.created_date || Date.now();
-            logToUI(
+            MDS.log(
               "📝 [GROUP-JOIN] Found group info: " +
                 groupName +
                 " | auto_approve value: " +
@@ -3331,7 +3306,7 @@ function executeJoinRequestAuth(
                   : row.auto_approve),
             );
           }
-          logToUI(
+          MDS.log(
             "📝 [GROUP-JOIN] final autoApproveEnabled evaluated to: " +
               autoApproveEnabled,
           );
@@ -3528,7 +3503,7 @@ function executeJoinRequestAuth(
                       "'",
                     function (membersRes) {
                       var members = membersRes.rows || [];
-                      logToUI(
+                      MDS.log(
                         "📤 [GROUP-JOIN] Re-sending group invite to " +
                           requesterPubkey.substring(0, 10),
                       );
@@ -3565,7 +3540,7 @@ function executeJoinRequestAuth(
                   memberRes.rows &&
                   memberRes.rows.length > 0
                 ) {
-                  logToUI(
+                  MDS.log(
                     "ℹ️ [GROUP-JOIN] User already a member. Re-sending invite just in case.",
                   );
                   reSendInviteToMember();
@@ -3848,7 +3823,7 @@ function broadcastJoinRequestToAdmins(
 
 function sendMaximaGroupMsg(toPk, payloadObj) {
   var hexData = "0x" + utf8ToHex(JSON.stringify(payloadObj)).toUpperCase();
-  logToUI(
+  MDS.log(
     "🚀 [GROUP-MSG] Sending to " +
       toPk.substring(0, 10) +
       " type: " +
@@ -4647,12 +4622,14 @@ var LAST_PONG_SENT = {};
 var PONG_THROTTLE_MS = 30000;
 
 function handleChatMessage(pubkey, maxjson) {
-  MDS.log(
-    "💬 [CHAT-DEBUG] RAW INCOMING from " +
-    pubkey +
-    ": " +
-    JSON.stringify(maxjson),
-  );
+  if (SW_DEBUG) {
+    MDS.log(
+      "💬 [CHAT-DEBUG] RAW INCOMING from " +
+      pubkey +
+      ": " +
+      JSON.stringify(maxjson),
+    );
+  }
   MDS.log(
     "💬 [CHAT] From: " +
     pubkey +
@@ -4707,7 +4684,7 @@ function handleChatMessage(pubkey, maxjson) {
       );
       return; // Abort insertion
     } else {
-      MDS.log("✅ [CHAT-DEBUG] Block check passed for " + safeUsername);
+      if (SW_DEBUG) MDS.log("✅ [CHAT-DEBUG] Block check passed for " + safeUsername);
     }
 
     // GAP DETECTION LOGIC
@@ -4796,7 +4773,7 @@ function handleChatMessage(pubkey, maxjson) {
       checkDup += " AND (" + conditions.join(" OR ") + ")";
     }
 
-    MDS.log("🔍 [DEDUP-LIVE] Checking for duplicates with SQL: " + checkDup);
+    if (SW_DEBUG) MDS.log("🔍 [DEDUP-LIVE] Checking for duplicates with SQL: " + checkDup);
 
     MDS.sql(checkDup, function (dupRes) {
       if (dupRes.status && dupRes.rows && dupRes.rows[0].COUNT > 0) {
@@ -4829,7 +4806,7 @@ function handleChatMessage(pubkey, maxjson) {
         }
         return;
       } else {
-        MDS.log("✨ [CHAT-DEBUG] No duplicate found. Proceeding to INSERT...");
+        if (SW_DEBUG) MDS.log("✨ [CHAT-DEBUG] No duplicate found. Proceeding to INSERT...");
       }
 
       var forwardedVal = forwarded ? 1 : 0;
@@ -5966,7 +5943,6 @@ function handleProfileRequest(pubkey, maxjson) {
 
             // Step 2: Fetch profile & privacy settings from DB
             MDS.sql("SELECT * FROM MY_PROFILE LIMIT 1", function (res) {
-                MDS.log("🔍 [PROFILE-DEBUG] DB Fetch Result: " + JSON.stringify(res));
 
                 var profile = {};
                 var level2Visibility = "public";
@@ -5976,8 +5952,6 @@ function handleProfileRequest(pubkey, maxjson) {
                 if (res.status && res.rows && res.rows.length > 0) {
                     row = res.rows[0];
                     // Log raw column values for debugging
-                    MDS.log("🔍 [PROFILE] RAW DB Values - PRIVACY_L2: " + row.PRIVACY_L2 + ", PRIVACY_L3: " + row.PRIVACY_L3);
-                    // Read Privacy Settings from DB if available
                     if (row.PRIVACY_L2 || row.privacy_l2) level2Visibility = row.PRIVACY_L2 || row.privacy_l2;
 
                     var rawL3 = row.PRIVACY_L3 || row.privacy_l3;
@@ -5988,8 +5962,6 @@ function handleProfileRequest(pubkey, maxjson) {
                     }
                 }
 
-                MDS.log("🔐 [PROFILE] Privacy Resolved (DB) - L2: " + level2Visibility + ", L3: " + level3Visibility);
-
                 // Check personal contacts via SQL (Migrated from Keypair)
                 MDS.sql("SELECT * FROM PERSONAL_CONTACTS", function (personalRes) {
                     var personalContacts = [];
@@ -5999,8 +5971,6 @@ function handleProfileRequest(pubkey, maxjson) {
                             personalContacts.push(personalRes.rows[i].PUBLICKEY);
                         }
                     }
-                    MDS.log("🔍 [PROFILE-DEBUG] Personal Contacts (SQL): " + personalContacts.length);
-
                     var isPersonalContact = false;
                     for (var i = 0; i < personalContacts.length; i++) {
                         if (personalContacts[i].toLowerCase() === pubkey.toLowerCase()) {
@@ -6009,17 +5979,9 @@ function handleProfileRequest(pubkey, maxjson) {
                         }
                     }
 
-                    if (isPersonalContact) {
-                        MDS.log("✅ [PROFILE] Requester is a PERSONAL contact!");
-                    } else {
-                        MDS.log("❌ [PROFILE-DEBUG] No match found for " + pubkey.substring(0, 10) + "... in Personal List");
-                    }
-
                     // Step 3: Determine what to include
                     var includeLevel2 = shouldIncludeLevel(level2Visibility, isContact, isPersonalContact);
                     var includeLevel3 = shouldIncludeLevel(level3Visibility, isContact, isPersonalContact);
-
-                    MDS.log("🔒 [PROFILE] Sharing - Level2: " + includeLevel2 + ", Level3: " + includeLevel3);
 
                     // Populate profile object from row data
                     if (res.status && res.rows && res.rows.length > 0) {
@@ -6047,15 +6009,12 @@ function handleProfileRequest(pubkey, maxjson) {
 
                     // Step 5: Get Basic Info from Maxima (Level 1 - Always public)
                     MDS.cmd("maxima action:info", function (maximaRes) {
-                        MDS.log("👤 [PROFILE] Maxima info - Status: " + maximaRes.status);
-
                         var name = "Unknown";
                         var avatar = "";
 
                         if (maximaRes.status && maximaRes.response) {
                             name = maximaRes.response.name || "Unknown";
                             avatar = maximaRes.response.icon ? decodeURIComponent(maximaRes.response.icon) : "";
-                            MDS.log("👤 [PROFILE] Name from Maxima: " + name);
                         } else {
                             MDS.log("⚠️ [PROFILE] Failed to get Maxima info, using fallback");
                         }
@@ -6099,7 +6058,6 @@ function handleProfileRequest(pubkey, maxjson) {
                                     MDS.log("✅ [PROFILE] Level 3 added to response - Email: " + (responsePayload.email || "EMPTY") + ", Phone: " + (responsePayload.phone || "EMPTY"));
                                 } else {
                                     responsePayload.privacy_l3 = "hidden";
-                                    MDS.log("⚠️ [PROFILE] Level 3 NOT added to response");
                                 }
 
                                 MDS.log("📦 [PROFILE] Final response payload: " + JSON.stringify(responsePayload));
@@ -7442,21 +7400,7 @@ function handlePeersResponse(pubkey, maxjson) {
     for (var i = 0; i < maxjson.peers.length; i++) {
       var peer = maxjson.peers[i];
 
-      // Debug each peer
-      MDS.log(
-        "🔍 [GOSSIP-PEER] " +
-          (i + 1) +
-          "/" +
-          peerCount +
-          ": " +
-          (peer.alias || "no-alias") +
-          " (" +
-          (peer.pubkey ? peer.pubkey.substring(0, 10) : "no-pubkey") +
-          "...)",
-      );
-
       if (peer.pubkey && peer.address && peer.alias) {
-        MDS.log("✅ [GOSSIP-PEER] Processing beacon for: " + peer.alias);
         handleBeacon(peer, "GOSSIP");
         processedCount++;
       } else {
@@ -7665,6 +7609,10 @@ function sendWelcomePackage(targetPubkey, targetAlias, targetAddress) {
 // MAIN EVENT DISPATCHER
 // ============================================================================
 
+// Configuration
+var SW_DEBUG = false; // Set to true to see verbose payload and latency logs
+
+
 // Flag to ensure startup cleanup runs once after DB is ready (triggered by first NEWBLOCK)
 var DB_INIT_DONE = false;
 var DB_READY = false;
@@ -7852,21 +7800,16 @@ MDS.init(function (msg) {
     }
 
     LAST_MAXIMA_EVENT_TIME = now;
-    MDS.log(
-      "📨 [MAXIMA] RAW DATA: App=" +
-        msg.data.application +
-        " From=" +
-        msg.data.from.substring(0, 10) +
-        " DataLen=" +
-        (msg.data.data ? msg.data.data.length : 0),
-    );
-    logToUI(
-      "📨 [MAXIMA] Event received. App: " +
-        msg.data.application +
-        " From: " +
-        msg.data.from.substring(0, 10),
-    );
-
+    if (SW_DEBUG) {
+      MDS.log(
+        "📨 [MAXIMA] RAW DATA: App=" +
+          msg.data.application +
+          " From=" +
+          msg.data.from.substring(0, 10) +
+          " DataLen=" +
+          (msg.data.data ? msg.data.data.length : 0),
+      );
+    }
     if (
       msg.data.application &&
       (msg.data.application.toLowerCase() == "metachain" ||
@@ -7885,23 +7828,18 @@ MDS.init(function (msg) {
 
       try {
         var maxjson = JSON.parse(jsonstr);
-        MDS.log(
-          "🔍 [MAXIMA-DEBUG-ALL] App: " +
-            app +
-            " Type: " +
-            (maxjson.type || maxjson.messageType) +
-            " From: " +
-            pubkey.substring(0, 10),
-        );
-        MDS.log("📨 [MAXIMA] Full JSON Payload: " + jsonstr);
-        if (app === "metachain-group") {
-          logToUI(
-            "🔍 [MAXIMA-GROUP] Type: " +
-              (maxjson.messageType || maxjson.type) +
+        if (SW_DEBUG) {
+          MDS.log(
+            "🔍 [MAXIMA-DEBUG-ALL] App: " +
+              app +
+              " Type: " +
+              (maxjson.type || maxjson.messageType) +
               " From: " +
               pubkey.substring(0, 10),
           );
+          MDS.log("📨 [MAXIMA] Full JSON Payload: " + jsonstr);
         }
+        
 
         // ================== GROUP MESSAGES ==================
         if (

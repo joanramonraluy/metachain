@@ -42,7 +42,7 @@ function DiscoveryPage() {
   const [showOffline, setShowOffline] = useState(true); // Show offline users by default
   const [viewMode, setViewMode] = useState<
     "all" | "users" | "groups" | "channels"
-  >("users");
+  >("all");
 
   useEffect(() => {
     // Initial load
@@ -367,7 +367,7 @@ function DiscoveryPage() {
         </div>
 
         <div className="flex flex-wrap gap-2">
-          {(["users", "groups", "channels", "all"] as const).map((mode) => (
+          {(["all", "users", "groups", "channels"] as const).map((mode) => (
             <button
               key={mode}
               onClick={() => setViewMode(mode)}

@@ -129,21 +129,7 @@ function handlePeersResponse(pubkey, maxjson) {
     for (var i = 0; i < maxjson.peers.length; i++) {
       var peer = maxjson.peers[i];
 
-      // Debug each peer
-      MDS.log(
-        "🔍 [GOSSIP-PEER] " +
-          (i + 1) +
-          "/" +
-          peerCount +
-          ": " +
-          (peer.alias || "no-alias") +
-          " (" +
-          (peer.pubkey ? peer.pubkey.substring(0, 10) : "no-pubkey") +
-          "...)",
-      );
-
       if (peer.pubkey && peer.address && peer.alias) {
-        MDS.log("✅ [GOSSIP-PEER] Processing beacon for: " + peer.alias);
         handleBeacon(peer, "GOSSIP");
         processedCount++;
       } else {

@@ -125,7 +125,6 @@ export async function initDB(): Promise<void> {
           res.error,
         );
       } else {
-        console.log("📂 [DB] CHAT_MESSAGES table initialized");
 
         // Migration: Add txpowid column if not exists (for receiver-side confirmation)
         const alterSql =
@@ -198,9 +197,7 @@ export async function initDB(): Promise<void> {
 
     MDS.sql(createStatusTable, (res: any) => {
       if (!res.status) {
-        console.error("❌ [DB] Failed to create CHAT_STATUS table:", res.error);
       } else {
-        console.log("📂 [DB] CHAT_STATUS table initialized");
         // Add columns if they don't exist (migration for existing databases)
         const alterSql1 =
           "ALTER TABLE CHAT_STATUS ADD COLUMN IF NOT EXISTS app_installed BOOLEAN DEFAULT FALSE";
@@ -219,38 +216,14 @@ export async function initDB(): Promise<void> {
         const alterSql8 =
           "ALTER TABLE CHAT_STATUS ADD COLUMN IF NOT EXISTS blocked_by_them BOOLEAN DEFAULT FALSE";
 
-        MDS.sql(alterSql1, (alterRes: any) => {
-          if (alterRes.status)
-            console.log("📂 [DB] app_installed column added/verified");
-        });
-        MDS.sql(alterSql2, (alterRes: any) => {
-          if (alterRes.status)
-            console.log("📂 [DB] archived column added/verified");
-        });
-        MDS.sql(alterSql3, (alterRes: any) => {
-          if (alterRes.status)
-            console.log("📂 [DB] archived_date column added/verified");
-        });
-        MDS.sql(alterSql4, (alterRes: any) => {
-          if (alterRes.status)
-            console.log("📂 [DB] last_opened column added/verified");
-        });
-        MDS.sql(alterSql5, (alterRes: any) => {
-          if (alterRes.status)
-            console.log("📂 [DB] muted column added/verified");
-        });
-        MDS.sql(alterSql6, (alterRes: any) => {
-          if (alterRes.status)
-            console.log("📂 [DB] favorite column added/verified");
-        });
-        MDS.sql(alterSql7, (alterRes: any) => {
-          if (alterRes.status)
-            console.log("📂 [DB] blocked column added/verified");
-        });
-        MDS.sql(alterSql8, (alterRes: any) => {
-          if (alterRes.status)
-            console.log("📂 [DB] blocked_by_them column added/verified");
-        });
+        MDS.sql(alterSql1, () => {});
+        MDS.sql(alterSql2, () => {});
+        MDS.sql(alterSql3, () => {});
+        MDS.sql(alterSql4, () => {});
+        MDS.sql(alterSql5, () => {});
+        MDS.sql(alterSql6, () => {});
+        MDS.sql(alterSql7, () => {});
+        MDS.sql(alterSql8, () => {});
 
         // Migration: Add virtual column for case-insensitive publickey lookup
         const alterSql9 =
@@ -286,14 +259,12 @@ export async function initDB(): Promise<void> {
         );
         resolve();
       } else {
-        console.log("📂 [DB] TRANSACTIONS table initialized");
 
         // Migration 1: Add pendinguid column if it doesn't exist
         const alterSql1 =
           "ALTER TABLE TRANSACTIONS ADD COLUMN IF NOT EXISTS pendinguid VARCHAR(512)";
         MDS.sql(alterSql1, (alterRes: any) => {
           if (alterRes.status) {
-            console.log("📂 [DB] pendinguid column added/verified");
           }
 
           // Migration: Add virtual column for case-insensitive publickey lookup
@@ -323,7 +294,6 @@ export async function initDB(): Promise<void> {
                 res.error,
               );
             } else {
-              console.log("📂 [DB] PROFILES table initialized");
             }
 
             // Create MY_PROFILE table (Mirroring Service Worker for safety)
@@ -359,7 +329,6 @@ export async function initDB(): Promise<void> {
                 MDS.sql(
                   "ALTER TABLE MY_PROFILE ADD COLUMN IF NOT EXISTS allow_non_contact_chats BOOLEAN DEFAULT TRUE",
                 );
-                console.log("📂 [DB] MY_PROFILE table checked/initialized");
               }
             });
 
@@ -386,7 +355,6 @@ export async function initDB(): Promise<void> {
                   res.error,
                 );
               } else {
-                console.log("📂 [DB] GROUPS table initialized");
                 MDS.sql(
                   "ALTER TABLE GROUPS ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT FALSE",
                   () => {},
@@ -427,7 +395,6 @@ export async function initDB(): Promise<void> {
                     res.error,
                   );
                 } else {
-                  console.log("📂 [DB] GROUP_MEMBERS table initialized");
                 }
 
                 // Create GROUP_MESSAGES table
@@ -452,7 +419,6 @@ export async function initDB(): Promise<void> {
                       res.error,
                     );
                   } else {
-                    console.log("📂 [DB] GROUP_MESSAGES table initialized");
 
                     // Migration: Add propagated column if it doesn't exist
                     const alterSql =
@@ -524,7 +490,6 @@ export async function initDB(): Promise<void> {
                         res.error,
                       );
                     } else {
-                      console.log("📂 [DB] GROUP_BANS table initialized");
                       // Migration
                       MDS.sql(
                         "ALTER TABLE GROUP_BANS ADD COLUMN IF NOT EXISTS username VARCHAR(255) DEFAULT 'Unknown'",
@@ -554,7 +519,6 @@ export async function initDB(): Promise<void> {
                         res.error,
                       );
                     } else {
-                      console.log("📂 [DB] CONTACT_REQUESTS table initialized");
                     }
 
                     // Migration: Add virtual column for case-insensitive publickey lookup
@@ -653,7 +617,6 @@ export async function initDB(): Promise<void> {
                             cRes.error,
                           );
                         } else {
-                          console.log("📂 [DB] CHANNELS table initialized");
 
                           // Migration: Add columns
                           MDS.sql(
@@ -761,7 +724,6 @@ export async function initDB(): Promise<void> {
                   res.error,
                 );
               } else {
-                console.log("📂 [DB] MESSAGE_COUNTERS table initialized");
               }
 
               // Create DISCOVERED_PEERS table
@@ -783,7 +745,6 @@ export async function initDB(): Promise<void> {
                     res.error,
                   );
                 } else {
-                  console.log("📂 [DB] DISCOVERED_PEERS table initialized");
 
                   // Ensure source column exists (migration)
                   MDS.sql(
@@ -822,7 +783,6 @@ export async function initDB(): Promise<void> {
                       res.error,
                     );
                   } else {
-                    console.log("📂 [DB] METACHAIN_USERS table initialized");
                     // Schema parity with Service Worker variant
                     MDS.sql(
                       "ALTER TABLE METACHAIN_USERS ADD COLUMN IF NOT EXISTS user_id VARCHAR(512)",

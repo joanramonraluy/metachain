@@ -17,13 +17,6 @@ import "./index.css"
 import { routeTree } from "./routeTree.gen"
 
 
-// SUPER DEBUG: Log Environment immediately
-console.log("🚀 [Main] STARTUP ENV CHECK:");
-console.log("🚀 [Main] URL:", window.location.href);
-console.log("🚀 [Main] Hostname:", window.location.hostname);
-console.log("🚀 [Main] Protocol:", window.location.protocol);
-console.log("🚀 [Main] Native:", Capacitor.isNativePlatform());
-
 // Check if we need to restore a route after reload (e.g. from Settings check permissions)
 const lastRoute = localStorage.getItem("lastRoute");
 if (lastRoute) {

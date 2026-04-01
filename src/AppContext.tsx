@@ -173,8 +173,6 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
       MDS.init(async (msg) => {
         // RAW DEBUG LOG: See everything coming from Minima
         if (msg.event === "MAXIMA") {
-          console.log("🔥 [AppContext] RAW MAXIMA EVENT:", msg);
-
           // Dispatch event to window so MaximaDiscoveryService can pick it up
           window.dispatchEvent(
             new CustomEvent("MDS_MAXIMA_EVENT", {

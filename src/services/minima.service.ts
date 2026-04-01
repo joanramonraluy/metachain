@@ -235,8 +235,6 @@ class MinimaService {
    */
   async handleNewBalance() {
     try {
-      console.log("💰 [WALLET] Balance changed - notifying UI...");
-
       // Transaction cleanup is now handled by Service Worker
       // Just notify UI to refresh balance
       this.notifyBalanceUpdate();
@@ -277,11 +275,11 @@ SELECT * FROM TRANSACTIONS
     const maximaData = event.data;
 
     // Log ALL Maxima events to see what's arriving
-    console.log("📨 [MAXIMA] Event received:", {
-      from: maximaData.from,
-      application: maximaData.application,
-      data: maximaData.data,
-    });
+    // console.log("📨 [MAXIMA] Event received:", {
+    //   from: maximaData.from,
+    //   application: maximaData.application,
+    //   data: maximaData.data,
+    // });
 
     if (!maximaData.application) {
       console.warn("⚠️ [MAXIMA] No application specified");
@@ -312,10 +310,6 @@ SELECT * FROM TRANSACTIONS
 
       try {
         const json = JSON.parse(datastr) as any;
-        console.log(
-          `📨[MAXIMA - DEBUG] Processing msg type: ${json.type || json.messageType}, from: ${from} `,
-        );
-        console.log(`📨[MAXIMA - DEBUG] Full Payload: `, json);
 
         // Check if this is a group message (by app name OR content)
         if (app === "metachain-group" || (json.messageType && json.groupId)) {
@@ -427,10 +421,6 @@ VALUES(UPPER('${peer.pubkey}'), '${escapedAlias}', '${escapedBio}', '${peer.addr
 
         // Handle Internal Sync - Peer Discovered from Beacon
         if (json.type === "peer_discovered") {
-          console.log(
-            "📡 [SYNC] Peer discovered notification from SW:",
-            json.peer?.alias,
-          );
           if (json.peer) {
             const peer = json.peer;
             const now = Date.now();
@@ -1804,11 +1794,15 @@ VALUES('', UPPER('${safeFrom}'), 'System', 'system', 'Maxima contact declined', 
   }
 
   processEvent(event: any) {
-    console.log("📡 [MINIMA-EVENT] Event received from MDS:", {
-      event: event.event,
-      from: event.data?.from?.substring(0, 10),
-      application: event.data?.application,
-    });
+    // Suppress high-frequency internal Minima events that have no relevance to MetaChain UI
+    const silentEvents = ['MINIMALOG', 'MINING', 'NOTIFYCASCADEBLOCK', 'MDS_TIMER_10SECONDS', 'MDS_TIMER_60SECONDS', 'MDS_TIMER_5MINUTES'];
+    if (!silentEvents.includes(event.event)) {
+      console.log("📡 [MINIMA-EVENT] Event received from MDS:", {
+        event: event.event,
+        from: event.data?.from?.substring(0, 10),
+        application: event.data?.application,
+      });
+    }
 
     if (this.isReconnectEvent(event)) {
       console.log("🔄 [MDS] RECONNECTED signal detected from service worker");
@@ -1837,7 +1831,7 @@ VALUES('', UPPER('${safeFrom}'), 'System', 'system', 'Maxima contact declined', 
           }
         }
       }
-      console.log("✉️ [MDS] MAXIMA event detected:", event);
+      console.log("✉️ [MDS] MAXIMA from:", event.data?.from?.substring(0, 10), "app:", event.data?.application);
       this.processIncomingMessage(event);
     }
 
@@ -2613,7 +2607,8 @@ VALUES('', UPPER('${safeFrom}'), 'System', 'system', 'Maxima contact declined', 
               `DELETE FROM CHAT_STATUS WHERE UPPER(publickey) = '${pk}'`,
             );
             await this.runSQL(`
-              INSERT INTO CHAT_STATUS (publickey, archived, archived_date, last_opened, favorite, blocked, blocked_by_them)
+              MERGE INTO CHAT_STATUS (publickey, archived, archived_date, last_opened, favorite, blocked, blocked_by_them)
+              KEY (publickey)
               VALUES ('${pk}', ${archived ? "TRUE" : "FALSE"}, ${master.ARCHIVED_DATE || 0}, ${master.LAST_OPENED || 0}, ${favorite ? "TRUE" : "FALSE"}, ${blocked ? "TRUE" : "FALSE"}, ${blockedByThem ? "TRUE" : "FALSE"})
             `);
           }
@@ -2639,7 +2634,8 @@ VALUES('', UPPER('${safeFrom}'), 'System', 'system', 'Maxima contact declined', 
             await this.runSQL(
               `DELETE FROM DISCOVERED_PEERS WHERE UPPER(publickey) = '${pk}'`,
             );
-            const sql = `INSERT INTO DISCOVERED_PEERS (publickey, alias, bio, address, last_seen, source, allow_non_contact_chats, extra_data, avatar, minimaaddress)
+            const sql = `MERGE INTO DISCOVERED_PEERS (publickey, alias, bio, address, last_seen, source, allow_non_contact_chats, extra_data, avatar, minimaaddress)
+                         KEY (publickey)
                          VALUES ('${pk}', '${this.escapeSql(master.ALIAS || master.alias)}', '${this.escapeSql(master.BIO || master.bio || "")}', '${master.ADDRESS || master.address}', ${master.LAST_SEEN || 0}, '${master.SOURCE || master.source || "P2P"}', ${master.ALLOW_NON_CONTACT_CHATS === 0 ? "FALSE" : "TRUE"}, '${this.escapeSql(master.EXTRA_DATA || master.extra_data || "")}', '${this.escapeSql(master.AVATAR || master.avatar || "")}', '${this.escapeSql(master.MINIMAADDRESS || master.minimaaddress || "")}')`;
             await this.runSQL(sql);
           }
@@ -2664,7 +2660,8 @@ VALUES('', UPPER('${safeFrom}'), 'System', 'system', 'Maxima contact declined', 
             await this.runSQL(
               `DELETE FROM METACHAIN_USERS WHERE UPPER(publickey) = '${pk}'`,
             );
-            const sql = `INSERT INTO METACHAIN_USERS (user_id, publickey, alias, address, first_seen, last_updated, avatar, last_seen)
+            const sql = `MERGE INTO METACHAIN_USERS (user_id, publickey, alias, address, first_seen, last_updated, avatar, last_seen)
+                         KEY (publickey)
                          VALUES ('${pk}', '${pk}', '${this.escapeSql(master.ALIAS || master.alias)}', '${master.ADDRESS || master.address}', ${master.FIRST_SEEN || 0}, ${master.LAST_UPDATED || 0}, '${this.escapeSql(master.AVATAR || master.avatar || "")}', ${master.LAST_SEEN || 0})`;
             await this.runSQL(sql);
           }

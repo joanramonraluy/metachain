@@ -206,13 +206,6 @@ function ChatPage() {
     });
 
     // Debug Log
-    // console.log("📊 [SORT DEBUG] Sorted Messages:", JSON.stringify(sorted.map(m => ({
-    //   txt: m.text?.substring(0, 20),
-    //   seq: m.sender_seq,
-    //   orig: m.originalTimestamp,
-    //   ts: m.timestamp,
-    //   sys: m.isSystem
-    // }))));
 
     return sorted;
   };
@@ -473,7 +466,6 @@ function ChatPage() {
 
         // PRE-CHECK: If address is a Maxima address (Mx...), try to resolve to Hex Public Key first
         if (address && (address.startsWith("Mx") || address.startsWith("MX"))) {
-          console.log(`🔍 [CHAT] Resolving address: ${address}`);
           const safeMxAddress = address.replace(/'/g, "''");
 
           let resolveSql = `SELECT PUBLICKEY FROM DISCOVERED_PEERS WHERE ADDRESS = '${safeMxAddress}' LIMIT 1`;
@@ -848,13 +840,11 @@ function ChatPage() {
       contact.publickey,
     );
     setIsPendingOutgoing(hasPendingOutgoing);
-    console.log(`🔍 [CHAT] Outgoing pending: ${hasPendingOutgoing}`);
 
     // Check for INCOMING requests (they sent to me)
     const hasPendingIncoming = await minimaService.checkIncomingChatRequest(
       contact.publickey,
     );
-    console.log(`🔍 [CHAT] Incoming pending: ${hasPendingIncoming}`);
 
     // Check if we're already Maxima contacts
     let isContact = false;
@@ -862,7 +852,6 @@ function ChatPage() {
       const res = await MDS.cmd.maxcontacts();
       const contacts: any[] = (res as any)?.response?.contacts || [];
       isContact = contacts.some((c: any) => c.publickey === contact.publickey);
-      console.log(`🔍 [CHAT] Is Maxima contact: ${isContact}`);
     } catch (err) {
       console.error("❌ [CHAT] Error checking Maxima contacts:", err);
     }
@@ -875,10 +864,6 @@ function ChatPage() {
       `🔍 [CHAT] Recipient ${contact?.extradata?.name || contact.publickey.substring(0, 10)} allowsNonContacts: ${recipientAllowsNonContacts}`,
     );
 
-    // Also log MY setting for comparison/debugging
-    const myAllowNonContacts = await minimaService.getChatPermission();
-    console.log(`🔍 [CHAT] My allowNonContacts setting: ${myAllowNonContacts}`);
-
     // CRITICAL: Maxima Contact Requests take precedence over everything else
     // We check this FIRST to ensure the banner appears if a request exists.
     let hasMaximaRequest = false;
@@ -889,9 +874,7 @@ function ChatPage() {
                             WHERE UPPER(from_publickey)=UPPER('${escapeSql(contact.publickey)}')
                             AND status='pending'`;
 
-      console.log(`🔍 [CHAT DEBUG] Checking Maxima Req SQL: ${maximaReqSql}`);
       const maximaReqRes = await minimaService.runSQL(maximaReqSql);
-      console.log(`🔍 [CHAT DEBUG] Maxima Req Result:`, maximaReqRes);
 
       if (maximaReqRes && maximaReqRes.rows && maximaReqRes.rows.length > 0) {
         // Has pending Maxima contact request - show banner but DO NOT auto-allow chat
@@ -998,7 +981,6 @@ function ChatPage() {
     // If we just sent a request, reload messages to show the system message (once only)
     if ((searchParams as any)?.requestPending && !requestPendingHandled.current) {
       requestPendingHandled.current = true;
-      console.log("🔍 [CHAT] requestPending detected, reloading.");
       loadMessagesFromDB();
     }
   }, [contact, searchParams]);
@@ -1062,10 +1044,7 @@ function ChatPage() {
         minimaService.getMaximaContactRequests(myPublicKey),
       ]);
 
-      console.log("🔍 [CHAT] Loading requests...");
       console.log("🔍 [CHAT] Contact address:", contact.publickey);
-      console.log("🔍 [CHAT] Chat Pending:", chatRequests.length);
-      console.log("🔍 [CHAT] Maxima Pending:", maximaRequests.length);
 
       // Tag Maxima requests so UI knows how to handle them
       const taggedMaxima = maximaRequests.map((r: any) => ({
@@ -1082,10 +1061,8 @@ function ChatPage() {
       let pendingRequest = null;
 
       if (allRequests.length === 1) {
-        console.log("🔍 [CHAT] Found 1 pending request.");
         pendingRequest = allRequests[0];
       } else if (allRequests.length > 1) {
-        console.log("🔍 [CHAT] Multiple requests, matching...");
         // Try to match by hex publickey if contact has it
         if (contact.publickey.startsWith("0x")) {
           // Check FROM_PUBLICKEY (Chat) or from_publickey (Maxima - casing might differ from SQL)
@@ -1096,7 +1073,6 @@ function ChatPage() {
         }
       }
 
-      console.log("🔍 [CHAT] Showing request:", pendingRequest);
       setContactRequest(pendingRequest || null);
     } catch (err) {
       console.error("❌ [CHAT] Load requests error:", err);

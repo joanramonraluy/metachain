@@ -1,6 +1,6 @@
 # AGENTS.md - MetaChain Engineering Guide
 
-Last reviewed against codebase: 2026-04-01 (commit `d058eb75` + Group photo sync fix + GroupService event listener)
+Last reviewed against codebase: 2026-04-01 (commit `d058eb75` + Group photo sync fix + GroupService event listener + Discovery default view set to 'all' + Log optimization strategy)
 Scope: `/home/joanramon/Minima/metachain`
 
 ## 0) Mandatory Update Mandate (Required)
@@ -545,3 +545,22 @@ Expected: permission gate behavior changes accordingly and beacon updates propag
 | X | `group_invite` sent without `groupName` — receiver inserts group with empty name | `group.service.ts` methods `addMember`, `removeMember`, `leaveGroup`, `unbanMember`, and `sendGroupMessage` all called `getGroupInfo()` and then accessed the result with uppercase keys `(group as any).NAME`, `.DESCRIPTION`, `.CREATED_DATE`. `getGroupInfo()` returns an object with lowercase TypeScript keys (`group.name`, `group.description`, `group.created_date`). Result: `groupName` was `undefined` → `JSON.stringify` omitted the field → receiver's `handleGroupInvite` got `maxjson.groupName = undefined` → group inserted into GROUPS with `name=''`. Fix: replaced all 7 occurrences of `(group as any).NAME/DESCRIPTION/CREATED_DATE` with `group.name`, `group.description`, `group.created_date`. Root cause is the same pattern as bugs W (uppercase vs lowercase DB row keys) but in the service layer rather than the component. |
 | Y | Group photo update not synced to other members | Two bugs combined prevented group avatar updates: (1) **SW security check case-sensitive**: `handleGroupUpdateDetails()` in `group.handler.js` line 1311 checked `publickey='${pubkey}'` (exact match). Maxima delivers pubkey as `0x...` (lowercase) but `GROUP_MEMBERS` stores it as `0X...` (uppercase), causing all authorization checks to fail with "Group not found locally or sender is not a member" — the avatar was never written to the DB. (2) **Frontend not refreshing on SW notification**: `ChatsAndGroups.tsx` calls `groupService.onGroupUpdate(fetchGroups)` to reload the group list when the group changes, but `GroupService.constructor` was empty (unlike `ChannelService` which had a listener). When the SW updated the BD and sent `MDS.comms.solo({ type: "group_update" })`, the frontend received the window event but `GroupService` never fired the callbacks, so `fetchGroups` never ran. Fix: (1) Changed line 1311 to `UPPER(publickey)=UPPER('${pubkey}')` (consistent with other SW security checks). (2) Added window event listener in `GroupService.constructor` (lines 131–139): `if (typeof window !== 'undefined') { window.addEventListener("GROUP_UPDATE", (e) => { if (e.detail?.type === "group_update") { this.notifyGroupUpdate(e.detail?.groupId, e.detail, true); } }); }`. This mirrors `ChannelService` pattern and ensures callbacks fire when the SW notifies. |
 | Y | Invite-link joiner's group/channel does not appear in chat list | After joining via `mcgrp://` or `mcch://` invite link: the admin received the join request, processed it, and sent back a `group_invite`/`channel_invite`. The joiner's SW correctly inserted the group/channel into the DB and fired `MDS.comms.solo({ type: "group_list_updated" })`. However, `minima.service.ts` MDSCOMMS handler only handled `group_update`, `group_join_requests_update`, `GROUP_SYNC_START`, and `GROUP_SYNC_END` — `group_list_updated` and `group_sync_start` (lowercase) were silently ignored. No `GROUP_UPDATE` CustomEvent was dispatched → `ChatsAndGroups` never re-fetched → group invisible to joiner. Separately, for channels, `handleChannelInvite` exited silently (no `CHANNEL_UPDATE` fired) if the channel already existed in the DB. Fix: added `group_list_updated` and `group_sync_start` to the MDSCOMMS condition in `minima.service.ts`; added `CHANNEL_UPDATE` + `requestChannelHistoryFromSW` to the early-exit path in `channel.handler.js`. See sections 11.33–34. |
+
+## 18) UI and UX Defaults
+
+1. **Discovery View Mode**: The default view mode in `/discovery` is set to `"all"`. This ensures that users, groups, and channels are all visible by default to new users, encouraging broader exploration of available content. The "All" tab is also positioned first in the filter bar for consistency with its default status.
+
+## 18) Log Optimization and Debugging Defaults
+
+As of version 3.0 (April 2026), the application has a strictly pruned logging strategy to prevent production consoles from being saturated by Minima MDS dumps.
+
+### 18.1 Frontend Build Stripping (Vite)
+- **Currently Disabled**: `vite.config.ts` includes the `terser` config to strip `console.log` in production, but it is commented out for active Alpha/Beta debugging.
+- Once the app is stable, uncomment the `minify: 'terser'` config blocks.
+- **Rule for UI development**: Use `console.warn` or `console.error` for errors that absolutely must remain visible in production, to prepare for when the final stripping is reactivated.
+
+### 18.2 Service Worker Debugging (SW_DEBUG)
+- The Rhino/Nashorn engine logs directly to the Minima Java console via `MDS.log()`. To keep this trace clean for node operators, all high-frequency payloads (like chat payload parsing, raw string dumps, and polling latency events) must be gated.
+- A global `var SW_DEBUG = false;` flag is located at the top of `public/service-workers/main.js`.
+- If an agent or developer needs to debug the raw inbound payload of `MAXIMA` messages or deduplication SQL, they must manually set this flag to `true`, build the SW, and revert it immediately after.
+- **`logToUI` removed**: The legacy `logToUI` utility (which spammed the bridge with `UI_LOG:` payloads so the frontend would print them) was removed due to bridge saturation. Use `MDS.log` for backend debugging.

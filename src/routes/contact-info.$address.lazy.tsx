@@ -86,17 +86,13 @@ function ContactInfoPage() {
     // If the route parameter is an Mx address, resolve it to Hex and redirect
     useEffect(() => {
         if (address.startsWith("Mx") || address.startsWith("MX")) {
-            console.log("🔄 [CONTACT-INFO] Normalizing Mx route to Hex Public Key...");
             resolveHexFromAddress(address).then((hex) => {
                 if (hex) {
-                    console.log("✅ [CONTACT-INFO] Resolved to:", hex);
                     navigate({
                         to: "/contact-info/$address",
                         params: { address: hex },
                         replace: true,
                     });
-                } else {
-                    console.warn("⚠️ [CONTACT-INFO] Could not resolve Mx address to Hex.");
                 }
             });
         }
@@ -666,18 +662,12 @@ function ContactInfoPage() {
     };
 
     const handleCancelRequest = async () => {
-        console.log("🖱️ [UI DEBUG] Cancel Request Clicked. Contact:", contact);
-        if (!contact?.publickey) {
-            console.error("❌ [UI DEBUG] Cannot cancel: No public key found on contact object");
-            return;
-        }
+        if (!contact?.publickey) return;
 
-        // const confirmed = confirm("Are you sure you want to cancel this chat request?");
-        // if (!confirmed) return;
-        console.log("⚠️ [UI DEBUG] Skipped confirm dialog (debugging)");
+        const confirmed = confirm("Are you sure you want to cancel this chat request?");
+        if (!confirmed) return;
 
-        console.log(`🚀 [UI DEBUG] Calling minimaService.cancelChatRequest with pk: ${contact.publickey}`);
-        setAddingContact(true); // Reuse state for loading indicator
+        setAddingContact(true);
         try {
             await minimaService.cancelChatRequest(contact.publickey);
             setRequestStatus('none'); // Clear pending status
@@ -691,9 +681,7 @@ function ContactInfoPage() {
     };
 
     const handleSendMaximaRequest = async () => {
-        console.log("🖱️ [UI DEBUG] Send Maxima Request Clicked. Contact:", contact);
         if (!contact?.currentaddress) {
-            console.error("❌ [UI DEBUG] Cannot send request: No currentaddress found on contact");
             alert("Error: Cannot find user's Maxima address.");
             return;
         }
@@ -718,17 +706,11 @@ function ContactInfoPage() {
     };
 
     const handleCancelMaximaRequest = async () => {
-        console.log("🖱️ [UI DEBUG] Cancel Maxima Request Clicked. Contact:", contact);
-        if (!contact?.publickey) {
-            console.error("❌ [UI DEBUG] Cannot cancel: No public key found");
-            return;
-        }
+        if (!contact?.publickey) return;
 
-        // const confirmed = confirm("Are you sure you want to cancel this Maxima contact request?");
-        // if (!confirmed) return;
-        console.log("⚠️ [UI DEBUG] Skipped confirm dialog (debugging)");
+        const confirmed = confirm("Are you sure you want to cancel this Maxima contact request?");
+        if (!confirmed) return;
 
-        console.log(`🚀 [UI DEBUG] Calling minimaService.cancelMaximaContactRequest with pk: ${contact.publickey}`);
         setSendingMaximaRequest(true);
         try {
             await minimaService.cancelMaximaContactRequest(contact.publickey);

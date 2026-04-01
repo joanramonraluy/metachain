@@ -7,12 +7,14 @@ var LAST_PONG_SENT = {};
 var PONG_THROTTLE_MS = 30000;
 
 function handleChatMessage(pubkey, maxjson) {
-  MDS.log(
-    "💬 [CHAT-DEBUG] RAW INCOMING from " +
-    pubkey +
-    ": " +
-    JSON.stringify(maxjson),
-  );
+  if (SW_DEBUG) {
+    MDS.log(
+      "💬 [CHAT-DEBUG] RAW INCOMING from " +
+      pubkey +
+      ": " +
+      JSON.stringify(maxjson),
+    );
+  }
   MDS.log(
     "💬 [CHAT] From: " +
     pubkey +
@@ -67,7 +69,7 @@ function handleChatMessage(pubkey, maxjson) {
       );
       return; // Abort insertion
     } else {
-      MDS.log("✅ [CHAT-DEBUG] Block check passed for " + safeUsername);
+      if (SW_DEBUG) MDS.log("✅ [CHAT-DEBUG] Block check passed for " + safeUsername);
     }
 
     // GAP DETECTION LOGIC
@@ -156,7 +158,7 @@ function handleChatMessage(pubkey, maxjson) {
       checkDup += " AND (" + conditions.join(" OR ") + ")";
     }
 
-    MDS.log("🔍 [DEDUP-LIVE] Checking for duplicates with SQL: " + checkDup);
+    if (SW_DEBUG) MDS.log("🔍 [DEDUP-LIVE] Checking for duplicates with SQL: " + checkDup);
 
     MDS.sql(checkDup, function (dupRes) {
       if (dupRes.status && dupRes.rows && dupRes.rows[0].COUNT > 0) {
@@ -189,7 +191,7 @@ function handleChatMessage(pubkey, maxjson) {
         }
         return;
       } else {
-        MDS.log("✨ [CHAT-DEBUG] No duplicate found. Proceeding to INSERT...");
+        if (SW_DEBUG) MDS.log("✨ [CHAT-DEBUG] No duplicate found. Proceeding to INSERT...");
       }
 
       var forwardedVal = forwarded ? 1 : 0;

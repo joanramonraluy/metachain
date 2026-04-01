@@ -12,6 +12,10 @@
 // MAIN EVENT DISPATCHER
 // ============================================================================
 
+// Configuration
+var SW_DEBUG = false; // Set to true to see verbose payload and latency logs
+
+
 // Flag to ensure startup cleanup runs once after DB is ready (triggered by first NEWBLOCK)
 var DB_INIT_DONE = false;
 var DB_READY = false;
@@ -199,21 +203,16 @@ MDS.init(function (msg) {
     }
 
     LAST_MAXIMA_EVENT_TIME = now;
-    MDS.log(
-      "📨 [MAXIMA] RAW DATA: App=" +
-        msg.data.application +
-        " From=" +
-        msg.data.from.substring(0, 10) +
-        " DataLen=" +
-        (msg.data.data ? msg.data.data.length : 0),
-    );
-    logToUI(
-      "📨 [MAXIMA] Event received. App: " +
-        msg.data.application +
-        " From: " +
-        msg.data.from.substring(0, 10),
-    );
-
+    if (SW_DEBUG) {
+      MDS.log(
+        "📨 [MAXIMA] RAW DATA: App=" +
+          msg.data.application +
+          " From=" +
+          msg.data.from.substring(0, 10) +
+          " DataLen=" +
+          (msg.data.data ? msg.data.data.length : 0),
+      );
+    }
     if (
       msg.data.application &&
       (msg.data.application.toLowerCase() == "metachain" ||
@@ -232,23 +231,18 @@ MDS.init(function (msg) {
 
       try {
         var maxjson = JSON.parse(jsonstr);
-        MDS.log(
-          "🔍 [MAXIMA-DEBUG-ALL] App: " +
-            app +
-            " Type: " +
-            (maxjson.type || maxjson.messageType) +
-            " From: " +
-            pubkey.substring(0, 10),
-        );
-        MDS.log("📨 [MAXIMA] Full JSON Payload: " + jsonstr);
-        if (app === "metachain-group") {
-          logToUI(
-            "🔍 [MAXIMA-GROUP] Type: " +
-              (maxjson.messageType || maxjson.type) +
+        if (SW_DEBUG) {
+          MDS.log(
+            "🔍 [MAXIMA-DEBUG-ALL] App: " +
+              app +
+              " Type: " +
+              (maxjson.type || maxjson.messageType) +
               " From: " +
               pubkey.substring(0, 10),
           );
+          MDS.log("📨 [MAXIMA] Full JSON Payload: " + jsonstr);
         }
+        
 
         // ================== GROUP MESSAGES ==================
         if (

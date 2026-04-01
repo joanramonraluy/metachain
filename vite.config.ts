@@ -13,6 +13,13 @@ export default defineConfig({
   base: "",
   publicDir: "public",
   build: {
+    // minify: 'terser',
+    // terserOptions: {
+    //   compress: {
+    //     drop_console: false, // keep error/warn
+    //     pure_funcs: ['console.log', 'console.info', 'console.debug']
+    //   }
+    // },
     outDir: "build",
     chunkSizeWarningLimit: 1000, // Lazy chunks can be larger since they load on-demand
     rollupOptions: {

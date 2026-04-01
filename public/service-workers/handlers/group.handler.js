@@ -1502,14 +1502,14 @@ function handleGroupRoleUpdate(pubkey, maxjson) {
 }
 
 function handleGroupJoinRequestEvent(pubkey, maxjson) {
-  logToUI(
+  MDS.log(
     "📨 [GROUP-JOIN] Received Join Request Event (Type: " +
       (maxjson.messageType || maxjson.type) +
       ") from " +
       pubkey.substring(0, 10),
   );
   try {
-    logToUI(
+    MDS.log(
       "🔄 [GROUP-JOIN] Processing event: " +
         (maxjson.messageType || maxjson.type) +
         " from " +
@@ -1576,34 +1576,34 @@ function executeJoinRequestAuth(
       localPk +
       "')";
     MDS.sql(checkSenderSql, function (resSender) {
-      logToUI(
+      MDS.log(
         "📝 [GROUP-JOIN] Membership check result: " +
           (resSender.status ? "OK" : "ERROR: " + resSender.error),
       );
       try {
         if (!resSender.status) {
-          logToUI(
+          MDS.log(
             "❌ [GROUP-JOIN] SQL Error validating group membership: " +
               resSender.error,
           );
           return;
         }
         if (!resSender.rows || resSender.rows.length === 0) {
-          logToUI(
+          MDS.log(
             "⚠️ [GROUP-JOIN] Ignored. We are not in group " + safeGroupId,
           );
           return;
         }
-        logToUI(
+        MDS.log(
           "📝 [GROUP-JOIN] Validating admin role for " +
             localPk.substring(0, 10) +
             " in " +
             safeGroupId,
         );
         var myRole = resSender.rows[0].ROLE || resSender.rows[0].role;
-        logToUI("📝 [GROUP-JOIN] My role in " + safeGroupId + " is " + myRole);
+        MDS.log("📝 [GROUP-JOIN] My role in " + safeGroupId + " is " + myRole);
         if (myRole !== "creator" && myRole !== "admin") {
-          logToUI(
+          MDS.log(
             "⚠️ [GROUP-JOIN] Ignored. We are not an admin/creator of group " +
               safeGroupId +
               " (Role: " +
@@ -1638,7 +1638,7 @@ function executeJoinRequestAuth(
             groupAvatar = row.AVATAR || row.avatar || "";
             groupCreatedDate =
               row.CREATED_DATE || row.created_date || Date.now();
-            logToUI(
+            MDS.log(
               "📝 [GROUP-JOIN] Found group info: " +
                 groupName +
                 " | auto_approve value: " +
@@ -1651,7 +1651,7 @@ function executeJoinRequestAuth(
                   : row.auto_approve),
             );
           }
-          logToUI(
+          MDS.log(
             "📝 [GROUP-JOIN] final autoApproveEnabled evaluated to: " +
               autoApproveEnabled,
           );
@@ -1848,7 +1848,7 @@ function executeJoinRequestAuth(
                       "'",
                     function (membersRes) {
                       var members = membersRes.rows || [];
-                      logToUI(
+                      MDS.log(
                         "📤 [GROUP-JOIN] Re-sending group invite to " +
                           requesterPubkey.substring(0, 10),
                       );
@@ -1885,7 +1885,7 @@ function executeJoinRequestAuth(
                   memberRes.rows &&
                   memberRes.rows.length > 0
                 ) {
-                  logToUI(
+                  MDS.log(
                     "ℹ️ [GROUP-JOIN] User already a member. Re-sending invite just in case.",
                   );
                   reSendInviteToMember();
@@ -2168,7 +2168,7 @@ function broadcastJoinRequestToAdmins(
 
 function sendMaximaGroupMsg(toPk, payloadObj) {
   var hexData = "0x" + utf8ToHex(JSON.stringify(payloadObj)).toUpperCase();
-  logToUI(
+  MDS.log(
     "🚀 [GROUP-MSG] Sending to " +
       toPk.substring(0, 10) +
       " type: " +

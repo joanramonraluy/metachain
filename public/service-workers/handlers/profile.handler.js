@@ -24,7 +24,6 @@ function handleProfileRequest(pubkey, maxjson) {
 
             // Step 2: Fetch profile & privacy settings from DB
             MDS.sql("SELECT * FROM MY_PROFILE LIMIT 1", function (res) {
-                MDS.log("🔍 [PROFILE-DEBUG] DB Fetch Result: " + JSON.stringify(res));
 
                 var profile = {};
                 var level2Visibility = "public";
@@ -34,8 +33,6 @@ function handleProfileRequest(pubkey, maxjson) {
                 if (res.status && res.rows && res.rows.length > 0) {
                     row = res.rows[0];
                     // Log raw column values for debugging
-                    MDS.log("🔍 [PROFILE] RAW DB Values - PRIVACY_L2: " + row.PRIVACY_L2 + ", PRIVACY_L3: " + row.PRIVACY_L3);
-                    // Read Privacy Settings from DB if available
                     if (row.PRIVACY_L2 || row.privacy_l2) level2Visibility = row.PRIVACY_L2 || row.privacy_l2;
 
                     var rawL3 = row.PRIVACY_L3 || row.privacy_l3;
@@ -46,8 +43,6 @@ function handleProfileRequest(pubkey, maxjson) {
                     }
                 }
 
-                MDS.log("🔐 [PROFILE] Privacy Resolved (DB) - L2: " + level2Visibility + ", L3: " + level3Visibility);
-
                 // Check personal contacts via SQL (Migrated from Keypair)
                 MDS.sql("SELECT * FROM PERSONAL_CONTACTS", function (personalRes) {
                     var personalContacts = [];
@@ -57,8 +52,6 @@ function handleProfileRequest(pubkey, maxjson) {
                             personalContacts.push(personalRes.rows[i].PUBLICKEY);
                         }
                     }
-                    MDS.log("🔍 [PROFILE-DEBUG] Personal Contacts (SQL): " + personalContacts.length);
-
                     var isPersonalContact = false;
                     for (var i = 0; i < personalContacts.length; i++) {
                         if (personalContacts[i].toLowerCase() === pubkey.toLowerCase()) {
@@ -67,17 +60,9 @@ function handleProfileRequest(pubkey, maxjson) {
                         }
                     }
 
-                    if (isPersonalContact) {
-                        MDS.log("✅ [PROFILE] Requester is a PERSONAL contact!");
-                    } else {
-                        MDS.log("❌ [PROFILE-DEBUG] No match found for " + pubkey.substring(0, 10) + "... in Personal List");
-                    }
-
                     // Step 3: Determine what to include
                     var includeLevel2 = shouldIncludeLevel(level2Visibility, isContact, isPersonalContact);
                     var includeLevel3 = shouldIncludeLevel(level3Visibility, isContact, isPersonalContact);
-
-                    MDS.log("🔒 [PROFILE] Sharing - Level2: " + includeLevel2 + ", Level3: " + includeLevel3);
 
                     // Populate profile object from row data
                     if (res.status && res.rows && res.rows.length > 0) {
@@ -105,15 +90,12 @@ function handleProfileRequest(pubkey, maxjson) {
 
                     // Step 5: Get Basic Info from Maxima (Level 1 - Always public)
                     MDS.cmd("maxima action:info", function (maximaRes) {
-                        MDS.log("👤 [PROFILE] Maxima info - Status: " + maximaRes.status);
-
                         var name = "Unknown";
                         var avatar = "";
 
                         if (maximaRes.status && maximaRes.response) {
                             name = maximaRes.response.name || "Unknown";
                             avatar = maximaRes.response.icon ? decodeURIComponent(maximaRes.response.icon) : "";
-                            MDS.log("👤 [PROFILE] Name from Maxima: " + name);
                         } else {
                             MDS.log("⚠️ [PROFILE] Failed to get Maxima info, using fallback");
                         }
@@ -157,7 +139,6 @@ function handleProfileRequest(pubkey, maxjson) {
                                     MDS.log("✅ [PROFILE] Level 3 added to response - Email: " + (responsePayload.email || "EMPTY") + ", Phone: " + (responsePayload.phone || "EMPTY"));
                                 } else {
                                     responsePayload.privacy_l3 = "hidden";
-                                    MDS.log("⚠️ [PROFILE] Level 3 NOT added to response");
                                 }
 
                                 MDS.log("📦 [PROFILE] Final response payload: " + JSON.stringify(responsePayload));
