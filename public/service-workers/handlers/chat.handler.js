@@ -39,6 +39,11 @@ function handleChatMessage(pubkey, maxjson) {
     maxjson.forwarded === true ||
     maxjson.forwarded === "true" ||
     maxjson.forwarded === 1;
+  var replyTo = maxjson.replyTo || null;
+  var replyToCustomid = replyTo && replyTo.customid ? escapeSql(String(replyTo.customid)) : null;
+  var replyToText = replyTo && replyTo.text ? escapeSql(String(replyTo.text).substring(0, 500)) : null;
+  var replyToSender = replyTo && replyTo.senderName ? escapeSql(String(replyTo.senderName)) : null;
+  var replyToType = replyTo && replyTo.type ? escapeSql(String(replyTo.type)) : null;
 
   MDS.log(
     "⏱️ [CHAT-LATENCY] customid=" +
@@ -196,7 +201,7 @@ function handleChatMessage(pubkey, maxjson) {
 
       var forwardedVal = forwarded ? 1 : 0;
       var insertSql =
-        "INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, txpowid, original_timestamp, sender_seq, customid, forwarded) " +
+        "INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, txpowid, original_timestamp, sender_seq, customid, forwarded, reply_to_customid, reply_to_text, reply_to_sender, reply_to_type) " +
         "VALUES ('', UPPER('" +
         safePubkey +
         "'), '" +
@@ -223,6 +228,14 @@ function handleChatMessage(pubkey, maxjson) {
         customid +
         "', " +
         forwardedVal +
+        ", " +
+        (replyToCustomid ? "'" + replyToCustomid + "'" : "NULL") +
+        ", " +
+        (replyToText ? "'" + replyToText + "'" : "NULL") +
+        ", " +
+        (replyToSender ? "'" + replyToSender + "'" : "NULL") +
+        ", " +
+        (replyToType ? "'" + replyToType + "'" : "NULL") +
         ")";
 
       MDS.sql(insertSql, function (res) {
@@ -248,7 +261,11 @@ function handleChatMessage(pubkey, maxjson) {
               original_timestamp: originalTimestamp,
               sender_seq: senderSeq,
               customid: maxjson.customid || "0x00",
-              forwarded: forwarded
+              forwarded: forwarded,
+              reply_to_customid: replyToCustomid || null,
+              reply_to_text: replyToText || null,
+              reply_to_sender: replyToSender || null,
+              reply_to_type: replyToType || null
             }
           };
           MDS.log("📡 [CHAT] Emitting NEW_CHAT_MESSAGE signal to Frontend...");
@@ -439,6 +456,12 @@ function handleChatHistoryRequest(pubkey, maxjson) {
             txpowid: row.TXPOWID,
             sender_seq: row.SENDER_SEQ, // Include sequence for ordering
             forwarded: row.FORWARDED === 1 || row.forwarded === 1,
+            replyTo: (row.REPLY_TO_CUSTOMID || row.reply_to_customid) ? {
+              customid: row.REPLY_TO_CUSTOMID || row.reply_to_customid,
+              text: row.REPLY_TO_TEXT || row.reply_to_text || "",
+              senderName: row.REPLY_TO_SENDER || row.reply_to_sender || "",
+              type: row.REPLY_TO_TYPE || row.reply_to_type || "text"
+            } : null,
           };
         });
 
@@ -544,6 +567,11 @@ function processHistoryMessage(safePubkey, originalPubkey, messages, index) {
   var content = escapeSql(msg.message || "");
   var username = escapeSql(msg.username || "Unknown");
   var senderSeq = msg.sender_seq || 0; // Extract sender_seq
+  var msgReplyTo = msg.replyTo || null;
+  var msgReplyToCustomid = msgReplyTo && msgReplyTo.customid ? escapeSql(String(msgReplyTo.customid)) : null;
+  var msgReplyToText = msgReplyTo && msgReplyTo.text ? escapeSql(String(msgReplyTo.text).substring(0, 500)) : null;
+  var msgReplyToSender = msgReplyTo && msgReplyTo.senderName ? escapeSql(String(msgReplyTo.senderName)) : null;
+  var msgReplyToType = msgReplyTo && msgReplyTo.type ? escapeSql(String(msgReplyTo.type)) : null;
 
   var finalUsername = "Unknown";
   var isIncoming = false;
@@ -585,7 +613,7 @@ function processHistoryMessage(safePubkey, originalPubkey, messages, index) {
 
           var forwardedVal = msg.forwarded ? 1 : 0;
           var insertSql =
-            "INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, txpowid, original_timestamp, customid, sender_seq, forwarded) " +
+            "INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, txpowid, original_timestamp, customid, sender_seq, forwarded, reply_to_customid, reply_to_text, reply_to_sender, reply_to_type) " +
             "VALUES ('', '" +
             safePubkey +
             "', '" +
@@ -612,6 +640,14 @@ function processHistoryMessage(safePubkey, originalPubkey, messages, index) {
             senderSeq +
             ", " +
             forwardedVal +
+            ", " +
+            (msgReplyToCustomid ? "'" + msgReplyToCustomid + "'" : "NULL") +
+            ", " +
+            (msgReplyToText ? "'" + msgReplyToText + "'" : "NULL") +
+            ", " +
+            (msgReplyToSender ? "'" + msgReplyToSender + "'" : "NULL") +
+            ", " +
+            (msgReplyToType ? "'" + msgReplyToType + "'" : "NULL") +
             ")";
 
           MDS.sql(insertSql, function (insRes) {
@@ -635,7 +671,7 @@ function processHistoryMessage(safePubkey, originalPubkey, messages, index) {
 
     var forwardedVal = msg.forwarded ? 1 : 0;
     var insertSql =
-      "INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, txpowid, original_timestamp, customid, sender_seq, forwarded) " +
+      "INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, txpowid, original_timestamp, customid, sender_seq, forwarded, reply_to_customid, reply_to_text, reply_to_sender, reply_to_type) " +
       "VALUES ('', '" +
       safePubkey +
       "', '" +
@@ -662,6 +698,14 @@ function processHistoryMessage(safePubkey, originalPubkey, messages, index) {
       senderSeq +
       ", " +
       forwardedVal +
+      ", " +
+      (msgReplyToCustomid ? "'" + msgReplyToCustomid + "'" : "NULL") +
+      ", " +
+      (msgReplyToText ? "'" + msgReplyToText + "'" : "NULL") +
+      ", " +
+      (msgReplyToSender ? "'" + msgReplyToSender + "'" : "NULL") +
+      ", " +
+      (msgReplyToType ? "'" + msgReplyToType + "'" : "NULL") +
       ")";
 
     MDS.sql(insertSql, function (insRes) {

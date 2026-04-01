@@ -3,7 +3,8 @@
 import Lottie from "lottie-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useEffect, useRef } from "react";
-import { Forward, Copy, Check } from "lucide-react";
+import { createPortal } from "react-dom";
+import { Forward, Copy, Check, Reply } from "lucide-react";
 import ForwardModal from "./ForwardModal";
 
 // Dynamic import of all .json files
@@ -27,6 +28,8 @@ interface MessageBubbleProps {
   currentChatId?: string;
   showName?: boolean;
   showAvatar?: boolean;
+  replyTo?: { customid: string; text: string; senderName: string; type: string } | null;
+  onReply?: () => void;
 }
 
 // Flying money emoji component
@@ -86,7 +89,7 @@ const ConfettiParticle = ({ delay = 0, color }: { delay?: number; color: string 
 
 const defaultAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23cbd5e1'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E";
 
-export default function MessageBubble({ fromMe, text, charm, amount, timestamp, status, tokenAmount, senderName, senderImage, onAvatarClick, type, filedata, forwarded, currentChatId, showName = true, showAvatar = true }: MessageBubbleProps) {
+export default function MessageBubble({ fromMe, text, charm, amount, timestamp, status, tokenAmount, senderName, senderImage, onAvatarClick, type, filedata, forwarded, currentChatId, showName = true, showAvatar = true, replyTo, onReply }: MessageBubbleProps) {
   const isCharm = !!charm;
   const isTokenTransfer = !!tokenAmount;
   const isImage = type === 'image' || (filedata && filedata.startsWith('data:image')); // Detect images
@@ -96,12 +99,17 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
   const [forwardAsForwarded, setForwardAsForwarded] = useState(false);
   const [showActions, setShowActions] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [menuPos, setMenuPos] = useState<{ top: number; left?: number; right?: number } | null>(null);
+  const bubbleRef = useRef<HTMLDivElement>(null);
   const actionsRef = useRef<HTMLDivElement>(null);
 
-  // Close actions when clicking outside
+  // Close actions when clicking outside both the menu portal and the bubble
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (showActions && actionsRef.current && !actionsRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      const insideMenu = actionsRef.current?.contains(target);
+      const insideBubble = bubbleRef.current?.contains(target);
+      if (showActions && !insideMenu && !insideBubble) {
         setShowActions(false);
       }
     };
@@ -244,8 +252,22 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
           </AnimatePresence>
 
           <div
-            ref={actionsRef}
-            onClick={() => !isTokenTransfer && !isCharm && setShowActions(!showActions)}
+            ref={bubbleRef}
+            onClick={() => {
+              if (isTokenTransfer || isCharm) return;
+              if (!showActions) {
+                const rect = bubbleRef.current?.getBoundingClientRect();
+                if (rect) {
+                  setMenuPos({
+                    top: rect.top - 8,
+                    ...(fromMe
+                      ? { right: window.innerWidth - rect.right }
+                      : { left: rect.left }),
+                  });
+                }
+              }
+              setShowActions(!showActions);
+            }}
             className={`relative px-4 py-2.5 ${borderRadius} ${bubbleColor} ${textColor} min-w-[80px] shadow-sm transition-all duration-200 ${!isTokenTransfer ? 'cursor-pointer hover:shadow-md' : ''} ${showActions ? 'ring-2 ring-primary-400 ring-opacity-50' : ''}`}
           >
             {/* Forwarded Indicator */}
@@ -256,16 +278,52 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
               </div>
             )}
 
-            {/* Action overlay */}
-            <AnimatePresence>
-              {showActions && (
+            {/* Reply Quote Block */}
+            {replyTo && (
+              <div className={`flex items-stretch gap-1.5 mb-2 rounded-lg overflow-hidden ${fromMe ? 'bg-primary-50 dark:bg-primary-900/30 border-l-2 border-primary-400' : 'bg-gray-100 dark:bg-gray-700/60 border-l-2 border-gray-400 dark:border-gray-500'}`}>
+                <div className="flex-1 px-2 py-1.5 min-w-0">
+                  <p className={`text-[10px] font-semibold truncate ${fromMe ? 'text-primary-600 dark:text-primary-400' : 'text-gray-500 dark:text-gray-400'}`}>
+                    {replyTo.senderName || 'Unknown'}
+                  </p>
+                  <p className="text-[11px] text-gray-600 dark:text-gray-300 truncate opacity-80">
+                    {replyTo.type === 'image' ? '📷 Image' : replyTo.text || '…'}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Action overlay — rendered via portal to escape scroll container stacking context */}
+            {showActions && menuPos && createPortal(
                 <motion.div
-                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                  ref={actionsRef}
+                  initial={{ opacity: 0, y: 8, scale: 0.95 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                  className={`absolute bottom-full mb-2 ${fromMe ? 'right-0' : 'left-0'} flex flex-col bg-white dark:bg-gray-800 shadow-2xl rounded-2xl border border-gray-100 dark:border-gray-700 z-[60] overflow-hidden whitespace-nowrap min-w-[140px]`}
+                  style={{
+                    position: 'fixed',
+                    top: menuPos.top,
+                    ...(menuPos.left !== undefined ? { left: menuPos.left } : {}),
+                    ...(menuPos.right !== undefined ? { right: menuPos.right } : {}),
+                    transform: 'translateY(-100%)',
+                    zIndex: 9999,
+                  }}
+                  className="flex flex-col bg-white dark:bg-gray-800 shadow-2xl rounded-2xl border border-gray-100 dark:border-gray-700 overflow-hidden whitespace-nowrap min-w-[140px]"
                 >
                   <div className="flex flex-col divide-y divide-gray-100 dark:divide-gray-700">
+                    {onReply && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onReply();
+                          setShowActions(false);
+                        }}
+                        className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-emerald-600 dark:text-emerald-400 text-[13px] font-bold transition-all active:scale-95 text-left w-full"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Reply size={16} />
+                          <span>Reply</span>
+                        </div>
+                      </button>
+                    )}
                     {text && (
                       <button
                         onClick={(e) => {
@@ -314,9 +372,9 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
                       </div>
                     </button>
                   </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                </motion.div>,
+                document.body
+            )}
             {/* Unified Transfer / Charm Card */}
             {(isTokenTransfer || isCharm) && (
               <div className="flex flex-col gap-1 min-w-[200px] max-w-full p-1">

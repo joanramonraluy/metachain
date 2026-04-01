@@ -44,6 +44,7 @@ interface ParsedMessage {
   customid?: string;
   filedata?: string;
   forwarded?: boolean;
+  replyTo?: { customid: string; text: string; senderName: string; type: string } | null;
 }
 
 
@@ -84,11 +85,13 @@ function ChatPage() {
   const [isArchived, setIsArchived] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [showForwardSuccess, setShowForwardSuccess] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<{ customid: string; text: string; senderName: string; type: string } | null>(null);
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const cursorPositionRef = useRef<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -229,6 +232,12 @@ function ChatPage() {
             customid: row.CUSTOMID || row.customid,
             filedata: row.FILEDATA || row.filedata,
             forwarded: row.FORWARDED == 1 || row.forwarded == 1,
+            replyTo: (row.REPLY_TO_CUSTOMID || row.reply_to_customid) ? {
+              customid: row.REPLY_TO_CUSTOMID || row.reply_to_customid,
+              text: row.REPLY_TO_TEXT || row.reply_to_text || "",
+              senderName: row.REPLY_TO_SENDER || row.reply_to_sender || "",
+              type: row.REPLY_TO_TYPE || row.reply_to_type || "text",
+            } : null,
           };
 
           return parsed;
@@ -397,6 +406,7 @@ function ChatPage() {
     if (!address || !userName || !myPublicKey) return;
 
     const customId = `group_${address}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const currentReplyTo = replyingTo;
     const newMsg: ParsedMessage = {
       text: input,
       fromMe: true,
@@ -405,12 +415,15 @@ function ChatPage() {
       timestamp: Date.now(),
       status: 'pending', // Use pending to ensure it's not replaced by DB load until synced
       senderUsername: userName,
-      customid: customId
+      customid: customId,
+      replyTo: currentReplyTo ?? undefined,
     };
     setMessages((prev) => [...prev, newMsg]);
+    setReplyingTo(null);
+    setInput("");
 
     try {
-      await groupService.sendGroupMessage(address, input, "text", myPublicKey, userName);
+      await groupService.sendGroupMessage(address, input, "text", myPublicKey, userName, "", false, currentReplyTo ?? undefined);
       // After sending, refresh to get the actual DB record (which will match by customid)
       setTimeout(() => loadMessagesFromDB(), 100);
     } catch (err) {
@@ -418,8 +431,6 @@ function ChatPage() {
       // Update its status to failed
       setMessages(prev => prev.map(m => m.customid === customId ? { ...m, status: 'failed' as const } : m));
     }
-
-    setInput("");
   };
 
   /* ----------------------------------------------------------------------------
@@ -920,6 +931,17 @@ function ChatPage() {
                   showAvatar={isLastInGroup}
                   currentChatId={address}
                   onAvatarClick={!msg.fromMe && msg.senderPublicKey ? () => navigate({ to: `/contact-info/${msg.senderPublicKey}`, search: { returnTo: `/groups/${address}` } }) : undefined}
+                  replyTo={msg.replyTo}
+                  onReply={() => {
+                    const senderName = msg.fromMe ? (userName || "You") : (msg.senderPublicKey ? (contactsMap[msg.senderPublicKey]?.name || msg.senderUsername || "Unknown") : (msg.senderUsername || "Unknown"));
+                    setReplyingTo({
+                      customid: msg.customid || "",
+                      text: msg.text || (msg.type === "image" ? "Image" : ""),
+                      senderName,
+                      type: msg.type || "text",
+                    });
+                    setTimeout(() => inputRef.current?.focus(), 50);
+                  }}
                 />
               )}
             </div>
@@ -929,6 +951,18 @@ function ChatPage() {
         <div ref={messagesEndRef} />
       </div>
 
+      {/* REPLY BANNER */}
+      {replyingTo && (
+        <div className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-700/60 border-t border-gray-200 dark:border-gray-600 flex items-center gap-2">
+          <div className="flex-1 min-w-0 pl-2 border-l-2 border-primary-400">
+            <p className="text-[10px] font-semibold text-primary-600 dark:text-primary-400 truncate">{replyingTo.senderName}</p>
+            <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate">{replyingTo.type === 'image' ? '📷 Image' : replyingTo.text}</p>
+          </div>
+          <button onClick={() => setReplyingTo(null)} className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 flex-shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      )}
       {/* INPUT BAR - Fixed at bottom */}
       <div className="p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] bg-white dark:bg-gray-800 flex gap-1 items-center flex-shrink-0 z-10 relative border-t border-gray-200 dark:border-gray-700">
         <div className="flex-1 min-w-0 bg-white dark:bg-gray-700 rounded-2xl flex items-center border border-gray-200 dark:border-gray-600 focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-transparent shadow-sm px-3 py-2 transition-all cursor-text relative">
@@ -996,6 +1030,7 @@ function ChatPage() {
           </button>
 
           <input
+            ref={inputRef}
             onFocus={() => setShowEmojiPicker(false)}
             onKeyUp={(e) => {
               cursorPositionRef.current = e.currentTarget.selectionStart;

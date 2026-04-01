@@ -970,6 +970,7 @@ VALUES('', UPPER('${safeFrom}'), 'System', 'system', 'Maxima contact declined', 
     txpowid?: string,
     overrideSeq?: number,
     forwarded: boolean = false,
+    replyTo?: { customid: string; text: string; senderName: string; type: string } | null,
   ) {
     if (!this.initialized) await this.init();
     return messagingService.sendMessage(
@@ -986,6 +987,7 @@ VALUES('', UPPER('${safeFrom}'), 'System', 'system', 'Maxima contact declined', 
       txpowid,
       overrideSeq,
       forwarded,
+      replyTo,
     );
   }
 

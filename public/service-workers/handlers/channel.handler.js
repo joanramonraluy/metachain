@@ -179,6 +179,11 @@ function handleChannelMessage(senderPublickey, maxjson, skipNotify) {
 
       var senderSeq = maxjson.sender_seq || 0;
       var forwarded = maxjson.forwarded ? 1 : 0;
+      var chReplyTo = maxjson.replyTo || null;
+      var chReplyToCustomid = chReplyTo && chReplyTo.customid ? (chReplyTo.customid + "").replace(/'/g, "''") : null;
+      var chReplyToText = chReplyTo && chReplyTo.text ? (String(chReplyTo.text).substring(0, 500)).replace(/'/g, "''") : null;
+      var chReplyToSender = chReplyTo && chReplyTo.senderName ? (String(chReplyTo.senderName)).replace(/'/g, "''") : null;
+      var chReplyToType = chReplyTo && chReplyTo.type ? (String(chReplyTo.type)).replace(/'/g, "''") : null;
 
       // 2. Duplicate Check
       var checkSql =
@@ -223,7 +228,7 @@ function handleChannelMessage(senderPublickey, maxjson, skipNotify) {
 
           // 4. Save Message
           var cmd =
-            "INSERT INTO CHANNEL_MESSAGES (channel_id, sender_publickey, sender_username, type, message, filedata, date, read, sender_seq, forwarded) " +
+            "INSERT INTO CHANNEL_MESSAGES (channel_id, sender_publickey, sender_username, type, message, filedata, date, read, sender_seq, forwarded, reply_to_customid, reply_to_text, reply_to_sender, reply_to_type) " +
             "VALUES ('" +
             channelId +
             "', '" +
@@ -240,7 +245,12 @@ function handleChannelMessage(senderPublickey, maxjson, skipNotify) {
             date +
             ", 0, " +
             senderSeq +
-            ", " + (forwarded ? 1 : 0) + ")";
+            ", " + (forwarded ? 1 : 0) +
+            ", " + (chReplyToCustomid ? "'" + chReplyToCustomid + "'" : "NULL") +
+            ", " + (chReplyToText ? "'" + chReplyToText + "'" : "NULL") +
+            ", " + (chReplyToSender ? "'" + chReplyToSender + "'" : "NULL") +
+            ", " + (chReplyToType ? "'" + chReplyToType + "'" : "NULL") +
+            ")";
 
           channelRunSQL(cmd, function (insRes) {
             if (insRes.status) {
@@ -319,6 +329,12 @@ function handleChannelHistoryRequest(pubkey, maxjson) {
           timestamp: Number(row.DATE || row.date),
           sender_seq: Number(row.SENDER_SEQ || row.sender_seq || 0),
           forwarded: row.FORWARDED === true || row.FORWARDED === 'true' || row.FORWARDED === 1,
+          replyTo: (row.REPLY_TO_TEXT || row.reply_to_text || row.REPLY_TO_SENDER || row.reply_to_sender) ? {
+            customid: row.REPLY_TO_CUSTOMID || row.reply_to_customid || "",
+            text: row.REPLY_TO_TEXT || row.reply_to_text || "",
+            senderName: row.REPLY_TO_SENDER || row.reply_to_sender || "",
+            type: row.REPLY_TO_TYPE || row.reply_to_type || "text"
+          } : null,
         });
       }
     }

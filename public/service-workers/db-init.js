@@ -126,6 +126,18 @@ function initDatabase() {
           "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS forwarded INT DEFAULT 0",
         ),
         runSQL(
+          "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS reply_to_customid VARCHAR(512)",
+        ),
+        runSQL(
+          "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS reply_to_text VARCHAR(512)",
+        ),
+        runSQL(
+          "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS reply_to_sender VARCHAR(160)",
+        ),
+        runSQL(
+          "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS reply_to_type VARCHAR(64)",
+        ),
+        runSQL(
           "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS publickey_upper VARCHAR(512) AS UPPER(publickey)",
         ),
         runSQL(
@@ -260,6 +272,18 @@ function initDatabase() {
         ),
         runSQL(
           "ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS forwarded INT DEFAULT 0",
+        ),
+        runSQL(
+          "ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS reply_to_customid VARCHAR(512)",
+        ),
+        runSQL(
+          "ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS reply_to_text VARCHAR(512)",
+        ),
+        runSQL(
+          "ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS reply_to_sender VARCHAR(160)",
+        ),
+        runSQL(
+          "ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS reply_to_type VARCHAR(64)",
         ),
       ]);
     });
@@ -620,6 +644,18 @@ function initDatabase() {
         ),
         runSQL(
           "ALTER TABLE CHANNEL_MESSAGES ADD COLUMN IF NOT EXISTS forwarded INT DEFAULT 0",
+        ),
+        runSQL(
+          "ALTER TABLE CHANNEL_MESSAGES ADD COLUMN IF NOT EXISTS reply_to_customid VARCHAR(512)",
+        ),
+        runSQL(
+          "ALTER TABLE CHANNEL_MESSAGES ADD COLUMN IF NOT EXISTS reply_to_text VARCHAR(512)",
+        ),
+        runSQL(
+          "ALTER TABLE CHANNEL_MESSAGES ADD COLUMN IF NOT EXISTS reply_to_sender VARCHAR(160)",
+        ),
+        runSQL(
+          "ALTER TABLE CHANNEL_MESSAGES ADD COLUMN IF NOT EXISTS reply_to_type VARCHAR(64)",
         ),
       ]);
     });

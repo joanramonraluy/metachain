@@ -205,6 +205,7 @@ export async function sendMessage(
   txpowid?: string,
   overrideSeq?: number,
   forwarded: boolean = false,
+  replyTo?: { customid: string; text: string; senderName: string; type: string } | null,
 ): Promise<any> {
   try {
     const cleanMessage = message.trim();
@@ -283,6 +284,10 @@ export async function sendMessage(
         sender_seq: seq,
         originalTimestamp: messageTimestamp,
         forwarded: forwarded,
+        reply_to_customid: replyTo?.customid ?? null,
+        reply_to_text: replyTo?.text ?? null,
+        reply_to_sender: replyTo?.senderName ?? null,
+        reply_to_type: replyTo?.type ?? null,
       };
 
       await chatService.insertMessage(msgData);
@@ -304,6 +309,7 @@ export async function sendMessage(
       customid: customid,
       seq: saveToDb || overrideSeq !== undefined ? seq : undefined,
       forwarded: forwarded,
+      replyTo: replyTo ?? undefined,
     };
 
     if (type === "charm" && amount > 0) payload.amount = amount;

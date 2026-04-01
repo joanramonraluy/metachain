@@ -93,6 +93,7 @@ interface ParsedMessage {
   id?: number;
   originalTimestamp?: number; // Sender's creation time (for correct ordering across peers)
   forwarded?: boolean;
+  replyTo?: { customid: string; text: string; senderName: string; type: string } | null;
 }
 
 // Helper function to format relative time
@@ -251,6 +252,7 @@ function ChatPage() {
   const [showInviteDialog, setShowInviteDialog] = useState(false);
   const [inviteSending, setInviteSending] = useState(false);
   const [showForwardSuccess, setShowForwardSuccess] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<{ customid: string; text: string; senderName: string; type: string } | null>(null);
 
   const { chatBackground, mode } = useTheme();
 
@@ -1245,6 +1247,12 @@ function ChatPage() {
               ? Number(row.ORIGINAL_TIMESTAMP)
               : undefined, // Convert to number,
             forwarded: row.FORWARDED == 1 || row.forwarded == 1,
+            replyTo: (row.REPLY_TO_CUSTOMID || row.reply_to_customid) ? {
+              customid: row.REPLY_TO_CUSTOMID || row.reply_to_customid,
+              text: row.REPLY_TO_TEXT || row.reply_to_text || "",
+              senderName: row.REPLY_TO_SENDER || row.reply_to_sender || "",
+              type: row.REPLY_TO_TYPE || row.reply_to_type || "text",
+            } : null,
           };
         });
 
@@ -1293,6 +1301,7 @@ function ChatPage() {
               type: msg.type,
               filedata: msg.filedata,
               forwarded: msg.forwarded,
+              replyTo: msg.replyTo,
             } as ParsedMessage;
           }),
         );
@@ -1843,6 +1852,8 @@ function ChatPage() {
       }
 
       const timestamp = Date.now();
+      // Capture replyTo before clearing state
+      const currentReplyTo = replyingTo;
       const newMsg: ParsedMessage = {
         text: input,
         fromMe: true,
@@ -1850,11 +1861,13 @@ function ChatPage() {
         amount: null,
         timestamp,
         status: "sent",
+        replyTo: currentReplyTo,
       };
       setMessages((prev) => [...prev, newMsg]);
 
       // OPTIMISTIC UPDATE: Clear input immediately to make UI feel responsive
       setInput("");
+      setReplyingTo(null);
 
       // FIX: Use publickey (0x) for reliable DB storage, fallback to currentaddress for network
       // This ensures messages are always stored with the same key format as the URL param
@@ -1869,7 +1882,13 @@ function ChatPage() {
         timestamp,
         recipientName,
         targetApp,
+        true,
+        undefined,
+        undefined,
+        false,
+        currentReplyTo ?? undefined,
       );
+      await loadMessagesFromDB();
     } catch (err) {
       console.error("[Send] Error sending message:", err);
       // Optional: Restore input on failure? Or just show toast.
@@ -3437,6 +3456,17 @@ function ChatPage() {
                     currentChatId={address}
                     showName={isFirstInGroup}
                     showAvatar={isLastInGroup}
+                    replyTo={msg.replyTo}
+                    onReply={blockReason === "none" && !isBlocked && !blockedByThem ? () => {
+                      const senderName = msg.fromMe ? (userName || "You") : (contact?.extradata?.name || "Unknown User");
+                      setReplyingTo({
+                        customid: msg.customid || "",
+                        text: msg.text || (msg.type === "image" ? "Image" : ""),
+                        senderName,
+                        type: msg.type || "text",
+                      });
+                      setTimeout(() => inputRef.current?.focus(), 50);
+                    } : undefined}
                   />
                 )}
               </div>
@@ -3445,6 +3475,18 @@ function ChatPage() {
 
         <div ref={messagesEndRef} />
       </div>
+      {/* REPLY BANNER */}
+      {replyingTo && (
+        <div className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-700/60 border-t border-gray-200 dark:border-gray-600 flex items-center gap-2">
+          <div className="flex-1 min-w-0 pl-2 border-l-2 border-primary-400">
+            <p className="text-[10px] font-semibold text-primary-600 dark:text-primary-400 truncate">{replyingTo.senderName}</p>
+            <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate">{replyingTo.type === 'image' ? '📷 Image' : replyingTo.text}</p>
+          </div>
+          <button onClick={() => setReplyingTo(null)} className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 flex-shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      )}
       {/* INPUT BAR - Fixed at bottom */}
       <div className="w-full max-w-full px-1.5 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] bg-white dark:bg-gray-800 flex gap-0.5 items-center flex-shrink-0 z-10 relative border-t border-gray-200 dark:border-gray-700 transition-colors box-border">
         <button

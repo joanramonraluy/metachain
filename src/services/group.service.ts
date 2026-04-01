@@ -37,6 +37,10 @@ export interface GroupMessage {
   date: number;
   read?: number;
   forwarded?: boolean;
+  reply_to_customid?: string | null;
+  reply_to_text?: string | null;
+  reply_to_sender?: string | null;
+  reply_to_type?: string | null;
 }
 
 // MAXIMA message types for group communication
@@ -71,6 +75,7 @@ export interface GroupMaximaMessage {
   seq?: number; // Per-sender sequence number for gap detection
   customid?: string;
   forwarded?: boolean;
+  replyTo?: { customid: string; text: string; senderName: string; type: string } | null;
 
   // For group_update_details and history_response:
   newName?: string;
@@ -936,6 +941,7 @@ class GroupService {
     myUsername: string,
     filedata: string = "",
     forwarded: boolean = false,
+    replyTo?: { customid: string; text: string; senderName: string; type: string } | null,
   ): Promise<void> {
     try {
       const now = Date.now();
@@ -967,9 +973,13 @@ class GroupService {
       // Save message locally - only escape SQL quotes
       const customId = `group_${groupId}_${now}_${Math.random().toString(36).substr(2, 9)}`;
       const escapedMsg = message.replace(/'/g, "''");
+      const replyToCustomid = replyTo?.customid?.replace(/'/g, "''") ?? null;
+      const replyToText = replyTo?.text?.replace(/'/g, "''") ?? null;
+      const replyToSender = replyTo?.senderName?.replace(/'/g, "''") ?? null;
+      const replyToType = replyTo?.type?.replace(/'/g, "''") ?? null;
       const insertSql = `
-                INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read, sender_seq, customid, forwarded)
-                VALUES ('${groupId}', UPPER('${myPublicKey}'), '${myUsername.replace(/'/g, "''")}', '${type}', '${escapedMsg}', '${filedata}', ${now}, 1, ${mySeq}, '${customId}', ${forwarded ? 1 : 0})
+                INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read, sender_seq, customid, forwarded, reply_to_customid, reply_to_text, reply_to_sender, reply_to_type)
+                VALUES ('${groupId}', UPPER('${myPublicKey}'), '${myUsername.replace(/'/g, "''")}', '${type}', '${escapedMsg}', '${filedata}', ${now}, 1, ${mySeq}, '${customId}', ${forwarded ? 1 : 0}, ${replyToCustomid ? `'${replyToCustomid}'` : 'NULL'}, ${replyToText ? `'${replyToText}'` : 'NULL'}, ${replyToSender ? `'${replyToSender}'` : 'NULL'}, ${replyToType ? `'${replyToType}'` : 'NULL'})
             `;
       await this.runSQL(insertSql);
 
@@ -987,6 +997,7 @@ class GroupService {
         seq: mySeq,
         customid: customId,
         forwarded,
+        replyTo: replyTo ?? undefined,
       };
 
       // Send to ALL group members (no Maxima contact required — uses Mx address routing)
@@ -1066,6 +1077,10 @@ class GroupService {
         sender_seq: Number(row.SENDER_SEQ || row.sender_seq || 0),
         customid: row.CUSTOMID || row.customid || "",
         forwarded: row.FORWARDED == 1 || row.forwarded == 1,
+        reply_to_customid: row.REPLY_TO_CUSTOMID || row.reply_to_customid || null,
+        reply_to_text: row.REPLY_TO_TEXT || row.reply_to_text || null,
+        reply_to_sender: row.REPLY_TO_SENDER || row.reply_to_sender || null,
+        reply_to_type: row.REPLY_TO_TYPE || row.reply_to_type || null,
       }));
     } catch (err) {
       console.error("❌ [GROUP-MSG] Failed to get messages:", err);

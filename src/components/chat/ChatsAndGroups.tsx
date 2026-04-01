@@ -11,6 +11,7 @@ import {
   Plus,
   Archive,
   Star,
+  Info,
   Users,
   MessageCircle,
   LayoutGrid,
@@ -146,31 +147,54 @@ export default function ChatsAndGroups() {
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
+    itemType: "chat" | "group" | "channel";
     publickey: string;
     archived: boolean;
     favorite: boolean;
   } | null>(null);
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
   const longPressTriggeredRef = useRef(false);
+  const contextMenuRef = useRef<HTMLDivElement | null>(null);
+  const ignoreContextMenuCloseUntilRef = useRef(0);
 
   // Close context menu on click outside
   useEffect(() => {
-    const handleClick = () => setContextMenu(null);
-    document.addEventListener("click", handleClick);
-    return () => document.removeEventListener("click", handleClick);
-  }, []);
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!contextMenu) return;
+
+      if (Date.now() < ignoreContextMenuCloseUntilRef.current) {
+        return;
+      }
+
+      if (
+        contextMenuRef.current &&
+        event.target instanceof Node &&
+        contextMenuRef.current.contains(event.target)
+      ) {
+        return;
+      }
+
+      setContextMenu(null);
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [contextMenu]);
 
   const handleContextMenu = (
     e: React.MouseEvent,
+    itemType: "chat" | "group" | "channel",
     publickey: string,
     archived?: boolean,
     favorite?: boolean,
   ) => {
     e.preventDefault();
     e.stopPropagation();
+    ignoreContextMenuCloseUntilRef.current = Date.now() + 400;
     setContextMenu({
       x: e.clientX,
       y: e.clientY,
+      itemType,
       publickey,
       archived: !!archived,
       favorite: !!favorite,
@@ -242,6 +266,32 @@ export default function ChatsAndGroups() {
     } catch (err) {
       console.error("❌ Favorite toggle error:", err);
     }
+  };
+
+  const handleOpenInfo = (
+    id: string,
+    itemType: "chat" | "group" | "channel",
+  ) => {
+    if (itemType === "group") {
+      navigate({
+        to: "/group-info/$groupId",
+        params: { groupId: id },
+      });
+      return;
+    }
+
+    if (itemType === "channel") {
+      navigate({
+        to: "/channel-info/$channelId",
+        params: { channelId: id },
+      });
+      return;
+    }
+
+    navigate({
+      to: "/contact-info/$address",
+      params: { address: id },
+    });
   };
 
   const fetchChats = async () => {
@@ -762,11 +812,30 @@ export default function ChatsAndGroups() {
       {/* Context Menu */}
       {contextMenu && (
         <div
+          ref={contextMenuRef}
           className="fixed bg-white dark:bg-gray-800 shadow-lg rounded-lg py-1 z-50 min-w-[200px] border border-gray-200 dark:border-gray-700 select-none"
           style={{ top: contextMenu.y, left: contextMenu.x }}
         >
           <button
             className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 flex items-center gap-3 transition-colors touch-manipulation"
+            onClick={() => {
+              handleOpenInfo(contextMenu.publickey, contextMenu.itemType);
+              setContextMenu(null);
+            }}
+          >
+            <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
+              <Info size={16} />
+            </div>
+            <span className="font-medium">
+              {contextMenu.itemType === "group"
+                ? "Group Info"
+                : contextMenu.itemType === "channel"
+                  ? "Channel Info"
+                  : "View Profile"}
+            </span>
+          </button>
+          <button
+            className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 flex items-center gap-3 transition-colors border-t border-gray-100 dark:border-gray-700 touch-manipulation"
             onClick={(e) => {
               handleToggleFavorite(contextMenu.publickey, e);
               setContextMenu(null);
@@ -982,6 +1051,7 @@ export default function ChatsAndGroups() {
                           e.preventDefault();
                           handleContextMenu(
                             e,
+                            "group",
                             group.group_id,
                             group.archived,
                             false,
@@ -1004,6 +1074,7 @@ export default function ChatsAndGroups() {
                             } as React.MouseEvent;
                             handleContextMenu(
                               syntheticEvent,
+                              "group",
                               group.group_id,
                               group.archived,
                               group.favorite,
@@ -1123,6 +1194,7 @@ export default function ChatsAndGroups() {
                           e.preventDefault();
                           handleContextMenu(
                             e,
+                            "channel",
                             channel.channel_id,
                             channel.archived,
                             channel.favorite,
@@ -1145,6 +1217,7 @@ export default function ChatsAndGroups() {
                             } as React.MouseEvent;
                             handleContextMenu(
                               syntheticEvent,
+                              "channel",
                               channel.channel_id,
                               channel.archived,
                               channel.favorite,
@@ -1254,6 +1327,7 @@ export default function ChatsAndGroups() {
                         e.preventDefault();
                         handleContextMenu(
                           e,
+                          "chat",
                           chat.publickey,
                           chat.archived,
                           chat.favorite,
@@ -1276,6 +1350,7 @@ export default function ChatsAndGroups() {
                           } as React.MouseEvent;
                           handleContextMenu(
                             syntheticEvent,
+                            "chat",
                             chat.publickey,
                             chat.archived,
                             chat.favorite,
@@ -1382,6 +1457,7 @@ export default function ChatsAndGroups() {
                       e.preventDefault();
                       handleContextMenu(
                         e,
+                        "group",
                         group.group_id,
                         group.archived,
                         group.favorite,
@@ -1404,6 +1480,7 @@ export default function ChatsAndGroups() {
                         } as React.MouseEvent;
                         handleContextMenu(
                           syntheticEvent,
+                          "group",
                           group.group_id,
                           group.archived,
                           group.favorite,
@@ -1521,6 +1598,7 @@ export default function ChatsAndGroups() {
                     e.preventDefault();
                     handleContextMenu(
                       e,
+                      "channel",
                       channel.channel_id,
                       channel.archived,
                       channel.favorite,
@@ -1543,6 +1621,7 @@ export default function ChatsAndGroups() {
                       } as React.MouseEvent;
                       handleContextMenu(
                         syntheticEvent,
+                        "channel",
                         channel.channel_id,
                         channel.archived,
                         channel.favorite,
@@ -1637,6 +1716,7 @@ export default function ChatsAndGroups() {
                     e.preventDefault();
                     handleContextMenu(
                       e,
+                      "chat",
                       chat.publickey,
                       chat.archived,
                       chat.favorite,
@@ -1659,6 +1739,7 @@ export default function ChatsAndGroups() {
                       } as React.MouseEvent;
                       handleContextMenu(
                         syntheticEvent,
+                        "chat",
                         chat.publickey,
                         chat.archived,
                         chat.favorite,

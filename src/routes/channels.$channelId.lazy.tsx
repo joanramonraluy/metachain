@@ -24,6 +24,8 @@ interface ParsedMessage {
     type?: string;
     filedata?: string;
     forwarded?: boolean;
+    replyTo?: { customid: string; text: string; senderName: string; type: string } | null;
+    customid?: string;
 }
 
 function ChannelPage() {
@@ -45,6 +47,8 @@ function ChannelPage() {
     const [isArchived, setIsArchived] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
     const [showForwardSuccess, setShowForwardSuccess] = useState(false);
+    const [replyingTo, setReplyingTo] = useState<{ customid: string; text: string; senderName: string; type: string } | null>(null);
+    const inputRef = useRef<HTMLTextAreaElement>(null);
     const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     const menuRef = useRef<HTMLDivElement>(null);
@@ -70,6 +74,13 @@ function ChannelPage() {
             type: m.TYPE || m.type || "text",
             forwarded: m.FORWARDED == 1 || m.forwarded == 1,
             filedata: m.FILEDATA || m.filedata,
+            customid: m.CUSTOMID || m.customid,
+            replyTo: (m.REPLY_TO_TEXT || m.reply_to_text || m.REPLY_TO_SENDER || m.reply_to_sender) ? {
+              customid: m.REPLY_TO_CUSTOMID || m.reply_to_customid || "",
+              text: m.REPLY_TO_TEXT || m.reply_to_text || "",
+              senderName: m.REPLY_TO_SENDER || m.reply_to_sender || "",
+              type: m.REPLY_TO_TYPE || m.reply_to_type || "text",
+            } : null,
         }));
         setMessages(parsed);
     }, [channelId, myPublicKey]);
@@ -222,9 +233,12 @@ function ChannelPage() {
         };
         setMessages((prev) => [...prev, optimistic]);
         const toSend = input;
+        const currentReplyTo = replyingTo;
         setInput("");
+        setReplyingTo(null);
         try {
-            await channelService.publishMessage(channelId, toSend, "text", myPublicKey, userName);
+            await channelService.publishMessage(channelId, toSend, "text", myPublicKey, userName, "", false, currentReplyTo ?? undefined);
+            await loadMessages();
         } catch (err) {
             console.error("❌ [CHANNEL-CHAT] Send failed:", err);
         } finally {
@@ -591,6 +605,14 @@ function ChannelPage() {
                                             {msg.forwarded && (<div className="flex items-center gap-1 mb-1 opacity-60 text-[10px] font-medium italic"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6" /><path d="M10 14L21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></svg><span>Forwarded</span></div>)}
                                         </div>
                                         <div className="bg-white dark:bg-gray-800 rounded-2xl rounded-tl-sm px-4 py-2.5 shadow-sm max-w-lg border border-gray-100 dark:border-gray-700">
+                                            {msg.replyTo && (
+                                                <div className="flex items-stretch gap-1.5 mb-2 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700/60 border-l-2 border-gray-400 dark:border-gray-500">
+                                                    <div className="flex-1 px-2 py-1.5 min-w-0">
+                                                        <p className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 truncate">{msg.replyTo.senderName || 'Unknown'}</p>
+                                                        <p className="text-[11px] text-gray-600 dark:text-gray-300 truncate opacity-80">{msg.replyTo.type === 'image' ? '📷 Image' : msg.replyTo.text}</p>
+                                                    </div>
+                                                </div>
+                                            )}
                                             {msg.type === "image" || msg.filedata?.startsWith("data:image/") ? (
                                                 <div className="relative group rounded-xl overflow-hidden cursor-pointer" onClick={() => window.open(msg.filedata, '_blank')}>
                                                     <img src={msg.filedata} alt="Attached Image" className="max-w-[280px] max-h-[400px] object-cover rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm transition-transform duration-300 group-hover:scale-105" loading="lazy" />
@@ -599,6 +621,18 @@ function ChannelPage() {
                                                 <p className="text-gray-900 dark:text-gray-100 text-sm whitespace-pre-wrap break-words">{msg.text}</p>
                                             )}
                                         </div>
+                                        {isAdmin && (
+                                            <button
+                                                onClick={() => {
+                                                    setReplyingTo({ customid: msg.customid || "", text: msg.text || (msg.type === 'image' ? 'Image' : ''), senderName: msg.senderUsername || 'Admin', type: msg.type || 'text' });
+                                                    setTimeout(() => inputRef.current?.focus(), 50);
+                                                }}
+                                                className="mt-1 flex items-center gap-1 text-[11px] text-gray-400 hover:text-emerald-500 dark:hover:text-emerald-400 transition-colors"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>
+                                                Reply
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
                             )}
@@ -609,6 +643,18 @@ function ChannelPage() {
                 <div ref={messagesEndRef} />
             </div>
 
+            {/* REPLY BANNER */}
+            {isAdmin && replyingTo && (
+                <div className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-700/60 border-t border-gray-200 dark:border-gray-600 flex items-center gap-2">
+                    <div className="flex-1 min-w-0 pl-2 border-l-2 border-primary-400">
+                        <p className="text-[10px] font-semibold text-primary-600 dark:text-primary-400 truncate">{replyingTo.senderName}</p>
+                        <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate">{replyingTo.type === 'image' ? '📷 Image' : replyingTo.text}</p>
+                    </div>
+                    <button onClick={() => setReplyingTo(null)} className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 flex-shrink-0">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
+                </div>
+            )}
             {/* INPUT BAR — only for admins */}
             {isAdmin && (
                 <div className="p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] bg-white dark:bg-gray-800 flex gap-1 items-center flex-shrink-0 z-10 relative border-t border-gray-200 dark:border-gray-700">
@@ -660,6 +706,7 @@ function ChannelPage() {
                         </button>
 
                         <textarea
+                            ref={inputRef}
                             value={input}
                             onChange={(e) => setInput(e.target.value)}
                             onKeyDown={(e) => {

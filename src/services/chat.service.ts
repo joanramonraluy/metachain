@@ -27,6 +27,10 @@ export interface ChatMessage {
   archived_date?: number;
   favorite?: boolean;
   forwarded?: boolean;
+  reply_to_customid?: string | null;
+  reply_to_text?: string | null;
+  reply_to_sender?: string | null;
+  reply_to_type?: string | null;
 }
 
 export type MessageCallback = (msg: any) => void;
@@ -420,6 +424,10 @@ class ChatService {
       originalTimestamp,
       customid,
       forwarded,
+      reply_to_customid,
+      reply_to_text,
+      reply_to_sender,
+      reply_to_type,
     } = msg;
 
     // SAFE ESCAPING FOR ALL STRINGS
@@ -437,9 +445,14 @@ class ChatService {
       sender_seq === null || sender_seq === undefined ? "0" : sender_seq;
     const sqlForwarded = forwarded ? 1 : 0;
 
+    const sqlReplyCustomId = reply_to_customid ? `'${reply_to_customid.replace(/'/g, "''")}'` : "NULL";
+    const sqlReplyText = reply_to_text ? `'${reply_to_text.replace(/'/g, "''")}'` : "NULL";
+    const sqlReplySender = reply_to_sender ? `'${reply_to_sender.replace(/'/g, "''")}'` : "NULL";
+    const sqlReplyType = reply_to_type ? `'${reply_to_type.replace(/'/g, "''")}'` : "NULL";
+
     const sql = `
-            INSERT INTO CHAT_MESSAGES (roomname,publickey,username,type,message,filedata,state,amount,date,customid,sender_seq,original_timestamp,forwarded)
-            VALUES ('${safeRoomname}',UPPER('${safeKey}'),'${safeUsername}','${type}','${escapedMsg}','${safeFiledata}','${state}',${amount},${timestamp},'${safeCustomId}', ${sqlSeq}, ${msgOriginalTimestamp}, ${sqlForwarded})
+            INSERT INTO CHAT_MESSAGES (roomname,publickey,username,type,message,filedata,state,amount,date,customid,sender_seq,original_timestamp,forwarded,reply_to_customid,reply_to_text,reply_to_sender,reply_to_type)
+            VALUES ('${safeRoomname}',UPPER('${safeKey}'),'${safeUsername}','${type}','${escapedMsg}','${safeFiledata}','${state}',${amount},${timestamp},'${safeCustomId}', ${sqlSeq}, ${msgOriginalTimestamp}, ${sqlForwarded},${sqlReplyCustomId},${sqlReplyText},${sqlReplySender},${sqlReplyType})
         `;
     console.log("📥 [CHAT-DB] Inserting message:", {
       type,

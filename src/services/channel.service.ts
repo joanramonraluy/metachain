@@ -62,6 +62,7 @@ export interface ChannelMaximaMessage {
   senderUsername?: string;
   sender_seq?: number;
   forwarded?: boolean;
+  replyTo?: { customid: string; text: string; senderName: string; type: string } | null;
   timestamp: number;
 
   // channel_invite
@@ -493,6 +494,7 @@ class ChannelService {
     myUsername: string,
     filedata: string = "",
     forwarded: boolean = false,
+    replyTo?: { customid: string; text: string; senderName: string; type: string } | null,
   ): Promise<void> {
     const channel = await this.getChannelInfo(channelId);
     if (!channel) throw new Error("Channel not found");
@@ -508,9 +510,13 @@ class ChannelService {
 
     // 2. Save locally
     const escapedMsg = message.replace(/'/g, "''");
+    const rCustomid = replyTo?.customid?.replace(/'/g, "''") ?? null;
+    const rText = replyTo?.text?.replace(/'/g, "''") ?? null;
+    const rSender = replyTo?.senderName?.replace(/'/g, "''") ?? null;
+    const rType = replyTo?.type?.replace(/'/g, "''") ?? null;
     await this.runSQL(`
-            INSERT INTO CHANNEL_MESSAGES (channel_id, sender_publickey, sender_username, type, message, filedata, date, read, sender_seq, forwarded)
-            VALUES ('${channelId}', UPPER('${myPublicKey}'), '${myUsername.replace(/'/g, "''")}', '${type}', '${escapedMsg}', '${filedata}', ${now}, 1, ${seq}, ${forwarded ? 1 : 0})
+            INSERT INTO CHANNEL_MESSAGES (channel_id, sender_publickey, sender_username, type, message, filedata, date, read, sender_seq, forwarded, reply_to_customid, reply_to_text, reply_to_sender, reply_to_type)
+            VALUES ('${channelId}', UPPER('${myPublicKey}'), '${myUsername.replace(/'/g, "''")}', '${type}', '${escapedMsg}', '${filedata}', ${now}, 1, ${seq}, ${forwarded ? 1 : 0}, ${rCustomid ? `'${rCustomid}'` : 'NULL'}, ${rText ? `'${rText}'` : 'NULL'}, ${rSender ? `'${rSender}'` : 'NULL'}, ${rType ? `'${rType}'` : 'NULL'})
         `);
 
     // 3. Construct payload
@@ -528,6 +534,7 @@ class ChannelService {
       filedata,
       timestamp: now,
       forwarded,
+      replyTo: replyTo ?? undefined,
     };
 
     // Send to all subscribers (except self)

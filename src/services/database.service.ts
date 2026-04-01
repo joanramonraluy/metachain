@@ -179,6 +179,12 @@ export async function initDB(): Promise<void> {
             "📂 [DB] virtual publickey_upper column added to CHAT_MESSAGES",
           );
         });
+
+        // Migration: Add reply_to_* columns for reply-to-message feature
+        MDS.sql("ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS reply_to_customid VARCHAR(512)", (r: any) => { console.log("📂 [DB] reply_to_customid CHAT_MESSAGES:", r.status, r.error || ""); });
+        MDS.sql("ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS reply_to_text VARCHAR(512)", (r: any) => { console.log("📂 [DB] reply_to_text CHAT_MESSAGES:", r.status, r.error || ""); });
+        MDS.sql("ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS reply_to_sender VARCHAR(160)", (r: any) => { console.log("📂 [DB] reply_to_sender CHAT_MESSAGES:", r.status, r.error || ""); });
+        MDS.sql("ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS reply_to_type VARCHAR(64)", (r: any) => { console.log("📂 [DB] reply_to_type CHAT_MESSAGES:", r.status, r.error || ""); });
       }
     });
 
@@ -455,6 +461,12 @@ export async function initDB(): Promise<void> {
                       );
                     });
 
+                    // Migration: Add reply_to_* columns for reply-to-message feature
+                    MDS.sql("ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS reply_to_customid VARCHAR(512)", () => {});
+                    MDS.sql("ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS reply_to_text VARCHAR(512)", () => {});
+                    MDS.sql("ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS reply_to_sender VARCHAR(160)", () => {});
+                    MDS.sql("ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS reply_to_type VARCHAR(64)", () => {});
+
                     // Create GROUP_MSG_COUNTERS table for per-sender sequence tracking
                     const createCountersTable = `
                       CREATE TABLE IF NOT EXISTS GROUP_MSG_COUNTERS (
@@ -682,6 +694,10 @@ export async function initDB(): Promise<void> {
                                 "ALTER TABLE CHANNEL_MESSAGES ADD COLUMN IF NOT EXISTS sender_seq INT DEFAULT 0",
                                 () => {},
                               );
+                              MDS.sql("ALTER TABLE CHANNEL_MESSAGES ADD COLUMN IF NOT EXISTS reply_to_customid VARCHAR(512)", () => {});
+                              MDS.sql("ALTER TABLE CHANNEL_MESSAGES ADD COLUMN IF NOT EXISTS reply_to_text VARCHAR(512)", () => {});
+                              MDS.sql("ALTER TABLE CHANNEL_MESSAGES ADD COLUMN IF NOT EXISTS reply_to_sender VARCHAR(160)", () => {});
+                              MDS.sql("ALTER TABLE CHANNEL_MESSAGES ADD COLUMN IF NOT EXISTS reply_to_type VARCHAR(64)", () => {});
                             }
                           });
 

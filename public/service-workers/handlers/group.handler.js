@@ -413,6 +413,12 @@ function handleGroupHistoryRequest(pubkey, maxjson) {
               row.FORWARDED === true ||
               row.FORWARDED === "true" ||
               row.FORWARDED === 1,
+            replyTo: (row.REPLY_TO_CUSTOMID || row.reply_to_customid) ? {
+              customid: row.REPLY_TO_CUSTOMID || row.reply_to_customid,
+              text: row.REPLY_TO_TEXT || row.reply_to_text || "",
+              senderName: row.REPLY_TO_SENDER || row.reply_to_sender || "",
+              type: row.REPLY_TO_TYPE || row.reply_to_type || "text"
+            } : null,
           });
         }
       }
@@ -508,8 +514,13 @@ function handleGroupHistoryResponse(pubkey, maxjson) {
         processNext(index + 1);
       } else {
         savedCount++;
+        var hReplyTo = msg.replyTo || null;
+        var hReplyToCustomid = hReplyTo && hReplyTo.customid ? escapeSql(String(hReplyTo.customid)) : null;
+        var hReplyToText = hReplyTo && hReplyTo.text ? escapeSql(String(hReplyTo.text).substring(0, 500)) : null;
+        var hReplyToSender = hReplyTo && hReplyTo.senderName ? escapeSql(String(hReplyTo.senderName)) : null;
+        var hReplyToType = hReplyTo && hReplyTo.type ? escapeSql(String(hReplyTo.type)) : null;
         var insSql =
-          "INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read, propagated, sender_seq, customid, forwarded) VALUES " +
+          "INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read, propagated, sender_seq, customid, forwarded, reply_to_customid, reply_to_text, reply_to_sender, reply_to_type) VALUES " +
           "('" +
           escapeSql(groupId) +
           "','" +
@@ -530,6 +541,14 @@ function handleGroupHistoryResponse(pubkey, maxjson) {
           escapeSql(msgCustomId) +
           "', " +
           (msg.forwarded ? 1 : 0) +
+          ", " +
+          (hReplyToCustomid ? "'" + hReplyToCustomid + "'" : "NULL") +
+          ", " +
+          (hReplyToText ? "'" + hReplyToText + "'" : "NULL") +
+          ", " +
+          (hReplyToSender ? "'" + hReplyToSender + "'" : "NULL") +
+          ", " +
+          (hReplyToType ? "'" + hReplyToType + "'" : "NULL") +
           ")";
         MDS.sql(insSql, function () {
           processNext(index + 1);
@@ -544,10 +563,16 @@ function handleGroupHistoryResponse(pubkey, maxjson) {
 function handleGroupMessage(pubkey, maxjson) {
   MDS.log("📨 [GROUP-MSG] Processing...");
 
-  // Migration: Ensure propagated column exists
-  var migrationSql =
-    "ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS propagated INT DEFAULT 0";
-  MDS.sql(migrationSql, function (migRes) {
+  // Migration: Ensure all required columns exist before processing
+  var _grpMigs = [
+    "ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS propagated INT DEFAULT 0",
+    "ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS reply_to_customid VARCHAR(512)",
+    "ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS reply_to_text VARCHAR(512)",
+    "ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS reply_to_sender VARCHAR(160)",
+    "ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS reply_to_type VARCHAR(64)"
+  ];
+  function runGrpMigs(i, cb) { if (i >= _grpMigs.length) { cb(); return; } MDS.sql(_grpMigs[i], function () { runGrpMigs(i + 1, cb); }); }
+  runGrpMigs(0, function () {
     var safeGroupId = escapeSql(maxjson.groupId || "");
     var encoded = escapeSql(maxjson.message || "");
     var messageTimestamp = Number(maxjson.timestamp) || Date.now();
@@ -555,6 +580,11 @@ function handleGroupMessage(pubkey, maxjson) {
     var safeSenderUsername = escapeSql(maxjson.senderUsername || "Unknown");
     var safeType = escapeSql(maxjson.type || "text");
     var safeFileData = escapeSql(maxjson.filedata || "");
+    var grpReplyTo = maxjson.replyTo || null;
+    var grpReplyToCustomid = grpReplyTo && grpReplyTo.customid ? escapeSql(String(grpReplyTo.customid)) : null;
+    var grpReplyToText = grpReplyTo && grpReplyTo.text ? escapeSql(String(grpReplyTo.text).substring(0, 500)) : null;
+    var grpReplyToSender = grpReplyTo && grpReplyTo.senderName ? escapeSql(String(grpReplyTo.senderName)) : null;
+    var grpReplyToType = grpReplyTo && grpReplyTo.type ? escapeSql(String(grpReplyTo.type)) : null;
 
     // 🚫 Check if the sender is banned from this group
     var banCheckSql =
@@ -581,6 +611,10 @@ function handleGroupMessage(pubkey, maxjson) {
         safeFileData,
         pubkey,
         maxjson,
+        grpReplyToCustomid,
+        grpReplyToText,
+        grpReplyToSender,
+        grpReplyToType,
       );
     });
   });
@@ -595,7 +629,11 @@ function processGroupMessage(
   safeType,
   safeFileData,
   pubkey,
-  maxjson
+  maxjson,
+  grpReplyToCustomid,
+  grpReplyToText,
+  grpReplyToSender,
+  grpReplyToType
 ) {
   var incomingSeq = maxjson.seq ? parseInt(maxjson.seq) : 0;
 
@@ -642,7 +680,7 @@ function processGroupMessage(
       shouldPropagate = true;
       var forwardedVal = maxjson.forwarded ? 1 : 0;
       var groupMsgSql =
-        "INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read, propagated, sender_seq, customid, forwarded) VALUES " +
+        "INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read, propagated, sender_seq, customid, forwarded, reply_to_customid, reply_to_text, reply_to_sender, reply_to_type) VALUES " +
         "('" +
         safeGroupId +
         "','" +
@@ -663,6 +701,14 @@ function processGroupMessage(
         escapeSql(maxjson.customid || "") +
         "', " +
         forwardedVal +
+        ", " +
+        (grpReplyToCustomid ? "'" + grpReplyToCustomid + "'" : "NULL") +
+        ", " +
+        (grpReplyToText ? "'" + grpReplyToText + "'" : "NULL") +
+        ", " +
+        (grpReplyToSender ? "'" + grpReplyToSender + "'" : "NULL") +
+        ", " +
+        (grpReplyToType ? "'" + grpReplyToType + "'" : "NULL") +
         ")";
 
       MDS.sql(groupMsgSql, function (res) {
