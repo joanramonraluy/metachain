@@ -762,6 +762,30 @@ export async function sendDeliveryReceipt(toPublicKey: string) {
 }
 
 /* ----------------------------------------------------------------------------
+   MESSAGE DELETE
+---------------------------------------------------------------------------- */
+
+export async function sendChatDeleteMessage(toPublicKey: string, customid: string): Promise<void> {
+  try {
+    const payload = { type: "message_deleted", customid };
+    const hexData = "0x" + utf8ToHex(JSON.stringify(payload)).toUpperCase();
+
+    let sendParams: any = { action: "send", application: "metachain", data: hexData, poll: false };
+
+    if (toPublicKey.toLowerCase().startsWith("0x")) {
+      const mxAddress = await resolveMaximaAddressFromPubkey(toPublicKey);
+      sendParams = mxAddress ? { ...sendParams, to: mxAddress } : { ...sendParams, publickey: toPublicKey };
+    } else {
+      sendParams.to = toPublicKey;
+    }
+
+    await MDS.cmd.maxima({ params: sendParams });
+  } catch (err) {
+    console.error("❌ [CHAT-DELETE] Error sending delete notification:", err);
+  }
+}
+
+/* ----------------------------------------------------------------------------
    PING / PONG
 ---------------------------------------------------------------------------- */
 

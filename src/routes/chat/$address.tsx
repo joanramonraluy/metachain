@@ -32,7 +32,10 @@ import { minimaService } from "../../services/minima.service";
 import { chatService } from "../../services/chat.service";
 import * as contactRequestsService from "../../services/contact-requests.service";
 import { transactionService } from "../../services/transaction.service";
-import { resolveHexFromAddress } from "../../services/messaging.service";
+import {
+  resolveHexFromAddress,
+  sendChatDeleteMessage,
+} from "../../services/messaging.service";
 import { requestProfile } from "../../services/profile.service";
 import InviteDialog from "../../components/chat/InviteDialog";
 import { useTheme } from "../../context/ThemeContext";
@@ -93,7 +96,13 @@ interface ParsedMessage {
   id?: number;
   originalTimestamp?: number; // Sender's creation time (for correct ordering across peers)
   forwarded?: boolean;
-  replyTo?: { customid: string; text: string; senderName: string; type: string } | null;
+  replyTo?: {
+    customid: string;
+    text: string;
+    senderName: string;
+    type: string;
+  } | null;
+  deleted?: boolean;
 }
 
 // Helper function to format relative time
@@ -175,8 +184,14 @@ function ChatPage() {
 
         if (aSeqUnknown && bSeqUnknown) {
           // Both my pending — sort by timestamp
-          const timeA = a.originalTimestamp && a.originalTimestamp > 0 ? a.originalTimestamp : a.timestamp || 0;
-          const timeB = b.originalTimestamp && b.originalTimestamp > 0 ? b.originalTimestamp : b.timestamp || 0;
+          const timeA =
+            a.originalTimestamp && a.originalTimestamp > 0
+              ? a.originalTimestamp
+              : a.timestamp || 0;
+          const timeB =
+            b.originalTimestamp && b.originalTimestamp > 0
+              ? b.originalTimestamp
+              : b.timestamp || 0;
           return timeA - timeB;
         } else if (aSeqUnknown) {
           return 1; // my pending goes after confirmed
@@ -184,8 +199,14 @@ function ChatPage() {
           return -1;
         } else if (a.sender_seq === 0 || b.sender_seq === 0) {
           // Received message with seq=0: fall back to timestamp
-          const timeA = a.originalTimestamp && a.originalTimestamp > 0 ? a.originalTimestamp : a.timestamp || 0;
-          const timeB = b.originalTimestamp && b.originalTimestamp > 0 ? b.originalTimestamp : b.timestamp || 0;
+          const timeA =
+            a.originalTimestamp && a.originalTimestamp > 0
+              ? a.originalTimestamp
+              : a.timestamp || 0;
+          const timeB =
+            b.originalTimestamp && b.originalTimestamp > 0
+              ? b.originalTimestamp
+              : b.timestamp || 0;
           return timeA - timeB;
         } else {
           // Both have valid seq — normal sequence comparison
@@ -219,7 +240,9 @@ function ChatPage() {
     if (address.startsWith("Mx") || address.startsWith("MX")) {
       resolveHexFromAddress(address).then((hex) => {
         if (hex) {
-          console.log(`🔄 [CHAT] Normalizing Identity: Resolved Mx ${address} -> Hex ${hex}`);
+          console.log(
+            `🔄 [CHAT] Normalizing Identity: Resolved Mx ${address} -> Hex ${hex}`,
+          );
           navigate({ to: `/chat/${hex}`, replace: true });
         }
       });
@@ -252,7 +275,12 @@ function ChatPage() {
   const [showInviteDialog, setShowInviteDialog] = useState(false);
   const [inviteSending, setInviteSending] = useState(false);
   const [showForwardSuccess, setShowForwardSuccess] = useState(false);
-  const [replyingTo, setReplyingTo] = useState<{ customid: string; text: string; senderName: string; type: string } | null>(null);
+  const [replyingTo, setReplyingTo] = useState<{
+    customid: string;
+    text: string;
+    senderName: string;
+    type: string;
+  } | null>(null);
 
   const { chatBackground, mode } = useTheme();
 
@@ -425,20 +453,49 @@ function ChatPage() {
   const defaultAvatar =
     "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23cbd5e1'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E";
 
+  const decodeStoredAvatar = (avatar?: string | null) => {
+    if (!avatar || avatar === "0x00") return "";
+
+    const candidates = [avatar];
+    try {
+      candidates.unshift(decodeURIComponent(avatar));
+    } catch (err) {
+      console.warn("⚠️ [AVATAR] Error decoding stored avatar:", err);
+    }
+
+    const validAvatar = candidates.find(
+      (candidate) =>
+        candidate &&
+        candidate.startsWith("data:image") &&
+        !candidate.includes("/0x00"),
+    );
+
+    return validAvatar || "";
+  };
+
+  const getDiscoveryAvatar = (row: any) => {
+    const directAvatar = decodeStoredAvatar(row?.AVATAR || row?.avatar);
+    if (directAvatar) return directAvatar;
+
+    const extraData = row?.EXTRA_DATA || row?.extra_data;
+    if (!extraData) return "";
+
+    try {
+      const parsed =
+        typeof extraData === "string" ? JSON.parse(extraData) : extraData;
+      return decodeStoredAvatar(parsed?.avatar || parsed?.icon);
+    } catch (err) {
+      console.warn("⚠️ [CHAT] Failed to parse avatar from extra_data", err);
+      return "";
+    }
+  };
+
   const getAvatar = (c: Contact | null) => {
     if (!c) return defaultAvatar;
 
-    if (c.extradata?.icon) {
-      try {
-        const decoded = decodeURIComponent(c.extradata.icon);
-        // Check if it's a valid data URL, and not a URL ending in /0x00 (no photo)
-        if (decoded.startsWith("data:image") && !decoded.includes("/0x00")) {
-          return decoded;
-        }
-      } catch (err) {
-        console.warn("⚠️ [AVATAR] Error decoding:", err);
-      }
-    }
+    const avatar = decodeStoredAvatar(c.extradata?.icon);
+    if (avatar) return avatar;
+
     return defaultAvatar;
   };
 
@@ -515,19 +572,37 @@ function ChatPage() {
           console.log("✅ [CHAT] User found in Contact cache");
 
           // Maxima contacts don't carry minimaaddress — enrich from DISCOVERED_PEERS
-          if (!c.extradata?.minimaaddress && c.publickey) {
+          if (
+            (!c.extradata?.minimaaddress || !c.extradata?.icon) &&
+            c.publickey
+          ) {
             try {
               const safeKey = c.publickey.replace(/'/g, "''");
               const dpRes: any = await withTimeout(
-                MDS.sql(`SELECT MINIMAADDRESS FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('${safeKey}') LIMIT 1`),
+                MDS.sql(
+                  `SELECT MINIMAADDRESS, AVATAR, EXTRA_DATA FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('${safeKey}') LIMIT 1`,
+                ),
                 2000,
               ).catch(() => ({ status: false }));
-              if (dpRes.status && dpRes.rows?.length > 0 && dpRes.rows[0].MINIMAADDRESS) {
+              if (dpRes.status && dpRes.rows?.length > 0) {
                 if (!c.extradata) (c as any).extradata = {};
-                c.extradata = { ...c.extradata, minimaaddress: dpRes.rows[0].MINIMAADDRESS };
-                console.log("✅ [CHAT] Enriched maxcontact with minimaaddress from DISCOVERED_PEERS");
+
+                const dpRow = dpRes.rows[0];
+                const discoveryAvatar = getDiscoveryAvatar(dpRow);
+                c.extradata = {
+                  ...c.extradata,
+                  minimaaddress:
+                    dpRow.MINIMAADDRESS || c.extradata?.minimaaddress || "",
+                  icon: c.extradata?.icon || discoveryAvatar,
+                };
+
+                console.log(
+                  "✅ [CHAT] Enriched maxcontact from DISCOVERED_PEERS",
+                );
               }
-            } catch (e) { /* ignore */ }
+            } catch (e) {
+              /* ignore */
+            }
           }
 
           setContact(c);
@@ -598,6 +673,8 @@ function ChatPage() {
                 );
               }
 
+              const discoveryAvatar = getDiscoveryAvatar(peer);
+
               contactToSet = {
                 publickey: peer.PUBLICKEY,
                 currentaddress: peer.ADDRESS || address,
@@ -605,7 +682,7 @@ function ChatPage() {
                   name: peer.ALIAS || "Unknown",
                   minimaaddress:
                     peer.MINIMAADDRESS || parsedExtra.minimaaddress || "",
-                  icon: peer.ICON || "",
+                  icon: discoveryAvatar,
                 },
               };
             } else {
@@ -981,7 +1058,10 @@ function ChatPage() {
     }
 
     // If we just sent a request, reload messages to show the system message (once only)
-    if ((searchParams as any)?.requestPending && !requestPendingHandled.current) {
+    if (
+      (searchParams as any)?.requestPending &&
+      !requestPendingHandled.current
+    ) {
       requestPendingHandled.current = true;
       loadMessagesFromDB();
     }
@@ -1138,12 +1218,16 @@ function ChatPage() {
         const res: any = await MDS.sql(resolveSql);
         if (res.status && res.rows && res.rows.length > 0) {
           resolvedKey = res.rows[0].PUBLICKEY;
-          console.log(`🔍 [CHAT] Quick-resolved identity for query: ${resolvedKey}`);
+          console.log(
+            `🔍 [CHAT] Quick-resolved identity for query: ${resolvedKey}`,
+          );
         }
       }
 
       const fetchKeys = [address, resolvedKey].filter(Boolean) as string[];
-      console.log(`🔄 [CHAT] Fetching messages from DB for: ${fetchKeys.join(", ")}`);
+      console.log(
+        `🔄 [CHAT] Fetching messages from DB for: ${fetchKeys.join(", ")}`,
+      );
       const rawMessages: any = await withTimeout(
         minimaService.getMessages(fetchKeys),
         5000,
@@ -1247,12 +1331,17 @@ function ChatPage() {
               ? Number(row.ORIGINAL_TIMESTAMP)
               : undefined, // Convert to number,
             forwarded: row.FORWARDED == 1 || row.forwarded == 1,
-            replyTo: (row.REPLY_TO_CUSTOMID || row.reply_to_customid) ? {
-              customid: row.REPLY_TO_CUSTOMID || row.reply_to_customid,
-              text: row.REPLY_TO_TEXT || row.reply_to_text || "",
-              senderName: row.REPLY_TO_SENDER || row.reply_to_sender || "",
-              type: row.REPLY_TO_TYPE || row.reply_to_type || "text",
-            } : null,
+            replyTo:
+              row.REPLY_TO_CUSTOMID || row.reply_to_customid
+                ? {
+                    customid: row.REPLY_TO_CUSTOMID || row.reply_to_customid,
+                    text: row.REPLY_TO_TEXT || row.reply_to_text || "",
+                    senderName:
+                      row.REPLY_TO_SENDER || row.reply_to_sender || "",
+                    type: row.REPLY_TO_TYPE || row.reply_to_type || "text",
+                  }
+                : null,
+            deleted: row.DELETED === 1 || row.DELETED === "1",
           };
         });
 
@@ -1302,6 +1391,7 @@ function ChatPage() {
               filedata: msg.filedata,
               forwarded: msg.forwarded,
               replyTo: msg.replyTo,
+              deleted: msg.deleted,
             } as ParsedMessage;
           }),
         );
@@ -1377,7 +1467,10 @@ function ChatPage() {
             syncTimeoutRef.current = null;
           }, 15000);
 
-          (window as any).MDS?.cmd("service:CHAT_SYNC:" + normPk, function () {});
+          (window as any).MDS?.cmd(
+            "service:CHAT_SYNC:" + normPk,
+            function () {},
+          );
         }
       }
     };
@@ -1444,7 +1537,10 @@ function ChatPage() {
           syncTimeoutRef.current = null;
         }, 15000);
 
-        (window as any).MDS?.cmd("service:CHAT_SYNC:" + normPkForSync, function () {});
+        (window as any).MDS?.cmd(
+          "service:CHAT_SYNC:" + normPkForSync,
+          function () {},
+        );
 
         // SMART SYNC: Trigger Status Check (Phase 1/2)
         minimaService
@@ -1694,6 +1790,19 @@ function ChatPage() {
         }
       }
 
+      // Handle message deletion
+      if (payload.type === "CHAT_MESSAGE_DELETED") {
+        const deletedCustomId = payload.customid;
+        if (deletedCustomId) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.customid === deletedCustomId ? { ...m, deleted: true } : m,
+            ),
+          );
+        }
+        return;
+      }
+
       // Handle Sync Completion and Generic List Updates from SW
       if (
         payload.type === "CHAT_LIST_UPDATE" ||
@@ -1751,7 +1860,9 @@ function ChatPage() {
 
     // Reload messages when a pending transaction is accepted/denied
     const handleBalanceUpdate = () => {
-      console.log("💰 [CHAT] Balance update — reloading messages for pending tx state change");
+      console.log(
+        "💰 [CHAT] Balance update — reloading messages for pending tx state change",
+      );
       loadMessagesFromDB();
     };
     window.addEventListener("minima_balance_update", handleBalanceUpdate);
@@ -1816,6 +1927,26 @@ function ChatPage() {
   /* ----------------------------------------------------------------------------
       SEND TEXT MESSAGE
   ---------------------------------------------------------------------------- */
+
+  const handleDeleteMessage = async (customid: string) => {
+    if (!contact?.publickey) return;
+    // Optimistic update
+    setMessages((prev) =>
+      prev.map((m) => (m.customid === customid ? { ...m, deleted: true } : m)),
+    );
+    try {
+      await chatService.deleteChatMessage(customid, contact.publickey);
+      await sendChatDeleteMessage(contact.publickey, customid);
+    } catch (err) {
+      console.error("❌ [CHAT] Delete message failed:", err);
+      // Revert on error
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.customid === customid ? { ...m, deleted: false } : m,
+        ),
+      );
+    }
+  };
 
   const handleSendMessage = async () => {
     // Guard to prevent concurrent sends
@@ -3457,16 +3588,30 @@ function ChatPage() {
                     showName={isFirstInGroup}
                     showAvatar={isLastInGroup}
                     replyTo={msg.replyTo}
-                    onReply={blockReason === "none" && !isBlocked && !blockedByThem ? () => {
-                      const senderName = msg.fromMe ? (userName || "You") : (contact?.extradata?.name || "Unknown User");
-                      setReplyingTo({
-                        customid: msg.customid || "",
-                        text: msg.text || (msg.type === "image" ? "Image" : ""),
-                        senderName,
-                        type: msg.type || "text",
-                      });
-                      setTimeout(() => inputRef.current?.focus(), 50);
-                    } : undefined}
+                    deleted={msg.deleted}
+                    onDelete={
+                      msg.fromMe && !msg.deleted && msg.customid
+                        ? () => handleDeleteMessage(msg.customid!)
+                        : undefined
+                    }
+                    onReply={
+                      blockReason === "none" && !isBlocked && !blockedByThem
+                        ? () => {
+                            const senderName = msg.fromMe
+                              ? userName || "You"
+                              : contact?.extradata?.name || "Unknown User";
+                            setReplyingTo({
+                              customid: msg.customid || "",
+                              text:
+                                msg.text ||
+                                (msg.type === "image" ? "Image" : ""),
+                              senderName,
+                              type: msg.type || "text",
+                            });
+                            setTimeout(() => inputRef.current?.focus(), 50);
+                          }
+                        : undefined
+                    }
                   />
                 )}
               </div>
@@ -3479,11 +3624,31 @@ function ChatPage() {
       {replyingTo && (
         <div className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-700/60 border-t border-gray-200 dark:border-gray-600 flex items-center gap-2">
           <div className="flex-1 min-w-0 pl-2 border-l-2 border-primary-400">
-            <p className="text-[10px] font-semibold text-primary-600 dark:text-primary-400 truncate">{replyingTo.senderName}</p>
-            <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate">{replyingTo.type === 'image' ? '📷 Image' : replyingTo.text}</p>
+            <p className="text-[10px] font-semibold text-primary-600 dark:text-primary-400 truncate">
+              {replyingTo.senderName}
+            </p>
+            <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate">
+              {replyingTo.type === "image" ? "📷 Image" : replyingTo.text}
+            </p>
           </div>
-          <button onClick={() => setReplyingTo(null)} className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 flex-shrink-0">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          <button
+            onClick={() => setReplyingTo(null)}
+            className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 flex-shrink-0"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
           </button>
         </div>
       )}

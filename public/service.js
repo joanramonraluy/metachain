@@ -1034,6 +1034,12 @@ function initDatabase() {
           "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS reply_to_type VARCHAR(64)",
         ),
         runSQL(
+          "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS deleted TINYINT DEFAULT 0",
+        ),
+        runSQL(
+          "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS deleted_at BIGINT",
+        ),
+        runSQL(
           "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS publickey_upper VARCHAR(512) AS UPPER(publickey)",
         ),
         runSQL(
@@ -1180,6 +1186,12 @@ function initDatabase() {
         ),
         runSQL(
           "ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS reply_to_type VARCHAR(64)",
+        ),
+        runSQL(
+          "ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS deleted TINYINT DEFAULT 0",
+        ),
+        runSQL(
+          "ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS deleted_at BIGINT",
         ),
       ]);
     });
@@ -1552,6 +1564,12 @@ function initDatabase() {
         ),
         runSQL(
           "ALTER TABLE CHANNEL_MESSAGES ADD COLUMN IF NOT EXISTS reply_to_type VARCHAR(64)",
+        ),
+        runSQL(
+          "ALTER TABLE CHANNEL_MESSAGES ADD COLUMN IF NOT EXISTS deleted TINYINT DEFAULT 0",
+        ),
+        runSQL(
+          "ALTER TABLE CHANNEL_MESSAGES ADD COLUMN IF NOT EXISTS deleted_at BIGINT",
         ),
       ]);
     });
@@ -2553,6 +2571,105 @@ function propagateGroupMessage(pubkey, maxjson) {
       };
 
       sendToMember(0);
+    });
+  });
+}
+
+function handleGroupMessageDeleted(pubkey, maxjson) {
+  var groupId = maxjson.groupId;
+  var customid = maxjson.customid;
+  if (!groupId || !customid) return;
+
+  var safeGroupId = escapeSql(groupId);
+  var safeCustomId = escapeSql(customid);
+  var safePubkey = escapeSql(pubkey);
+
+  // Load message to check sender + load role of requester
+  var msgSql =
+    "SELECT sender_publickey FROM GROUP_MESSAGES WHERE UPPER(group_id)=UPPER('" +
+    safeGroupId +
+    "') AND customid='" +
+    safeCustomId +
+    "'";
+
+  MDS.sql(msgSql, function (msgRes) {
+    if (!msgRes.status || !msgRes.rows || msgRes.rows.length === 0) {
+      MDS.log("⚠️ [GROUP-DELETE] Message not found: " + safeCustomId);
+      return;
+    }
+
+    var senderPk = (msgRes.rows[0].SENDER_PUBLICKEY || "").toUpperCase();
+
+    var roleSql =
+      "SELECT role FROM GROUP_MEMBERS WHERE group_id='" +
+      safeGroupId +
+      "' AND UPPER(publickey)=UPPER('" +
+      safePubkey +
+      "')";
+
+    MDS.sql(roleSql, function (roleRes) {
+      var role = "";
+      if (roleRes.status && roleRes.rows && roleRes.rows.length > 0) {
+        role = (roleRes.rows[0].ROLE || "").toLowerCase();
+      }
+
+      var isSender = senderPk === safePubkey.toUpperCase();
+      var isAdmin = role === "admin" || role === "creator";
+
+      if (!isSender && !isAdmin) {
+        MDS.log("⚠️ [GROUP-DELETE] Not authorized to delete: " + safePubkey.substring(0, 10));
+        return;
+      }
+
+      var updateSql =
+        "UPDATE GROUP_MESSAGES SET deleted=1, deleted_at=" +
+        Date.now() +
+        " WHERE UPPER(group_id)=UPPER('" +
+        safeGroupId +
+        "') AND customid='" +
+        safeCustomId +
+        "'";
+
+      MDS.sql(updateSql, function (upRes) {
+        if (!upRes.status) {
+          MDS.log("❌ [GROUP-DELETE] Failed: " + upRes.error);
+          return;
+        }
+        MDS.log("🗑️ [GROUP-DELETE] Message deleted: " + safeCustomId);
+
+        // Fanout delete notification to other members
+        var membersSql =
+          "SELECT publickey FROM GROUP_MEMBERS WHERE group_id='" +
+          safeGroupId +
+          "' AND UPPER(publickey) != UPPER('" +
+          safePubkey +
+          "')";
+
+        MDS.sql(membersSql, function (membersRes) {
+          if (!membersRes.status || !membersRes.rows || membersRes.rows.length === 0) {
+            MDS.comms.solo(JSON.stringify({ type: "GROUP_MESSAGE_DELETED", groupId: groupId, customid: customid }));
+            return;
+          }
+
+          var deletePayload = {
+            app: "metachain-group",
+            messageType: "message_deleted",
+            groupId: groupId,
+            customid: customid,
+            timestamp: Date.now()
+          };
+          var hexData = "0x" + utf8ToHex(JSON.stringify(deletePayload)).toUpperCase();
+
+          for (var mi = 0; mi < membersRes.rows.length; mi++) {
+            var memberPk = membersRes.rows[mi].PUBLICKEY;
+            if (memberPk && memberPk.toUpperCase() !== safePubkey.toUpperCase()) {
+              smartSend(memberPk, "metachain-group", hexData, "GROUP-DELETE", false);
+            }
+          }
+
+          MDS.comms.solo(JSON.stringify({ type: "GROUP_MESSAGE_DELETED", groupId: groupId, customid: customid }));
+        });
+      });
     });
   });
 }
@@ -4711,6 +4828,34 @@ function handleChannelSubscriberRemoved(pubkey, maxjson) {
   });
 }
 
+function handleChannelMessageDeleted(pubkey, maxjson) {
+  var channelId = maxjson.channelId;
+  var senderSeq = maxjson.senderSeq !== undefined ? parseInt(maxjson.senderSeq) : -1;
+  if (!channelId || senderSeq < 0) return;
+
+  var safeChannelId = escapeSql(channelId);
+  var safePubkey = escapeSql(pubkey);
+
+  // Channels are admin-broadcast: trust any authenticated delete notification
+  var updateSql =
+    "UPDATE CHANNEL_MESSAGES SET deleted=1, deleted_at=" +
+    Date.now() +
+    " WHERE UPPER(channel_id)=UPPER('" +
+    safeChannelId +
+    "') AND sender_seq=" +
+    senderSeq;
+
+  MDS.sql(updateSql, function (upRes) {
+    if (!upRes.status) {
+      MDS.log("❌ [CHANNEL-DELETE] Failed: " + upRes.error);
+      return;
+    }
+    MDS.log("🗑️ [CHANNEL-DELETE] seq=" + senderSeq + " deleted in " + safeChannelId);
+
+    MDS.comms.solo(JSON.stringify({ type: "CHANNEL_MESSAGE_DELETED", channelId: channelId, senderSeq: senderSeq }));
+  });
+}
+
 /**
  * MetaChain Service Worker - Chat Message Handler
  * Handles chat messages, read receipts, pings, pongs
@@ -5108,6 +5253,47 @@ function handlePing(pubkey) {
 function handlePong(pubkey) {
   MDS.log("📡 [PONG] Received from " + pubkey);
   // Let the UI handle pong events
+}
+
+function handleChatMessageDeleted(pubkey, maxjson) {
+  var customid = maxjson.customid;
+  if (!customid) return;
+
+  var safeCustomId = escapeSql(customid);
+  var safePubkey = escapeSql(pubkey);
+
+  // Permission check: only the original sender (username='Me' from their side stored as their pubkey) can delete
+  // We verify the message belongs to the sender (UPPER(publickey)=UPPER(sender pubkey))
+  var checkSql =
+    "SELECT id FROM CHAT_MESSAGES WHERE customid='" +
+    safeCustomId +
+    "' AND UPPER(publickey)=UPPER('" +
+    safePubkey +
+    "')";
+
+  MDS.sql(checkSql, function (res) {
+    if (!res.status || !res.rows || res.rows.length === 0) {
+      MDS.log("⚠️ [CHAT-DELETE] Message not found or not authorized for: " + safeCustomId);
+      return;
+    }
+
+    var updateSql =
+      "UPDATE CHAT_MESSAGES SET deleted=1, deleted_at=" +
+      Date.now() +
+      " WHERE customid='" +
+      safeCustomId +
+      "'";
+
+    MDS.sql(updateSql, function (upRes) {
+      if (!upRes.status) {
+        MDS.log("❌ [CHAT-DELETE] Failed to delete message: " + upRes.error);
+        return;
+      }
+      MDS.log("🗑️ [CHAT-DELETE] Message deleted: " + safeCustomId);
+      MDS.comms.solo(JSON.stringify({ type: "CHAT_MESSAGE_DELETED", customid: customid }));
+      MDS.comms.solo("CHAT_LIST_UPDATE");
+    });
+  });
 }
 
 // ============================================================================
@@ -7752,7 +7938,7 @@ function sendWelcomePackage(targetPubkey, targetAlias, targetAddress) {
 // ============================================================================
 
 // Configuration
-var SW_DEBUG = false; // Set to true to see verbose payload and latency logs
+var SW_DEBUG = true; // Set to true to see verbose payload and latency logs
 
 
 // Flag to ensure startup cleanup runs once after DB is ready (triggered by first NEWBLOCK)
@@ -8071,6 +8257,14 @@ MDS.init(function (msg) {
           return;
         }
 
+        if (
+          app === "metachain-group" &&
+          maxjson.messageType === "message_deleted"
+        ) {
+          handleGroupMessageDeleted(pubkey, maxjson);
+          return;
+        }
+
         if (app === "metachain-group") {
           MDS.log(
             "⚠️ [SW] Unhandled metachain-group message type: " +
@@ -8137,6 +8331,14 @@ MDS.init(function (msg) {
 
         if (
           app === "metachain-channel" &&
+          maxjson.messageType === "message_deleted"
+        ) {
+          handleChannelMessageDeleted(pubkey, maxjson);
+          return;
+        }
+
+        if (
+          app === "metachain-channel" &&
           maxjson.messageType === "channel_history_request"
         ) {
           handleChannelHistoryRequest(pubkey, maxjson);
@@ -8169,6 +8371,11 @@ MDS.init(function (msg) {
 
         if (maxjson.type === "pong") {
           handlePong(pubkey);
+          return;
+        }
+
+        if (maxjson.type === "message_deleted") {
+          handleChatMessageDeleted(pubkey, maxjson);
           return;
         }
 

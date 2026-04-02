@@ -1,0 +1,268 @@
+usre1:
+ 🚀 [ProfileService] Module Initialized via import
+ 🔧[MinimaService] Instance created: #7554
+ Using Stored UID for connection: 0xD0A348C5893838376019D36BC7C90A9F4D82C88276298FFA26881BB9E0358241EC7AE4C26A620BA75986948F4C0B0718F61DD9E0B19C0D894BE95C24239F9C82A2A340A4B29E2EFE7E89645C695F58845F11256E9440A2C28BC724789EBFF5F7ABCD55ABA35FC13A13EC93EA5AA1598BA7CFC1C9FE7C1FB23B997B71D59BFE58
+ ⚙️ [SERVICE] MinimaService initialized - waiting for MDS.init...
+ Minima @ 2/4/2026 15:58:05 : MDS Inited
+vendor-minima-Da5q8uRc.js:1 Minima @ 2/4/2026 15:58:05 : MDS HOST  : https://10.0.0.11:9003/
+index-DRi88gte.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-DRi88gte.js:18 MDS initialised! 🚀 Starting serialized initialization sequence...
+index-DRi88gte.js:18 1️⃣ [AppContext] Checking Write Mode (Waiting for node)...
+index-DRi88gte.js:18 🕵️‍♂️ [AppContext] Checking Session Validity...
+index-DRi88gte.js:18 🕵️‍♂️ [AppContext] Session Check Result: Object
+index-DRi88gte.js:18 ✅ [AppContext] Node ready! Mode: READ (Attempt 1)
+index-DRi88gte.js:18 2️⃣ [AppContext] Initializing Database...
+index-DRi88gte.js:18 📂 [DB] txpowid column added/verified in CHAT_MESSAGES
+index-DRi88gte.js:18 📂 [DB] virtual publickey_upper column added to CHAT_STATUS
+index-DRi88gte.js:18 📂 [DB] original_timestamp column added/verified in CHAT_MESSAGES
+index-DRi88gte.js:18 📂 [DB] sender_seq column added/verified in CHAT_MESSAGES
+index-DRi88gte.js:18 📂 [DB] customid column added/verified in CHAT_MESSAGES
+index-DRi88gte.js:18 📂 [DB] virtual publickey_upper column added to CHAT_MESSAGES
+index-DRi88gte.js:18 📂 [DB] reply_to_text CHAT_MESSAGES: true
+index-DRi88gte.js:18 📂 [DB] reply_to_customid CHAT_MESSAGES: true
+index-DRi88gte.js:18 📂 [DB] reply_to_sender CHAT_MESSAGES: true
+index-DRi88gte.js:18 📂 [DB] reply_to_type CHAT_MESSAGES: true
+index-DRi88gte.js:18 📂 [DB] deleted CHANNEL_MESSAGES: true
+index-DRi88gte.js:18 📂 [DB] deleted_at GROUP_MESSAGES: true
+index-DRi88gte.js:18 📂 [DB] deleted CHAT_MESSAGES: true
+index-DRi88gte.js:18 📂 [DB] deleted_at CHAT_MESSAGES: true
+index-DRi88gte.js:18 📂 [DB] deleted GROUP_MESSAGES: true
+index-DRi88gte.js:18 📂 [DB] deleted_at CHANNEL_MESSAGES: true
+index-DRi88gte.js:18 📂 [DB] virtual publickey_upper column added to TRANSACTIONS
+index-DRi88gte.js:18 📂 [DB] Verified DISCOVERED_PEERS source column
+index-DRi88gte.js:18 📂 [DB] virtual publickey_upper column added to DISCOVERED_PEERS
+index-DRi88gte.js:18 📂 [DB] DISCOVERED_LISTINGS table initialized
+index-DRi88gte.js:18 📂 [DB] propagated column added/verified in GROUP_MESSAGES
+index-DRi88gte.js:18 📂 [DB] GROUP_MSG_COUNTERS table initialized
+index-DRi88gte.js:18 📂 [DB] sender_seq column added/verified in GROUP_MESSAGES
+index-DRi88gte.js:18 📂 [DB] customid column added/verified in GROUP_MESSAGES
+index-DRi88gte.js:18 📂 [DB] from_address column added/verified
+index-DRi88gte.js:18 📂 [DB] MAXIMA_CONTACT_REQUESTS table initialized
+index-DRi88gte.js:18 📂 [DB] virtual publickey_upper column added to METACHAIN_USERS
+index-DRi88gte.js:18 📂 [DB] Verified DISCOVERED_PEERS allow_non_contact_chats column
+index-DRi88gte.js:18 📂 [DB] CHANNEL_SUBSCRIBERS table initialized
+index-DRi88gte.js:18 📂 [DB] CHANNEL_MSG_COUNTERS table initialized
+index-DRi88gte.js:18 ✅ [QUEUE] OFFLINE_QUEUE table ready.
+index-DRi88gte.js:18 ✅ [QUEUE] Reconnection listener registered
+index-DRi88gte.js:18 ✅ [AppContext] Database ready
+index-DRi88gte.js:18 📍 [PROFILE] Found cached Minima Address in KeyPair: MxG086P0BVJC21B0NZ8BB173JV8RH9RWHYBHE63RE60EMTKU28WZME0FNMF4J1F
+index-DRi88gte.js:18 🧹 [AppContext] Running legacy chat migration...
+index-DRi88gte.js:18 🧹 [MIGRATION] Checking for legacy chat keys (Mx addresses)...
+index-DRi88gte.js:18 ✅ [MIGRATION] No legacy chat keys found.
+index-DRi88gte.js:18 🧹 [AppContext] Normalizing identities...
+index-DRi88gte.js:18 🧹 [MIGRATION] Normalizing identities and deduplicating...
+index-DRi88gte.js:18 🧹 [MIGRATION] Found 1 duplicate identities in DISCOVERED_PEERS. Merging...
+index-DRi88gte.js:18 ✅ [MIGRATION] Identity normalization complete.
+index-DRi88gte.js:18 3️⃣ [AppContext] Fetching User Profile...
+index-DRi88gte.js:18 🔄 [AppContext] Fetching latest user profile from Maxima...
+index-DRi88gte.js:18 ✅ [AppContext] Profile fetched: Name=user1
+index-DRi88gte.js:18 🖼️ [AppContext] Profile Icon: "data:image/png;base64,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
+index-DRi88gte.js:18 4️⃣ [AppContext] Verifying Block Status...
+index-DRi88gte.js:18 ✅ [AppContext] Initialization Complete! Setting loaded = true
+index-DRi88gte.js:18 ⏰ [AppContext] Starting transaction confirmation checker...
+index-DRi88gte.js:18 ⏰ [TX-CONFIRM] Starting confirmation checker (recursive loop)
+index-DRi88gte.js:18 🔄 [SERVICE] Starting Offline Queue Polling...
+index-DRi88gte.js:18 🔄 [QUEUE] Starting offline message queue polling (serialized)...
+index-DRi88gte.js:18 🔇 [BalanceAmount] Blinking INACTIVE
+index-DRi88gte.js:18 [GROUP-SERVICE] getMyGroups for 0x30819F300D06092A864886F70D010101050003818D0030818902818100996790A3B322C103DCC8DA422AE79C4D0C829EEA0F68D1C07E4B348024C9F520859A429CE74B5554958773672D6116B96699209EEB994A403C13931002F5AB79F562ACC65906CF8A0FAC94D3D89D11BC6030CB8098B89E66198250FE9749346658141318A9BAC322E1EBF891C335150C016C3BEAC5E0A5D58398C83FF370F77D0203010001: 2 rows found
+index-DRi88gte.js:18 ✅ [AppContext] Heartbeat - Minima is BACK ONLINE
+index-DRi88gte.js:18 ✅ [NOTIFICATIONS] Permission granted
+index-DRi88gte.js:18 ℹ️ [DEBUG] Groups fetched successfully: 2 groups, active: 2
+index-DRi88gte.js:18 Sample group: Object
+index-DRi88gte.js:18 🔄 [CHANNEL-SYNC] Requesting history for channel channel_1775130275504_gqotgqncju...
+index-DRi88gte.js:18 🔄 [ChannelService] Global CHANNEL_UPDATE received: Object
+index-DRi88gte.js:18 ℹ️ [CHANNEL-SYNC] Admin is self. Nothing remote to sync.
+index-DRi88gte.js:18 🔄 [ChannelService] Global CHANNEL_UPDATE received: Object
+index-DRi88gte.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-DRi88gte.js:18 🚀 [SERVICE] Solo message received from SW: Object
+index-DRi88gte.js:18 🚀 [SERVICE] Channel event received: CHANNEL_SYNC_START
+index-DRi88gte.js:18 🔄 [ChannelService] Global CHANNEL_UPDATE received: Object
+index-DRi88gte.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-DRi88gte.js:18 🚀 [SERVICE] Solo message received from SW: Object
+index-DRi88gte.js:18 🚀 [SERVICE] Channel event received: CHANNEL_SYNC_END
+index-DRi88gte.js:18 🔄 [ChannelService] Global CHANNEL_UPDATE received: Object
+index-DRi88gte.js:18 📤 [CHANNEL-MAXIMA] Sent via Mx address
+index-DRi88gte.js:18 ✅ [CHANNEL] Published to channel_1775130275504_gqotgqncju
+index-DRi88gte.js:18 📤 [CHANNEL-MAXIMA] Sent via Mx address
+index-DRi88gte.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-DRi88gte.js:18 ✉️ [MDS] MAXIMA from: 0x30819F30 app: metachain-channel
+index-DRi88gte.js:18 📢 [CHANNELS] Message detected: channel_history_request
+index-DRi88gte.js:18 📨 [CHANNEL-MSG] Incoming: channel_history_request
+index-DRi88gte.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-DRi88gte.js:18 👀 [AppContext] App resumed - checking session validity...
+index-DRi88gte.js:18 🕵️‍♂️ [AppContext] Checking Session Validity...
+index-DRi88gte.js:18 🔴 [NOTIFICATIONS] Unread count: 0
+index-DRi88gte.js:18 🕵️‍♂️ [AppContext] Session Check Result: Object
+index-DRi88gte.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'NEWBLOCK', from: undefined, application: undefined}
+index-DRi88gte.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MAXIMA', from: '0x30819F30', application: 'metachain'}
+index-DRi88gte.js:18 ✉️ [MDS] MAXIMA from: 0x30819F30 app: metachain
+index-DRi88gte.js:18 ℹ️ [MAXIMA] Ignoring non-chat type: get_peers
+index-DRi88gte.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MAXIMA', from: '0x30819F30', application: 'metachain'}
+index-DRi88gte.js:18 ✉️ [MDS] MAXIMA from: 0x30819F30 app: metachain
+index-DRi88gte.js:18 ℹ️ [MAXIMA] Ignoring non-chat type: get_peers
+index-DRi88gte.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MAXIMA', from: '0x30819F30', application: 'metachain'}
+index-DRi88gte.js:18 ✉️ [MDS] MAXIMA from: 0x30819F30 app: metachain
+index-DRi88gte.js:18 🗣 [GOSSIP] Received peer list from 0x30819F300D06092A864886F70D010101050003818D0030818902818100996790A3B322C103DCC8DA422AE79C4D0C829EEA0F68D1C07E4B348024C9F520859A429CE74B5554958773672D6116B96699209EEB994A403C13931002F5AB79F562ACC65906CF8A0FAC94D3D89D11BC6030CB8098B89E66198250FE9749346658141318A9BAC322E1EBF891C335150C016C3BEAC5E0A5D58398C83FF370F77D0203010001
+index-DRi88gte.js:18 🗣[GOSSIP] Processing 2 peers...
+index-DRi88gte.js:18 ✅[GOSSIP] Saved peer: user2
+index-DRi88gte.js:18 ✅[GOSSIP] Saved peer: user1
+index-DRi88gte.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MAXIMA', from: '0x30819F30', application: 'metachain'}
+index-DRi88gte.js:18 ✉️ [MDS] MAXIMA from: 0x30819F30 app: metachain
+index-DRi88gte.js:18 ℹ️ [MAXIMA] Ignoring non-chat type: BEACON
+index-DRi88gte.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MAXIMA', from: '0x30819F30', application: 'metachain-group'}
+index-DRi88gte.js:18 ✉️ [MDS] MAXIMA from: 0x30819F30 app: metachain-group
+index-DRi88gte.js:18 👥 [GROUPS] Message detected: group_address_beacon
+index-DRi88gte.js:18 📨 [GROUP-MSG] Incoming: {app: 'metachain-group', messageType: 'group_address_beacon', senderPublickey: '0x30819F300D06092A864886F70D010101050003818D003081…90682D7A8C3A30FC60ADBD8D7EB835ADC823BDD0203010001', senderUsername: 'user2', senderAddress: 'MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60…9659GMT6UHEQF5BYQ35S10608005YMUAS3@10.0.0.11:9001', …}
+index-DRi88gte.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MAXIMA', from: '0x30819F30', application: 'metachain'}
+index-DRi88gte.js:18 ✉️ [MDS] MAXIMA from: 0x30819F30 app: metachain
+index-DRi88gte.js:18 🗣 [GOSSIP] Received peer list from 0x30819F300D06092A864886F70D010101050003818D0030818902818100A9574C24B04D670261DB56BD74FAA0334CE8AE7E1CE7BA6AE80B75916AFDD0D0F388D43D937EAF1925C3C2C1342B414468C365C00997D48C77068F47188EED72C3E6E061E7D1DA8B4591367791083C77955C850448B6A450023631F474B1944C1DCC6BA9AAB0148F85A1C21F190682D7A8C3A30FC60ADBD8D7EB835ADC823BDD0203010001
+index-DRi88gte.js:18 🗣[GOSSIP] Processing 2 peers...
+index-DRi88gte.js:18 ✅[GOSSIP] Saved peer: user1
+index-DRi88gte.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MAXIMA', from: '0x30819F30', application: 'metachain'}
+index-DRi88gte.js:18 ✉️ [MDS] MAXIMA from: 0x30819F30 app: metachain
+index-DRi88gte.js:18 🗣 [GOSSIP] Received peer list from 0x30819F300D06092A864886F70D010101050003818D0030818902818100A9574C24B04D670261DB56BD74FAA0334CE8AE7E1CE7BA6AE80B75916AFDD0D0F388D43D937EAF1925C3C2C1342B414468C365C00997D48C77068F47188EED72C3E6E061E7D1DA8B4591367791083C77955C850448B6A450023631F474B1944C1DCC6BA9AAB0148F85A1C21F190682D7A8C3A30FC60ADBD8D7EB835ADC823BDD0203010001
+index-DRi88gte.js:18 🗣[GOSSIP] Processing 2 peers...
+index-DRi88gte.js:18 ✅[GOSSIP] Saved peer: user2
+index-DRi88gte.js:18 ✅[GOSSIP] Saved peer: user1
+index-DRi88gte.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MAXIMA', from: '0x30819F30', application: 'metachain'}
+index-DRi88gte.js:18 ✉️ [MDS] MAXIMA from: 0x30819F30 app: metachain
+index-DRi88gte.js:18 🗣 [GOSSIP] Received peer list from 0x30819F300D06092A864886F70D010101050003818D0030818902818100996790A3B322C103DCC8DA422AE79C4D0C829EEA0F68D1C07E4B348024C9F520859A429CE74B5554958773672D6116B96699209EEB994A403C13931002F5AB79F562ACC65906CF8A0FAC94D3D89D11BC6030CB8098B89E66198250FE9749346658141318A9BAC322E1EBF891C335150C016C3BEAC5E0A5D58398C83FF370F77D0203010001
+index-DRi88gte.js:18 🗣[GOSSIP] Processing 2 peers...
+index-DRi88gte.js:18 ✅[GOSSIP] Saved peer: user2
+index-DRi88gte.js:18 ✅[GOSSIP] Saved peer: user1
+index-DRi88gte.js:18 ✅[GOSSIP] Saved peer: user2
+index-DRi88gte.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MAXIMA', from: '0x30819F30', application: 'metachain'}
+index-DRi88gte.js:18 ✉️ [MDS] MAXIMA from: 0x30819F30 app: metachain
+index-DRi88gte.js:18 🗣 [GOSSIP] Received peer list from 0x30819F300D06092A864886F70D010101050003818D0030818902818100996790A3B322C103DCC8DA422AE79C4D0C829EEA0F68D1C07E4B348024C9F520859A429CE74B5554958773672D6116B96699209EEB994A403C13931002F5AB79F562ACC65906CF8A0FAC94D3D89D11BC6030CB8098B89E66198250FE9749346658141318A9BAC322E1EBF891C335150C016C3BEAC5E0A5D58398C83FF370F77D0203010001
+index-DRi88gte.js:18 🗣[GOSSIP] Processing 2 peers...
+index-DRi88gte.js:18 ✅[GOSSIP] Saved peer: user1
+index-DRi88gte.js:18 ✅[GOSSIP] Saved peer: user2
+index-DRi88gte.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MAXIMA', from: '0x30819F30', application: 'metachain'}
+index-DRi88gte.js:18 ✉️ [MDS] MAXIMA from: 0x30819F30 app: metachain
+index-DRi88gte.js:18 🗣 [GOSSIP] Received peer list from 0x30819F300D06092A864886F70D010101050003818D0030818902818100A9574C24B04D670261DB56BD74FAA0334CE8AE7E1CE7BA6AE80B75916AFDD0D0F388D43D937EAF1925C3C2C1342B414468C365C00997D48C77068F47188EED72C3E6E061E7D1DA8B4591367791083C77955C850448B6A450023631F474B1944C1DCC6BA9AAB0148F85A1C21F190682D7A8C3A30FC60ADBD8D7EB835ADC823BDD0203010001
+index-DRi88gte.js:18 🗣[GOSSIP] Processing 2 peers...
+index-DRi88gte.js:18 ✅[GOSSIP] Saved peer: user2
+index-DRi88gte.js:18 ✅[GOSSIP] Saved peer: user1
+index-DRi88gte.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'NEWBLOCK', from: undefined, application: undefined}
+User2:
+ 🚀 [ProfileService] Module Initialized via import
+ 🔧[MinimaService] Instance created: #1776
+ Using Stored UID for connection: 0x59692F1AD497CF5E98760BF8EB11AD36B99619E40CA0B6770BD3F073DE165895BC67A0E38C5E24810B943F128D3A06BB5AADD5F370B40A1BD496D34132A15B57C815506801B44376474B302C8A7657B46D1F675B617AF46385A10585B9948CAAA7FD5EBEE449E2FA40E4AE4084098C284D942A606F42CC56AE06D589814A8D42
+index-DRi88gte.js:18 ⚙️ [SERVICE] MinimaService initialized - waiting for MDS.init...
+vendor-minima-Da5q8uRc.js:1 Minima @ 2/4/2026 15:58:18 : MDS Inited
+vendor-minima-Da5q8uRc.js:1 Minima @ 2/4/2026 15:58:18 : MDS HOST  : https://10.0.0.12:9003/
+index-DRi88gte.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-DRi88gte.js:18 MDS initialised! 🚀 Starting serialized initialization sequence...
+index-DRi88gte.js:18 1️⃣ [AppContext] Checking Write Mode (Waiting for node)...
+index-DRi88gte.js:18 🕵️‍♂️ [AppContext] Checking Session Validity...
+index-DRi88gte.js:18 ✅ [AppContext] Node ready! Mode: READ (Attempt 1)
+index-DRi88gte.js:18 2️⃣ [AppContext] Initializing Database...
+index-DRi88gte.js:18 🕵️‍♂️ [AppContext] Session Check Result: Object
+index-DRi88gte.js:18 📂 [DB] virtual publickey_upper column added to CHAT_MESSAGES
+index-DRi88gte.js:18 📂 [DB] reply_to_customid CHAT_MESSAGES: true
+index-DRi88gte.js:18 📂 [DB] reply_to_sender CHAT_MESSAGES: true
+index-DRi88gte.js:18 📂 [DB] deleted GROUP_MESSAGES: true
+index-DRi88gte.js:18 📂 [DB] deleted_at GROUP_MESSAGES: true
+index-DRi88gte.js:18 📂 [DB] deleted_at CHANNEL_MESSAGES: true
+index-DRi88gte.js:18 📂 [DB] txpowid column added/verified in CHAT_MESSAGES
+index-DRi88gte.js:18 📂 [DB] original_timestamp column added/verified in CHAT_MESSAGES
+index-DRi88gte.js:18 📂 [DB] customid column added/verified in CHAT_MESSAGES
+index-DRi88gte.js:18 📂 [DB] reply_to_text CHAT_MESSAGES: true
+index-DRi88gte.js:18 📂 [DB] virtual publickey_upper column added to CHAT_STATUS
+index-DRi88gte.js:18 📂 [DB] reply_to_type CHAT_MESSAGES: true
+index-DRi88gte.js:18 📂 [DB] deleted CHAT_MESSAGES: true
+index-DRi88gte.js:18 📂 [DB] deleted_at CHAT_MESSAGES: true
+index-DRi88gte.js:18 📂 [DB] deleted CHANNEL_MESSAGES: true
+index-DRi88gte.js:18 📂 [DB] sender_seq column added/verified in CHAT_MESSAGES
+index-DRi88gte.js:18 📂 [DB] virtual publickey_upper column added to TRANSACTIONS
+index-DRi88gte.js:18 📂 [DB] Verified DISCOVERED_PEERS source column
+index-DRi88gte.js:18 📂 [DB] virtual publickey_upper column added to DISCOVERED_PEERS
+index-DRi88gte.js:18 📂 [DB] propagated column added/verified in GROUP_MESSAGES
+index-DRi88gte.js:18 📂 [DB] customid column added/verified in GROUP_MESSAGES
+index-DRi88gte.js:18 📂 [DB] sender_seq column added/verified in GROUP_MESSAGES
+index-DRi88gte.js:18 📂 [DB] GROUP_MSG_COUNTERS table initialized
+index-DRi88gte.js:18 📂 [DB] DISCOVERED_LISTINGS table initialized
+index-DRi88gte.js:18 📂 [DB] MAXIMA_CONTACT_REQUESTS table initialized
+index-DRi88gte.js:18 📂 [DB] Verified DISCOVERED_PEERS allow_non_contact_chats column
+index-DRi88gte.js:18 📂 [DB] from_address column added/verified
+index-DRi88gte.js:18 📂 [DB] CHANNEL_MSG_COUNTERS table initialized
+index-DRi88gte.js:18 ✅ [QUEUE] OFFLINE_QUEUE table ready.
+index-DRi88gte.js:18 ✅ [QUEUE] Reconnection listener registered
+index-DRi88gte.js:18 ✅ [AppContext] Database ready
+index-DRi88gte.js:18 📂 [DB] virtual publickey_upper column added to METACHAIN_USERS
+index-DRi88gte.js:18 📂 [DB] CHANNEL_SUBSCRIBERS table initialized
+index-DRi88gte.js:18 📍 [PROFILE] Found cached Minima Address in KeyPair: MxG080SCB7S9BAJF83UG3RYU46BP0RCY2RYDDNZETZSJWGCNSEDNGU0A3DNA7R1
+index-DRi88gte.js:18 🧹 [AppContext] Running legacy chat migration...
+index-DRi88gte.js:18 🧹 [MIGRATION] Checking for legacy chat keys (Mx addresses)...
+index-DRi88gte.js:18 ✅ [MIGRATION] No legacy chat keys found.
+index-DRi88gte.js:18 🧹 [AppContext] Normalizing identities...
+index-DRi88gte.js:18 🧹 [MIGRATION] Normalizing identities and deduplicating...
+index-DRi88gte.js:18 🧹 [MIGRATION] Found 1 duplicate identities in DISCOVERED_PEERS. Merging...
+index-DRi88gte.js:18 ✅ [MIGRATION] Identity normalization complete.
+index-DRi88gte.js:18 3️⃣ [AppContext] Fetching User Profile...
+index-DRi88gte.js:18 🔄 [AppContext] Fetching latest user profile from Maxima...
+index-DRi88gte.js:18 ✅ [AppContext] Profile fetched: Name=user2
+index-DRi88gte.js:18 🖼️ [AppContext] Profile Icon: "data:image/png;base64,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
+index-DRi88gte.js:18 4️⃣ [AppContext] Verifying Block Status...
+index-DRi88gte.js:18 ✅ [AppContext] Initialization Complete! Setting loaded = true
+index-DRi88gte.js:18 ⏰ [AppContext] Starting transaction confirmation checker...
+index-DRi88gte.js:18 ⏰ [TX-CONFIRM] Starting confirmation checker (recursive loop)
+index-DRi88gte.js:18 🔄 [SERVICE] Starting Offline Queue Polling...
+index-DRi88gte.js:18 🔄 [QUEUE] Starting offline message queue polling (serialized)...
+index-DRi88gte.js:18 🔇 [BalanceAmount] Blinking INACTIVE
+index-DRi88gte.js:18 ✅ [AppContext] Heartbeat - Minima is BACK ONLINE
+index-DRi88gte.js:18 [GROUP-SERVICE] getMyGroups for 0x30819F300D06092A864886F70D010101050003818D0030818902818100A9574C24B04D670261DB56BD74FAA0334CE8AE7E1CE7BA6AE80B75916AFDD0D0F388D43D937EAF1925C3C2C1342B414468C365C00997D48C77068F47188EED72C3E6E061E7D1DA8B4591367791083C77955C850448B6A450023631F474B1944C1DCC6BA9AAB0148F85A1C21F190682D7A8C3A30FC60ADBD8D7EB835ADC823BDD0203010001: 2 rows found
+index-DRi88gte.js:18 ⚠️ [NOTIFICATIONS] Permission denied / limited
+requestNotificationPermission @ index-DRi88gte.js:18
+index-DRi88gte.js:18 ℹ️ [DEBUG] Groups fetched successfully: 2 groups, active: 2
+index-DRi88gte.js:18 Sample group: Object
+index-DRi88gte.js:18 🔄 [CHANNEL-SYNC] Requesting history for channel channel_1775130275504_gqotgqncju...
+index-DRi88gte.js:18 🔄 [ChannelService] Global CHANNEL_UPDATE received: Object
+index-DRi88gte.js:18 📤 [CHANNEL-MAXIMA] Sent via Mx address
+index-DRi88gte.js:18 ✅ [CHANNEL-SYNC] History request sent to admin: 0x30819F300D06092A864886F70D010101050003818D0030818902818100996790A3B322C103DCC8DA422AE79C4D0C829EEA0F68D1C07E4B348024C9F520859A429CE74B5554958773672D6116B96699209EEB994A403C13931002F5AB79F562ACC65906CF8A0FAC94D3D89D11BC6030CB8098B89E66198250FE9749346658141318A9BAC322E1EBF891C335150C016C3BEAC5E0A5D58398C83FF370F77D0203010001
+index-DRi88gte.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-DRi88gte.js:18 🚀 [SERVICE] Solo message received from SW: Object
+index-DRi88gte.js:18 🚀 [SERVICE] Channel event received: CHANNEL_SYNC_START
+index-DRi88gte.js:18 🔄 [ChannelService] Global CHANNEL_UPDATE received: Object
+index-DRi88gte.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-DRi88gte.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-DRi88gte.js:18 ✉️ [MDS] MAXIMA from: 0x30819F30 app: metachain-channel
+index-DRi88gte.js:18 📢 [CHANNELS] Message detected: channel_history_response
+index-DRi88gte.js:18 ✅ [CHANNELS] History response received for channel_1775130275504_gqotgqncju. Waiting for SW to process...
+index-DRi88gte.js:18 📨 [CHANNEL-MSG] Incoming: channel_history_response
+index-DRi88gte.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-DRi88gte.js:18 🚀 [SERVICE] Solo message received from SW: Object
+index-DRi88gte.js:18 🚀 [SERVICE] Channel event received: CHANNEL_NEW_MESSAGE
+index-DRi88gte.js:18 🔄 [ChannelService] Global CHANNEL_UPDATE received: Object
+index-DRi88gte.js:18 📡 [MINIMA-EVENT] Event received from MDS: Object
+index-DRi88gte.js:18 🚀 [SERVICE] Solo message received from SW: Object
+index-DRi88gte.js:18 🚀 [SERVICE] Channel event received: CHANNEL_SYNC_END
+index-DRi88gte.js:18 🔄 [ChannelService] Global CHANNEL_UPDATE received: Object
+index-DRi88gte.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'NEWBLOCK', from: undefined, application: undefined}
+index-DRi88gte.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MAXIMA', from: '0x30819F30', application: 'metachain'}
+index-DRi88gte.js:18 ✉️ [MDS] MAXIMA from: 0x30819F30 app: metachain
+index-DRi88gte.js:18 ℹ️ [MAXIMA] Ignoring non-chat type: get_peers
+index-DRi88gte.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MAXIMA', from: '0x30819F30', application: 'metachain'}
+index-DRi88gte.js:18 ✉️ [MDS] MAXIMA from: 0x30819F30 app: metachain
+index-DRi88gte.js:18 ℹ️ [MAXIMA] Ignoring non-chat type: get_peers
+index-DRi88gte.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MAXIMA', from: '0x30819F30', application: 'metachain-group'}
+index-DRi88gte.js:18 ✉️ [MDS] MAXIMA from: 0x30819F30 app: metachain-group
+index-DRi88gte.js:18 👥 [GROUPS] Message detected: group_address_beacon
+index-DRi88gte.js:18 📨 [GROUP-MSG] Incoming: {app: 'metachain-group', messageType: 'group_address_beacon', senderPublickey: '0x30819F300D06092A864886F70D010101050003818D003081…335150C016C3BEAC5E0A5D58398C83FF370F77D0203010001', senderUsername: 'user1', senderAddress: 'MxG18HGG6FJ038614Y8CW46US6G20810K0070CD00Z83282G60…6PHH175ZSTPWVUF2Y8V410608004MY6KFB@10.0.0.11:9001', …}
+index-DRi88gte.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MAXIMA', from: '0x30819F30', application: 'metachain'}
+index-DRi88gte.js:18 ✉️ [MDS] MAXIMA from: 0x30819F30 app: metachain
+index-DRi88gte.js:18 🗣 [GOSSIP] Received peer list from 0x30819F300D06092A864886F70D010101050003818D0030818902818100996790A3B322C103DCC8DA422AE79C4D0C829EEA0F68D1C07E4B348024C9F520859A429CE74B5554958773672D6116B96699209EEB994A403C13931002F5AB79F562ACC65906CF8A0FAC94D3D89D11BC6030CB8098B89E66198250FE9749346658141318A9BAC322E1EBF891C335150C016C3BEAC5E0A5D58398C83FF370F77D0203010001
+index-DRi88gte.js:18 🗣[GOSSIP] Processing 2 peers...
+index-DRi88gte.js:18 ✅[GOSSIP] Saved peer: user1
+index-DRi88gte.js:18 ✅[GOSSIP] Saved peer: user2
+index-DRi88gte.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'MAXIMA', from: '0x30819F30', application: 'metachain'}
+index-DRi88gte.js:18 ✉️ [MDS] MAXIMA from: 0x30819F30 app: metachain
+index-DRi88gte.js:18 🗣 [GOSSIP] Received peer list from 0x30819F300D06092A864886F70D010101050003818D0030818902818100A9574C24B04D670261DB56BD74FAA0334CE8AE7E1CE7BA6AE80B75916AFDD0D0F388D43D937EAF1925C3C2C1342B414468C365C00997D48C77068F47188EED72C3E6E061E7D1DA8B4591367791083C77955C850448B6A450023631F474B1944C1DCC6BA9AAB0148F85A1C21F190682D7A8C3A30FC60ADBD8D7EB835ADC823BDD0203010001
+index-DRi88gte.js:18 🗣[GOSSIP] Processing 2 peers...
+index-DRi88gte.js:18 ✅[GOSSIP] Saved peer: user2
+index-DRi88gte.js:18 ✅[GOSSIP] Saved peer: user1
+index-DRi88gte.js:18 📡 [MINIMA-EVENT] Event received from MDS: {event: 'NEWBLOCK', from: undefined, application: undefined}
+index-DRi88gte.js:18 👀 [AppContext] App resumed - checking session validity...
+index-DRi88gte.js:18 🕵️‍♂️ [AppContext] Checking Session Validity...
+index-DRi88gte.js:18 🔴 [NOTIFICATIONS] Unread count: 0
+index-DRi88gte.js:18 🕵️‍♂️ [AppContext] Session Check Result: {command: 'block', status: true, pending: false, response: {…}}

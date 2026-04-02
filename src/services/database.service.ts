@@ -185,6 +185,12 @@ export async function initDB(): Promise<void> {
         MDS.sql("ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS reply_to_text VARCHAR(512)", (r: any) => { console.log("📂 [DB] reply_to_text CHAT_MESSAGES:", r.status, r.error || ""); });
         MDS.sql("ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS reply_to_sender VARCHAR(160)", (r: any) => { console.log("📂 [DB] reply_to_sender CHAT_MESSAGES:", r.status, r.error || ""); });
         MDS.sql("ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS reply_to_type VARCHAR(64)", (r: any) => { console.log("📂 [DB] reply_to_type CHAT_MESSAGES:", r.status, r.error || ""); });
+        MDS.sql("ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS deleted TINYINT DEFAULT 0", (r: any) => { console.log("📂 [DB] deleted CHAT_MESSAGES:", r.status, r.error || ""); });
+        MDS.sql("ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS deleted_at BIGINT", (r: any) => { console.log("📂 [DB] deleted_at CHAT_MESSAGES:", r.status, r.error || ""); });
+        MDS.sql("ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS deleted TINYINT DEFAULT 0", (r: any) => { console.log("📂 [DB] deleted GROUP_MESSAGES:", r.status, r.error || ""); });
+        MDS.sql("ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS deleted_at BIGINT", (r: any) => { console.log("📂 [DB] deleted_at GROUP_MESSAGES:", r.status, r.error || ""); });
+        MDS.sql("ALTER TABLE CHANNEL_MESSAGES ADD COLUMN IF NOT EXISTS deleted TINYINT DEFAULT 0", (r: any) => { console.log("📂 [DB] deleted CHANNEL_MESSAGES:", r.status, r.error || ""); });
+        MDS.sql("ALTER TABLE CHANNEL_MESSAGES ADD COLUMN IF NOT EXISTS deleted_at BIGINT", (r: any) => { console.log("📂 [DB] deleted_at CHANNEL_MESSAGES:", r.status, r.error || ""); });
       }
     });
 

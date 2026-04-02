@@ -37,6 +37,7 @@ export const Route = createLazyFileRoute("/group-info/$groupId")({
 interface GroupMember {
   publickey: string;
   name?: string;
+  avatar?: string;
   icon?: string;
   isMe?: boolean;
   role?: "creator" | "admin" | "member";
@@ -103,6 +104,7 @@ function GroupInfoPage() {
       name: string;
       currentaddress: string;
       type: "contact" | "community";
+      icon?: string;
     }>
   >([]);
   const [addMemberSearch, setAddMemberSearch] = useState("");
@@ -127,6 +129,26 @@ function GroupInfoPage() {
     value === 1 ||
     String(value).toUpperCase() === "TRUE" ||
     String(value) === "1";
+
+  const decodeStoredAvatar = (avatar?: string | null) => {
+    if (!avatar || avatar === "0x00") return "";
+
+    const candidates = [avatar];
+    try {
+      candidates.unshift(decodeURIComponent(avatar));
+    } catch {
+      // ignore invalid URI sequences and try raw value
+    }
+
+    return (
+      candidates.find(
+        (candidate) =>
+          candidate &&
+          candidate.startsWith("data:image") &&
+          !candidate.includes("/0x00"),
+      ) || ""
+    );
+  };
 
   const fetchGroupDetails = useCallback(async () => {
     try {
@@ -176,6 +198,7 @@ function GroupInfoPage() {
           name: username,
           isMe: isMe,
           role: role as "creator" | "admin" | "member",
+          avatar: decodeStoredAvatar(m.AVATAR || m.avatar),
         };
       });
 
@@ -555,6 +578,7 @@ function GroupInfoPage() {
           name: chat.roomname || chat.publickey,
           currentaddress: chat.currentaddress || chat.publickey,
           type: "community" as const,
+          icon: decodeStoredAvatar(chat.avatar),
         }));
 
       const allContacts = [
@@ -563,6 +587,7 @@ function GroupInfoPage() {
           name: c.extradata?.name || c.currentaddress || c.publickey,
           currentaddress: c.currentaddress || c.publickey,
           type: "contact" as const,
+          icon: decodeStoredAvatar(c.extradata?.icon),
         })),
         ...communityContacts,
       ];
@@ -940,7 +965,25 @@ function GroupInfoPage() {
                                       : "cursor-pointer active:scale-[0.99]"
                                   }`}
                       >
-                        <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 flex-shrink-0 flex items-center justify-center text-gray-600 dark:text-gray-300 font-medium text-sm group-hover:bg-gray-300 dark:group-hover:bg-gray-600 transition-colors">
+                        {member.avatar ? (
+                          <img
+                            src={member.avatar}
+                            alt={member.name || "Member"}
+                            className="w-10 h-10 rounded-full object-cover bg-gray-200 dark:bg-gray-700 flex-shrink-0"
+                            onError={(e: any) => {
+                              e.target.style.display = "none";
+                              const fallback = e.target
+                                .nextElementSibling as HTMLDivElement | null;
+                              if (fallback) {
+                                fallback.style.display = "flex";
+                              }
+                            }}
+                          />
+                        ) : null}
+                        <div
+                          className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 flex-shrink-0 items-center justify-center text-gray-600 dark:text-gray-300 font-medium text-sm group-hover:bg-gray-300 dark:group-hover:bg-gray-600 transition-colors"
+                          style={{ display: member.avatar ? "none" : "flex" }}
+                        >
                           {member.isMe
                             ? "You"
                             : member.name &&
@@ -1368,7 +1411,25 @@ function GroupInfoPage() {
                         key={contact.publickey}
                         className="flex items-center gap-3 px-4 py-3"
                       >
-                        <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-gray-600 dark:text-gray-300 font-bold flex-shrink-0">
+                        {contact.icon ? (
+                          <img
+                            src={contact.icon}
+                            alt={contact.name}
+                            className="w-10 h-10 rounded-full object-cover bg-gray-200 dark:bg-gray-700 flex-shrink-0"
+                            onError={(e: any) => {
+                              e.target.style.display = "none";
+                              const fallback = e.target
+                                .nextElementSibling as HTMLDivElement | null;
+                              if (fallback) {
+                                fallback.style.display = "flex";
+                              }
+                            }}
+                          />
+                        ) : null}
+                        <div
+                          className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 items-center justify-center text-gray-600 dark:text-gray-300 font-bold flex-shrink-0"
+                          style={{ display: contact.icon ? "none" : "flex" }}
+                        >
                           {contact.name.charAt(0).toUpperCase()}
                         </div>
                         <div className="flex-1 min-w-0">

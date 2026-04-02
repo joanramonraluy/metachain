@@ -35,6 +35,7 @@ interface Contact {
 interface ChatItem {
   publickey: string;
   roomname: string;
+  avatar?: string;
   lastMessage: string;
   lastMessageType: string;
   lastMessageDate: number;
@@ -742,18 +743,45 @@ export default function ChatsAndGroups() {
   const defaultAvatar =
     "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23cbd5e1'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E";
 
-  const getAvatar = (publickey: string) => {
-    const contact = contacts.get(publickey);
-    if (contact?.extradata?.icon) {
-      try {
-        const decoded = decodeURIComponent(contact.extradata.icon);
-        if (decoded.startsWith("data:image") && !decoded.includes("/0x00")) {
-          return decoded;
-        }
-      } catch (err) {
-        console.warn("⚠️ Error decoding avatar:", err);
-      }
+  const decodeStoredAvatar = (avatar?: string | null) => {
+    if (!avatar || avatar === "0x00") return "";
+
+    const candidates = [avatar];
+    try {
+      candidates.unshift(decodeURIComponent(avatar));
+    } catch (err) {
+      console.warn("⚠️ Error decoding avatar:", err);
     }
+
+    const validAvatar = candidates.find(
+      (candidate) =>
+        candidate &&
+        candidate.startsWith("data:image") &&
+        !candidate.includes("/0x00"),
+    );
+
+    return validAvatar || "";
+  };
+
+  const getAvatar = (chat: ChatItem) => {
+    const contact = contacts.get(chat.publickey);
+    const contactAvatar = decodeStoredAvatar(contact?.extradata?.icon);
+    if (contactAvatar) {
+      return contactAvatar;
+    }
+
+    const chatAvatar = decodeStoredAvatar(chat.avatar);
+    if (chatAvatar) {
+      return chatAvatar;
+    }
+
+    const peerAvatar = decodeStoredAvatar(
+      chats.find((item) => item.publickey === chat.publickey)?.avatar,
+    );
+    if (peerAvatar) {
+      return peerAvatar;
+    }
+
     return defaultAvatar;
   };
 
@@ -1387,7 +1415,7 @@ export default function ChatsAndGroups() {
                             </div>
                           ) : (
                             <img
-                              src={getAvatar(chat.publickey)}
+                              src={getAvatar(chat)}
                               alt={getName(chat)}
                               className="w-14 h-14 rounded-full object-cover bg-gray-200 dark:bg-gray-700 shadow-md pointer-events-none"
                               onError={(e: any) => {
@@ -1776,7 +1804,7 @@ export default function ChatsAndGroups() {
                         </div>
                       ) : (
                         <img
-                          src={getAvatar(chat.publickey)}
+                          src={getAvatar(chat)}
                           alt={getName(chat)}
                           className="w-14 h-14 rounded-full object-cover bg-gray-200 dark:bg-gray-700 shadow-md pointer-events-none"
                           onError={(e: any) => {

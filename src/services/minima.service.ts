@@ -918,6 +918,7 @@ VALUES('', UPPER('${safeFrom}'), 'System', 'system', 'Maxima contact declined', 
           "chat_history_response",
           "sync_status_check",
           "sync_status_report",
+          "message_deleted",
         ];
 
         if (protocolTypes.includes(json.type)) {
@@ -1872,9 +1873,11 @@ VALUES('', UPPER('${safeFrom}'), 'System', 'system', 'Maxima contact declined', 
           const parsedMsg = JSON.parse(msg);
           if (parsedMsg.type === "SW_LOG") {
             console.log(`📡 [SW-LOG] ${parsedMsg.message}`);
-          } else if (parsedMsg.type === "NEW_CHAT_MESSAGE") {
+          } else if (parsedMsg.type === "NEW_CHAT_MESSAGE" || parsedMsg.type === "CHAT_MESSAGE_DELETED") {
             // Direct message payload from SW — relay to UI without DB round-trip
-            console.log(`💬 [SERVICE] NEW_CHAT_MESSAGE from SW for ${parsedMsg.message?.publickey?.substring(0, 10)}`);
+            if (parsedMsg.type === "NEW_CHAT_MESSAGE") {
+              console.log(`💬 [SERVICE] NEW_CHAT_MESSAGE from SW for ${parsedMsg.message?.publickey?.substring(0, 10)}`);
+            }
             this.notifyNewMessage(parsedMsg);
           } else if (
             parsedMsg.type === "group_update" ||
@@ -1882,7 +1885,8 @@ VALUES('', UPPER('${safeFrom}'), 'System', 'system', 'Maxima contact declined', 
             parsedMsg.type === "group_join_requests_update" ||
             parsedMsg.type === "GROUP_SYNC_START" ||
             parsedMsg.type === "GROUP_SYNC_END" ||
-            parsedMsg.type === "group_sync_start"
+            parsedMsg.type === "group_sync_start" ||
+            parsedMsg.type === "GROUP_MESSAGE_DELETED"
           ) {
             console.log(`🚀 [SERVICE] Group event received: ${parsedMsg.type}`);
             window.dispatchEvent(

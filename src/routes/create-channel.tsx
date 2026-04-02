@@ -1,10 +1,17 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useContext, useEffect, useState } from "react";
+import {
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+} from "react";
 import { appContext } from "../AppContext";
 import { channelService } from "../services/channel.service";
 import { chatService } from "../services/chat.service";
 import { MDS } from "@minima-global/mds";
-import { ArrowLeft, Check, Radio } from "lucide-react";
+import { ArrowLeft, Check, Radio, Camera } from "lucide-react";
+import { compressImage } from "../utils/image";
 import {
   getPublicListingsCount,
   LISTINGS_PUBLIC_LIMIT,
@@ -31,6 +38,8 @@ function CreateChannelPage() {
   const [people, setPeople] = useState<Person[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [creating, setCreating] = useState(false);
+  const [avatar, setAvatar] = useState("");
+  const [processingAvatar, setProcessingAvatar] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<"all" | "contacts" | "community">(
     "all",
@@ -38,6 +47,7 @@ function CreateChannelPage() {
   const [isPublic, setIsPublic] = useState(false);
   const [publicCount, setPublicCount] = useState(0);
   const [publicError, setPublicError] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
   // -------------------------------------------------------------------------
@@ -88,6 +98,31 @@ function CreateChannelPage() {
     setSelected(next);
   };
 
+  const handleAvatarFileSelect = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+
+    if (!file.type.startsWith("image/")) {
+      alert("Please select a valid image.");
+      return;
+    }
+
+    try {
+      setProcessingAvatar(true);
+      const compressedBase64 = await compressImage(file, 600, 600, 0.75);
+      setAvatar(compressedBase64);
+    } catch (err) {
+      console.error("❌ [CreateChannel] Avatar processing failed:", err);
+      alert("Failed to process the image. Please try another one.");
+    } finally {
+      setProcessingAvatar(false);
+    }
+  };
+
   const handleCreate = async () => {
     if (!channelName.trim() || !myPublicKey || !userName) {
       alert("Please enter a channel name");
@@ -110,6 +145,7 @@ function CreateChannelPage() {
         myPublicKey,
         userName,
         isPublic,
+        avatar,
       );
 
       // Invite selected subscribers
@@ -175,6 +211,59 @@ function CreateChannelPage() {
 
           {/* Channel details */}
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 space-y-4">
+            <div className="flex flex-col items-center gap-3">
+              <input
+                type="file"
+                ref={fileInputRef}
+                className="hidden"
+                accept="image/*"
+                onChange={handleAvatarFileSelect}
+              />
+
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={processingAvatar}
+                className="relative group/avatar"
+              >
+                <div className="w-24 h-24 rounded-full overflow-hidden bg-gray-100 dark:bg-gray-700 shadow-md flex items-center justify-center">
+                  {avatar ? (
+                    <img
+                      src={avatar}
+                      alt={channelName || "Channel avatar"}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <Radio
+                      size={32}
+                      className="text-sky-600 dark:text-sky-400"
+                    />
+                  )}
+                </div>
+                <div className="absolute inset-0 rounded-full bg-black/35 text-white flex items-center justify-center opacity-0 group-hover/avatar:opacity-100 transition-opacity">
+                  {processingAvatar ? (
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
+                  ) : (
+                    <Camera size={22} />
+                  )}
+                </div>
+              </button>
+
+              <div className="text-center">
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Channel Image
+                </p>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={processingAvatar}
+                  className="text-xs text-sky-600 dark:text-sky-400 hover:underline disabled:opacity-50"
+                >
+                  {avatar ? "Change image" : "Upload image"}
+                </button>
+              </div>
+            </div>
+
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Channel Name *

@@ -397,6 +397,47 @@ function handlePong(pubkey) {
   // Let the UI handle pong events
 }
 
+function handleChatMessageDeleted(pubkey, maxjson) {
+  var customid = maxjson.customid;
+  if (!customid) return;
+
+  var safeCustomId = escapeSql(customid);
+  var safePubkey = escapeSql(pubkey);
+
+  // Permission check: only the original sender (username='Me' from their side stored as their pubkey) can delete
+  // We verify the message belongs to the sender (UPPER(publickey)=UPPER(sender pubkey))
+  var checkSql =
+    "SELECT id FROM CHAT_MESSAGES WHERE customid='" +
+    safeCustomId +
+    "' AND UPPER(publickey)=UPPER('" +
+    safePubkey +
+    "')";
+
+  MDS.sql(checkSql, function (res) {
+    if (!res.status || !res.rows || res.rows.length === 0) {
+      MDS.log("⚠️ [CHAT-DELETE] Message not found or not authorized for: " + safeCustomId);
+      return;
+    }
+
+    var updateSql =
+      "UPDATE CHAT_MESSAGES SET deleted=1, deleted_at=" +
+      Date.now() +
+      " WHERE customid='" +
+      safeCustomId +
+      "'";
+
+    MDS.sql(updateSql, function (upRes) {
+      if (!upRes.status) {
+        MDS.log("❌ [CHAT-DELETE] Failed to delete message: " + upRes.error);
+        return;
+      }
+      MDS.log("🗑️ [CHAT-DELETE] Message deleted: " + safeCustomId);
+      MDS.comms.solo(JSON.stringify({ type: "CHAT_MESSAGE_DELETED", customid: customid }));
+      MDS.comms.solo("CHAT_LIST_UPDATE");
+    });
+  });
+}
+
 // ============================================================================
 // HISTORY SYNC HANDLERS
 // ============================================================================

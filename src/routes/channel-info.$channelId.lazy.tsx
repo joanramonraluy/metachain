@@ -96,6 +96,26 @@ function ChannelInfoPage() {
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
+  const decodeStoredAvatar = (avatar?: string | null) => {
+    if (!avatar || avatar === "0x00") return "";
+
+    const candidates = [avatar];
+    try {
+      candidates.unshift(decodeURIComponent(avatar));
+    } catch {
+      // ignore invalid URI sequences and try raw value
+    }
+
+    return (
+      candidates.find(
+        (candidate) =>
+          candidate &&
+          candidate.startsWith("data:image") &&
+          !candidate.includes("/0x00"),
+      ) || ""
+    );
+  };
+
   const loadData = async () => {
     if (!myPublicKey) return;
     const info = await channelService.getChannelInfo(channelId);
@@ -160,6 +180,7 @@ function ChannelInfoPage() {
         username: name,
         isMe: isMe,
         role: role as "admin" | "subscriber",
+        avatar: decodeStoredAvatar(s.AVATAR || s.avatar),
       };
     });
 
@@ -800,7 +821,25 @@ function ChannelInfoPage() {
                                                                       : "cursor-pointer active:scale-[0.99]"
                                                                   }`}
                           >
-                            <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 flex-shrink-0 flex items-center justify-center text-gray-600 dark:text-gray-300 font-medium text-sm group-hover:bg-gray-300 dark:group-hover:bg-gray-600 transition-colors">
+                            {sub.avatar ? (
+                              <img
+                                src={sub.avatar}
+                                alt={name || "Subscriber"}
+                                className="w-10 h-10 rounded-full object-cover bg-gray-200 dark:bg-gray-700 flex-shrink-0"
+                                onError={(e: any) => {
+                                  e.target.style.display = "none";
+                                  const fallback = e.target
+                                    .nextElementSibling as HTMLDivElement | null;
+                                  if (fallback) {
+                                    fallback.style.display = "flex";
+                                  }
+                                }}
+                              />
+                            ) : null}
+                            <div
+                              className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 flex-shrink-0 items-center justify-center text-gray-600 dark:text-gray-300 font-medium text-sm group-hover:bg-gray-300 dark:group-hover:bg-gray-600 transition-colors"
+                              style={{ display: sub.avatar ? "none" : "flex" }}
+                            >
                               {isMe
                                 ? "You"
                                 : name &&

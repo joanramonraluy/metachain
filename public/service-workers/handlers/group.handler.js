@@ -866,6 +866,105 @@ function propagateGroupMessage(pubkey, maxjson) {
   });
 }
 
+function handleGroupMessageDeleted(pubkey, maxjson) {
+  var groupId = maxjson.groupId;
+  var customid = maxjson.customid;
+  if (!groupId || !customid) return;
+
+  var safeGroupId = escapeSql(groupId);
+  var safeCustomId = escapeSql(customid);
+  var safePubkey = escapeSql(pubkey);
+
+  // Load message to check sender + load role of requester
+  var msgSql =
+    "SELECT sender_publickey FROM GROUP_MESSAGES WHERE UPPER(group_id)=UPPER('" +
+    safeGroupId +
+    "') AND customid='" +
+    safeCustomId +
+    "'";
+
+  MDS.sql(msgSql, function (msgRes) {
+    if (!msgRes.status || !msgRes.rows || msgRes.rows.length === 0) {
+      MDS.log("⚠️ [GROUP-DELETE] Message not found: " + safeCustomId);
+      return;
+    }
+
+    var senderPk = (msgRes.rows[0].SENDER_PUBLICKEY || "").toUpperCase();
+
+    var roleSql =
+      "SELECT role FROM GROUP_MEMBERS WHERE group_id='" +
+      safeGroupId +
+      "' AND UPPER(publickey)=UPPER('" +
+      safePubkey +
+      "')";
+
+    MDS.sql(roleSql, function (roleRes) {
+      var role = "";
+      if (roleRes.status && roleRes.rows && roleRes.rows.length > 0) {
+        role = (roleRes.rows[0].ROLE || "").toLowerCase();
+      }
+
+      var isSender = senderPk === safePubkey.toUpperCase();
+      var isAdmin = role === "admin" || role === "creator";
+
+      if (!isSender && !isAdmin) {
+        MDS.log("⚠️ [GROUP-DELETE] Not authorized to delete: " + safePubkey.substring(0, 10));
+        return;
+      }
+
+      var updateSql =
+        "UPDATE GROUP_MESSAGES SET deleted=1, deleted_at=" +
+        Date.now() +
+        " WHERE UPPER(group_id)=UPPER('" +
+        safeGroupId +
+        "') AND customid='" +
+        safeCustomId +
+        "'";
+
+      MDS.sql(updateSql, function (upRes) {
+        if (!upRes.status) {
+          MDS.log("❌ [GROUP-DELETE] Failed: " + upRes.error);
+          return;
+        }
+        MDS.log("🗑️ [GROUP-DELETE] Message deleted: " + safeCustomId);
+
+        // Fanout delete notification to other members
+        var membersSql =
+          "SELECT publickey FROM GROUP_MEMBERS WHERE group_id='" +
+          safeGroupId +
+          "' AND UPPER(publickey) != UPPER('" +
+          safePubkey +
+          "')";
+
+        MDS.sql(membersSql, function (membersRes) {
+          if (!membersRes.status || !membersRes.rows || membersRes.rows.length === 0) {
+            MDS.comms.solo(JSON.stringify({ type: "GROUP_MESSAGE_DELETED", groupId: groupId, customid: customid }));
+            return;
+          }
+
+          var deletePayload = {
+            app: "metachain-group",
+            messageType: "message_deleted",
+            groupId: groupId,
+            customid: customid,
+            timestamp: Date.now()
+          };
+          var hexData = "0x" + utf8ToHex(JSON.stringify(deletePayload)).toUpperCase();
+
+          for (var mi = 0; mi < membersRes.rows.length; mi++) {
+            var memberPk = membersRes.rows[mi].PUBLICKEY;
+            if (memberPk && memberPk.toUpperCase() !== safePubkey.toUpperCase()) {
+              smartSend(memberPk, "metachain-group", hexData, "GROUP-DELETE", false);
+            }
+          }
+
+          MDS.comms.solo(JSON.stringify({ type: "GROUP_MESSAGE_DELETED", groupId: groupId, customid: customid }));
+        });
+      });
+    });
+  });
+}
+
 function handleGroupInvite(pubkey, maxjson) {
   var safeGroupId = escapeSql(maxjson.groupId || "");
   var safeGroupName = escapeSql(maxjson.groupName || "");

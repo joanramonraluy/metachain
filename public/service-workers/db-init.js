@@ -138,6 +138,12 @@ function initDatabase() {
           "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS reply_to_type VARCHAR(64)",
         ),
         runSQL(
+          "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS deleted TINYINT DEFAULT 0",
+        ),
+        runSQL(
+          "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS deleted_at BIGINT",
+        ),
+        runSQL(
           "ALTER TABLE CHAT_MESSAGES ADD COLUMN IF NOT EXISTS publickey_upper VARCHAR(512) AS UPPER(publickey)",
         ),
         runSQL(
@@ -284,6 +290,12 @@ function initDatabase() {
         ),
         runSQL(
           "ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS reply_to_type VARCHAR(64)",
+        ),
+        runSQL(
+          "ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS deleted TINYINT DEFAULT 0",
+        ),
+        runSQL(
+          "ALTER TABLE GROUP_MESSAGES ADD COLUMN IF NOT EXISTS deleted_at BIGINT",
         ),
       ]);
     });
@@ -656,6 +668,12 @@ function initDatabase() {
         ),
         runSQL(
           "ALTER TABLE CHANNEL_MESSAGES ADD COLUMN IF NOT EXISTS reply_to_type VARCHAR(64)",
+        ),
+        runSQL(
+          "ALTER TABLE CHANNEL_MESSAGES ADD COLUMN IF NOT EXISTS deleted TINYINT DEFAULT 0",
+        ),
+        runSQL(
+          "ALTER TABLE CHANNEL_MESSAGES ADD COLUMN IF NOT EXISTS deleted_at BIGINT",
         ),
       ]);
     });

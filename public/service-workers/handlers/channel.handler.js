@@ -721,3 +721,31 @@ function handleChannelSubscriberRemoved(pubkey, maxjson) {
     MDS.comms.solo(JSON.stringify({ type: "CHANNEL_UPDATE", channelId: channelId }));
   });
 }
+
+function handleChannelMessageDeleted(pubkey, maxjson) {
+  var channelId = maxjson.channelId;
+  var senderSeq = maxjson.senderSeq !== undefined ? parseInt(maxjson.senderSeq) : -1;
+  if (!channelId || senderSeq < 0) return;
+
+  var safeChannelId = escapeSql(channelId);
+  var safePubkey = escapeSql(pubkey);
+
+  // Channels are admin-broadcast: trust any authenticated delete notification
+  var updateSql =
+    "UPDATE CHANNEL_MESSAGES SET deleted=1, deleted_at=" +
+    Date.now() +
+    " WHERE UPPER(channel_id)=UPPER('" +
+    safeChannelId +
+    "') AND sender_seq=" +
+    senderSeq;
+
+  MDS.sql(updateSql, function (upRes) {
+    if (!upRes.status) {
+      MDS.log("❌ [CHANNEL-DELETE] Failed: " + upRes.error);
+      return;
+    }
+    MDS.log("🗑️ [CHANNEL-DELETE] seq=" + senderSeq + " deleted in " + safeChannelId);
+
+    MDS.comms.solo(JSON.stringify({ type: "CHANNEL_MESSAGE_DELETED", channelId: channelId, senderSeq: senderSeq }));
+  });
+}

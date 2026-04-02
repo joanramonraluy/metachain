@@ -28,6 +28,7 @@ export interface ChannelSubscriber {
   username: string;
   joined_date: number;
   role: "creator" | "admin" | "subscriber";
+  avatar?: string;
 }
 
 export interface ChannelMessage {
@@ -41,6 +42,9 @@ export interface ChannelMessage {
   date: number;
   forwarded?: boolean;
   read?: number;
+  sender_seq?: number;
+  deleted?: number;
+  deleted_at?: number;
 }
 
 export interface ChannelMaximaMessage {
@@ -53,7 +57,8 @@ export interface ChannelMaximaMessage {
     | "channel_info_updated"
     | "channel_join_request"
     | "channel_history_request"
-    | "channel_history_response";
+    | "channel_history_response"
+    | "message_deleted";
   channelId: string;
   channelName: string;
   adminPublickey: string;
@@ -61,8 +66,14 @@ export interface ChannelMaximaMessage {
   senderPublickey?: string;
   senderUsername?: string;
   sender_seq?: number;
+  senderSeq?: number;
   forwarded?: boolean;
-  replyTo?: { customid: string; text: string; senderName: string; type: string } | null;
+  replyTo?: {
+    customid: string;
+    text: string;
+    senderName: string;
+    type: string;
+  } | null;
   timestamp: number;
 
   // channel_invite
@@ -364,17 +375,49 @@ class ChannelService {
   async getChannelSubscribers(channelId: string): Promise<ChannelSubscriber[]> {
     try {
       const res = await this.runSQL(`
-                SELECT cs.*, COALESCE(d.alias, cs.username) as resolved_name
+                SELECT
+                    cs.*,
+                    COALESCE(d.alias, cs.username) as resolved_name,
+                    d.avatar as discovered_avatar,
+                    d.extra_data as discovered_extra_data
                 FROM CHANNEL_SUBSCRIBERS cs
                 LEFT JOIN (
-                    SELECT UPPER(publickey) AS pubkey_upper, MIN(alias) AS alias
+                    SELECT UPPER(publickey) AS pubkey_upper, MIN(alias) AS alias, MIN(avatar) AS avatar, MIN(extra_data) AS extra_data
                     FROM DISCOVERED_PEERS
                     GROUP BY UPPER(publickey)
                 ) d ON UPPER(cs.publickey) = d.pubkey_upper
                 WHERE UPPER(cs.channel_id) = UPPER('${channelId}')
                 ORDER BY cs.joined_date ASC
             `);
-      return res.rows || [];
+      return (res.rows || []).map((row: any) => {
+        let avatar = row.DISCOVERED_AVATAR || row.discovered_avatar || "";
+        if (
+          !avatar &&
+          (row.DISCOVERED_EXTRA_DATA || row.discovered_extra_data)
+        ) {
+          try {
+            const parsedExtra =
+              typeof (
+                row.DISCOVERED_EXTRA_DATA || row.discovered_extra_data
+              ) === "string"
+                ? JSON.parse(
+                    row.DISCOVERED_EXTRA_DATA || row.discovered_extra_data,
+                  )
+                : row.DISCOVERED_EXTRA_DATA || row.discovered_extra_data;
+            avatar = parsedExtra.avatar || parsedExtra.icon || "";
+          } catch (err) {
+            console.warn(
+              "⚠️ [CHANNEL] Failed to parse subscriber avatar from extra_data:",
+              err,
+            );
+          }
+        }
+
+        return {
+          ...row,
+          avatar,
+        } as ChannelSubscriber;
+      });
     } catch {
       return [];
     }
@@ -436,7 +479,11 @@ class ChannelService {
     };
     for (const sub of subs) {
       const pk = (sub as any).PUBLICKEY || sub.publickey;
-      if (pk && pk.toUpperCase() !== myPublicKey.toUpperCase() && pk.toUpperCase() !== subscriberPublicKey.toUpperCase()) {
+      if (
+        pk &&
+        pk.toUpperCase() !== myPublicKey.toUpperCase() &&
+        pk.toUpperCase() !== subscriberPublicKey.toUpperCase()
+      ) {
         await this.sendMaximaMessage(pk, addedPayload).catch(() => {});
       }
     }
@@ -494,7 +541,12 @@ class ChannelService {
     myUsername: string,
     filedata: string = "",
     forwarded: boolean = false,
-    replyTo?: { customid: string; text: string; senderName: string; type: string } | null,
+    replyTo?: {
+      customid: string;
+      text: string;
+      senderName: string;
+      type: string;
+    } | null,
   ): Promise<void> {
     const channel = await this.getChannelInfo(channelId);
     if (!channel) throw new Error("Channel not found");
@@ -516,7 +568,7 @@ class ChannelService {
     const rType = replyTo?.type?.replace(/'/g, "''") ?? null;
     await this.runSQL(`
             INSERT INTO CHANNEL_MESSAGES (channel_id, sender_publickey, sender_username, type, message, filedata, date, read, sender_seq, forwarded, reply_to_customid, reply_to_text, reply_to_sender, reply_to_type)
-            VALUES ('${channelId}', UPPER('${myPublicKey}'), '${myUsername.replace(/'/g, "''")}', '${type}', '${escapedMsg}', '${filedata}', ${now}, 1, ${seq}, ${forwarded ? 1 : 0}, ${rCustomid ? `'${rCustomid}'` : 'NULL'}, ${rText ? `'${rText}'` : 'NULL'}, ${rSender ? `'${rSender}'` : 'NULL'}, ${rType ? `'${rType}'` : 'NULL'})
+            VALUES ('${channelId}', UPPER('${myPublicKey}'), '${myUsername.replace(/'/g, "''")}', '${type}', '${escapedMsg}', '${filedata}', ${now}, 1, ${seq}, ${forwarded ? 1 : 0}, ${rCustomid ? `'${rCustomid}'` : "NULL"}, ${rText ? `'${rText}'` : "NULL"}, ${rSender ? `'${rSender}'` : "NULL"}, ${rType ? `'${rType}'` : "NULL"})
         `);
 
     // 3. Construct payload
@@ -561,6 +613,39 @@ class ChannelService {
       return res.rows || [];
     } catch {
       return [];
+    }
+  }
+
+  async deleteChannelMessage(
+    channelId: string,
+    senderSeq: number,
+  ): Promise<void> {
+    const safeChannelId = channelId.replace(/'/g, "''");
+    await this.runSQL(
+      `UPDATE CHANNEL_MESSAGES SET deleted=1, deleted_at=${Date.now()} WHERE UPPER(channel_id)=UPPER('${safeChannelId}') AND sender_seq=${senderSeq}`,
+    );
+  }
+
+  async sendChannelDeleteMessage(
+    channelId: string,
+    senderSeq: number,
+    myPublicKey: string,
+    myUsername: string,
+  ): Promise<void> {
+    const subscribers = await this.getChannelSubscribers(channelId);
+    const payload: ChannelMaximaMessage = {
+      messageType: "message_deleted",
+      channelId,
+      channelName: "",
+      adminPublickey: myPublicKey,
+      adminUsername: myUsername,
+      senderSeq,
+      timestamp: Date.now(),
+    };
+    for (const sub of subscribers) {
+      const pk = (sub as any).PUBLICKEY || sub.publickey;
+      if (!pk || pk.toUpperCase() === myPublicKey?.toUpperCase()) continue;
+      await this.sendMaximaMessage(pk, payload).catch(() => {});
     }
   }
 

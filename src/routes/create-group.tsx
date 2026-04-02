@@ -1,10 +1,17 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useContext, useEffect, useState } from "react";
+import {
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+} from "react";
 import { appContext } from "../AppContext";
 import { groupService } from "../services/group.service";
 import { chatService } from "../services/chat.service";
 import { MDS } from "@minima-global/mds";
-import { ArrowLeft, Check } from "lucide-react";
+import { ArrowLeft, Check, Camera } from "lucide-react";
+import { compressImage } from "../utils/image";
 import {
   getPublicListingsCount,
   LISTINGS_PUBLIC_LIMIT,
@@ -33,6 +40,8 @@ function CreateGroupPage() {
     new Set(),
   );
   const [creating, setCreating] = useState(false);
+  const [avatar, setAvatar] = useState("");
+  const [processingAvatar, setProcessingAvatar] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<"all" | "contacts" | "community">(
     "all",
@@ -41,6 +50,7 @@ function CreateGroupPage() {
   const [autoApprove, setAutoApprove] = useState(false);
   const [publicCount, setPublicCount] = useState(0);
   const [publicError, setPublicError] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -131,6 +141,7 @@ function CreateGroupPage() {
       const groupId = await groupService.createGroup(
         groupName,
         description,
+        avatar,
         Array.from(selectedContacts),
         myPublicKey,
         userName,
@@ -163,6 +174,31 @@ function CreateGroupPage() {
   const defaultAvatar =
     "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23cbd5e1'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E";
 
+  const handleAvatarFileSelect = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+
+    if (!file.type.startsWith("image/")) {
+      alert("Please select a valid image.");
+      return;
+    }
+
+    try {
+      setProcessingAvatar(true);
+      const compressedBase64 = await compressImage(file, 600, 600, 0.75);
+      setAvatar(compressedBase64);
+    } catch (err) {
+      console.error("❌ [CreateGroup] Avatar processing failed:", err);
+      alert("Failed to process the image. Please try another one.");
+    } finally {
+      setProcessingAvatar(false);
+    }
+  };
+
   return (
     <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-900">
       <div className="bg-primary-600 dark:bg-gray-800 text-white p-4 flex items-center gap-3 shadow-sm border-b dark:border-gray-700">
@@ -187,6 +223,58 @@ function CreateGroupPage() {
           </div>
 
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 space-y-4">
+            <div className="flex flex-col items-center gap-3">
+              <input
+                type="file"
+                ref={fileInputRef}
+                className="hidden"
+                accept="image/*"
+                onChange={handleAvatarFileSelect}
+              />
+
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={processingAvatar}
+                className="relative group/avatar"
+              >
+                <div className="w-24 h-24 rounded-full overflow-hidden bg-gray-100 dark:bg-gray-700 shadow-md flex items-center justify-center">
+                  {avatar ? (
+                    <img
+                      src={avatar}
+                      alt={groupName || "Group avatar"}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <span className="text-3xl font-bold text-primary-600 dark:text-primary-400">
+                      {groupName.trim().charAt(0).toUpperCase() || "G"}
+                    </span>
+                  )}
+                </div>
+                <div className="absolute inset-0 rounded-full bg-black/35 text-white flex items-center justify-center opacity-0 group-hover/avatar:opacity-100 transition-opacity">
+                  {processingAvatar ? (
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
+                  ) : (
+                    <Camera size={22} />
+                  )}
+                </div>
+              </button>
+
+              <div className="text-center">
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Group Image
+                </p>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={processingAvatar}
+                  className="text-xs text-primary-600 dark:text-primary-400 hover:underline disabled:opacity-50"
+                >
+                  {avatar ? "Change image" : "Upload image"}
+                </button>
+              </div>
+            </div>
+
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Group Name *

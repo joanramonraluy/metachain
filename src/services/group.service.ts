@@ -24,6 +24,7 @@ export interface GroupMember {
   username: string;
   joined_date: number;
   role: string;
+  avatar?: string;
 }
 
 export interface GroupMessage {
@@ -41,6 +42,8 @@ export interface GroupMessage {
   reply_to_text?: string | null;
   reply_to_sender?: string | null;
   reply_to_type?: string | null;
+  deleted?: number;
+  deleted_at?: number;
 }
 
 // MAXIMA message types for group communication
@@ -60,11 +63,12 @@ export interface GroupMaximaMessage {
     | "group_join_request_resolved"
     | "group_update_details"
     | "group_role_update"
-    | "group_address_beacon";
+    | "group_address_beacon"
+    | "message_deleted";
   groupId: string;
-  groupName: string;
-  senderPublickey: string;
-  senderUsername: string;
+  groupName?: string;
+  senderPublickey?: string;
+  senderUsername?: string;
   timestamp: number;
   auto_approve?: boolean;
 
@@ -75,7 +79,12 @@ export interface GroupMaximaMessage {
   seq?: number; // Per-sender sequence number for gap detection
   customid?: string;
   forwarded?: boolean;
-  replyTo?: { customid: string; text: string; senderName: string; type: string } | null;
+  replyTo?: {
+    customid: string;
+    text: string;
+    senderName: string;
+    type: string;
+  } | null;
 
   // For group_update_details and history_response:
   newName?: string;
@@ -169,6 +178,7 @@ class GroupService {
   async createGroup(
     name: string,
     description: string,
+    avatar: string,
     memberPublicKeys: string[],
     myPublicKey: string,
     myUsername: string,
@@ -181,8 +191,8 @@ class GroupService {
     try {
       // 1. Create group in database
       const createGroupSql = `
-                INSERT INTO GROUPS (group_id, name, creator_publickey, created_date, description, is_public, auto_approve)
-                VALUES ('${groupId}', '${name.replace(/'/g, "''")}', UPPER('${myPublicKey}'), ${now}, '${description.replace(/'/g, "''")}', ${isPublic ? 1 : 0}, ${autoApprove ? 1 : 0})
+                INSERT INTO GROUPS (group_id, name, creator_publickey, created_date, description, avatar, is_public, auto_approve)
+                VALUES ('${groupId}', '${name.replace(/'/g, "''")}', UPPER('${myPublicKey}'), ${now}, '${description.replace(/'/g, "''")}', '${(avatar || "").replace(/'/g, "''")}', ${isPublic ? 1 : 0}, ${autoApprove ? 1 : 0})
             `;
       await this.runSQL(createGroupSql);
       console.log("✅ [GROUP-MGMT] Created:", groupId);
@@ -215,7 +225,7 @@ class GroupService {
             groupId,
             name,
             description,
-            "",
+            avatar || "",
             memberPubkey,
             myPublicKey,
             myUsername,
@@ -875,7 +885,9 @@ class GroupService {
       const sql = `
                 SELECT
                     m.*,
-                    COALESCE(d.alias, u.alias, m.username) as resolved_name
+                    COALESCE(d.alias, u.alias, m.username) as resolved_name,
+                    d.avatar as discovered_avatar,
+                    d.extra_data as discovered_extra_data
                 FROM GROUP_MEMBERS m
                 LEFT JOIN DISCOVERED_PEERS d ON UPPER(m.publickey) = UPPER(d.publickey)
                 LEFT JOIN METACHAIN_USERS u ON UPPER(m.publickey) = UPPER(u.publickey)
@@ -892,12 +904,36 @@ class GroupService {
         ).trim();
         if (!memberPubkey) continue;
 
+        let memberAvatar = row.DISCOVERED_AVATAR || row.discovered_avatar || "";
+        if (
+          !memberAvatar &&
+          (row.DISCOVERED_EXTRA_DATA || row.discovered_extra_data)
+        ) {
+          try {
+            const parsedExtra =
+              typeof (
+                row.DISCOVERED_EXTRA_DATA || row.discovered_extra_data
+              ) === "string"
+                ? JSON.parse(
+                    row.DISCOVERED_EXTRA_DATA || row.discovered_extra_data,
+                  )
+                : row.DISCOVERED_EXTRA_DATA || row.discovered_extra_data;
+            memberAvatar = parsedExtra.avatar || parsedExtra.icon || "";
+          } catch (err) {
+            console.warn(
+              "⚠️ [GROUP-MEMBER] Failed to parse member avatar from extra_data:",
+              err,
+            );
+          }
+        }
+
         normalizedMembers.push({
           ...(row as GroupMember),
           publickey: memberPubkey,
           username: row.USERNAME || row.username || "Unknown",
           joined_date: Number(row.JOINED_DATE || row.joined_date || Date.now()),
           role: row.ROLE || row.role || "member",
+          avatar: memberAvatar,
           group_id: row.GROUP_ID || row.group_id || groupId,
           // Preserve uppercase aliases because legacy callers still read raw SQL casing.
           PUBLICKEY: memberPubkey,
@@ -941,7 +977,12 @@ class GroupService {
     myUsername: string,
     filedata: string = "",
     forwarded: boolean = false,
-    replyTo?: { customid: string; text: string; senderName: string; type: string } | null,
+    replyTo?: {
+      customid: string;
+      text: string;
+      senderName: string;
+      type: string;
+    } | null,
   ): Promise<void> {
     try {
       const now = Date.now();
@@ -979,7 +1020,7 @@ class GroupService {
       const replyToType = replyTo?.type?.replace(/'/g, "''") ?? null;
       const insertSql = `
                 INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read, sender_seq, customid, forwarded, reply_to_customid, reply_to_text, reply_to_sender, reply_to_type)
-                VALUES ('${groupId}', UPPER('${myPublicKey}'), '${myUsername.replace(/'/g, "''")}', '${type}', '${escapedMsg}', '${filedata}', ${now}, 1, ${mySeq}, '${customId}', ${forwarded ? 1 : 0}, ${replyToCustomid ? `'${replyToCustomid}'` : 'NULL'}, ${replyToText ? `'${replyToText}'` : 'NULL'}, ${replyToSender ? `'${replyToSender}'` : 'NULL'}, ${replyToType ? `'${replyToType}'` : 'NULL'})
+                VALUES ('${groupId}', UPPER('${myPublicKey}'), '${myUsername.replace(/'/g, "''")}', '${type}', '${escapedMsg}', '${filedata}', ${now}, 1, ${mySeq}, '${customId}', ${forwarded ? 1 : 0}, ${replyToCustomid ? `'${replyToCustomid}'` : "NULL"}, ${replyToText ? `'${replyToText}'` : "NULL"}, ${replyToSender ? `'${replyToSender}'` : "NULL"}, ${replyToType ? `'${replyToType}'` : "NULL"})
             `;
       await this.runSQL(insertSql);
 
@@ -1077,14 +1118,43 @@ class GroupService {
         sender_seq: Number(row.SENDER_SEQ || row.sender_seq || 0),
         customid: row.CUSTOMID || row.customid || "",
         forwarded: row.FORWARDED == 1 || row.forwarded == 1,
-        reply_to_customid: row.REPLY_TO_CUSTOMID || row.reply_to_customid || null,
+        reply_to_customid:
+          row.REPLY_TO_CUSTOMID || row.reply_to_customid || null,
         reply_to_text: row.REPLY_TO_TEXT || row.reply_to_text || null,
         reply_to_sender: row.REPLY_TO_SENDER || row.reply_to_sender || null,
         reply_to_type: row.REPLY_TO_TYPE || row.reply_to_type || null,
+        deleted: row.DELETED === 1 || row.DELETED === "1" ? 1 : 0,
+        deleted_at: Number(row.DELETED_AT || row.deleted_at || 0),
       }));
     } catch (err) {
       console.error("❌ [GROUP-MSG] Failed to get messages:", err);
       return [];
+    }
+  }
+
+  async deleteGroupMessage(groupId: string, customid: string): Promise<void> {
+    const safeGroupId = groupId.replace(/'/g, "''");
+    const safeCustomId = customid.replace(/'/g, "''");
+    const sql = `UPDATE GROUP_MESSAGES SET deleted=1, deleted_at=${Date.now()} WHERE UPPER(group_id)=UPPER('${safeGroupId}') AND customid='${safeCustomId}'`;
+    await this.runSQL(sql);
+  }
+
+  async sendGroupDeleteMessage(
+    groupId: string,
+    customid: string,
+    members: GroupMember[],
+    myPublicKey: string,
+  ): Promise<void> {
+    const payload: GroupMaximaMessage = {
+      messageType: "message_deleted",
+      groupId,
+      customid,
+      timestamp: Date.now(),
+    };
+    for (const member of members) {
+      if (member.publickey?.toUpperCase() === myPublicKey?.toUpperCase())
+        continue;
+      await this.sendMaximaMessage(member.publickey, payload).catch(() => {});
     }
   }
 

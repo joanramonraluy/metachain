@@ -4,7 +4,7 @@ import Lottie from "lottie-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { Forward, Copy, Check, Reply } from "lucide-react";
+import { Forward, Copy, Check, Reply, Trash2 } from "lucide-react";
 import ForwardModal from "./ForwardModal";
 
 // Dynamic import of all .json files
@@ -30,6 +30,8 @@ interface MessageBubbleProps {
   showAvatar?: boolean;
   replyTo?: { customid: string; text: string; senderName: string; type: string } | null;
   onReply?: () => void;
+  deleted?: boolean;
+  onDelete?: () => void;
 }
 
 // Flying money emoji component
@@ -89,7 +91,7 @@ const ConfettiParticle = ({ delay = 0, color }: { delay?: number; color: string 
 
 const defaultAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23cbd5e1'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E";
 
-export default function MessageBubble({ fromMe, text, charm, amount, timestamp, status, tokenAmount, senderName, senderImage, onAvatarClick, type, filedata, forwarded, currentChatId, showName = true, showAvatar = true, replyTo, onReply }: MessageBubbleProps) {
+export default function MessageBubble({ fromMe, text, charm, amount, timestamp, status, tokenAmount, senderName, senderImage, onAvatarClick, type, filedata, forwarded, currentChatId, showName = true, showAvatar = true, replyTo, onReply, deleted, onDelete }: MessageBubbleProps) {
   const isCharm = !!charm;
   const isTokenTransfer = !!tokenAmount;
   const isImage = type === 'image' || (filedata && filedata.startsWith('data:image')); // Detect images
@@ -324,6 +326,21 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
                         </div>
                       </button>
                     )}
+                    {onDelete && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDelete();
+                          setShowActions(false);
+                        }}
+                        className="flex items-center gap-3 px-4 py-3 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 text-[13px] font-bold transition-all active:scale-95 text-left w-full"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Trash2 size={16} />
+                          <span>Delete</span>
+                        </div>
+                      </button>
+                    )}
                     {text && (
                       <button
                         onClick={(e) => {
@@ -473,6 +490,26 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
       </div>
     </div>
   );
+
+  if (deleted) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className={`flex flex-col w-full px-2 ${alignment}`}
+      >
+        <div className={`flex ${flexDir} gap-3 mb-2 max-w-full`}>
+          {showAvatar && <div className="w-9 flex-shrink-0" />}
+          {!showAvatar && <div className="w-9 flex-shrink-0" />}
+          <div className={`flex-1 min-w-0 flex flex-col ${fromMe ? 'items-end' : 'items-start'}`}>
+            <div className="px-4 py-2 rounded-2xl bg-gray-100 dark:bg-gray-800/50 border border-dashed border-gray-300 dark:border-gray-600 text-gray-400 dark:text-gray-500 text-sm italic">
+              This message was deleted
+            </div>
+          </div>
+        </div>
+      </motion.div>
+    );
+  }
 
   if (!text && !charm && !tokenAmount && !isImage) {
     return null;

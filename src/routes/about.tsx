@@ -1,110 +1,202 @@
 import { createFileRoute } from "@tanstack/react-router"
-import { Info as InfoIcon, Shield, Zap, Heart, Github, Globe, ExternalLink } from "lucide-react"
+import {
+  Shield,
+  Zap,
+  Globe,
+  Github,
+  ExternalLink,
+  Cpu,
+  Lock,
+  Network,
+  CheckCircle2,
+} from "lucide-react"
 
 export const Route = createFileRoute("/about")({
   component: About,
 })
 
 function About() {
-  const appVersion = "0.0.1"; // You might want to pull this from package.json or config
+  const appVersion = "0.9"
 
   return (
-    <div className="h-full overflow-y-auto bg-gray-50 dark:bg-gray-900 transition-colors">
-      <div className="max-w-3xl mx-auto p-6 space-y-8">
+    <div className="h-full overflow-y-auto bg-gray-50 dark:bg-gray-950 transition-colors">
+      <div className="max-w-4xl mx-auto p-4 sm:p-8 space-y-12">
+        {/* Premium Hero Section */}
+        <div className="relative bg-white dark:bg-gray-900 rounded-[2.5rem] shadow-2xl shadow-primary-500/10 border border-gray-100 dark:border-gray-800 p-10 sm:p-16 text-center overflow-hidden transition-all group">
+          {/* Animated Background Elements */}
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary-500 via-indigo-500 to-violet-500"></div>
+          <div className="absolute -top-24 -right-24 w-64 h-64 bg-primary-500/10 rounded-full blur-3xl group-hover:scale-125 transition-transform duration-1000"></div>
+          <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-violet-500/10 rounded-full blur-3xl group-hover:scale-125 transition-transform duration-1000 delay-200"></div>
 
-        {/* Hero Section */}
-        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-8 text-center relative overflow-hidden transition-colors">
-          <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-primary-500 via-purple-500 to-pink-500"></div>
-
-          <div className="w-20 h-20 bg-primary-50 rounded-2xl mx-auto flex items-center justify-center mb-4 text-primary-600 shadow-sm">
-            <Zap size={40} fill="currentColor" className="text-primary-500" />
-          </div>
-
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">MetaChain</h1>
-          <p className="text-gray-500 dark:text-gray-400 font-medium mb-6">v{appVersion}</p>
-
-          <p className="text-gray-600 dark:text-gray-300 leading-relaxed max-w-lg mx-auto">
-            Experience the future of decentralized messaging. Send messages, share Charms, and transfer tokens securely on the Minima network.
-          </p>
-        </div>
-
-        {/* Features Grid */}
-        <div className="grid md:grid-cols-3 gap-4">
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 hover:shadow-md transition-shadow">
-            <div className="w-10 h-10 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-center text-green-600 dark:text-green-400 mb-4">
-              <Shield size={20} />
+          <div className="relative z-10">
+            <div className="w-24 h-24 bg-gradient-to-br from-primary-500 to-indigo-600 rounded-[2rem] mx-auto flex items-center justify-center mb-8 shadow-xl shadow-primary-500/20 transform group-hover:rotate-12 transition-transform duration-700">
+              <Zap size={48} className="text-white fill-white/20" />
             </div>
-            <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Secure & Private</h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              End-to-end encrypted messaging powered by the Minima blockchain. Your data stays yours.
-            </p>
-          </div>
 
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 hover:shadow-md transition-shadow">
-            <div className="w-10 h-10 bg-purple-100 dark:bg-purple-900/30 rounded-lg flex items-center justify-center text-purple-600 dark:text-purple-400 mb-4">
-              <Heart size={20} />
+            <h1 className="text-5xl sm:text-6xl font-black text-gray-900 dark:text-white mb-4 tracking-tighter">
+              MetaChain
+            </h1>
+            <div className="inline-flex items-center gap-2 px-4 py-1 bg-gray-100 dark:bg-gray-800 rounded-full mb-8">
+              <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
+              <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest">
+                Version {appVersion} • Stable
+              </span>
             </div>
-            <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Expressive</h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Send unique "Charms" to your friends to show appreciation or just say hello in style.
-            </p>
-          </div>
 
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 hover:shadow-md transition-shadow">
-            <div className="w-10 h-10 bg-orange-100 dark:bg-orange-900/30 rounded-lg flex items-center justify-center text-orange-600 dark:text-orange-400 mb-4">
-              <Zap size={20} />
-            </div>
-            <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Fast & Free</h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Instant peer-to-peer transactions with no middleman and minimal fees.
+            <p className="text-xl text-gray-600 dark:text-gray-400 leading-relaxed max-w-2xl mx-auto font-medium">
+              The full-power decentralized messaging layer. Secure,
+              private, and unstoppable communication on the Minima network.
             </p>
           </div>
         </div>
 
-        {/* Resources Section */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden transition-colors">
-          <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/50">
-            <h3 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-              <InfoIcon size={18} className="text-primary-500" />
-              Resources
+        {/* The Technical Pillars */}
+        <div className="space-y-6">
+          <div className="flex items-center justify-between mb-2 px-2">
+            <h2 className="text-2xl font-black text-gray-900 dark:text-white tracking-tight">
+              Technical Pillars
+            </h2>
+            <div className="h-px flex-1 mx-6 bg-gray-200 dark:bg-gray-800"></div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="bg-white dark:bg-gray-900 p-8 rounded-[2rem] border border-gray-100 dark:border-gray-800 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+              <div className="w-14 h-14 bg-blue-50 dark:bg-blue-900/30 rounded-2xl flex items-center justify-center text-blue-600 dark:text-blue-400 mb-6">
+                <Lock size={28} />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-3">
+                Quantum Secure
+              </h3>
+              <p className="text-gray-500 dark:text-gray-400 leading-relaxed">
+                Built on Minima's post-quantum algorithms, ensuring your 
+                conversations remain private even against future computing power.
+              </p>
+            </div>
+
+            <div className="bg-white dark:bg-gray-900 p-8 rounded-[2rem] border border-gray-100 dark:border-gray-800 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+              <div className="w-14 h-14 bg-indigo-50 dark:bg-indigo-900/30 rounded-2xl flex items-center justify-center text-indigo-600 dark:text-indigo-400 mb-6">
+                <Network size={28} />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-3">
+                NIO P2P
+              </h3>
+              <p className="text-gray-500 dark:text-gray-400 leading-relaxed">
+                Direct peer-to-peer communication via Minima's Network In-Out 
+                layer. Truly serverless, reactive, and censorship-resistant.
+              </p>
+            </div>
+
+            <div className="bg-white dark:bg-gray-900 p-8 rounded-[2rem] border border-gray-100 dark:border-gray-800 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+              <div className="w-14 h-14 bg-emerald-50 dark:bg-emerald-900/30 rounded-2xl flex items-center justify-center text-emerald-600 dark:text-emerald-400 mb-6">
+                <Cpu size={28} />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-3">
+                Full-Node Hub
+              </h3>
+              <p className="text-gray-500 dark:text-gray-400 leading-relaxed">
+                Runs entirely on your device. No central cloud, no data mining, 
+                no hidden tracking. Your node is your sovereign gateway.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Resources & Engineering Card */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          {/* Network Health / Engineering Status */}
+          <div className="bg-gradient-to-br from-gray-900 to-black rounded-[2.5rem] p-10 text-white shadow-2xl overflow-hidden relative group">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -mr-16 -mt-16 blur-2xl group-hover:scale-150 transition-transform duration-700"></div>
+            
+            <h3 className="text-2xl font-bold mb-6 flex items-center gap-3">
+              <Shield className="text-primary-400" />
+              Engineering
             </h3>
-          </div>
-          <div className="divide-y divide-gray-100 dark:divide-gray-700">
-            <a
-              href="https://minima.global"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors group"
-            >
-              <div className="flex items-center gap-3">
-                <Globe size={20} className="text-gray-400 group-hover:text-primary-500 transition-colors" />
-                <span className="text-gray-700 dark:text-gray-300 font-medium">Minima Website</span>
-              </div>
-              <ExternalLink size={16} className="text-gray-400" />
-            </a>
+            
+            <ul className="space-y-4 mb-8">
+              <li className="flex items-center gap-3 text-gray-300">
+                <CheckCircle2 size={18} className="text-emerald-400 shrink-0" />
+                <span>Base Protocol: Minima v1.0+</span>
+              </li>
+              <li className="flex items-center gap-3 text-gray-300">
+                <CheckCircle2 size={18} className="text-emerald-400 shrink-0" />
+                <span>Runtime: React 19 + Service Worker</span>
+              </li>
+              <li className="flex items-center gap-3 text-gray-300">
+                <CheckCircle2 size={18} className="text-emerald-400 shrink-0" />
+                <span>Network: Encrypted NIO Beacons</span>
+              </li>
+              <li className="flex items-center gap-3 text-gray-300">
+                <CheckCircle2 size={18} className="text-emerald-400 shrink-0" />
+                <span>Persistence: Embedded SQLite</span>
+              </li>
+            </ul>
 
-            <a
-              href="https://github.com/minima-global"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors group"
+            <button 
+              className="w-full py-4 bg-white/10 hover:bg-white/20 border border-white/10 rounded-2xl text-sm font-bold transition-all active:scale-[0.98]"
+              onClick={() => window.open('https://minima.global', '_blank')}
             >
-              <div className="flex items-center gap-3">
-                <Github size={20} className="text-gray-400 group-hover:text-gray-900 dark:group-hover:text-white transition-colors" />
-                <span className="text-gray-700 dark:text-gray-300 font-medium">Source Code</span>
+              Explore Protocol Docs
+            </button>
+          </div>
+
+          {/* Resources List */}
+          <div className="bg-white dark:bg-gray-900 rounded-[2.5rem] p-10 border border-gray-100 dark:border-gray-800 shadow-sm flex flex-col justify-between">
+            <div>
+              <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
+                Official Resources
+              </h3>
+              <div className="space-y-3">
+                <a
+                  href="https://minima.global"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-between p-5 bg-gray-50/50 dark:bg-gray-800/50 rounded-2xl hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-all group"
+                >
+                  <div className="flex items-center gap-4">
+                    <Globe size={24} className="text-gray-400 group-hover:text-primary-500 transition-colors" />
+                    <div>
+                      <h4 className="font-bold text-gray-900 dark:text-white">Minima Network</h4>
+                      <p className="text-xs text-gray-500">Official ecosystem portal</p>
+                    </div>
+                  </div>
+                  <ExternalLink size={18} className="text-gray-400 group-hover:text-primary-500 transition-all" />
+                </a>
+
+                <a
+                  href="https://github.com/minima-global"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-between p-5 bg-gray-50/50 dark:bg-gray-800/50 rounded-2xl hover:bg-gray-900 dark:hover:bg-white transition-all group"
+                >
+                  <div className="flex items-center gap-4">
+                    <Github size={24} className="text-gray-400 group-hover:text-white dark:group-hover:text-gray-900 transition-colors" />
+                    <div>
+                      <h4 className="font-bold text-gray-900 dark:text-white group-hover:text-white dark:group-hover:text-gray-900">Source Code</h4>
+                      <p className="text-xs text-gray-500 group-hover:text-white/60 dark:group-hover:text-gray-900/60">Contribute on GitHub</p>
+                    </div>
+                  </div>
+                  <ExternalLink size={18} className="text-gray-400 group-hover:text-white dark:group-hover:text-gray-900 transition-all" />
+                </a>
               </div>
-              <ExternalLink size={16} className="text-gray-400" />
-            </a>
+            </div>
+
+            <div className="mt-8 text-center sm:text-left">
+               <p className="text-xs text-gray-400 font-medium uppercase tracking-widest">
+                 Open-Source • Community Driven
+               </p>
+            </div>
           </div>
         </div>
 
         {/* Footer */}
-        <div className="text-center pt-4 pb-8">
-          <p className="text-sm text-gray-400 flex items-center justify-center gap-1">
-            Powered by <span className="font-bold text-gray-500">Minima</span>
+        <div className="text-center pt-8 pb-12 border-t border-gray-100 dark:border-gray-800">
+          <p className="text-sm text-gray-400 font-medium flex items-center justify-center gap-2">
+            Powered by <span className="font-black text-gray-500 hover:text-primary-500 transition-colors">MINIMA</span>
+          </p>
+          <p className="text-[10px] text-gray-500 mt-2 uppercase tracking-[0.3em]">
+            Decentralized Social Intelligence
           </p>
         </div>
-
       </div>
     </div>
   )

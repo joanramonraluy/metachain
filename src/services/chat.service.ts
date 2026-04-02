@@ -31,6 +31,8 @@ export interface ChatMessage {
   reply_to_text?: string | null;
   reply_to_sender?: string | null;
   reply_to_type?: string | null;
+  deleted?: number;
+  deleted_at?: number;
 }
 
 export type MessageCallback = (msg: any) => void;
@@ -41,6 +43,26 @@ class ChatService {
   private archiveStatusCallbacks: (() => void)[] = [];
   private favoriteStatusCallbacks: (() => void)[] = [];
   private chatListUpdateCallbacks: (() => void)[] = [];
+
+  private extractDiscoveryAvatar(row: any) {
+    const directAvatar = row.DISCOVERY_AVATAR || row.discovery_avatar;
+    if (directAvatar) return directAvatar;
+
+    const extraData = row.DISCOVERY_EXTRA_DATA || row.discovery_extra_data;
+    if (!extraData) return "";
+
+    try {
+      const parsed =
+        typeof extraData === "string" ? JSON.parse(extraData) : extraData;
+      return parsed.avatar || parsed.icon || "";
+    } catch (err) {
+      console.warn(
+        "⚠️ [CHAT-SERVICE] Failed to parse discovery extra_data avatar:",
+        err,
+      );
+      return "";
+    }
+  }
 
   /* ----------------------------------------------------------------------------
       BADGE / NOTIFICATION MANAGEMENT (Android "Badge" via Notifications)
@@ -445,10 +467,18 @@ class ChatService {
       sender_seq === null || sender_seq === undefined ? "0" : sender_seq;
     const sqlForwarded = forwarded ? 1 : 0;
 
-    const sqlReplyCustomId = reply_to_customid ? `'${reply_to_customid.replace(/'/g, "''")}'` : "NULL";
-    const sqlReplyText = reply_to_text ? `'${reply_to_text.replace(/'/g, "''")}'` : "NULL";
-    const sqlReplySender = reply_to_sender ? `'${reply_to_sender.replace(/'/g, "''")}'` : "NULL";
-    const sqlReplyType = reply_to_type ? `'${reply_to_type.replace(/'/g, "''")}'` : "NULL";
+    const sqlReplyCustomId = reply_to_customid
+      ? `'${reply_to_customid.replace(/'/g, "''")}'`
+      : "NULL";
+    const sqlReplyText = reply_to_text
+      ? `'${reply_to_text.replace(/'/g, "''")}'`
+      : "NULL";
+    const sqlReplySender = reply_to_sender
+      ? `'${reply_to_sender.replace(/'/g, "''")}'`
+      : "NULL";
+    const sqlReplyType = reply_to_type
+      ? `'${reply_to_type.replace(/'/g, "''")}'`
+      : "NULL";
 
     const sql = `
             INSERT INTO CHAT_MESSAGES (roomname,publickey,username,type,message,filedata,state,amount,date,customid,sender_seq,original_timestamp,forwarded,reply_to_customid,reply_to_text,reply_to_sender,reply_to_type)
@@ -478,6 +508,18 @@ class ChatService {
       console.error("❌ [SQL] INSERT failed:", err);
       console.error("❌ [SQL] FAILED QUERY:", sql);
     }
+  }
+
+  deleteChatMessage(customid: string, publickey: string): Promise<void> {
+    return new Promise((resolve) => {
+      const safeCustomId = escapeSql(customid);
+      const safeKey = escapeSql(publickey);
+      const sql = `UPDATE CHAT_MESSAGES SET deleted=1, deleted_at=${Date.now()} WHERE customid='${safeCustomId}' AND UPPER(publickey)=UPPER('${safeKey}')`;
+      MDS.sql(sql, (res: any) => {
+        if (!res.status) console.error("❌ [CHAT-DELETE] Failed:", res.error);
+        resolve();
+      });
+    });
   }
 
   updateMessageState(
@@ -527,7 +569,9 @@ class ChatService {
                 ORDER BY COALESCE(original_timestamp, date) ASC, CASE WHEN sender_seq > 0 THEN sender_seq ELSE 999999 END ASC, id ASC
             `;
 
-      console.log(`🔍 [DB] Fetching messages for keys: ${validKeys.join(", ")}`);
+      console.log(
+        `🔍 [DB] Fetching messages for keys: ${validKeys.join(", ")}`,
+      );
 
       MDS.sql(sql, (res: any) => {
         if (!res.status || !res.rows) {
@@ -606,6 +650,7 @@ class ChatService {
                     s.favorite,
                     COALESCE(d.alias, u.alias) AS discovery_alias,
                     d.avatar AS discovery_avatar,
+                    d.extra_data AS discovery_extra_data,
                     d.address AS discovery_address,
                     COALESCE(unread.unread_count, 0) AS unread_count,
                     COALESCE(last_incoming.last_received_date, 0) AS last_received_date
@@ -622,7 +667,7 @@ class ChatService {
                 ) latest
                 LEFT JOIN CHAT_STATUS s ON UPPER(latest.publickey) = UPPER(s.publickey)
                 LEFT JOIN (
-                    SELECT UPPER(publickey) AS pubkey_upper, MIN(alias) AS alias, MIN(avatar) AS avatar, MIN(address) AS address
+                    SELECT UPPER(publickey) AS pubkey_upper, MIN(alias) AS alias, MIN(avatar) AS avatar, MIN(extra_data) AS extra_data, MIN(address) AS address
                     FROM DISCOVERED_PEERS
                     GROUP BY UPPER(publickey)
                 ) d ON UPPER(latest.publickey) = d.pubkey_upper
@@ -691,7 +736,7 @@ class ChatService {
               publickey: row.PUBLICKEY,
               currentaddress: row.DISCOVERY_ADDRESS,
               roomname: row.DISCOVERY_ALIAS || row.ROOMNAME || "Unknown",
-              avatar: row.DISCOVERY_AVATAR,
+              avatar: this.extractDiscoveryAvatar(row),
               lastMessage: row.MESSAGE,
               lastMessageType: row.TYPE,
               lastMessageDate: displayDate,
@@ -730,6 +775,7 @@ class ChatService {
                 s.favorite,
                 COALESCE(d.alias, u.alias) as discovery_alias,
                 d.avatar as discovery_avatar,
+                d.extra_data as discovery_extra_data,
                 d.address as discovery_address
             FROM CHAT_MESSAGES m
             LEFT JOIN CHAT_STATUS s ON UPPER(m.publickey) = UPPER(s.publickey)
@@ -778,7 +824,7 @@ class ChatService {
           publickey: row.PUBLICKEY,
           currentaddress: row.DISCOVERY_ADDRESS,
           roomname: row.DISCOVERY_ALIAS || row.ROOMNAME || "Unknown",
-          avatar: row.DISCOVERY_AVATAR,
+          avatar: this.extractDiscoveryAvatar(row),
           lastMessage: row.MESSAGE,
           lastMessageType: row.TYPE,
           lastMessageDate: displayDate,

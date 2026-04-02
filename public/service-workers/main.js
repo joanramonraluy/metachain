@@ -13,7 +13,7 @@
 // ============================================================================
 
 // Configuration
-var SW_DEBUG = false; // Set to true to see verbose payload and latency logs
+var SW_DEBUG = true; // Set to true to see verbose payload and latency logs
 
 
 // Flag to ensure startup cleanup runs once after DB is ready (triggered by first NEWBLOCK)
@@ -332,6 +332,14 @@ MDS.init(function (msg) {
           return;
         }
 
+        if (
+          app === "metachain-group" &&
+          maxjson.messageType === "message_deleted"
+        ) {
+          handleGroupMessageDeleted(pubkey, maxjson);
+          return;
+        }
+
         if (app === "metachain-group") {
           MDS.log(
             "⚠️ [SW] Unhandled metachain-group message type: " +
@@ -398,6 +406,14 @@ MDS.init(function (msg) {
 
         if (
           app === "metachain-channel" &&
+          maxjson.messageType === "message_deleted"
+        ) {
+          handleChannelMessageDeleted(pubkey, maxjson);
+          return;
+        }
+
+        if (
+          app === "metachain-channel" &&
           maxjson.messageType === "channel_history_request"
         ) {
           handleChannelHistoryRequest(pubkey, maxjson);
@@ -430,6 +446,11 @@ MDS.init(function (msg) {
 
         if (maxjson.type === "pong") {
           handlePong(pubkey);
+          return;
+        }
+
+        if (maxjson.type === "message_deleted") {
+          handleChatMessageDeleted(pubkey, maxjson);
           return;
         }
 
