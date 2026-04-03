@@ -1,6 +1,6 @@
 # AGENTS.md - MetaChain Engineering Guide
 
-Last reviewed against codebase: 2026-04-01 (commit `d058eb75` + Group photo sync fix + GroupService event listener + Discovery default view set to 'all' + Log optimization strategy + Reply-to-message feature + Reply-to bug fixes: DM Phase 2 drop, channel customid guard, group handler param pass-through)
+Last reviewed against codebase: 2026-04-03 (commit `4ac7ec0b` + Delete messages in DMs, Groups and Channels: propagation fixes, SW handler role-check removal, case-insensitive group_id/channel_id WHERE clauses, subscriber PUBLICKEY casing fix)
 Scope: `/home/joanramon/Minima/metachain`
 
 ## 0) Mandatory Update Mandate (Required)
@@ -272,6 +272,25 @@ Do not create independent history merge algorithms in FE.
 | `chat_history_request` / `chat_history_response` | SW `chat.handler.js` | SW | `CHAT_MESSAGES` | `CHAT_LIST_UPDATE` via `MDS.comms.solo` |
 | `channel_history_request` / `channel_history_response` | SW `channel.handler.js` | SW | `CHANNEL_MESSAGES` | `CHANNEL_SYNC_START`, `CHANNEL_SYNC_END` via `MDS.comms.solo` |
 | `channel_subscriber_added` / `channel_subscriber_removed` | SW `channel.handler.js` | SW | `CHANNEL_SUBSCRIBERS` | `CHANNEL_UPDATE` via `MDS.comms.solo` |
+| `message_deleted` | FE `messaging.service.ts` → Maxima → SW `chat.handler.js` | SW | `CHAT_MESSAGES` (`deleted=1`, `deleted_at`) | `CHAT_LIST_UPDATE` via `MDS.comms.solo` |
+| `group_invite` | FE `group.service.ts` → Maxima → SW `group.handler.js` | SW | `GROUPS`, `GROUP_MEMBERS`, `GROUP_BANS`, `GROUP_MESSAGES` (system) | `group_list_updated`, `group_sync_start` via `MDS.comms.solo` |
+| `group_message` | FE `group.service.ts` → Maxima fanout → SW `group.handler.js` | SW | `GROUP_MESSAGES` | (polled by FE via sync) |
+| `group_member_added` / `group_member_removed` | FE `group.service.ts` → Maxima fanout → SW `group.handler.js` | SW | `GROUP_MEMBERS` | `{ type: "group_update", groupId }` via `MDS.comms.solo` |
+| `group_member_unbanned` | FE `group.service.ts` → Maxima fanout → SW `group.handler.js` | SW | `GROUP_BANS` | `{ type: "group_update", groupId }` via `MDS.comms.solo` |
+| `group_update_details` | FE `group.service.ts` → Maxima fanout → SW `group.handler.js` | SW | `GROUPS` | `{ type: "group_update", groupId, ... }` via `MDS.comms.solo` |
+| `group_role_update` | FE `group.service.ts` → Maxima fanout → SW `group.handler.js` | SW | `GROUP_MEMBERS` | `{ type: "group_update", groupId }` via `MDS.comms.solo` |
+| `group_join_request` / `group_join_request_propagated` / `group_join_request_resolved` | FE `group.service.ts` → Maxima → SW `group.handler.js` | SW | `GROUP_JOIN_REQUESTS`, `GROUP_MEMBERS` | `{ type: "group_join_requests_update", groupId }` via `MDS.comms.solo` |
+| `history_request` / `history_response` (groups) | SW `group.handler.js` | SW | `GROUP_MESSAGES` | `GROUP_SYNC_START`, `GROUP_SYNC_END` via `MDS.comms.solo` |
+| `group_message_deleted` | FE `group.service.ts` → Maxima fanout to `GROUP_MEMBERS` → SW `group.handler.js` | SW | `GROUP_MESSAGES` (`deleted=1`, `deleted_at`) | `{ type: "GROUP_MESSAGE_DELETED", groupId, customId }` via `MDS.comms.solo` |
+| `channel_invite` | FE `channel.service.ts` → Maxima → SW `channel.handler.js` | SW | `CHANNELS`, `CHANNEL_SUBSCRIBERS` | `CHANNEL_UPDATE` via `MDS.comms.solo` |
+| `channel_message` | FE `channel.service.ts` → Maxima fanout → SW `channel.handler.js` | SW | `CHANNEL_MESSAGES`, `CHANNEL_MSG_COUNTERS` | `CHANNEL_NEW_MESSAGE` via `MDS.comms.solo` |
+| `channel_info_updated` | FE `channel.service.ts` → Maxima fanout → SW `channel.handler.js` | SW | `CHANNELS` | `CHANNEL_UPDATE` via `MDS.comms.solo` |
+| `channel_role_update` | FE `channel.service.ts` → Maxima fanout → SW `channel.handler.js` | SW | `CHANNEL_SUBSCRIBERS` | `CHANNEL_UPDATE` via `MDS.comms.solo` |
+| `channel_join_request` | FE `channel.service.ts` → Maxima → SW `channel.handler.js` (admin) | SW | `CHANNEL_SUBSCRIBERS`, `CHANNEL_MESSAGES` (system) | `CHANNEL_NEW_MESSAGE` via `MDS.comms.solo` |
+| `channel_subscriber_added` / `channel_subscriber_removed` | SW `channel.handler.js` | SW | `CHANNEL_SUBSCRIBERS` | `CHANNEL_UPDATE` via `MDS.comms.solo` |
+| `channel_history_request` / `channel_history_response` | SW `channel.handler.js` | SW | `CHANNEL_MESSAGES` | `CHANNEL_SYNC_START`, `CHANNEL_SYNC_END` via `MDS.comms.solo` |
+| `channel_message_deleted` | FE `channel.service.ts` → Maxima fanout to `CHANNEL_SUBSCRIBERS` → SW `channel.handler.js` | SW | `CHANNEL_MESSAGES` (`deleted=1`, `deleted_at`) | `{ type: "CHANNEL_MESSAGE_DELETED", channelId, senderSeq }` via `MDS.comms.solo` |
+| `ping` / `pong` | FE `messaging.service.ts` → Maxima → SW `chat.handler.js` | SW (`pong`), FE (observe `pong`) | none | none (FE listens via MDSCOMMS for presence UI) |
 | reconnect signal (`RECONNECTED`) | SW `main.js` | FE queue state | local queue/cache | offline queue + chat refresh |
 
 ### 6.5 Single Owner Per Flow (Do Not Duplicate)
@@ -448,6 +467,14 @@ When changing protocol code, log:
 
 37. **SW handler function parameter lists must exactly match the call site — missing params become `undefined`, not a ReferenceError**: In `group.handler.js`, `handleGroupMessage()` parses `grpReplyToCustomid`/`Text`/`Sender`/`Type` from the inbound payload and then calls `processGroupMessage(...)`. If these 4 variables are NOT passed as arguments, `processGroupMessage` tries to reference them as free variables — they are defined in `handleGroupMessage`'s scope, not `processGroupMessage`'s. This is fine on the sender's node (they share a scope), but crashes with `ReferenceError` on the receiver's node where `handleGroupMessage` is running in a different call context. Result: **every incoming group message crashes the SW silently** — recipients never receive messages. Fix: always pass new state variables as explicit function arguments, never rely on lexical scope bridging between sibling functions in the SW.
 
+38. **`getChannelSubscribers()` and group subscriber iterators return raw MDS SQL rows with UPPERCASE keys — `sub.publickey` is always `undefined`**: When iterating over subscriber/member lists for Maxima sends, `sub.publickey` (lowercase) is always `undefined` because MDS SQL returns columns as `PUBLICKEY` (uppercase). Calling `sendMaximaMessage(sub.publickey, payload)` silently sends to `undefined` — no error, no log, no delivery. Always use `const pk = (sub as any).PUBLICKEY || sub.publickey` to handle both casings. Use `sendChannelMessage` as the canonical reference — it already uses this pattern. Any new "send to all subscribers" loop must follow it.
+
+39. **Channel SW operation handlers must NOT apply role-based access checks on inbound notifications**: `handleChannelMessageDeleted` (and similar channel inbound handlers) must not query `CHANNEL_SUBSCRIBERS` to check if the sender is `admin`/`creator`. The role lookup can return empty rows due to key case mismatches, freshly-joined state, or DB row absence — silently blocking all propagation. Channels are admin-broadcast: only the admin publishes/deletes, so any authenticated Maxima sender of a channel operation type is trusted. Do not add role gating to inbound channel operation handlers. If authorization is needed, validate the sender pubkey against the channel's `admin_publickey`, not a live subscriber role query.
+
+40. **`group_id` and `channel_id` in SQL WHERE clauses must be case-insensitive**: `GROUP_MESSAGES.group_id` and `CHANNEL_MESSAGES.channel_id` are text columns that can be stored with different casing than the runtime value (especially after reinstall, DB migration, or cross-node invite). Exact-case WHERE clauses (`WHERE group_id='...'`) silently match 0 rows — no error, 0 affected rows. Deletes, read receipts, and all row-specific operations silently no-op. Always use `UPPER(group_id)=UPPER('...')` and `UPPER(channel_id)=UPPER('...')` in UPDATE and SELECT WHERE clauses. This applies in the TypeScript service layer (`group.service.ts`, `channel.service.ts`) and in all SW handlers (`group.handler.js`, `channel.handler.js`).
+
+41. **`loadMessagesFromDB` for groups must handle both uppercase AND lowercase `deleted` field on already-mapped objects**: The group route's `loadMessagesFromDB` in `groups.$groupId.lazy.tsx` re-maps already-mapped `GroupMessage` objects (NOT raw SQL rows). The SW maps the SQL `DELETED` column → lowercase `deleted` when normalizing messages. If the route uses only `row.DELETED` (uppercase), it always gets `undefined` → coerced to `false` → deleted messages reappear on every reload. Always check both casings: `row.DELETED === 1 || row.DELETED === "1" || row.deleted === 1 || row.deleted === "1"`. This pattern generalizes: any field read from an object that may originate from either a raw SQL row OR an already-mapped service object must handle both case variants.
+
 34. **`handleChannelInvite` must fire `CHANNEL_UPDATE` even when the channel already exists**: When a user re-joins via invite link and the channel is already present in the DB, `handleChannelInvite` was silently returning without notifying the frontend. The frontend never dispatched `CHANNEL_UPDATE`, so the channel did not appear in the chat list for the joiner. Fix: on the early-exit path, fire `MDS.comms.solo(JSON.stringify({ type: "CHANNEL_UPDATE", channelId }))` and call `requestChannelHistoryFromSW(channelId)` before returning. This also handles cases where a user reinstalls/resyncs and their DB is partially empty.
 
 ## 12) Pre-merge Checklist (Mandatory for protocol/state changes)
@@ -552,14 +579,18 @@ Expected: permission gate behavior changes accordingly and beacon updates propag
 | W | `GroupList.tsx` showed undefined name/avatar/description for all groups | `GroupList.tsx` fetched groups via `groupService.getMyGroups()` which returns objects with camelCase/lowercase keys (`group_id`, `name`, `avatar`, etc.), but the map callback accessed them with uppercase keys (`group.GROUP_ID`, `group.NAME`, `group.AVATAR`, etc. — all `undefined`). The return object was rebuilt with these undefined values, so the entire group list rendered as blank. Fix: replaced the explicit field-by-field return with `...group` spread, preserving all keys from `getMyGroups()`. Also added `|| "G"` guard on `group.name.charAt(0)` to prevent crashes on empty name. `ChatsAndGroups.tsx` already used lowercase keys and was unaffected. |
 | X | `group_invite` sent without `groupName` — receiver inserts group with empty name | `group.service.ts` methods `addMember`, `removeMember`, `leaveGroup`, `unbanMember`, and `sendGroupMessage` all called `getGroupInfo()` and then accessed the result with uppercase keys `(group as any).NAME`, `.DESCRIPTION`, `.CREATED_DATE`. `getGroupInfo()` returns an object with lowercase TypeScript keys (`group.name`, `group.description`, `group.created_date`). Result: `groupName` was `undefined` → `JSON.stringify` omitted the field → receiver's `handleGroupInvite` got `maxjson.groupName = undefined` → group inserted into GROUPS with `name=''`. Fix: replaced all 7 occurrences of `(group as any).NAME/DESCRIPTION/CREATED_DATE` with `group.name`, `group.description`, `group.created_date`. Root cause is the same pattern as bugs W (uppercase vs lowercase DB row keys) but in the service layer rather than the component. |
 | Y | Group photo update not synced to other members | Two bugs combined prevented group avatar updates: (1) **SW security check case-sensitive**: `handleGroupUpdateDetails()` in `group.handler.js` line 1311 checked `publickey='${pubkey}'` (exact match). Maxima delivers pubkey as `0x...` (lowercase) but `GROUP_MEMBERS` stores it as `0X...` (uppercase), causing all authorization checks to fail with "Group not found locally or sender is not a member" — the avatar was never written to the DB. (2) **Frontend not refreshing on SW notification**: `ChatsAndGroups.tsx` calls `groupService.onGroupUpdate(fetchGroups)` to reload the group list when the group changes, but `GroupService.constructor` was empty (unlike `ChannelService` which had a listener). When the SW updated the BD and sent `MDS.comms.solo({ type: "group_update" })`, the frontend received the window event but `GroupService` never fired the callbacks, so `fetchGroups` never ran. Fix: (1) Changed line 1311 to `UPPER(publickey)=UPPER('${pubkey}')` (consistent with other SW security checks). (2) Added window event listener in `GroupService.constructor` (lines 131–139): `if (typeof window !== 'undefined') { window.addEventListener("GROUP_UPDATE", (e) => { if (e.detail?.type === "group_update") { this.notifyGroupUpdate(e.detail?.groupId, e.detail, true); } }); }`. This mirrors `ChannelService` pattern and ensures callbacks fire when the SW notifies. |
+| AA | Groups: deleted messages reappear after reload | `loadMessagesFromDB` in `groups.$groupId.lazy.tsx` re-mapped already-mapped `GroupMessage` objects using only `row.DELETED` (uppercase). The SW normalizes the column to lowercase `deleted`, so `row.DELETED` was always `undefined` → coerced to `false` → deleted messages reappeared on every DB reload. Fix: added `|| row.deleted === 1 || row.deleted === "1"` to the deleted guard. See fragility point #41. |
+| AB | Groups/Channels: SW delete silently matched 0 rows | `deleteGroupMessage` in `group.service.ts`, `handleGroupMessageDeleted` in `group.handler.js`, and `deleteChannelMessage` in `channel.service.ts` all used exact-case WHERE clauses (`WHERE group_id='...'` / `WHERE channel_id='...'`). On casing mismatch (common after cross-node invites or reinstalls), 0 rows were updated and no error was thrown — the delete appeared to succeed locally but was never written to the DB. Fix: `UPPER(group_id)=UPPER('...')` and `UPPER(channel_id)=UPPER('...')` in all UPDATE/SELECT operations. See fragility point #40. |
+| AC | Channels: delete notification never sent to subscribers | `sendChannelDeleteMessage` in `channel.service.ts` iterated over `getChannelSubscribers()` results and used `sub.publickey` (lowercase) as the Maxima destination. MDS SQL returns `PUBLICKEY` (uppercase), so `sub.publickey` was always `undefined`. `sendMaximaMessage(undefined, payload)` silently no-ops — no error, no delivery. Diagnosed via logs: the `[CHANNEL-MAXIMA]` send log that appears in `sendChannelMessage` was entirely absent for delete operations. Fix: `const pk = (sub as any).PUBLICKEY || sub.publickey`. See fragility point #38. |
+| AD | Channel SW handler blocked all incoming delete notifications | `handleChannelMessageDeleted` in `channel.handler.js` queried `CHANNEL_SUBSCRIBERS` to verify the sender had role `admin`/`creator` before proceeding. This lookup returned empty rows due to key case mismatches — causing all incoming deletes to be silently blocked. Only User1 (who initiated the delete) saw the message as deleted; User2 never received the update. Channels are admin-broadcast: no role check is needed on the receiver side. Fix: removed role check and fanout entirely; handler now directly issues the UPDATE and fires `MDS.comms.solo`. See fragility point #39. |
 | Y | Invite-link joiner's group/channel does not appear in chat list | After joining via `mcgrp://` or `mcch://` invite link: the admin received the join request, processed it, and sent back a `group_invite`/`channel_invite`. The joiner's SW correctly inserted the group/channel into the DB and fired `MDS.comms.solo({ type: "group_list_updated" })`. However, `minima.service.ts` MDSCOMMS handler only handled `group_update`, `group_join_requests_update`, `GROUP_SYNC_START`, and `GROUP_SYNC_END` — `group_list_updated` and `group_sync_start` (lowercase) were silently ignored. No `GROUP_UPDATE` CustomEvent was dispatched → `ChatsAndGroups` never re-fetched → group invisible to joiner. Separately, for channels, `handleChannelInvite` exited silently (no `CHANNEL_UPDATE` fired) if the channel already existed in the DB. Fix: added `group_list_updated` and `group_sync_start` to the MDSCOMMS condition in `minima.service.ts`; added `CHANNEL_UPDATE` + `requestChannelHistoryFromSW` to the early-exit path in `channel.handler.js`. See sections 11.33–34. |
 
-## 19) Reply-to-Message Feature
+## 18) Reply-to-Message Feature
 
-### 19.1 Overview
+### 18.1 Overview
 Users can reply to any message in DMs, groups, and channels. A reply carries a `replyTo` object in the Maxima payload referencing the original message.
 
-### 19.2 Protocol
+### 18.2 Protocol
 `replyTo` is an optional field in ALL outbound message payloads:
 ```json
 {
@@ -573,34 +604,34 @@ Users can reply to any message in DMs, groups, and channels. A reply carries a `
 ```
 If no reply, the field is absent (`undefined`/`null`).
 
-### 19.3 DB Schema
+### 18.3 DB Schema
 Four new columns added to all 3 message tables via `ADD COLUMN IF NOT EXISTS`:
 - `reply_to_customid VARCHAR(512) DEFAULT NULL` — references original message `customid`
 - `reply_to_text VARCHAR(512) DEFAULT NULL` — preview of original message text
 - `reply_to_sender VARCHAR(160) DEFAULT NULL` — original sender's display name
 - `reply_to_type VARCHAR(64) DEFAULT NULL` — original message type (text/image/etc.)
 
-### 19.4 SW Handlers
+### 18.4 SW Handlers
 All 3 SW handlers (`chat.handler.js`, `group.handler.js`, `channel.handler.js`) parse `replyTo` from inbound payload and persist all 4 columns. History request/response flows also include `replyTo` so replies survive history sync.
 
-### 19.5 FE Services
+### 18.5 FE Services
 - `messaging.service.ts`: `sendMessage(... replyTo?)` — new last param
 - `group.service.ts`: `sendGroupMessage(... replyTo?)` — new last param
 - `channel.service.ts`: `publishMessage(... replyTo?)` — new last param
 
-### 19.6 UI
+### 18.6 UI
 - **MessageBubble**: new `replyTo` prop renders a quote block above the message text. New `onReply` callback prop shows a "Reply" button at top of action menu.
 - **Reply banner**: shown above the input bar when `replyingTo` state is set. Shows sender name + text preview. An ✕ button clears it.
 - **Channels**: uses custom rendering (no MessageBubble); quote block and "Reply" button rendered inline. Reply available only to admin.
 
-### 19.7 Important Notes
+### 18.7 Important Notes
 - `replyTo` carries a **snapshot** of the original message text and sender name at send time — it does NOT resolve dynamically from the DB. This is intentional for simplicity and to avoid broken references.
 - Channels only allow admin to reply (consistent with the publish-only model).
 - The `customid` in `replyTo` is stored for future scroll-to-original functionality but not yet implemented.
 - **`CHANNEL_MESSAGES` has no `customid` column**: channel `reply_to_customid` is always NULL. The display guard must check `reply_to_text || reply_to_sender`, NOT `reply_to_customid`. See fragility point #36.
 - **`loadMessagesFromDB` Phase 2 must include `replyTo`**: Phase 2 of `loadMessagesFromDB` in `$address.tsx` rebuilds the message object for token/charm status checks. It must explicitly include `replyTo: msg.replyTo` or the field is silently dropped. See fragility point #35.
 
-### 19.8 Bugs Fixed (post-initial implementation)
+### 18.8 Bugs Fixed (post-initial implementation)
 | ID | Context | Root Cause | Fix |
 |---|---|---|---|
 | Z1 | Group messages not arriving | `processGroupMessage()` referenced `grpReplyToCustomid/Text/Sender/Type` as free variables from the outer `handleGroupMessage()` scope. On the receiver's node these variables don't exist → ReferenceError crash on every incoming group message. | Passed all 4 as explicit parameters to `processGroupMessage()`. See fragility point #37. |
@@ -609,26 +640,26 @@ All 3 SW handlers (`chat.handler.js`, `group.handler.js`, `channel.handler.js`) 
 | Z4 | DM optimistic message missing quote block | `newMsg` was created before `currentReplyTo` was captured (after `setMessages`). So optimistic message had `replyTo: undefined`. | Moved `const currentReplyTo = replyingTo` capture BEFORE `newMsg` construction; added `replyTo: currentReplyTo` to optimistic message. |
 | Z5 | DM reply not persisted from sender side | `chatService.insertMessage()` INSERT SQL was missing all 4 `reply_to_*` columns — they were not being written to the DB by the sender. | Added `reply_to_customid/text/sender/type` to the destructure and INSERT in `chatService.insertMessage()`. |
 
-## 18) UI and UX Defaults
+## 19) UI and UX Defaults
 
 1. **Discovery View Mode**: The default view mode in `/discovery` is set to `"all"`. This ensures that users, groups, and channels are all visible by default to new users, encouraging broader exploration of available content. The "All" tab is also positioned first in the filter bar for consistency with its default status.
 
-## 18) Log Optimization and Debugging Defaults
+## 20) Log Optimization and Debugging Defaults
 
 As of version 3.0 (April 2026), the application has a strictly pruned logging strategy to prevent production consoles from being saturated by Minima MDS dumps.
 
-### 18.1 Frontend Build Stripping (Vite)
+### 20.1 Frontend Build Stripping (Vite)
 - **Currently Disabled**: `vite.config.ts` includes the `terser` config to strip `console.log` in production, but it is commented out for active Alpha/Beta debugging.
 - Once the app is stable, uncomment the `minify: 'terser'` config blocks.
 - **Rule for UI development**: Use `console.warn` or `console.error` for errors that absolutely must remain visible in production, to prepare for when the final stripping is reactivated.
 
-### 18.2 Service Worker Debugging (SW_DEBUG)
+### 20.2 Service Worker Debugging (SW_DEBUG)
 - The Rhino/Nashorn engine logs directly to the Minima Java console via `MDS.log()`. To keep this trace clean for node operators, all high-frequency payloads (like chat payload parsing, raw string dumps, and polling latency events) must be gated.
 - A global `var SW_DEBUG = false;` flag is located at the top of `public/service-workers/main.js`.
 - If an agent or developer needs to debug the raw inbound payload of `MAXIMA` messages or deduplication SQL, they must manually set this flag to `true`, build the SW, and revert it immediately after.
 - **`logToUI` removed**: The legacy `logToUI` utility (which spammed the bridge with `UI_LOG:` payloads so the frontend would print them) was removed due to bridge saturation. Use `MDS.log` for backend debugging.
 
-## 19) Additional Fragility Notes
+## 21) Avatar and UI Hydration Patterns
 
 1. **DM header avatars must read Discovery cache, not only Maxima contact `extradata.icon`**. In `src/routes/chat/$address.tsx`, the one-to-one chat header can load a peer through `DISCOVERED_PEERS` even when `maxcontacts` has no avatar. The avatar may be stored in either `DISCOVERED_PEERS.avatar` or `DISCOVERED_PEERS.extra_data.avatar` (sometimes URL-encoded). If the chat page only reads `peer.ICON` or `contact.extradata.icon`, it falls back to the generic avatar even though the real photo is already cached locally.
 2. **Group chat headers must hydrate `contact.extradata.icon` from `GROUPS.avatar`**. In `src/routes/groups.$groupId.lazy.tsx`, the route reuses the DM-style `contact` shape for header rendering. If the initial group load copies only the group name and not the `avatar`, the UI always shows the letter badge even when `groupService.getGroupInfo()` already returned a valid group photo. `GROUP_UPDATE` refreshes should also propagate `avatar` into that same `contact.extradata.icon` field.
@@ -642,7 +673,423 @@ As of version 3.0 (April 2026), the application has a strictly pruned logging st
 10. **Channel `Subscribers` list has the same avatar dependency as group `Members`**. `channelService.getChannelSubscribers()` must return subscriber avatar data from `DISCOVERED_PEERS.avatar` and `DISCOVERED_PEERS.extra_data.avatar`, and `src/routes/channel-info.$channelId.lazy.tsx` must render it. Otherwise the channel subscriber list always falls back to initials even when the peer photo is already cached locally.
 11. **Channel chat menu `Actions` must deep-link to the settings tab**. In `src/routes/channels.$channelId.lazy.tsx`, the second menu entry should navigate to `/channel-info/$channelId` with `search.tab = "settings"` (and preserve `returnTo`). If it omits the tab, the user lands on the default `Info/Profile` tab and the menu action feels broken.
 12. **Keep shared avatar helpers out of single-query scope in `chat.service.ts`**. `getRecentChats()` has both optimized and legacy row-mapping paths. If `extractDiscoveryAvatar` is declared inside only one callback path, the other path compiles against an out-of-scope symbol and breaks `tsc`. Shared row mappers should stay on the class (or module) so both query paths use the same implementation.
-13. **`getChannelSubscribers()` returns raw SQL rows: always read publickey as `(sub as any).PUBLICKEY || sub.publickey`**. MDS SQL returns column names in uppercase. `getChannelSubscribers()` spreads raw rows without normalizing field names. Any loop over subscribers that reads `sub.publickey` directly gets `undefined` and silently fails to send. The pattern `(sub as any).PUBLICKEY || sub.publickey` is required — see `sendChannelMessage` as the canonical example. `sendChannelDeleteMessage` was broken because it only used `sub.publickey`.
-14. **`loadMessagesFromDB` in groups route must read `deleted` from both `row.DELETED` and `row.deleted`**. `groupService.getGroupMessages()` already maps the SQL result to a `GroupMessage` object with lowercase `deleted` property. When `loadMessagesFromDB` re-maps those objects it must use `row.DELETED === 1 || row.DELETED === "1" || row.deleted === 1 || row.deleted === "1"` — reading only `row.DELETED` (uppercase) always gives `undefined` → `false`, causing deleted messages to reappear on every reload.
-15. **All SW and service DELETE/UPDATE queries for group_id and channel_id must use `UPPER()`**. Exact-case comparison (`WHERE group_id='...'`) silently matches 0 rows if the stored id has different capitalisation than the URL param. Use `WHERE UPPER(group_id)=UPPER('...')` for all UPDATE/DELETE operations in `group.service.ts`, `channel.service.ts`, `group.handler.js`, and `channel.handler.js`.
-16. **Channel SW handler `handleChannelMessageDeleted` must NOT require admin/creator role**. Channels are admin-broadcast; any authenticated `message_deleted` Maxima message for a known channel should be trusted and applied directly. Adding a role check blocked all propagation to subscribers because the role lookup query was often empty or failed silently.
+
+## 22) Delete Message Feature
+
+### 22.1 Overview
+Any user can delete their own messages in DMs, groups, and channels. The deletion propagates to all other participants via Maxima so every node marks the message as deleted locally. The deleted state is permanent and not reversible from the UI.
+
+### 22.2 Protocol Types
+| Context | Maxima type sent by FE | Handled by SW |
+|---|---|---|
+| DM | `message_deleted` | `chat.handler.js` → `handleMessageDeleted()` |
+| Group | `group_message_deleted` | `group.handler.js` → `handleGroupMessageDeleted()` |
+| Channel | `channel_message_deleted` | `channel.handler.js` → `handleChannelMessageDeleted()` |
+
+### 22.3 Fanout — Who Sends to Whom
+- **DM**: FE sends one Maxima message to the peer's public key.
+- **Group**: FE iterates `GROUP_MEMBERS` (via `groupService.getGroupSubscribers()`) and sends one Maxima message per member, skipping self. Uses `(member as any).PUBLICKEY || member.publickey` pattern.
+- **Channel**: FE iterates `CHANNEL_SUBSCRIBERS` (via `channelService.getChannelSubscribers()`) and sends one Maxima message per subscriber, skipping self. Uses `(sub as any).PUBLICKEY || sub.publickey` pattern. **The SW handler does NOT re-fanout** — the FE already covers all subscribers.
+
+### 22.4 Payload Shape
+```json
+{
+  "type": "group_message_deleted",
+  "groupId": "0x...",
+  "customId": "0x...",
+  "senderPublicKey": "0x..."
+}
+```
+```json
+{
+  "type": "channel_message_deleted",
+  "channelId": "0x...",
+  "senderSeq": 42
+}
+```
+DM uses `customId` only (no group/channel ID).
+
+### 22.5 DB Columns Affected
+All three message tables share the same pattern:
+```sql
+UPDATE <TABLE> SET deleted=1, deleted_at=<timestamp_ms>
+WHERE <id_col>=<value> AND <msg_key>=<value>
+```
+- `CHAT_MESSAGES`: `WHERE customid='...'`
+- `GROUP_MESSAGES`: `WHERE UPPER(group_id)=UPPER('...') AND customid='...'`
+- `CHANNEL_MESSAGES`: `WHERE UPPER(channel_id)=UPPER('...') AND sender_seq=<n>`
+
+`deleted` is an INTEGER column (0/1). `deleted_at` is a BIGINT timestamp in ms.
+
+### 22.6 SW Handler Behavior
+1. Parse `groupId`/`channelId`/`customId`/`senderSeq` from payload.
+2. Run UPDATE with case-insensitive ID comparison.
+3. Fire `MDS.comms.solo(JSON.stringify({ type: "GROUP_MESSAGE_DELETED"|"CHANNEL_MESSAGE_DELETED", ... }))` so the FE reacts.
+4. **No role/authorization check on the receiver side.** DMs are peer-to-peer (sender is implicit). Groups/Channels: trust any authenticated Maxima sender of this type — do not query `GROUP_MEMBERS` or `CHANNEL_SUBSCRIBERS` for role validation (lookup can return empty due to key-case mismatch and blocks all propagation).
+
+### 22.7 FE Reaction
+- FE listens for `GROUP_MESSAGE_DELETED` / `CHANNEL_MESSAGE_DELETED` via MDSCOMMS handler in `minima.service.ts`.
+- On receipt, dispatches `GROUP_MESSAGE_DELETED` / `CHANNEL_MESSAGE_DELETED` CustomEvent.
+- Route (`groups.$groupId.lazy.tsx`, `channels.$channelId.lazy.tsx`) listens and updates local message state to mark the message deleted without a full DB reload.
+
+### 22.8 Rendering
+Deleted messages render as a grey "This message was deleted" placeholder. The `deleted` boolean comes from:
+- SW-persisted rows: `row.DELETED` (uppercase, raw SQL) or `row.deleted` (lowercase, already-mapped object).
+- **Always check both**: `row.DELETED === 1 || row.DELETED === "1" || row.deleted === 1 || row.deleted === "1"`.
+
+### 22.9 Critical Patterns (see also Fragility Points #38–41)
+- Subscriber/member lists from MDS SQL have UPPERCASE keys (`PUBLICKEY`). Always use `(sub as any).PUBLICKEY || sub.publickey`.
+- `group_id` and `channel_id` WHERE clauses must use `UPPER()` to avoid silent 0-row updates.
+- Channel SW handler must NOT apply role checks — channels are admin-broadcast.
+- Group route `loadMessagesFromDB` re-maps already-mapped objects (lowercase `deleted`), not raw SQL rows — use both case variants.
+
+### 22.10 Bugs Fixed
+See Closed/Fixed table entries AA–AD in section 17.
+
+## 23) Groups Feature
+
+### 23.1 Overview
+Groups are multi-participant chat rooms. Any user can create a group and invite others. Groups support roles, moderation, paginated history sync, auto-approval of join requests, and invite-link-based joining.
+
+### 23.2 Roles and Permissions
+| Role | Immutable | Can send messages | Can invite/remove | Can update settings | Can promote |
+|---|---|---|---|---|---|
+| `creator` | Yes (cannot be changed or removed) | Yes | Yes | Yes | Yes |
+| `admin` | No | Yes | Yes | Yes | No (only creator can) |
+| `member` | No | Yes | No | No | No |
+
+Banned users are **not** a role in `GROUP_MEMBERS` — they are stored separately in `GROUP_BANS` with `(group_id, publickey)`. Ban check precedes every add-member and message-receive operation.
+
+### 23.3 DB Tables
+| Table | Purpose | Key Columns |
+|---|---|---|
+| `GROUPS` | Group metadata | `group_id`, `name`, `creator_publickey`, `description`, `avatar`, `is_public`, `auto_approve` |
+| `GROUP_MEMBERS` | Membership and roles | `group_id`, `publickey`, `username`, `role`, `joined_date` |
+| `GROUP_MESSAGES` | Chat messages | `group_id`, `sender_publickey`, `sender_username`, `type`, `message`, `filedata`, `date`, `sender_seq`, `customid`, `propagated`, `forwarded`, `reply_to_*`, `deleted`, `deleted_at` |
+| `GROUP_BANS` | Ban list (persisted across re-joins) | `group_id`, `publickey`, `username`, `banned_by`, `banned_at` |
+| `GROUP_JOIN_REQUESTS` | Pending join requests (auto_approve=false) | `group_id`, `publickey`, `username`, `requester_address`, `status` |
+
+`GROUP_MESSAGES.propagated` = 1 means the SW has already processed and accepted this message. Duplicate arrives are silently skipped if `propagated=1`.
+
+### 23.4 Protocol Types
+| Maxima Type | Direction | DB Impact | SW Signal |
+|---|---|---|---|
+| `group_invite` | Admin → new member | INSERT GROUPS, GROUP_MEMBERS, GROUP_BANS | `group_list_updated`, `group_sync_start` |
+| `group_message` | Member → all members (fanout) | INSERT GROUP_MESSAGES | (FE polls via sync) |
+| `group_member_added` | Admin → all members | INSERT GROUP_MEMBERS | `group_update` |
+| `group_member_removed` | Admin → all members | DELETE GROUP_MEMBERS; if self-remove → wipe all local group data | `group_update` |
+| `group_member_unbanned` | Admin → all members | DELETE GROUP_BANS | `group_update` |
+| `group_update_details` | Admin → all members | UPDATE GROUPS | `group_update` (with new name/avatar/auto_approve) |
+| `group_role_update` | Creator/admin → all | UPDATE GROUP_MEMBERS SET role | `group_update` |
+| `group_join_request` | User → admin's Mx address | INSERT GROUP_JOIN_REQUESTS (if manual) or auto-approve flow | `group_join_requests_update` |
+| `group_join_request_propagated` | Admin → other admins | UPSERT GROUP_JOIN_REQUESTS | `group_join_requests_update` |
+| `group_join_request_resolved` | Admin → other admins | DELETE GROUP_JOIN_REQUESTS | `group_join_requests_update` |
+| `history_request` / `history_response` | SW ↔ peers | INSERT GROUP_MESSAGES (on response) | `GROUP_SYNC_START`, `GROUP_SYNC_END` |
+| `group_address_beacon` | Any member → all | DELETE+INSERT DISCOVERED_PEERS | none |
+| `group_message_deleted` | Member → all members | UPDATE GROUP_MESSAGES deleted=1 | `GROUP_MESSAGE_DELETED` |
+
+### 23.5 Direct Invite vs Invite-Link Join
+
+**Direct Invite** (`group_invite`):
+1. Admin calls `addMember(groupId, [pubkeys])`.
+2. SW sends `group_invite` payload (includes full member list, ban list, metadata) directly to new member.
+3. Recipient SW: INSERT GROUPS + GROUP_MEMBERS + GROUP_BANS, fires `group_list_updated` + `group_sync_start`.
+4. No approval needed — member is instantly in the group.
+
+**Invite-Link Join** (`group_join_request` → `group_invite`):
+1. User decodes `mcgrp://` link → extracts `groupId`, admin's Mx address.
+2. FE sends `group_join_request` to admin's Mx address.
+3. Admin SW: checks `auto_approve` in GROUPS.
+   - `auto_approve=true` → auto-adds member, sends `group_member_added` to all, sends `group_invite` to joiner.
+   - `auto_approve=false` → inserts into `GROUP_JOIN_REQUESTS`, broadcasts `group_join_request_propagated` to all admins for review.
+4. Manual approval: Admin calls `resolveJoinRequest(groupId, pubkey, "approved")` → triggers `addMember()` flow.
+
+Invite link format: `mcgrp://[base64({ g: groupId, n: groupName, p: adminPubkey, a: adminAddress })]`
+
+### 23.6 Auto-Approve
+- Stored as `GROUPS.auto_approve` (INT 0/1; coerced from string "TRUE"/"1"/boolean true in SW).
+- When `true`: join requests are immediately processed without admin intervention.
+- When `false`: request stored in `GROUP_JOIN_REQUESTS` (status=`pending`) and propagated to all admins.
+- Synced via `group_update_details` when changed. When a member is promoted to admin, they receive a settings snapshot (including current `auto_approve`) from the promoter's SW.
+
+### 23.7 Sync Protocol (Paginated)
+History sync is **per-peer, paginated in 50-message pages**.
+
+State object per active sync:
+```javascript
+_pendingSyncs[groupId] = {
+  expected:   number,           // peers requested
+  pending:    { pubkey: true }, // awaiting first response (keys UPPERCASE)
+  paginating: { pubkey: true }, // received full page, requesting next
+  retryCount: number,           // 0–2
+  startedAt:  Date.now()
+}
+```
+
+Flow:
+1. `requestGroupHistoryFromSW(groupId)`: fires `GROUP_SYNC_START`, finds last local timestamp, sends `history_request` to all `GROUP_MEMBERS` via `DISCOVERED_PEERS` addresses.
+2. Each peer responds with up to 50 messages.
+3. If response.length >= 50 → peer moves to `paginating`, next page requested with `sinceTimestamp = latestInPage`.
+4. If response.length < 50 → peer marked done.
+5. When all peers done → `GROUP_SYNC_END`.
+6. Timeout: 30s via `checkSyncTimeouts()` (called from `MDS_TIMER_10SECONDS`). Up to 2 retries if zero responses received.
+
+**Critical**: peer keys in `pending`/`paginating` must be `.toUpperCase()` at both read and write (SQL returns `0X...`, Maxima delivers `0x...`). See fragility point #22.
+
+### 23.8 SW Signals
+| Signal | Payload | Purpose |
+|---|---|---|
+| `group_list_updated` | `{ type }` | New group joined — refresh group list in UI |
+| `group_sync_start` | `{ type, groupId }` | Lowercase — fired after invite-link join; triggers sync |
+| `GROUP_SYNC_START` | `{ type, groupId }` | Uppercase — fired by `requestGroupHistoryFromSW` |
+| `GROUP_SYNC_END` | `{ type, groupId }` | Sync complete |
+| `group_update` | `{ type, groupId, [name, description, avatar, auto_approve] }` | Member list, settings, or role changed |
+| `group_join_requests_update` | `{ type, groupId }` | Pending join request inserted or resolved |
+| `GROUP_MESSAGE_DELETED` | `{ type, groupId, customId }` | Message marked deleted |
+
+**Important**: `minima.service.ts` MDSCOMMS handler must handle BOTH `group_list_updated` (lowercase) and `GROUP_SYNC_START` (uppercase). Missing either causes the UI to not refresh. See fragility point #33.
+
+### 23.9 Authorization (SW-enforced)
+- `group_update_details`: SW checks sender's role in `GROUP_MEMBERS` — must be `creator` or `admin`.
+- `group_role_update`: same check + cannot change `creator` role.
+- `group_message`: SW checks `GROUP_BANS` — discards if sender is banned.
+- `group_invite`: SW checks `GROUP_BANS` — ignores if WE are banned in that group.
+- `group_join_request`: SW checks receiver must be `creator` or `admin`.
+- `group_member_added`/`removed`: trusted from sender (no additional SW check beyond ban list).
+
+## 24) Channels Feature
+
+### 24.1 Overview
+Channels are broadcast-style one-to-many feeds. Unlike groups, channels follow an **admin-broadcast model**: only the admin publishes messages (UI-enforced; protocol does not reject other senders). Subscribers receive messages and can reply (admin-only in UI). Channel history is synced from the admin.
+
+### 24.2 Roles and Permissions
+Valid roles in `CHANNEL_SUBSCRIBERS`: `creator`, `admin`, `subscriber`.
+
+| Operation | Enforced By | Who Can |
+|---|---|---|
+| Publish message | UI only | Admin |
+| Delete message | UI + SW trust (no role check) | Admin |
+| Invite subscriber | FE service (no SW check) | Admin |
+| Remove subscriber | FE service (no SW check) | Admin |
+| Update channel info | FE service; SW: no explicit check | Admin |
+| Update subscriber role | SW: checks sender is `admin` | Admin |
+| Join via invite link | Any user | Any user |
+
+**Important**: The SW handler for `channel_message` does NOT check the sender's role. Authorization for publishing is UI-level only. Do not add role checks to the SW message handler — it would break history sync (messages replayed from non-admin history responses would be rejected).
+
+### 24.3 DB Tables
+| Table | Purpose | Key Columns |
+|---|---|---|
+| `CHANNELS` | Channel metadata | `channel_id`, `name`, `description`, `admin_publickey`, `created_date`, `avatar`, `is_public`, `archived`, `favorite` |
+| `CHANNEL_SUBSCRIBERS` | Subscriber list | `channel_id`, `publickey`, `username`, `joined_date`, `role` |
+| `CHANNEL_MESSAGES` | Messages | `channel_id`, `sender_publickey`, `sender_username`, `type`, `message`, `filedata`, `date`, `sender_seq`, `forwarded`, `reply_to_*`, `deleted`, `deleted_at` |
+| `CHANNEL_MSG_COUNTERS` | Per-sender sequence tracking | `channel_id`, `sender_publickey`, `last_seen_seq`, `my_next_seq` |
+
+`CHANNEL_MESSAGES` has **no `customid` column**. Dedup is by `(channel_id, UPPER(sender_publickey), date)`. Reply-to display must use `reply_to_text || reply_to_sender` as guard. See fragility points #36.
+
+`CHANNEL_MSG_COUNTERS` uses H2 `MERGE INTO ... KEY(channel_id, sender_publickey)` — NOT PostgreSQL `ON CONFLICT`. See fragility point #28.
+
+### 24.4 Protocol Types
+| Maxima Type | Direction | DB Impact | SW Signal |
+|---|---|---|---|
+| `channel_invite` | Admin → new subscriber | INSERT CHANNELS, CHANNEL_SUBSCRIBERS (self + admin) | `CHANNEL_UPDATE` |
+| `channel_message` | Admin → all subscribers | INSERT CHANNEL_MESSAGES, MERGE CHANNEL_MSG_COUNTERS | `CHANNEL_NEW_MESSAGE` |
+| `channel_info_updated` | Admin → all | UPDATE CHANNELS | `CHANNEL_UPDATE` |
+| `channel_role_update` | Admin → all | UPDATE CHANNEL_SUBSCRIBERS | `CHANNEL_UPDATE` |
+| `channel_join_request` | User → admin's Mx | INSERT CHANNEL_SUBSCRIBERS + CHANNEL_MESSAGES (system) | `CHANNEL_NEW_MESSAGE` |
+| `channel_subscriber_added` | Admin → all | MERGE CHANNEL_SUBSCRIBERS | `CHANNEL_UPDATE` |
+| `channel_subscriber_removed` | Admin → all + removed user | DELETE CHANNEL_SUBSCRIBERS | `CHANNEL_UPDATE` |
+| `channel_history_request` | Subscriber → admin | SELECT CHANNEL_MESSAGES (up to 50) | (sends `channel_history_response`) |
+| `channel_history_response` | Admin → subscriber | INSERT CHANNEL_MESSAGES (via handleChannelMessage) | `CHANNEL_NEW_MESSAGE`, `CHANNEL_SYNC_END` |
+| `message_deleted` | Admin → all subscribers | UPDATE CHANNEL_MESSAGES deleted=1 | `CHANNEL_MESSAGE_DELETED` |
+
+### 24.5 Direct Invite vs Join Request
+
+**Direct Invite** (`channel_invite`):
+1. Admin calls `inviteSubscriber(channelId, pubkey)`.
+2. FE sends `channel_invite` to invitee + `channel_subscriber_added` to all current subscribers.
+3. Invitee SW: INSERT CHANNELS + INSERT CHANNEL_SUBSCRIBERS (self as `subscriber`, admin as `admin`), then calls `requestChannelHistoryFromSW`.
+4. **Critical**: admin entry MUST be inserted (`role='admin'`) with `joined_date` (NOT NULL). Without it, the history request finds only self (filtered out) and exits with "No remote subscribers". See fragility point #29 and bug T.
+
+**Join Request** (`channel_join_request` → `channel_invite`):
+1. User decodes `mcch://` link → extracts `channelId`, admin's Mx address.
+2. FE sends `channel_join_request` to admin's Mx address.
+3. Admin SW: auto-accepts (no approval gate exists for channels), INSERT CHANNEL_SUBSCRIBERS, inserts system message, sends `channel_invite` back to requester.
+
+Invite link format: `mcch://[base64({ c: channelId, n: channelName, p: adminPubkey, a: adminAddress })]`
+
+### 24.6 Sync Protocol
+Channel history requests go to the **admin only** (unlike groups which fanout to all members).
+
+```
+_pendingChannelSyncs[channelId] = Date.now()   // guard set on request
+```
+
+Flow:
+1. `requestChannelHistoryFromSW(channelId)`: checks guard (skip if in-flight), sets guard, fires `CHANNEL_SYNC_START`.
+2. Finds last local message timestamp, sends `channel_history_request` to all `CHANNEL_SUBSCRIBERS` except self (case-insensitive self-filter).
+3. Admin responds with `channel_history_response` (up to 50 messages).
+4. SW calls `handleChannelMessage(msg, skipNotify=true)` for each message (dedup + insert).
+5. After all messages processed: fires `CHANNEL_SYNC_END`, clears guard.
+6. Timeout: 30s via `checkChannelSyncTimeouts()` (`MDS_TIMER_10SECONDS`).
+
+Gap detection: if `senderSeq > lastSeen + 1` in `CHANNEL_MSG_COUNTERS` → automatically triggers history request.
+
+### 24.7 SW Signals
+| Signal | Payload | Purpose |
+|---|---|---|
+| `CHANNEL_UPDATE` | `{ type, channelId }` | Subscriber list or channel info changed |
+| `CHANNEL_NEW_MESSAGE` | `{ type, channelId }` | New message arrived |
+| `CHANNEL_MESSAGE_DELETED` | `{ type, channelId, senderSeq }` | Message marked deleted |
+| `CHANNEL_SYNC_START` | `{ type, channelId }` | Sync started |
+| `CHANNEL_SYNC_END` | `{ type, channelId }` | Sync complete |
+
+### 24.8 Groups vs Channels — Key Differences
+| Aspect | Groups | Channels |
+|---|---|---|
+| **Who publishes** | Any member | Admin only (UI-enforced) |
+| **Who can reply** | Any member | Admin only (UI-enforced) |
+| **Approval gate** | `auto_approve` toggle | None (admin auto-accepts all join requests) |
+| **Sync fanout** | All GROUP_MEMBERS | Admin only |
+| **Dedup key** | `customid` (UUID) | `(channel_id, sender_publickey, date)` |
+| **Role check in SW** | Yes (update_details, role_update, join_request) | Only for `channel_role_update` (sender must be admin) |
+| **Message ID for delete** | `customid` | `sender_seq` |
+| **Re-join behavior** | Blocked if banned | No ban mechanism |
+
+## 25) Token and Charm Transfers
+
+### 25.1 Overview
+Token and charm messages combine a Minima blockchain transaction with a chat message. The message is saved immediately as `pending`; it transitions to `confirmed` when the blockchain includes the transaction. Both `CHAT_MESSAGES` and `TRANSACTIONS` are updated in sync via `txpowid`.
+
+- **Token**: transfer of a named Minima token (ERC-20 style). Includes `tokenid` in sender's payload.
+- **Charm**: transfer of native Minima currency. Identified by `type="charm"` and `amount > 0`.
+
+### 25.2 Message State Machine
+```
+pending  →  sent  →  delivered  →  (no "read" state for token/charm)
+                  ↘  confirmed        (blockchain confirms txpowid)
+                  ↘  failed           (transaction rejected)
+```
+- `pending`: saved optimistically before blockchain submission
+- `sent`: Maxima message successfully sent to peer
+- `confirmed`: `transactionPollingService` detects txpowid in a confirmed block
+- `failed`: transaction rejected by consensus
+- Token/charm messages **never reach `read` state** — `handleReadReceipt` skips `type='token'` and `type='charm'`
+
+### 25.3 TRANSACTIONS Table Schema
+```sql
+CREATE TABLE TRANSACTIONS (
+  id           BIGINT AUTO_INCREMENT PRIMARY KEY,
+  txpowid      VARCHAR(512) NOT NULL UNIQUE,
+  type         VARCHAR(32),          -- "token", "charm"
+  publickey    VARCHAR(512),         -- recipient's public key
+  message_timestamp BIGINT,
+  status       VARCHAR(32) DEFAULT 'pending',  -- "pending", "sent", "confirmed", "rejected"
+  created_at   BIGINT NOT NULL,
+  updated_at   BIGINT NOT NULL,
+  metadata     CLOB,                 -- extra data
+  pendinguid   VARCHAR(512),
+  date         BIGINT,
+  amount       VARCHAR(64),
+  tokenid      VARCHAR(512),
+  message      VARCHAR(255)
+)
+```
+
+`CHAT_MESSAGES.txpowid` links to `TRANSACTIONS.txpowid`. Both must stay in sync — never update one without the other.
+
+### 25.4 Maxima Payload
+```json
+{
+  "type": "token",
+  "message": "optional text",
+  "txpowid": "0x...",
+  "amount": 10,
+  "customid": "0x...",
+  "seq": 42
+}
+```
+The receiver's payload omits `tokenid` (added only by sender). Dedup strategy for token/charm uses `txpowid` as an additional key alongside `customid`. See section 7.4.
+
+### 25.5 Confirmation Polling
+`transactionPollingService` (FE) polls every 10 seconds:
+1. Queries Minima `history` command for each pending `txpowid`.
+2. If found in confirmed block: updates `TRANSACTIONS.status='confirmed'` + `CHAT_MESSAGES.state='confirmed'`.
+3. If rejected: updates both to `failed`.
+
+The SW also monitors `NEWBLOCK` events to trigger checks. **Do not remove the txpowid link** between the two tables — confirmation logic depends on it.
+
+### 25.6 Important Notes
+- Token messages look different on sender vs receiver side (sender has `tokenid`, receiver does not). The dedup strategy intentionally matches on type+timestamp, NOT content. See section 7.4.
+- Charm and token messages share the same `MessageBubble` card component in the UI with status badge and pending animation.
+- The `amount` field in `CHAT_MESSAGES` is INT; in `TRANSACTIONS` it is VARCHAR(64) to support decimal precision.
+
+## 26) Offline Queue
+
+### 26.1 Overview
+When a Maxima send fails (peer offline, network error), the message is already saved to `CHAT_MESSAGES` as `state='pending'`. `OfflineQueueService` queues it for retry without losing the message. This is a **FE-only** service — the SW does not know about the offline queue.
+
+### 26.2 OFFLINE_QUEUE Table (FE only)
+```sql
+CREATE TABLE OFFLINE_QUEUE (
+  id          INT PRIMARY KEY AUTO_INCREMENT,
+  type        VARCHAR(32),    -- "chat_message", "group_message"
+  data        CLOB,           -- JSON-serialized message data
+  created_at  BIGINT,
+  retry_count INT DEFAULT 0,
+  state       VARCHAR(16) DEFAULT 'pending'  -- "pending", "sent"
+)
+```
+
+### 26.3 Queue and Retry Flow
+1. `messagingService.sendMessage()` fails → calls `offlineQueueService.queueChatMessage()`.
+2. Message already in `CHAT_MESSAGES` as `state='pending'`.
+3. Polling loop (every 30 seconds, batch of 5): calls `messagingService.retryMessage()` per queued item.
+4. On success: deletes from `OFFLINE_QUEUE`, updates `CHAT_MESSAGES.state='sent'`.
+5. On failure: keeps in queue (does NOT re-queue, just leaves for next poll cycle).
+
+### 26.4 Immediate Retry on Reconnect
+`offlineQueueService.triggerImmediateRetry(source)` is called when:
+- FE receives `RECONNECTED` event from SW (node came back online).
+- Debounced to 1.5 seconds to prevent retry storms.
+
+**Do not call `retryMessage()` directly** from outside this service — it is not idempotent and does not handle queue cleanup.
+
+## 27) DM Protocol Details
+
+### 27.1 Message State Flow (DMs)
+```
+pending → sent → delivered → read
+                ↘ confirmed  (token/charm only)
+                ↘ failed     (token/charm only)
+```
+
+### 27.2 Delivery Receipts
+- **Triggered by**: SW `handleChatMessage()` immediately after inserting a received message.
+- **Sent to**: the sender of the received message.
+- **Payload**: `{ type: "delivery_receipt", message: "", username: "Me", filedata: "" }`.
+- **Effect on sender's DB**: `UPDATE CHAT_MESSAGES SET state='delivered' WHERE publickey=sender AND username='Me' AND state='sent'`.
+- **Do not send manually from FE** — the SW handles this automatically on every inbound message.
+
+### 27.3 Read Receipts
+- **Triggered by**: FE when user opens a chat and views unread messages.
+- **Sent to**: the peer whose messages are being read.
+- **Payload**: `{ type: "read", message: "", username: "Me", filedata: "" }`.
+- **Effect on sender's DB**: `UPDATE CHAT_MESSAGES SET state='read' WHERE publickey=peer AND username='Me' AND type='text' AND state NOT IN ('pending','failed','confirmed')`.
+- **Never sent for token/charm** — token/charm state is managed by blockchain confirmation, not reads.
+
+### 27.4 Ping/Pong (Presence)
+- **Purpose**: check if a peer is online without sending a real message.
+- **FE sends**: `sendPing(toPublicKey)` → Maxima message `{ type: "ping" }`.
+- **SW receives ping**: `handlePing(pubkey)` → sends `{ type: "pong" }` back, throttled to 1 per 30 seconds per peer (`PONG_THROTTLE_MS = 30000`).
+- **FE observes pong**: via MDSCOMMS handler → updates presence/online indicator.
+- **Not persisted**: ping and pong are never written to `CHAT_MESSAGES`.
+- **SW owns pong response** — FE must not send pong directly.
+
+### 27.5 Forwarded Messages
+- **What it is**: a boolean flag (`forwarded=true`) on an outbound message indicating it was not originally composed by the sender.
+- **Set by**: FE when user taps "Forward" on a message and sends it to another chat.
+- **Persisted in**: `CHAT_MESSAGES.forwarded` (INT 0/1) and in the Maxima payload (`forwarded: true`).
+- **Display**: UI shows a "Forwarded" label above the message bubble.
+- **No protocol impact**: forwarding follows the exact same send path as a normal message; `forwarded` is purely informational.
+- **`replyTo` is independent**: forwarding can optionally preserve `replyTo` context but this is a UI decision.
