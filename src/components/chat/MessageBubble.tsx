@@ -17,7 +17,7 @@ interface MessageBubbleProps {
   amount?: number | null;
   // Ensure timestamp is treated as number (it comes from DB as number)
   timestamp?: number;
-  status?: 'pending' | 'sent' | 'delivered' | 'read' | 'failed' | 'zombie' | 'confirmed';
+  status?: 'pending' | 'sent' | 'delivered' | 'read' | 'failed' | 'zombie' | 'confirmed' | 'received';
   tokenAmount?: { amount: string; tokenName: string };
   senderName?: string;
   senderImage?: string; // Base64 or URL
@@ -135,11 +135,11 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
   }, [status, isTokenTransfer, isCharm, prevStatus]);
 
   // Use status directly - no fake pending needed
-  // Enhanced status logic:
-  // For tokens/charms, 'read' implies the transaction was received and viewed.
-  // We treat 'read' as 'confirmed' to ensure the UI shows the green CONFIRMED badge
-  // instead of falling back to the default PROCESSING state.
-  const currentStatus = (isTokenTransfer || isCharm) && (status === 'read' || status === 'delivered')
+  // For outgoing token/charm, only 'confirmed' and 'read' show CONFIRMED badge.
+  // 'delivered' means recipient got the Maxima message but blockchain hasn't confirmed yet → PROCESSING.
+  const currentStatus = (isTokenTransfer || isCharm) && fromMe && status === 'confirmed'
+    ? 'confirmed'
+    : (isTokenTransfer || isCharm) && !fromMe && (status === 'read' || status === 'confirmed')
     ? 'confirmed'
     : status;
 
@@ -151,17 +151,18 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
   } else if (isCharm || isTokenTransfer) {
     bubbleColor = "bg-gradient-to-br from-gray-50 via-white to-gray-50 dark:from-gray-800 dark:via-gray-700 dark:to-gray-800 border border-gray-200 dark:border-gray-600 shadow-md";
   } else if (fromMe) {
-    // Channel-style primary (sky-blue/primary)
-    bubbleColor = "bg-white dark:bg-gray-800 border border-primary-100 dark:border-primary-900 shadow-sm";
+    // Premium Gradient for Me (Theme-Aware)
+    bubbleColor = "bg-gradient-to-br from-primary-500 to-primary-600 shadow-md shadow-primary-500/20";
+    textColor = "text-white";
   } else {
-    // Channel-style white/dark
-    bubbleColor = "bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-sm";
+    // Glassmorphism for Them
+    bubbleColor = "bg-white/80 dark:bg-gray-800/40 backdrop-blur-md border border-white/20 dark:border-gray-700/30 shadow-sm";
   }
 
   // Channel style treats corners differently: rounded-2xl with a specific beak
   const borderRadius = fromMe
-    ? "rounded-2xl rounded-tr-sm"
-    : "rounded-2xl rounded-tl-sm";
+    ? "rounded-2xl rounded-tr-none"
+    : "rounded-2xl rounded-tl-none";
 
   const alignment = fromMe ? "justify-end" : "justify-start";
   const flexDir = fromMe ? "flex-row-reverse" : "flex-row";
@@ -185,7 +186,7 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
           className={`flex-shrink-0 mt-1 ${onAvatarClick ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
           onClick={onAvatarClick}
         >
-          <div className={`w-9 h-9 rounded-full ${fromMe ? 'bg-primary-500' : 'bg-sky-500'} flex items-center justify-center text-white text-xs font-bold shadow-sm overflow-hidden`}>
+          <div className={`w-9 h-9 rounded-full ${fromMe ? 'bg-primary-500' : 'bg-sky-500'} flex items-center justify-center text-white text-xs font-bold shadow-lg ring-2 ring-white dark:ring-gray-800 overflow-hidden`}>
             {senderImage ? (
               <img
                 src={senderImage}
@@ -216,7 +217,7 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
             </span>
           )}
           {showName && fromMe && (
-            <span className="text-xs font-semibold text-primary-600 dark:text-primary-400">
+            <span className="text-xs font-semibold text-primary-500 dark:text-primary-400">
               {senderName || "You"}
             </span>
           )}
@@ -270,7 +271,7 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
               }
               setShowActions(!showActions);
             }}
-            className={`relative px-4 py-2.5 ${borderRadius} ${bubbleColor} ${textColor} min-w-[80px] shadow-sm transition-all duration-200 ${!isTokenTransfer ? 'cursor-pointer hover:shadow-md' : ''} ${showActions ? 'ring-2 ring-primary-400 ring-opacity-50' : ''}`}
+            className={`relative px-4 py-2.5 ${borderRadius} ${bubbleColor} ${textColor} min-w-[80px] transition-all duration-200 ${!isTokenTransfer ? 'cursor-pointer hover:shadow-lg active:scale-[0.98]' : ''} ${showActions ? 'ring-2 ring-primary-400 ring-opacity-50' : ''}`}
           >
             {/* Forwarded Indicator */}
             {forwarded && (
@@ -412,6 +413,12 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
                       )}
                     </div>
                   )}
+                  {!fromMe && status === 'received' && (
+                    <span className="text-[10px] font-medium text-blue-500 animate-pulse">RECEIVING</span>
+                  )}
+                  {!fromMe && (status === 'confirmed' || currentStatus === 'confirmed') && (
+                    <span className="text-[10px] font-bold text-emerald-600">CONFIRMED</span>
+                  )}
                 </div>
 
                 {/* Token amount */}
@@ -475,13 +482,13 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
 
             {/* Status Footer */}
             {fromMe && (
-              <div className="flex items-center justify-end gap-1 mt-1 opacity-60">
+              <div className={`flex items-center justify-end gap-1 mt-1 ${textColor === 'text-white' ? 'opacity-80' : 'opacity-60'}`}>
                 <span className="text-[9px]">
                   {status === 'pending' && <span className="animate-pulse">⌛</span>}
                   {status === 'sent' && "✓"}
                   {status === 'delivered' && "✓✓"}
-                  {status === 'read' && <span className="text-primary-500 font-bold">✓✓</span>}
-                  {status === 'confirmed' && <span className="text-emerald-500 font-bold">✓✓</span>}
+                  {status === 'read' && <span className={`${textColor === 'text-white' ? 'text-white font-black' : 'text-primary-500 font-bold'}`}>✓✓</span>}
+                  {status === 'confirmed' && <span className={`${textColor === 'text-white' ? 'text-white font-black' : 'text-emerald-500 font-bold'}`}>✓✓</span>}
                 </span>
               </div>
             )}

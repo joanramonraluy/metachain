@@ -17,8 +17,11 @@ import {
   Database,
   Info,
   MessageSquare,
-  History,
   Camera,
+  Activity,
+  Zap,
+  Star,
+  ChevronRight,
 } from "lucide-react";
 import { groupService } from "../services/group.service";
 import { chatService } from "../services/chat.service";
@@ -85,8 +88,7 @@ function GroupInfoPage() {
   const [savingAvatar, setSavingAvatar] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // New state for contextual menu Actions on a member
-  const [activeMenuPubkey, setActiveMenuPubkey] = useState<string | null>(null);
+
   const [bannedMembers, setBannedMembers] = useState<
     Array<{
       publickey: string;
@@ -268,8 +270,8 @@ function GroupInfoPage() {
           allMsgs.length > 0
             ? Number(allMsgs[0].date)
             : Number(
-                (info as any).CREATED_DATE || (info as any).created_date || 0,
-              ),
+              (info as any).CREATED_DATE || (info as any).created_date || 0,
+            ),
       });
 
       const count = await getPublicListingsCount();
@@ -437,7 +439,6 @@ function GroupInfoPage() {
     newRole: "admin" | "member",
   ) => {
     try {
-      setActiveMenuPubkey(null);
       await groupService.updateMemberRole(
         groupId,
         targetPubkey,
@@ -454,7 +455,6 @@ function GroupInfoPage() {
 
   const handleRemoveMember = async (targetPubkey: string) => {
     try {
-      setActiveMenuPubkey(null);
       await groupService.removeMember(
         groupId,
         targetPubkey,
@@ -638,11 +638,10 @@ function GroupInfoPage() {
       setAddingMember(null);
     }
   };
-
   return (
-    <div className="h-full overflow-y-auto bg-gray-50 dark:bg-gray-900 flex flex-col transition-colors">
-      {/* HEADER */}
-      <div className="sticky top-0 z-10 bg-white/80 dark:bg-gray-800/80 backdrop-blur-md border-b border-gray-200 dark:border-gray-700 px-4 py-3 flex items-center gap-3">
+    <div className="h-full overflow-y-auto bg-gray-50 dark:bg-gray-900 flex flex-col transition-colors selection:bg-primary-500/30">
+      {/* ELITE STICKY HEADER */}
+      <div className="sticky top-0 z-[100] bg-white/70 dark:bg-gray-950/60 backdrop-blur-2xl border-b border-white/10 px-6 py-4 flex items-center justify-between shadow-xl shadow-black/5">
         <button
           onClick={() => {
             if (search.returnTo) {
@@ -651,39 +650,40 @@ function GroupInfoPage() {
               navigate({ to: `/groups/${groupId}` });
             }
           }}
-          className="p-2 -ml-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors text-gray-700 dark:text-gray-200"
+          className="p-3 bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 rounded-2xl transition-all active:scale-90 text-gray-700 dark:text-white border border-white/5"
         >
-          <ArrowLeft size={20} />
+          <ArrowLeft size={18} strokeWidth={3} />
         </button>
-        <div className="flex flex-col min-w-0">
-          <h1 className="text-lg font-semibold text-gray-800 dark:text-white truncate leading-tight">
+        <div className="flex flex-col items-center min-w-0 px-4">
+          <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.4em] mb-0.5">Community Registry</span>
+          <h1 className="text-xs font-black text-gray-900 dark:text-white truncate uppercase tracking-tight">
             {groupName}
           </h1>
-          <span className="text-xs text-gray-500 dark:text-gray-400 truncate">
-            Group Info
-          </span>
+        </div>
+        <div className="w-12 h-12 flex items-center justify-center">
+            <Info size={18} className="text-gray-300 opacity-20" />
         </div>
       </div>
 
-      {/* Tab Navigation */}
-      <GroupTabs activeTab={activeTab} onTabChange={setActiveTab} />
+      <div className="flex-1 overflow-y-auto">
+        {/* ELITE HERO SECTION - COMMON */}
+        <div className="relative pt-16 pb-12 px-6 sm:px-12 bg-white dark:bg-gray-900 overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-b from-primary-500/5 to-transparent pointer-events-none"></div>
+          <div className="max-w-xl mx-auto flex flex-col items-center">
+            <input
+              type="file"
+              ref={fileInputRef}
+              className="hidden"
+              accept="image/*"
+              onChange={handleAvatarFileSelect}
+            />
 
-      <div className="flex-1 w-full max-w-2xl mx-auto p-4 pb-32 space-y-6">
-        {activeTab === "profile" && (
-          <div className="space-y-6">
-            {/* GROUP HEADER CARD */}
-            <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col items-center relative">
-              <input
-                type="file"
-                ref={fileInputRef}
-                className="hidden"
-                accept="image/*"
-                onChange={handleAvatarFileSelect}
-              />
-
-              <div className="relative group/avatar mb-4">
+            <div className="relative group/avatar mb-10">
+              <div className="absolute inset-0 bg-primary-500/20 blur-[60px] rounded-full scale-125 opacity-30 group-hover/avatar:opacity-60 transition-opacity"></div>
+              <div className="relative">
+                <div className="absolute -inset-2 bg-gradient-to-tr from-primary-500 to-indigo-600 rounded-[3.5rem] blur opacity-20 group-hover/avatar:opacity-40 transition-opacity duration-700"></div>
                 <div
-                  className={`w-24 h-24 rounded-full flex items-center justify-center text-white text-4xl font-bold shadow-lg overflow-hidden ${!avatar ? "bg-primary-500 shadow-primary-500/30" : "bg-gray-200 dark:bg-gray-700"}`}
+                  className={`w-36 h-36 sm:w-44 sm:h-44 rounded-[3rem] flex items-center justify-center text-white text-5xl font-black shadow-[0_30px_70px_rgba(0,0,0,0.4)] dark:shadow-[0_30px_70px_rgba(0,0,0,0.6)] border-2 border-white/20 dark:border-white/10 relative z-10 transition-transform duration-700 group-hover/avatar:scale-[1.02] overflow-hidden ${!avatar ? "bg-gradient-to-br from-primary-500 to-primary-700" : "bg-gray-200 dark:bg-gray-800"}`}
                 >
                   {avatar ? (
                     <img
@@ -692,7 +692,7 @@ function GroupInfoPage() {
                       className="w-full h-full object-cover"
                     />
                   ) : (
-                    groupName.charAt(0).toUpperCase()
+                    <span className="drop-shadow-2xl">{groupName.charAt(0).toUpperCase()}</span>
                   )}
                 </div>
 
@@ -700,19 +700,21 @@ function GroupInfoPage() {
                   <button
                     onClick={() => fileInputRef.current?.click()}
                     disabled={savingAvatar}
-                    className="absolute inset-0 flex items-center justify-center bg-black/40 text-white rounded-full opacity-0 group-hover/avatar:opacity-100 transition-opacity"
+                    className="absolute -bottom-2 -right-2 w-12 h-12 bg-white dark:bg-gray-900 flex items-center justify-center text-primary-500 rounded-2xl shadow-2xl border-2 border-white dark:border-gray-800 z-20 hover:scale-110 active:scale-95 transition-all shadow-primary-500/10"
                   >
                     {savingAvatar ? (
-                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary-500"></div>
                     ) : (
-                      <Camera size={24} />
+                      <Camera size={20} strokeWidth={3} />
                     )}
                   </button>
                 )}
               </div>
+            </div>
 
-              {isEditingName ? (
-                <div className="flex items-center gap-2 mb-2 w-full max-w-xs">
+            {isEditingName ? (
+              <div className="flex flex-col items-center gap-4 w-full max-w-sm animate-in zoom-in-95 duration-200">
+                <div className="relative w-full">
                   <input
                     type="text"
                     value={newName}
@@ -726,41 +728,43 @@ function GroupInfoPage() {
                         setIsEditingName(false);
                       }
                     }}
-                    className="flex-1 bg-gray-50 dark:bg-gray-900 border border-primary-500 rounded-lg px-3 py-1.5 text-gray-900 dark:text-white text-center font-semibold focus:outline-none"
+                    className="w-full bg-white dark:bg-white/5 border-2 border-primary-500 rounded-[1.5rem] px-6 py-4 text-gray-900 dark:text-white text-center font-black text-xl focus:outline-none shadow-xl shadow-primary-500/10 uppercase tracking-widest"
                     disabled={savingName}
                   />
-                  <button
-                    onClick={handleSaveName}
-                    disabled={savingName}
-                    className="p-1.5 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors disabled:opacity-50"
-                  >
-                    <Check size={18} />
-                  </button>
                 </div>
-              ) : (
-                <div className="flex items-center justify-center gap-2 mb-1 w-full relative group/name">
-                  <h1 className="text-2xl font-bold text-gray-900 dark:text-white text-center break-all px-8">
-                    {groupName}
-                  </h1>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-3 group/name px-4 mb-4">
+                <h1 className="text-4xl sm:text-5xl font-black text-gray-900 dark:text-white text-center break-all uppercase tracking-tighter leading-none">
+                  {groupName}
+                </h1>
+
+                <div className="flex items-center gap-3">
+                  <div className="px-4 py-1.5 bg-primary-500/10 rounded-full border border-primary-500/20">
+                    <span className="text-[10px] font-black text-primary-500 uppercase tracking-widest">Protocol Channel</span>
+                  </div>
+
                   {(isCreator || myRole === "admin") && (
                     <button
                       onClick={() => {
                         setNewName(groupName);
                         setIsEditingName(true);
                       }}
-                      className="absolute right-0 p-1.5 text-gray-400 opacity-0 group-hover/name:opacity-100 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-900/30 rounded-full transition-all"
+                      className="p-2 text-gray-300 hover:text-primary-500 transition-colors"
                       title="Rename Group"
                     >
-                      <Edit2 size={16} />
+                      <Edit2 size={16} strokeWidth={3} />
                     </button>
                   )}
                 </div>
-              )}
+              </div>
+            )}
 
-              {/* DESCRIPTION */}
+            {/* DESCRIPTION */}
+            <div className="w-full mb-2">
               {isEditingDesc ? (
-                <div className="w-full mt-3 mb-4 flex flex-col items-end gap-2">
-                  <div className="relative w-full">
+                <div className="w-full flex flex-col items-center animate-in zoom-in-95 duration-200">
+                  <div className="relative w-full max-w-md">
                     <textarea
                       value={newDesc}
                       onChange={(e) => {
@@ -776,134 +780,168 @@ function GroupInfoPage() {
                           setIsEditingDesc(false);
                         }
                       }}
-                      className="w-full bg-gray-50 dark:bg-gray-900 border border-primary-500 rounded-lg px-3 py-2 text-sm text-gray-700 dark:text-gray-300 focus:outline-none resize-none pr-12"
+                      className="w-full bg-white dark:bg-white/5 border-2 border-primary-500 rounded-[2rem] px-8 py-6 text-sm text-center text-gray-700 dark:text-gray-300 focus:outline-none resize-none shadow-xl shadow-primary-500/5 font-bold"
                       rows={3}
-                      placeholder="Add a group description..."
+                      placeholder="Mission statement..."
                       disabled={savingDesc}
                     />
-                    <span
-                      className={`absolute bottom-2 right-2 text-[10px] font-medium ${newDesc.length >= 240 ? "text-red-500" : "text-gray-400"}`}
-                    >
-                      {newDesc.length}/255
-                    </span>
                   </div>
                 </div>
               ) : (
-                <div
-                  className={`mt-3 mb-4 w-full relative group/desc flex items-start ${description ? "justify-center text-center" : "justify-center"}`}
-                >
+                <div className="flex flex-col items-center group/desc px-6">
                   {description ? (
-                    <p className="text-gray-600 dark:text-gray-300 text-sm italic px-8 whitespace-pre-wrap text-center max-w-sm break-words">
-                      {description}
-                    </p>
-                  ) : isCreator || myRole === "admin" ? (
-                    <p
-                      className="text-gray-400 dark:text-gray-500 text-sm italic cursor-pointer hover:text-primary-500 transition-colors"
-                      onClick={() => {
-                        setNewDesc(description);
-                        setIsEditingDesc(true);
-                      }}
-                    >
-                      Add a description...
-                    </p>
-                  ) : null}
-
-                  {description && (isCreator || myRole === "admin") && (
+                    <div className="relative">
+                      <p className="text-gray-500 dark:text-gray-400 text-sm font-bold leading-relaxed text-center max-w-md break-words opacity-80 italic">
+                        "{description}"
+                      </p>
+                      {(isCreator || myRole === "admin") && (
+                        <button
+                          onClick={() => {
+                            setNewDesc(description);
+                            setIsEditingDesc(true);
+                          }}
+                          className="absolute -right-8 top-0 p-2 text-gray-300 hover:text-primary-500 opacity-0 group-hover/desc:opacity-100 transition-all"
+                        >
+                          <Edit2 size={14} strokeWidth={3} />
+                        </button>
+                      )}
+                    </div>
+                  ) : (isCreator || myRole === "admin") ? (
                     <button
                       onClick={() => {
                         setNewDesc(description);
                         setIsEditingDesc(true);
                       }}
-                      className="absolute right-0 top-0 p-1.5 text-gray-400 opacity-0 group-hover/desc:opacity-100 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-900/30 rounded-full transition-all"
-                      title="Edit Description"
+                      className="text-[10px] font-black text-gray-400 hover:text-primary-500 uppercase tracking-widest transition-colors py-2 border-b border-dashed border-gray-300 dark:border-gray-700"
                     >
-                      <Edit2 size={14} />
+                      Add Mission Manifest
                     </button>
-                  )}
+                  ) : null}
                 </div>
               )}
             </div>
+          </div>
+        </div>
 
-            {/* CHAT STATISTICS */}
-            <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 space-y-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Info size={18} className="text-primary-500" />
-                <h3 className="font-semibold text-gray-900 dark:text-white">
-                  Chat Statistics
-                </h3>
+        {/* TABS NAVIGATION - CENTERED ELITE */}
+        <div className="flex justify-center -mt-8 relative z-[50]">
+          <GroupTabs activeTab={activeTab} onTabChange={setActiveTab} />
+        </div>
+
+        <div className="w-full max-w-2xl mx-auto p-6 sm:p-10 pb-32 space-y-12">
+        {activeTab === "profile" && (
+          <div className="space-y-12 animate-in fade-in slide-in-from-bottom-6 duration-700">
+
+            {/* ELITE ANALYTICS CARDS */}
+            <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[3rem] p-10 border border-white/20 dark:border-white/5 shadow-xl shadow-black/5">
+              <div className="flex items-center gap-4 mb-8">
+                <div className="w-12 h-12 bg-primary-500/10 rounded-2xl flex items-center justify-center text-primary-500">
+                  <Activity size={22} strokeWidth={3} />
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.4em] mb-0.5">Activity Ledger</span>
+                  <h3 className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-tight">Group Analytics</h3>
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl">
-                  <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center text-blue-600 dark:text-blue-400">
-                    <MessageSquare size={20} />
+              <div className="grid grid-cols-1 gap-4">
+                <div className="flex items-center justify-between p-6 bg-gray-50/50 dark:bg-white/5 rounded-[2.5rem] border border-white/5 group hover:border-primary-500/20 transition-all">
+                  <div className="flex items-center gap-5">
+                    <div className="w-14 h-14 bg-blue-500/10 rounded-2xl flex items-center justify-center text-blue-500 group-hover:scale-110 transition-transform">
+                      <MessageSquare size={24} strokeWidth={3} />
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Message Volume</span>
+                      <span className="text-sm font-black text-gray-900 dark:text-gray-200 uppercase">Communcation</span>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">
-                      Messages
-                    </p>
-                    <p className="text-sm font-bold text-gray-900 dark:text-white">
-                      {stats.total} total ({stats.mine} mine)
-                    </p>
+                  <div className="text-right flex flex-col">
+                    <span className="text-2xl font-black text-gray-900 dark:text-white tracking-tighter">
+                      {stats.total}
+                    </span>
+                    <span className="text-[9px] font-black text-gray-500 uppercase tracking-widest italic">{stats.mine} Mine</span>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl">
-                  <div className="w-10 h-10 bg-orange-100 dark:bg-orange-900/30 rounded-full flex items-center justify-center text-orange-600 dark:text-orange-400">
-                    <History size={20} />
+                <div className="flex items-center justify-between p-6 bg-gray-50/50 dark:bg-white/5 rounded-[2.5rem] border border-white/5 group hover:border-indigo-500/20 transition-all">
+                  <div className="flex items-center gap-5">
+                    <div className="w-14 h-14 bg-indigo-500/10 rounded-2xl flex items-center justify-center text-indigo-500 group-hover:scale-110 transition-transform">
+                      <Users size={24} strokeWidth={3} />
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Member Registry</span>
+                      <span className="text-sm font-black text-gray-900 dark:text-gray-200 uppercase">Population</span>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">
-                      History
-                    </p>
-                    <p className="text-sm font-bold text-gray-900 dark:text-white">
-                      Since{" "}
-                      {stats.firstDate
-                        ? new Date(stats.firstDate).toLocaleDateString()
-                        : "N/A"}
-                    </p>
+                  <div className="text-right">
+                    <span className="text-2xl font-black text-gray-900 dark:text-white tracking-tighter">
+                      {members.length}
+                    </span>
                   </div>
                 </div>
+
+                {stats.firstDate > 0 && (
+                  <div className="flex items-center justify-between p-6 bg-gray-50/50 dark:bg-white/5 rounded-[2.5rem] border border-white/5 opacity-60">
+                    <div className="flex items-center gap-5">
+                      <div className="w-14 h-14 bg-orange-500/10 rounded-2xl flex items-center justify-center text-orange-500">
+                        <Zap size={24} strokeWidth={3} />
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Genesis Block</span>
+                        <span className="text-sm font-black text-gray-900 dark:text-gray-200 uppercase">Established</span>
+                      </div>
+                    </div>
+                    <span className="text-xs font-black text-gray-500 uppercase tracking-tighter">
+                      {new Date(stats.firstDate).toLocaleDateString([], { month: 'short', year: 'numeric' })}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
 
             {/* TECHNICAL DATA */}
-            <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 space-y-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Database size={18} className="text-primary-500" />
-                <h3 className="font-semibold text-gray-900 dark:text-white">
-                  Technical Data
-                </h3>
+            <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[3rem] p-10 border border-white/20 dark:border-white/5 shadow-xl shadow-black/5">
+              <div className="flex items-center gap-4 mb-8">
+                <div className="w-12 h-12 bg-primary-500/10 rounded-2xl flex items-center justify-center text-primary-500">
+                  <Database size={22} strokeWidth={3} />
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.4em] mb-0.5">Specifications</span>
+                  <h3 className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-tight">Technical Data</h3>
+                </div>
               </div>
 
-              <div className="space-y-3">
+              <div className="space-y-6">
                 <div className="group relative">
-                  <p className="text-xs text-gray-500 dark:text-gray-400 font-medium mb-1">
-                    Group ID (Public Key)
+                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-2 px-2">
+                    Group ID / Registry Address
                   </p>
-                  <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-transparent hover:border-primary-200 dark:hover:border-primary-900/50 transition-all">
-                    <p className="text-xs font-mono text-gray-800 dark:text-gray-200 break-all pr-8">
+                  <div className="flex items-center justify-between p-6 bg-gray-50/50 dark:bg-white/5 rounded-[2.5rem] border border-white/5 group hover:border-primary-500/20 transition-all">
+                    <p className="text-xs font-black text-gray-800 dark:text-gray-200 break-all pr-12 font-mono">
                       {groupId}
                     </p>
                     <button
                       onClick={() => copyToClipboard(groupId || "", "groupid")}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 p-2 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg text-gray-400 hover:text-primary-500 opacity-0 group-hover:opacity-100 transition-all shadow-sm"
+                      className="absolute right-6 top-1/2 -translate-y-1/2 p-3 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-2xl text-gray-400 hover:text-primary-500 opacity-0 group-hover:opacity-100 transition-all shadow-lg"
                     >
                       {copiedField === "groupid" ? (
-                        <Check size={14} className="text-green-500" />
+                        <Check size={16} className="text-green-500" />
                       ) : (
-                        <Copy size={14} />
+                        <Copy size={16} />
                       )}
                     </button>
                   </div>
                 </div>
 
-                <div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 font-medium mb-1">
-                    My Role
-                  </p>
-                  <div className="inline-flex items-center px-3 py-1 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 rounded-full text-xs font-mono font-bold uppercase tracking-wider">
-                    {myRole}
+                <div className="flex items-center justify-between p-6 bg-gray-50/50 dark:bg-white/5 rounded-[2.5rem] border border-white/5">
+                  <div className="flex flex-col">
+                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-1">
+                      Assigned Privilege
+                    </p>
+                    <span className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-widest">{myRole}</span>
+                  </div>
+                  <div className="w-10 h-10 bg-primary-500/10 rounded-xl flex items-center justify-center text-primary-500">
+                    <ShieldCheck size={20} strokeWidth={3} />
                   </div>
                 </div>
               </div>
@@ -913,541 +951,457 @@ function GroupInfoPage() {
 
         {activeTab === "settings" && (
           <div className="space-y-6">
-            {/* MEMBERS LIST */}
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
-              <div className="p-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Users size={18} className="text-gray-500" />
-                  <span className="font-semibold text-gray-900 dark:text-white">
-                    Members
-                  </span>
+            {/* VERIFIED REGISTRY: MEMBERS */}
+            <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[3rem] p-10 border border-white/20 dark:border-white/5 shadow-xl shadow-black/5">
+              <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-primary-500/10 rounded-2xl flex items-center justify-center text-primary-500">
+                    <Users size={22} strokeWidth={3} />
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.4em] mb-0.5">Verified Registry</span>
+                    <h3 className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-tight">Active Members</h3>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
                   {(isCreator || myRole === "admin") && (
                     <button
                       onClick={openAddMember}
-                      className="flex items-center gap-1.5 text-xs font-semibold text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/30 hover:bg-primary-100 dark:hover:bg-primary-900/50 px-3 py-1.5 rounded-full transition-colors"
+                      className="w-10 h-10 bg-primary-500 text-white rounded-xl flex items-center justify-center hover:bg-primary-600 active:scale-95 transition-all shadow-lg shadow-primary-500/20"
                     >
-                      <UserPlus size={13} />
-                      Add
+                      <UserPlus size={18} strokeWidth={3} />
                     </button>
                   )}
-                  <span className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-1 rounded-full">
+                  <span className="h-10 px-4 bg-gray-100 dark:bg-white/5 rounded-xl flex items-center justify-center text-xs font-black text-gray-500 dark:text-gray-400 border border-white/5">
                     {members.length}
                   </span>
                 </div>
               </div>
 
-              <div className="divide-y divide-gray-100 dark:divide-gray-700">
+              <div className="space-y-2">
                 {loading ? (
-                  <div className="p-8 text-center text-gray-500">
-                    Loading members...
+                  <div className="py-20 text-center">
+                    <div className="inline-block w-8 h-8 border-4 border-primary-500/20 border-t-primary-500 rounded-full animate-spin mb-4" />
+                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Synchronizing Registry...</p>
                   </div>
                 ) : (
                   members.map((member, i) => (
                     <div
                       key={member.publickey || i}
-                      className={`relative flex items-center ${activeMenuPubkey === member.publickey ? "z-30" : "z-0"} ${member.isMe ? "bg-primary-50/50 dark:bg-primary-900/10" : "hover:bg-gray-100 dark:hover:bg-gray-700/50"}`}
+                      className={`group relative flex items-center p-4 rounded-[2rem] transition-all hover:bg-white dark:hover:bg-white/5 border border-transparent hover:border-white/20 dark:hover:border-white/10 ${member.isMe ? "bg-primary-500/5 border-primary-500/10" : ""}`}
                     >
-                      <button
-                        onClick={() => {
-                          if (!member.isMe) {
-                            navigate({
-                              to: `/contact-info/${member.publickey}`,
-                              search: { returnTo: `/group-info/${groupId}` },
-                            });
-                          }
-                        }}
-                        className={`flex-1 p-4 flex items-center gap-3 transition-all text-left group min-w-0
-                                  ${
-                                    member.isMe
-                                      ? "cursor-default"
-                                      : "cursor-pointer active:scale-[0.99]"
-                                  }`}
-                      >
-                        {member.avatar ? (
-                          <img
-                            src={member.avatar}
-                            alt={member.name || "Member"}
-                            className="w-10 h-10 rounded-full object-cover bg-gray-200 dark:bg-gray-700 flex-shrink-0"
-                            onError={(e: any) => {
-                              e.target.style.display = "none";
-                              const fallback = e.target
-                                .nextElementSibling as HTMLDivElement | null;
-                              if (fallback) {
-                                fallback.style.display = "flex";
-                              }
-                            }}
-                          />
-                        ) : null}
-                        <div
-                          className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 flex-shrink-0 items-center justify-center text-gray-600 dark:text-gray-300 font-medium text-sm group-hover:bg-gray-300 dark:group-hover:bg-gray-600 transition-colors"
-                          style={{ display: member.avatar ? "none" : "flex" }}
-                        >
-                          {member.isMe
-                            ? "You"
-                            : member.name &&
-                                member.name !== "Unknown Member" &&
-                                member.name !== "Unknown"
-                              ? member.name.charAt(0).toUpperCase()
-                              : "?"}
+                      <div className="relative">
+                        <div className="w-14 h-14 rounded-2xl overflow-hidden bg-gray-200 dark:bg-gray-800 border-2 border-white dark:border-gray-700 shadow-sm flex-shrink-0">
+                          {member.avatar ? (
+                            <img src={member.avatar} className="w-full h-full object-cover" alt="" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-xl font-black text-gray-400 dark:text-gray-600 uppercase">
+                              {member.name ? member.name.charAt(0) : "?"}
+                            </div>
+                          )}
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <div>
-                            <p className="text-sm font-medium text-gray-900 dark:text-white truncate flex items-center gap-2">
-                              {member.isMe
-                                ? "You"
-                                : member.name &&
-                                    member.name !== "Unknown Member" &&
-                                    member.name !== "Unknown"
-                                  ? member.name
-                                  : shortenKey(member.publickey)}
-                              {member.role === "creator" && (
-                                <span className="text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-400 px-1.5 py-0.5 rounded-md uppercase tracking-wide flex-shrink-0">
-                                  Creator
-                                </span>
-                              )}
-                              {member.role === "admin" && (
-                                <span className="text-[10px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-400 px-1.5 py-0.5 rounded-md uppercase tracking-wide flex-shrink-0">
-                                  Admin
-                                </span>
-                              )}
-                            </p>
-                            <p className="text-xs text-gray-500 dark:text-gray-400 truncate font-mono">
-                              {shortenKey(member.publickey)}
-                            </p>
-                          </div>
-                        </div>
-                      </button>
-
-                      {/* Inline Actions for Admins/Creators */}
-                      {!member.isMe &&
-                        member.role !== "creator" &&
-                        (myRole === "creator" || myRole === "admin") && (
-                          <div className="flex items-center gap-1 pr-3 flex-shrink-0">
-                            {/* Role Management */}
-                            {member.role === "member" &&
-                              (isCreator || myRole === "admin") && (
-                                <button
-                                  onClick={() =>
-                                    handleRoleChange(member.publickey, "admin")
-                                  }
-                                  className="p-1.5 text-sky-600 hover:text-sky-700 dark:hover:text-sky-400 transition-colors rounded-full hover:bg-sky-50 dark:hover:bg-sky-900/20"
-                                  title="Promote to Admin"
-                                >
-                                  <ShieldCheck size={18} />
-                                </button>
-                              )}
-                            {member.role === "admin" && isCreator && (
-                              <button
-                                onClick={() =>
-                                  handleRoleChange(member.publickey, "member")
-                                }
-                                className="p-1.5 text-amber-600 hover:text-amber-700 dark:hover:text-amber-400 transition-colors rounded-full hover:bg-amber-50 dark:hover:bg-amber-900/20"
-                                title="Demote to Member"
-                              >
-                                <ShieldAlert size={18} />
-                              </button>
-                            )}
-
-                            {/* Remove Button */}
-                            {(isCreator ||
-                              (myRole === "admin" &&
-                                member.role === "member")) && (
-                              <button
-                                onClick={() =>
-                                  handleRemoveMember(member.publickey)
-                                }
-                                className="p-1.5 text-red-500 hover:text-red-700 dark:hover:text-red-400 transition-colors rounded-full hover:bg-red-50 dark:hover:bg-red-900/20"
-                                title="Remove from Group"
-                              >
-                                <UserX size={18} />
-                              </button>
-                            )}
+                        {member.role !== "member" && (
+                          <div className={`absolute -top-1 -right-1 w-6 h-6 rounded-lg flex items-center justify-center shadow-lg border border-white dark:border-gray-800 ${member.role === "creator" ? "bg-amber-500 text-white" : "bg-blue-500 text-white"}`}>
+                            {member.role === "creator" ? <Star size={12} strokeWidth={3} /> : <ShieldCheck size={12} strokeWidth={3} />}
                           </div>
                         )}
+                      </div>
+
+                      <div className="ml-5 flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span className="text-sm font-black text-gray-900 dark:text-gray-100 uppercase tracking-tight truncate">
+                            {member.isMe ? "You" : member.name || "Anonymous Contact"}
+                          </span>
+                        </div>
+                        <p className="text-[9px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest font-mono truncate">
+                          {shortenKey(member.publickey)}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {!member.isMe && member.role !== "creator" && (myRole === "creator" || myRole === "admin") && (
+                          <>
+                            {member.role === "member" && (isCreator || myRole === "admin") && (
+                              <button
+                                onClick={() => handleRoleChange(member.publickey, "admin")}
+                                className="w-9 h-9 bg-blue-500/10 text-blue-500 rounded-xl flex items-center justify-center hover:bg-blue-500 hover:text-white transition-all"
+                                title="Promote"
+                              >
+                                <ShieldCheck size={16} strokeWidth={3} />
+                              </button>
+                            )}
+                            {member.role === "admin" && isCreator && (
+                              <button
+                                onClick={() => handleRoleChange(member.publickey, "member")}
+                                className="w-9 h-9 bg-amber-500/10 text-amber-500 rounded-xl flex items-center justify-center hover:bg-amber-500 hover:text-white transition-all"
+                                title="Demote"
+                              >
+                                <ShieldAlert size={16} strokeWidth={3} />
+                              </button>
+                            )}
+                            {(isCreator || (myRole === "admin" && member.role === "member")) && (
+                              <button
+                                onClick={() => handleRemoveMember(member.publickey)}
+                                className="w-9 h-9 bg-red-500/10 text-red-500 rounded-xl flex items-center justify-center hover:bg-red-500 hover:text-white transition-all"
+                                title="Expel"
+                              >
+                                <UserX size={16} strokeWidth={3} />
+                              </button>
+                            )}
+                          </>
+                        )}
+                        {!member.isMe && (
+                          <button
+                            onClick={() => navigate({ to: `/contact-info/${member.publickey}`, search: { returnTo: `/group-info/${groupId}` } })}
+                            className="w-9 h-9 bg-gray-500/10 text-gray-500 rounded-xl flex items-center justify-center hover:bg-gray-500 hover:text-white transition-all"
+                          >
+                            <ChevronRight size={16} strokeWidth={3} />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))
                 )}
               </div>
             </div>
 
-            {/* BANNED MEMBERS — visible to Creator and Admins */}
-            {(isCreator || myRole === "admin") && bannedMembers.length > 0 && (
-              <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-red-100 dark:border-red-900/50">
-                <div className="p-4 border-b border-red-100 dark:border-red-900/50 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <ShieldOff size={18} className="text-red-500" />
-                    <span className="font-semibold text-red-600 dark:text-red-400">
-                      Banned Members
-                    </span>
+            {/* ACTION LEDGER: BANNED & REQUESTS */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* BANNED MEMBERS */}
+              <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[3rem] p-10 border border-red-500/20 dark:border-red-500/10 shadow-xl shadow-red-500/5">
+                <div className="flex items-center justify-between mb-8">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-red-500/10 rounded-2xl flex items-center justify-center text-red-500 font-black">
+                      <ShieldOff size={22} strokeWidth={3} />
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[10px] font-black text-red-400 uppercase tracking-[0.4em] mb-0.5">Restriction List</span>
+                      <h3 className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-tight">Expelled Users</h3>
+                    </div>
                   </div>
-                  <span className="text-xs bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 px-2 py-1 rounded-full">
+                  <span className="h-10 px-4 bg-red-500/10 rounded-xl flex items-center justify-center text-xs font-black text-red-500 border border-red-500/10">
                     {bannedMembers.length}
                   </span>
                 </div>
-                <div className="divide-y divide-red-50 dark:divide-red-900/20">
-                  {bannedMembers.map((banned) => (
-                    <div
-                      key={banned.publickey}
-                      className="p-4 flex items-center gap-3"
-                    >
-                      <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex-shrink-0 flex items-center justify-center text-red-500">
-                        <ShieldOff size={16} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                          {banned.username && banned.username !== "Unknown"
-                            ? banned.username
-                            : shortenKey(banned.publickey)}
-                        </p>
-                        <p className="text-xs text-gray-400 dark:text-gray-500">
-                          Banned{" "}
-                          {new Date(banned.banned_at).toLocaleDateString()}
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => handleUnban(banned.publickey)}
-                        className="flex-shrink-0 text-xs px-3 py-1.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full font-medium hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors"
-                      >
-                        Unban
-                      </button>
+
+                <div className="space-y-3">
+                  {bannedMembers.length === 0 ? (
+                    <div className="py-8 text-center bg-gray-50/50 dark:bg-white/5 rounded-[2.5rem] border border-dashed border-gray-200 dark:border-white/10">
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest italic">Clear Ledger</p>
                     </div>
-                  ))}
+                  ) : (
+                    bannedMembers.map((banned) => (
+                      <div key={banned.publickey} className="flex items-center p-4 bg-gray-50/50 dark:bg-white/5 rounded-[2rem] border border-white/5">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-black text-gray-900 dark:text-white uppercase tracking-tight truncate mb-0.5">
+                            {banned.username || shortenKey(banned.publickey)}
+                          </p>
+                          <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest">
+                            Blacklisted {new Date(banned.banned_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => handleUnban(banned.publickey)}
+                          className="px-4 py-2 bg-green-500 text-white text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-green-600 transition-all shadow-lg shadow-green-500/20"
+                        >
+                          Pardon
+                        </button>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
-            )}
 
-            {/* JOIN REQUESTS */}
-            {joinRequests.length > 0 && (isCreator || myRole === "admin") && (
-              <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-blue-100 dark:border-blue-900/50">
-                <div className="p-4 border-b border-blue-100 dark:border-blue-900/50 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <UserPlus size={18} className="text-blue-500" />
-                    <span className="font-semibold text-blue-600 dark:text-blue-400">
-                      Join Requests
-                    </span>
+              {/* JOIN REQUESTS */}
+              <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[3rem] p-10 border border-blue-500/20 dark:border-blue-500/10 shadow-xl shadow-blue-500/5">
+                <div className="flex items-center justify-between mb-8">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-blue-500/10 rounded-2xl flex items-center justify-center text-blue-500">
+                      <UserPlus size={22} strokeWidth={3} />
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[10px] font-black text-blue-400 uppercase tracking-[0.4em] mb-0.5">Inbound Terminal</span>
+                      <h3 className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-tight">Pending Access</h3>
+                    </div>
                   </div>
-                  <span className="text-xs bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 px-2 py-1 rounded-full">
+                  <span className="h-10 px-4 bg-blue-500/10 rounded-xl flex items-center justify-center text-xs font-black text-blue-500 border border-blue-500/10">
                     {joinRequests.length}
                   </span>
                 </div>
-                <div className="divide-y divide-blue-50 dark:divide-blue-900/20">
-                  {joinRequests.map((req) => (
-                    <div
-                      key={req.id}
-                      className="p-4 flex items-center justify-between gap-3"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                          {req.username || shortenKey(req.publickey)}
-                        </p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate font-mono">
-                          {shortenKey(req.publickey)}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <button
-                          onClick={() =>
-                            handleResolveJoinRequest(req, "approved")
-                          }
-                          className="p-1.5 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 hover:bg-green-200 dark:hover:bg-green-900/50 rounded-lg transition-colors"
-                          title="Approve"
-                        >
-                          <Check size={18} />
-                        </button>
-                        <button
-                          onClick={() =>
-                            handleResolveJoinRequest(req, "denied")
-                          }
-                          className="p-1.5 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50 rounded-lg transition-colors"
-                          title="Reject"
-                        >
-                          <X size={18} />
-                        </button>
-                      </div>
+
+                <div className="space-y-3">
+                  {(isCreator || myRole === "admin") && joinRequests.length === 0 ? (
+                    <div className="py-8 text-center bg-gray-50/50 dark:bg-white/5 rounded-[2.5rem] border border-dashed border-gray-200 dark:border-white/10">
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest italic">No Pending Access</p>
                     </div>
-                  ))}
+                  ) : (
+                    joinRequests.map((req) => (
+                      <div key={req.id} className="flex items-center p-4 bg-gray-50/50 dark:bg-white/5 rounded-[2rem] border border-white/5">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-black text-gray-900 dark:text-white uppercase tracking-tight truncate mb-0.5">
+                            {req.username || shortenKey(req.publickey)}
+                          </p>
+                          <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest font-mono">
+                            {shortenKey(req.publickey)}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleResolveJoinRequest(req, "approved")}
+                            className="w-10 h-10 bg-green-500 text-white rounded-xl flex items-center justify-center hover:bg-green-600 transition-all shadow-lg shadow-green-500/20"
+                          >
+                            <Check size={18} strokeWidth={3} />
+                          </button>
+                          <button
+                            onClick={() => handleResolveJoinRequest(req, "denied")}
+                            className="w-10 h-10 bg-red-500 text-white rounded-xl flex items-center justify-center hover:bg-red-600 transition-all shadow-lg shadow-red-500/20"
+                          >
+                            <X size={18} strokeWidth={3} />
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
-            )}
+            </div>
 
-            {/* GENERATE INVITE LINK & AUTO-APPROVE */}
+            {/* ACCESS PROTOCOLS: INVITE & PERMISSIONS */}
             {(isCreator || myRole === "admin") && (
-              <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Users size={18} className="text-primary-500" />
-                    <span className="font-semibold text-gray-900 dark:text-white">
-                      Invite Link
-                    </span>
+              <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[3rem] p-10 border border-white/20 dark:border-white/5 shadow-xl shadow-black/5">
+                <div className="flex items-center gap-4 mb-10">
+                  <div className="w-12 h-12 bg-primary-500/10 rounded-2xl flex items-center justify-center text-primary-500">
+                    <ShieldCheck size={22} strokeWidth={3} />
                   </div>
-                </div>
-
-                {/* Public listing toggle */}
-                <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
                   <div className="flex flex-col">
-                    <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                      Public Listing
-                    </span>
-                    <span className="text-xs text-gray-500 dark:text-gray-400">
-                      Make this group discoverable via gossip
-                    </span>
+                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.4em] mb-0.5">Control Panel</span>
+                    <h3 className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-tight">Access Protocols</h3>
                   </div>
-                  <button
-                    onClick={handleTogglePublicListing}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
-                      isPublic
-                        ? "bg-primary-600"
-                        : "bg-gray-300 dark:bg-gray-600"
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        isPublic ? "translate-x-6" : "translate-x-1"
-                      }`}
-                    />
-                  </button>
-                </div>
-                {publicError && (
-                  <div className="text-xs text-red-600 dark:text-red-400">
-                    {publicError}
-                  </div>
-                )}
-                <div className="text-xs text-gray-500 dark:text-gray-400">
-                  Public listings used: {publicCount}/{LISTINGS_PUBLIC_LIMIT}
                 </div>
 
-                {/* Auto-approve toggle */}
-                <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
-                  <div className="flex flex-col">
-                    <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                      Automatic Approval
-                    </span>
-                    <span className="text-xs text-gray-500 dark:text-gray-400">
-                      Users with link join instantly
-                    </span>
-                  </div>
-                  <button
-                    onClick={handleToggleAutoApprove}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
-                      autoApprove
-                        ? "bg-primary-600"
-                        : "bg-gray-300 dark:bg-gray-600"
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        autoApprove ? "translate-x-6" : "translate-x-1"
-                      }`}
-                    />
-                  </button>
-                </div>
-
-                {inviteLink ? (
-                  <div className="space-y-3">
-                    <div className="p-3 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-600 break-all text-sm font-mono text-gray-600 dark:text-gray-300 relative group/link">
-                      {inviteLink}
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Public listing toggle */}
+                    {/* Global discovery toggle */}
+                    <div className="group flex items-center justify-between p-8 bg-white/40 dark:bg-black/5 rounded-[2.5rem] border border-white/10 hover:border-primary-500/20 hover:shadow-xl transition-all duration-500">
+                      <div className="flex flex-col min-w-0 pr-6">
+                        <span className="text-[11px] font-black text-gray-900 dark:text-white uppercase tracking-[0.2em] mb-1">Global Discovery</span>
+                        <span className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase leading-relaxed max-w-[200px] opacity-70">Broadcast channel via gossip network</span>
+                      </div>
                       <button
-                        onClick={() =>
-                          copyToClipboard(inviteLink, "inviteLink")
-                        }
-                        className="absolute right-2 top-2 p-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md text-gray-500 hover:text-primary-500 transition-colors shadow-sm"
-                        title="Copy Invite Link"
+                        onClick={handleTogglePublicListing}
+                        className={`relative inline-flex h-9 w-16 flex-shrink-0 items-center rounded-2xl transition-all duration-500 ease-in-out border-2 overflow-hidden ${isPublic ? "bg-primary-500 border-primary-400 shadow-[0_0_25px_rgba(59,130,246,0.5)]" : "bg-black/10 dark:bg-white/5 border-white/5"}`}
                       >
-                        {copiedField === "inviteLink" ? (
-                          <Check size={14} className="text-green-500" />
-                        ) : (
-                          <Copy size={14} />
-                        )}
+                        <div className={`absolute inset-0 bg-gradient-to-tr from-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity`} />
+                        <span className={`inline-block h-6 w-6 transform rounded-xl bg-white shadow-[0_4px_12px_rgba(0,0,0,0.2)] transition-all duration-500 ease-in-out ${isPublic ? "translate-x-9" : "translate-x-1"}`} />
                       </button>
                     </div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      Share this link carefully. Anyone with this link can
-                      request to join the group.
-                    </p>
+
+                    {/* Auto-approve toggle */}
+                    <div className="group flex items-center justify-between p-8 bg-white/40 dark:bg-black/5 rounded-[2.5rem] border border-white/10 hover:border-primary-500/20 hover:shadow-xl transition-all duration-500">
+                      <div className="flex flex-col min-w-0 pr-6">
+                        <span className="text-[11px] font-black text-gray-900 dark:text-white uppercase tracking-[0.2em] mb-1">Autonomous Approval</span>
+                        <span className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase leading-relaxed max-w-[200px] opacity-70">Manifest links grant instant access</span>
+                      </div>
+                      <button
+                        onClick={handleToggleAutoApprove}
+                        className={`relative inline-flex h-9 w-16 flex-shrink-0 items-center rounded-2xl transition-all duration-500 ease-in-out border-2 overflow-hidden ${autoApprove ? "bg-primary-500 border-primary-400 shadow-[0_0_25px_rgba(59,130,246,0.5)]" : "bg-black/10 dark:bg-white/5 border-white/5"}`}
+                      >
+                        <div className={`absolute inset-0 bg-gradient-to-tr from-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity`} />
+                        <span className={`inline-block h-6 w-6 transform rounded-xl bg-white shadow-[0_4px_12px_rgba(0,0,0,0.2)] transition-all duration-500 ease-in-out ${autoApprove ? "translate-x-9" : "translate-x-1"}`} />
+                      </button>
+                    </div>
                   </div>
-                ) : (
-                  <button
-                    onClick={handleGenerateInvite}
-                    disabled={generatingLink}
-                    className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 font-medium rounded-lg hover:bg-primary-100 dark:hover:bg-primary-900/50 transition-colors disabled:opacity-50"
-                  >
-                    {generatingLink ? (
-                      "Generating..."
+
+                  {publicError && <p className="text-[9px] font-black text-red-500 uppercase tracking-widest px-4">{publicError}</p>}
+                  <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest px-4">Global Discovery Utilization: {publicCount} / {LISTINGS_PUBLIC_LIMIT}</p>
+
+                  <div className="mt-8 pt-8 border-t border-white/5 space-y-6">
+                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-2">Access Token / Invite Manifest</p>
+                    {inviteLink ? (
+                      <div className="space-y-4">
+                        <div className="relative group/link p-8 bg-gray-50/50 dark:bg-white/10 rounded-[2.5rem] border border-white/10 font-mono text-xs font-black text-primary-500 break-all select-all">
+                          {inviteLink}
+                          <button
+                            onClick={() => copyToClipboard(inviteLink, "inviteLink")}
+                            className="absolute right-6 top-1/2 -translate-y-1/2 w-12 h-12 bg-white dark:bg-gray-800 rounded-2xl flex items-center justify-center text-gray-400 hover:text-primary-500 opacity-0 group-hover/link:opacity-100 transition-all shadow-xl"
+                          >
+                            {copiedField === "inviteLink" ? <Check size={18} strokeWidth={3} className="text-green-500" /> : <Copy size={18} strokeWidth={3} />}
+                          </button>
+                        </div>
+                        <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest text-center italic">Protocol warning: single-use tokens recommended for high-security registries.</p>
+                      </div>
                     ) : (
-                      <>
-                        <Copy size={16} />
-                        Generate Invite Link
-                      </>
+                      <button
+                        onClick={handleGenerateInvite}
+                        disabled={generatingLink}
+                        className="w-full flex items-center justify-center gap-4 py-8 bg-primary-500 text-white rounded-[2.5rem] font-black uppercase tracking-[0.3em] hover:bg-primary-600 active:scale-[0.98] transition-all shadow-2xl shadow-primary-500/20 disabled:opacity-50"
+                      >
+                        {generatingLink ? "Generating Manifesto..." : <><Copy size={20} strokeWidth={3} /> Generate Access Manifest</>}
+                      </button>
                     )}
-                  </button>
-                )}
+                  </div>
+                </div>
               </div>
             )}
 
-            {/* EXIT GROUP BUTTON */}
-            <div className="bg-white dark:bg-gray-800 rounded-2xl overflow-hidden shadow-sm border border-gray-100 dark:border-gray-700">
+            {/* EXIT TERMINAL */}
+            <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[3rem] p-2 border border-red-500/10 shadow-xl overflow-hidden group">
               <button
                 onClick={() => setShowDeleteConfirm(true)}
-                className="w-full flex items-center gap-3 p-4 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-left font-medium"
+                className="w-full h-24 flex items-center justify-between px-10 text-red-500 hover:bg-red-500 hover:text-white transition-all rounded-[2.5rem] group"
               >
-                <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
-                  <Trash2 size={20} />
+                <div className="flex items-center gap-6">
+                  <div className="w-12 h-12 bg-red-500/10 rounded-2xl flex items-center justify-center group-hover:bg-red-400 transition-colors">
+                    <Trash2 size={24} strokeWidth={3} />
+                  </div>
+                  <div className="flex flex-col text-left">
+                    <span className="text-[10px] font-black uppercase tracking-[0.4em] opacity-60">Session Management</span>
+                    <span className="text-sm font-black uppercase tracking-tight">Expunge Registry Connection</span>
+                  </div>
                 </div>
-                Exit Group
+                <ChevronRight size={24} strokeWidth={3} className="opacity-0 group-hover:opacity-100 -translate-x-4 group-hover:translate-x-0 transition-all font-black" />
               </button>
             </div>
           </div>
         )}
 
-        {/* EXIT CONFIRMATION DIALOG */}
+        {/* ELITE EXIT CONFIRMATION */}
         {showDeleteConfirm && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-sm w-full p-6 animate-in zoom-in-95 fade-in duration-200 border border-gray-200 dark:border-gray-700">
-              <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">
-                Exit Group?
-              </h3>
-              <p className="text-gray-600 dark:text-gray-300 mb-6">
-                Are you sure you want to exit this group? You will no longer
-                receive new messages.
-              </p>
-              <div className="flex gap-3">
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[100] p-6 animate-in fade-in duration-300">
+            <div className="bg-white dark:bg-gray-900 rounded-[3rem] shadow-2xl p-10 border border-white/20 dark:border-white/10 max-w-sm w-full animate-in zoom-in-95 duration-300">
+              <div className="w-16 h-16 bg-red-500/10 rounded-2xl flex items-center justify-center text-red-500 mb-6 mx-auto">
+                <Trash2 size={32} strokeWidth={3} />
+              </div>
+              <h3 className="text-lg font-black text-gray-900 dark:text-white mb-2 text-center uppercase tracking-tight">Expunge Connection?</h3>
+              <p className="text-xs font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest text-center mb-8 leading-relaxed">Incoming data streams will be terminated. This action is recorded and permanent.</p>
+              <div className="grid grid-cols-2 gap-4">
                 <button
                   onClick={() => setShowDeleteConfirm(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-medium"
+                  className="py-4 bg-gray-100 dark:bg-white/5 text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest rounded-2xl hover:bg-gray-200 dark:hover:bg-white/10 transition-all"
                 >
-                  Cancel
+                  Abort
                 </button>
                 <button
                   onClick={() => {
                     setShowDeleteConfirm(false);
                     handleExitGroup();
                   }}
-                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
+                  className="py-4 bg-red-500 text-white text-[10px] font-black uppercase tracking-widest rounded-2xl hover:bg-red-600 transition-all shadow-lg shadow-red-500/20"
                 >
-                  Exit
+                  Expunge
                 </button>
               </div>
             </div>
           </div>
         )}
 
-        {/* ADD MEMBER MODAL */}
+        {/* ELITE ADD MEMBER MODAL */}
         {showAddMember && (
-          <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4">
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md max-h-[80vh] flex flex-col animate-in slide-in-from-bottom-4 sm:zoom-in-95 fade-in duration-200">
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center z-[100] p-6 animate-in fade-in duration-300">
+            <div className="bg-white dark:bg-gray-900 rounded-t-[3rem] sm:rounded-[4rem] shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col border border-white/20 dark:border-white/10 animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-500">
               {/* Modal header */}
-              <div className="p-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
-                <h3 className="font-bold text-gray-900 dark:text-white text-lg">
-                  Add member
-                </h3>
+              <div className="p-10 pb-6 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-primary-500/10 rounded-2xl flex items-center justify-center text-primary-500">
+                    <UserPlus size={22} strokeWidth={3} />
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.4em] mb-0.5">Authorization Flow</span>
+                    <h3 className="text-lg font-black text-gray-900 dark:text-white uppercase tracking-tight">Expand Registry</h3>
+                  </div>
+                </div>
                 <button
                   onClick={() => setShowAddMember(false)}
-                  className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                  className="w-12 h-12 bg-gray-100 dark:bg-white/5 rounded-2xl flex items-center justify-center text-gray-400 hover:text-gray-900 dark:hover:text-white transition-all hover:rotate-90"
                 >
-                  <X size={20} />
+                  <X size={20} strokeWidth={3} />
                 </button>
               </div>
 
-              {/* Tabs */}
-              <div className="flex gap-2 px-4 pt-3 border-b border-gray-100 dark:border-gray-700">
-                {(["all", "contacts", "community"] as const).map((tab) => (
-                  <button
-                    key={tab}
-                    onClick={() => setAddMemberTab(tab)}
-                    className={`pb-2 px-2 text-sm font-medium capitalize transition-colors relative ${
-                      addMemberTab === tab
-                        ? "text-sky-600 dark:text-sky-400 border-b-2 border-sky-600 dark:border-sky-400 -mb-px"
-                        : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                    }`}
-                  >
-                    {tab}
-                  </button>
-                ))}
-              </div>
+              {/* Enhanced Search & Filter */}
+              <div className="px-10 space-y-6 mb-6">
+                <div className="flex gap-2">
+                  {(["all", "contacts", "community"] as const).map((tab) => (
+                    <button
+                      key={tab}
+                      onClick={() => setAddMemberTab(tab)}
+                      className={`h-10 px-6 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${addMemberTab === tab
+                          ? "bg-primary-500 text-white shadow-lg shadow-primary-500/20"
+                          : "bg-gray-100 dark:bg-white/5 text-gray-400 dark:text-gray-500 hover:bg-gray-200 dark:hover:bg-white/10"
+                        }`}
+                    >
+                      {tab}
+                    </button>
+                  ))}
+                </div>
 
-              {/* Search */}
-              <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700">
-                <div className="relative">
+                <div className="relative group">
                   <Search
-                    size={16}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                    size={18}
+                    strokeWidth={3}
+                    className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-primary-500 transition-colors"
                   />
                   <input
                     type="text"
                     value={addMemberSearch}
                     onChange={(e) => setAddMemberSearch(e.target.value)}
-                    placeholder="Search..."
-                    className="w-full pl-9 pr-4 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400"
+                    placeholder="Search Global Index..."
+                    className="w-full pl-16 pr-6 h-16 bg-gray-50/50 dark:bg-white/5 border border-white/5 rounded-[2rem] text-sm font-black text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:border-primary-500/50 focus:ring-4 focus:ring-primary-500/10 transition-all uppercase tracking-widest"
                     autoFocus
                   />
                 </div>
               </div>
 
-              {/* People list */}
-              <div className="overflow-y-auto flex-1 divide-y divide-gray-100 dark:divide-gray-700">
+              {/* Registry Results list */}
+              <div className="overflow-y-auto flex-1 px-10 pb-10 space-y-2 custom-scrollbar">
                 {addableContacts.length === 0 ? (
-                  <div className="p-10 text-center">
-                    <p className="text-gray-500 dark:text-gray-400 text-sm">
-                      No contacts available to add
-                    </p>
+                  <div className="py-20 text-center bg-gray-50/50 dark:bg-white/5 rounded-[3rem] border border-dashed border-gray-200 dark:border-white/10">
+                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] italic">No compatible profiles discovered</p>
                   </div>
                 ) : (
                   addableContacts
                     .filter((c) => {
-                      const matchesSearch = c.name
-                        .toLowerCase()
-                        .includes(addMemberSearch.toLowerCase());
+                      const matchesSearch = c.name.toLowerCase().includes(addMemberSearch.toLowerCase());
                       if (!matchesSearch) return false;
-                      if (addMemberTab === "contacts")
-                        return c.type === "contact";
-                      if (addMemberTab === "community")
-                        return c.type === "community";
+                      if (addMemberTab === "contacts") return c.type === "contact";
+                      if (addMemberTab === "community") return c.type === "community";
                       return true;
                     })
                     .map((contact) => (
                       <div
                         key={contact.publickey}
-                        className="flex items-center gap-3 px-4 py-3"
+                        className="group flex items-center p-4 bg-gray-50/50 dark:bg-white/5 rounded-[2rem] border border-transparent hover:border-primary-500/20 hover:bg-white dark:hover:bg-white/10 transition-all"
                       >
-                        {contact.icon ? (
-                          <img
-                            src={contact.icon}
-                            alt={contact.name}
-                            className="w-10 h-10 rounded-full object-cover bg-gray-200 dark:bg-gray-700 flex-shrink-0"
-                            onError={(e: any) => {
-                              e.target.style.display = "none";
-                              const fallback = e.target
-                                .nextElementSibling as HTMLDivElement | null;
-                              if (fallback) {
-                                fallback.style.display = "flex";
-                              }
-                            }}
-                          />
-                        ) : null}
-                        <div
-                          className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 items-center justify-center text-gray-600 dark:text-gray-300 font-bold flex-shrink-0"
-                          style={{ display: contact.icon ? "none" : "flex" }}
-                        >
-                          {contact.name.charAt(0).toUpperCase()}
+                        <div className="w-14 h-14 rounded-2xl overflow-hidden bg-gray-200 dark:bg-gray-800 border-2 border-white dark:border-gray-700 shadow-sm flex-shrink-0 group-hover:scale-105 transition-transform">
+                          {contact.icon ? (
+                            <img src={contact.icon} className="w-full h-full object-cover" alt="" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-xl font-black text-gray-400 dark:text-gray-600 uppercase">
+                              {contact.name.charAt(0)}
+                            </div>
+                          )}
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-gray-900 dark:text-white truncate">
+
+                        <div className="ml-5 flex-1 min-w-0">
+                          <p className="text-sm font-black text-gray-900 dark:text-gray-100 uppercase tracking-tight truncate mb-0.5">
                             {contact.name}
                           </p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400 capitalize">
-                            {contact.type}
-                          </p>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[8px] font-black text-primary-500 uppercase tracking-widest">{contact.type}</span>
+                            <span className="w-1 h-1 bg-gray-300 dark:bg-gray-700 rounded-full" />
+                            <p className="text-[8px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest font-mono truncate">
+                              {shortenKey(contact.publickey)}
+                            </p>
+                          </div>
                         </div>
+
                         <button
                           onClick={() => handleAddMember(contact)}
                           disabled={addingMember === contact.publickey}
-                          className="px-3 py-1.5 bg-primary-600 text-white text-sm rounded-lg hover:bg-primary-700 active:bg-primary-800 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed font-medium flex-shrink-0"
+                          className="px-6 py-3 bg-primary-500 text-white text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-primary-600 active:scale-95 transition-all shadow-lg shadow-primary-500/20 disabled:opacity-50"
                         >
-                          {addingMember === contact.publickey
-                            ? "Adding..."
-                            : "Add"}
+                          {addingMember === contact.publickey ? "Transmitting..." : "Authorize"}
                         </button>
                       </div>
                     ))
@@ -1456,6 +1410,7 @@ function GroupInfoPage() {
             </div>
           </div>
         )}
+      </div>
       </div>
     </div>
   );

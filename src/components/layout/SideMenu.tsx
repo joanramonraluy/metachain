@@ -11,6 +11,8 @@ import {
   HelpCircle,
   ChevronRight,
   Zap,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { appContext } from "../../AppContext";
 import { minimaService } from "../../services/minima.service";
@@ -34,6 +36,9 @@ export default function SideMenu({ isOpen, setIsOpen }: SideMenuProps) {
 
   const [optimisticBlink, setOptimisticBlink] = useState(false);
   const [hasPendingTx, setHasPendingTx] = useState(false);
+  const [isBalanceHidden, setIsBalanceHidden] = useState<boolean>(() => {
+    return localStorage.getItem("metachain_hide_balance") === "true";
+  });
 
   useEffect(() => {
     const fetchBalance = async () => {
@@ -100,7 +105,7 @@ export default function SideMenu({ isOpen, setIsOpen }: SideMenuProps) {
 
   const menuItems = [
     { to: "/", icon: <MessageSquare size={22} />, label: "Chats", color: "sky" },
-    { to: "/contacts", icon: <Users size={22} />, label: "Contacts", color: "indigo" },
+    { to: "/contacts", icon: <Users size={22} />, label: "People", color: "sky" },
     { to: "/discovery", icon: <Globe size={22} />, label: "Community", color: "emerald" },
     { to: "/settings", icon: <Settings size={22} />, label: "Settings", color: "amber" },
     { to: "/about", icon: <Info size={22} />, label: "About", color: "violet" },
@@ -118,55 +123,68 @@ export default function SideMenu({ isOpen, setIsOpen }: SideMenuProps) {
 
       <div
         ref={menuRef}
-        className={`fixed top-0 left-0 h-full bg-gray-950 text-white flex flex-col shadow-2xl z-50 transition-all duration-500 ease-in-out pt-[env(safe-area-inset-top)] border-r border-gray-800/50
+        className={`fixed top-0 left-0 h-full bg-gray-950/90 text-white flex flex-col shadow-[20px_0_50px_rgba(0,0,0,0.5)] z-50 transition-all duration-700 ease-out pt-[env(safe-area-inset-top)] border-r border-white/5 backdrop-blur-2xl
           ${isOpen ? "translate-x-0 opacity-100" : "-translate-x-full opacity-0"}
-          md:relative md:translate-x-0 md:opacity-100 md:w-72 w-[85vw] max-w-sm`}
+          md:relative md:translate-x-0 md:opacity-100 md:w-80 w-[85vw] max-w-sm`}
       >
         {/* User Profile Card Header */}
-        <div className="p-6 relative group">
-          <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-primary-500/10 to-transparent -z-10 group-hover:from-primary-500/15 transition-all duration-500"></div>
+        <div className="p-8 relative group">
+          <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-primary-500/20 to-transparent -z-10 group-hover:from-primary-500/30 transition-all duration-700"></div>
           
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center justify-between mb-8">
             <Link
               to="/settings"
               onClick={() => setIsOpen(false)}
               className="relative group/avatar"
             >
-              <div className="absolute -inset-1 bg-gradient-to-tr from-primary-500 to-indigo-600 rounded-2xl blur opacity-25 group-hover/avatar:opacity-50 transition-opacity duration-300"></div>
+              <div className="absolute -inset-1.5 bg-gradient-to-tr from-primary-500 to-indigo-600 rounded-[1.5rem] blur opacity-30 group-hover/avatar:opacity-60 transition-opacity duration-500"></div>
               <img
                 src={userAvatar}
                 alt="User"
-                className="relative w-14 h-14 rounded-2xl object-cover border-2 border-white/10 shadow-lg group-hover/avatar:scale-105 transition-transform duration-300"
+                className="relative w-16 h-16 rounded-[1.5rem] object-cover border-2 border-white/20 shadow-2xl transition-all duration-500 group-hover/avatar:scale-105 active:group-hover/avatar:scale-95"
                 onError={(e) => {
                   (e.target as HTMLImageElement).src = defaultAvatar;
                 }}
               />
             </Link>
             <button
-              className="md:hidden p-2 text-gray-500 hover:text-white transition-colors hover:bg-white/5 rounded-xl"
+              className="md:hidden p-3 text-gray-400 hover:text-white transition-all hover:bg-white/10 rounded-[1.25rem] active:scale-90"
               onClick={() => setIsOpen(false)}
             >
-              <X size={24} />
+              <X size={26} strokeWidth={3} />
             </button>
           </div>
 
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             <h1
-              className="text-xl font-black tracking-tight truncate pr-4 text-white hover:text-primary-400 transition-colors cursor-default"
+              className="text-2xl font-black tracking-tighter truncate pr-4 text-white hover:text-primary-400 transition-colors cursor-default uppercase"
               title={userName}
             >
               {userName}
             </h1>
             {minimaBalance && (
-              <div className="flex items-center gap-2 group/balance py-1 px-3 bg-white/5 rounded-xl border border-white/5 w-fit hover:bg-white/10 transition-colors">
-                <span className="w-2 h-2 bg-primary-500 rounded-full animate-pulse shadow-glow shadow-primary-500/50"></span>
+              <div className="flex items-center gap-2.5 group/balance py-2 px-4 bg-white/10 rounded-2xl border border-white/10 w-fit hover:bg-white/15 transition-all">
+                <span className="w-2.5 h-2.5 bg-primary-500 rounded-full animate-pulse shadow-glow shadow-primary-500/50"></span>
                 <BalanceAmount
                   amount={parseFloat(minimaBalance.sendable).toFixed(2)}
                   unconfirmed={minimaBalance.unconfirmed}
                   forceActive={optimisticBlink || hasPendingTx}
-                  className="font-bold text-white text-[14px]"
+                  hidden={isBalanceHidden}
+                  className="font-black text-white text-[15px]"
                 />
-                <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1 opacity-50">Minima</span>
+                <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1 opacity-60">Minima</span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const newState = !isBalanceHidden;
+                    setIsBalanceHidden(newState);
+                    localStorage.setItem("metachain_hide_balance", newState.toString());
+                  }}
+                  className="ml-2 p-1.5 hover:bg-white/10 rounded-lg text-gray-500 hover:text-white transition-all active:scale-90"
+                  title={isBalanceHidden ? "Show Balance" : "Hide Balance"}
+                >
+                  {isBalanceHidden ? <Eye size={14} strokeWidth={3} /> : <EyeOff size={14} strokeWidth={3} />}
+                </button>
               </div>
             )}
           </div>
@@ -188,17 +206,17 @@ export default function SideMenu({ isOpen, setIsOpen }: SideMenuProps) {
         </nav>
 
         {/* Premium Footer */}
-        <div className="p-6 border-t border-gray-800/30">
-          <div className="flex items-center justify-between p-4 bg-gray-900/50 rounded-2xl border border-white/5 group hover:border-white/10 transition-all">
+        <div className="p-8 border-t border-white/5">
+          <div className="flex items-center justify-between p-5 bg-white/5 rounded-3xl border border-white/5 group hover:border-white/10 transition-all cursor-default">
              <div className="flex flex-col">
-               <span className="text-[10px] font-black text-gray-600 uppercase tracking-[0.2em] mb-0.5">Application</span>
-               <span className="text-xs font-bold text-gray-400">MetaChain v0.9</span>
+               <span className="text-[10px] font-black text-gray-600 uppercase tracking-[0.3em] mb-1">Application</span>
+               <span className="text-xs font-black text-gray-400 uppercase tracking-tight">MetaChain v0.9</span>
              </div>
-             <div className="w-8 h-8 rounded-xl bg-gray-800 flex items-center justify-center text-gray-500 group-hover:bg-primary-500 group-hover:text-white transition-all">
-                <Zap size={14} />
+             <div className="w-10 h-10 rounded-[1.25rem] bg-white/5 flex items-center justify-center text-gray-500 group-hover:bg-primary-500 group-hover:text-white transition-all shadow-lg group-hover:shadow-primary-500/20">
+                <Zap size={18} strokeWidth={2.5} />
              </div>
           </div>
-          <p className="text-center text-[10px] text-gray-750 font-medium mt-4 uppercase tracking-[0.3em] opacity-40">Powered by Minima</p>
+          <p className="text-center text-[10px] text-gray-600 font-black mt-6 uppercase tracking-[0.4em] opacity-30">Powered by Minima</p>
         </div>
       </div>
     </>
@@ -233,37 +251,37 @@ function MenuItem({
     <Link
       to={to}
       onClick={onClick}
-      className={`relative flex items-center justify-between group px-4 py-3 rounded-2xl transition-all duration-300 ${
+      className={`relative flex items-center justify-between group px-5 py-4 rounded-3xl transition-all duration-500 ${
         active
-          ? "bg-primary-500/10 text-white shadow-sm ring-1 ring-primary-500/20"
-          : "text-gray-400 hover:bg-white/5 hover:text-white"
+          ? "bg-white/10 text-white shadow-2xl ring-1 ring-white/10"
+          : "text-gray-500 hover:bg-white/5 hover:text-white"
       }`}
     >
-      <div className="flex items-center gap-4 relative z-10">
+      <div className="flex items-center gap-5 relative z-10">
         <div
-          className={`transition-all duration-300 ${
+          className={`transition-all duration-500 ${
             active 
-            ? `${colorStyles[color]} scale-110 drop-shadow-[0_0_8px_rgba(var(--color-primary-500),0.5)]` 
-            : "text-gray-500 group-hover:scale-110 group-hover:text-gray-300"
+            ? `${colorStyles[color]} scale-110 drop-shadow-[0_0_12px_rgba(59,130,246,0.6)]` 
+            : "text-gray-600 group-hover:scale-110 group-hover:text-gray-300"
           }`}
         >
           {icon}
         </div>
-        <span className={`text-[15px] font-bold transition-all duration-300 ${active ? "tracking-tight" : "group-hover:translate-x-1"}`}>
+        <span className={`text-base font-black transition-all duration-500 uppercase tracking-tight ${active ? "opacity-100" : "opacity-60 group-hover:opacity-100 group-hover:translate-x-1"}`}>
           {label}
         </span>
       </div>
 
       {active ? (
         <div className="relative z-10">
-           <ChevronRight size={16} className="text-primary-500/50" />
+           <ChevronRight size={18} strokeWidth={3} className="text-white opacity-40" />
         </div>
       ) : (
-        <ChevronRight size={16} className="text-gray-800 opacity-0 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300 -translate-x-2" />
+        <ChevronRight size={18} strokeWidth={3} className="text-white opacity-0 group-hover:opacity-20 group-hover:translate-x-0 transition-all duration-500 -translate-x-2" />
       )}
 
       {active && (
-        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-6 bg-primary-500 rounded-r-full shadow-lg shadow-primary-500/50 animate-in slide-in-from-left-full duration-500"></div>
+        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-8 bg-primary-500 rounded-r-full shadow-glow shadow-primary-500/50 animate-in slide-in-from-left-full duration-700"></div>
       )}
     </Link>
   );

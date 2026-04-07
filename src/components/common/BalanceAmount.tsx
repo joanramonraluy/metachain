@@ -5,9 +5,10 @@ interface BalanceProps {
     unconfirmed: string;
     className?: string;
     forceActive?: boolean;
+    hidden?: boolean;
 }
 
-export const BalanceAmount = ({ amount, unconfirmed, className = "", forceActive = false }: BalanceProps) => {
+export const BalanceAmount = ({ amount, unconfirmed, className = "", forceActive = false, hidden = false }: BalanceProps) => {
     // 0 = Normal, 1 = Dimmed
     const [blinkState, setBlinkState] = useState<number>(0);
 
@@ -39,9 +40,14 @@ export const BalanceAmount = ({ amount, unconfirmed, className = "", forceActive
         color: hasUnconfirmed ? '#ff4444' : undefined // Red if active
     };
 
+    // Format the amount with thousands separators if it's a valid number
+    const formattedAmount = !isNaN(parseFloat(amount)) 
+        ? parseFloat(amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        : amount;
+
     return (
         <span className={className} style={style}>
-            {amount}
+            {hidden ? "****" : formattedAmount}
         </span>
     );
 };

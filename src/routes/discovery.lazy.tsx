@@ -6,22 +6,13 @@ import {
   DiscoveredListing,
   UserWithStatus,
 } from "../services/discovery.service";
-import { Search, Globe, Info, RefreshCw, X, Filter, Menu } from "lucide-react";
+import { Search, RefreshCw, Filter, ChevronRight, Users as UsersIcon, User, Radio, Copy, Check, LayoutGrid, Plus, ArrowRight, ExternalLink } from "lucide-react";
 import { channelService } from "../services/channel.service";
 import { groupService } from "../services/group.service";
 
 export const Route = createLazyFileRoute("/discovery")({
   component: DiscoveryPage,
 });
-
-function formatMiddleSegment(value: string, segmentLength: number = 10) {
-  if (!value) return "";
-  if (value.length <= segmentLength + 2) return value;
-
-  const start = Math.max(0, Math.floor((value.length - segmentLength) / 2));
-  const middle = value.slice(start, start + segmentLength);
-  return `...${middle}...`;
-}
 
 function DiscoveryPage() {
   const navigate = useNavigate();
@@ -32,158 +23,81 @@ function DiscoveryPage() {
   const [showNotification, setShowNotification] = useState(false);
   const [notificationMessage, setNotificationMessage] = useState("");
   const [toastError, setToastError] = useState(false);
-  const [totalFound, setTotalFound] = useState(0);
 
-  // Search & Filter State
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCountry, setSelectedCountry] = useState("");
   const [selectedLanguage, setSelectedLanguage] = useState("");
   const [showFilters, setShowFilters] = useState(false);
-  const [showOffline, setShowOffline] = useState(true); // Show offline users by default
-  const [viewMode, setViewMode] = useState<
-    "all" | "users" | "groups" | "channels"
-  >("all");
+  const [showOffline, setShowOffline] = useState(true);
+  const [viewMode, setViewMode] = useState<"all" | "users" | "groups" | "channels">("all");
+  const [isEnteringManualAddress, setIsEnteringManualAddress] = useState(false);
+  const [manualAddress, setManualAddress] = useState("");
 
   useEffect(() => {
-    // Initial load
     loadData();
-
-    // FAST POLLING: Check frequently during the first few seconds
     const t1 = setTimeout(loadData, 2000);
     const t2 = setTimeout(loadData, 5000);
-    const t3 = setTimeout(loadData, 10000);
-
-    // Regular refresh every 10 seconds (was 30s) - More responsive for P2P
     const intervalId = setInterval(loadData, 10000);
 
-    // React immediately to Gossip events from Frontend
-    const handleDiscoveryUpdate = () => {
-      console.log("⚡ [UI] Discovery update event received! Reloading data...");
-      loadData();
-    };
+    const handleDiscoveryUpdate = () => loadData();
     window.addEventListener("DISCOVERY_UPDATE", handleDiscoveryUpdate);
 
-    // Auto-refresh when tab becomes visible
     const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        console.log("👀 [UI] Tab visible, refreshing discovery...");
-        loadData();
-      }
+      if (document.visibilityState === "visible") loadData();
     };
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       clearTimeout(t1);
       clearTimeout(t2);
-      clearTimeout(t3);
       clearInterval(intervalId);
       window.removeEventListener("DISCOVERY_UPDATE", handleDiscoveryUpdate);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, []);
 
-  // Helper for timeouts
   const withTimeout = (promise: Promise<any>, ms: number = 5000) => {
     return Promise.race([
       promise,
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Request timed out")), ms),
-      ),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("Request timed out")), ms)),
     ]);
   };
 
   const loadData = async () => {
-    // setLoading(true) // Don't flicker loading on every refresh
-
-    // 1. Load from cache immediately (Optimistic UI)
     const cached = localStorage.getItem("cached_discovery_users");
     const cachedListings = localStorage.getItem("cached_discovery_listings");
-    let cachedUsersCount = 0;
-    let cachedListingsCount = 0;
+    
     if (cached && loading) {
-      // Only load cache on initial load (when loading is true)
       try {
         const cachedUsers = JSON.parse(cached);
-        if (Array.isArray(cachedUsers)) {
-          setUsers(cachedUsers);
-          cachedUsersCount = cachedUsers.length;
-          // Don't set loading to false yet, let the fresh fetch attempt run
-          // But if strict offline, maybe we should?
-          // Let's just update state so user sees something.
-          console.log("⚠️ [DISCOVERY] Loaded users from cache");
-        }
-      } catch (e) {
-        console.warn("Error parsing cached discovery users", e);
-      }
+        if (Array.isArray(cachedUsers)) setUsers(cachedUsers);
+      } catch (e) {}
     }
     if (cachedListings && loading) {
       try {
         const parsedListings = JSON.parse(cachedListings);
-        if (Array.isArray(parsedListings)) {
-          setListings(parsedListings);
-          cachedListingsCount = parsedListings.length;
-        }
-      } catch (e) {
-        console.warn("Error parsing cached discovery listings", e);
-      }
-    }
-    if (loading && (cachedUsersCount > 0 || cachedListingsCount > 0)) {
-      setTotalFound(cachedUsersCount + cachedListingsCount);
+        if (Array.isArray(parsedListings)) setListings(parsedListings);
+      } catch (e) {}
     }
 
     try {
-      console.log("🔄 [DISCOVERY] loadData triggering...");
-      // Fetch users and listings with timeout
       const [fetchedUsers, fetchedListings] = await Promise.all([
         withTimeout(getUsersWithStatus(), 5000),
         withTimeout(getDiscoveredListings(), 5000),
       ]);
 
-      console.log(`✅ [DISCOVERY] Received ${fetchedUsers.length} users.`);
-      // fetchedUsers.forEach((u, i) => {
-      //     console.log(`   [${i}] ${u.alias} - Online: ${u.is_online}`);
-      // });
-
-      setTotalFound(fetchedUsers.length + fetchedListings.length);
-      const onlineCount = fetchedUsers.filter((u) => u.is_online).length;
-      console.log(
-        `📡 [DISCOVERY] Found ${fetchedUsers.length} users (${onlineCount} online)`,
-      );
-
-      // Show users immediately
       setUsers(fetchedUsers);
       setListings(fetchedListings);
-      // setLoading(false)
 
-      console.log(`⚡ [DISCOVERY] State updated.`);
-
-      // Check if new users appeared
       if (previousCount > 0 && fetchedUsers.length > previousCount) {
         const newCount = fetchedUsers.length - previousCount;
-        setNotificationMessage(
-          `🎉 ${newCount} new user${newCount > 1 ? "s" : ""} found!`,
-        );
-        setShowNotification(true);
-        setTimeout(() => setShowNotification(false), 3000);
+        showToast(`🎉 ${newCount} new user${newCount > 1 ? "s" : ""} found!`);
       }
       setPreviousCount(fetchedUsers.length);
-
-      // 3. Update cache
-      localStorage.setItem(
-        "cached_discovery_users",
-        JSON.stringify(fetchedUsers),
-      );
-      localStorage.setItem(
-        "cached_discovery_listings",
-        JSON.stringify(fetchedListings),
-      );
+      localStorage.setItem("cached_discovery_users", JSON.stringify(fetchedUsers));
+      localStorage.setItem("cached_discovery_listings", JSON.stringify(fetchedListings));
     } catch (e) {
-      // Using cached variable from outer scope of loadData
-      if (cached) {
-        console.warn("⚠️ [DISCOVERY] Offline/Timeout - keeping cached data", e);
-      } else {
-        console.error("❌ [DISCOVERY] Error:", e);
-      }
+      console.warn("⚠️ [DISCOVERY] Fetch failed, using cache", e);
     } finally {
       setLoading(false);
     }
@@ -204,10 +118,9 @@ function DiscoveryPage() {
         showToast("Join request sent.");
       } else {
         await channelService.joinViaInviteLink(listing.link);
-        // Channels are always public — no confirmation needed
+        showToast("Joined channel.");
       }
     } catch (err) {
-      console.error("❌ [DISCOVERY] Join failed:", err);
       showToast("Failed to join. Please try again.", true);
     }
   };
@@ -217,38 +130,20 @@ function DiscoveryPage() {
       await navigator.clipboard.writeText(link);
       showToast("Join link copied.");
     } catch (err) {
-      console.error("❌ [DISCOVERY] Copy failed:", err);
       showToast("Failed to copy link.", true);
     }
   };
 
-  // Filter Logic
   const filteredUsers = useMemo(() => {
     return users.filter((user) => {
-      const matchesSearch =
-        !searchQuery ||
-        (user.alias &&
-          user.alias.toLowerCase().includes(searchQuery.toLowerCase())) ||
-        (user.bio &&
-          user.bio.toLowerCase().includes(searchQuery.toLowerCase())) ||
-        (user.address &&
-          user.address.toLowerCase().includes(searchQuery.toLowerCase()));
-
-      const matchesCountry =
-        !selectedCountry || user.country === selectedCountry;
-
-      const matchesLanguage =
-        !selectedLanguage ||
-        (user.languages && user.languages.includes(selectedLanguage));
-
-      const matchesOnlineStatus = showOffline || user.is_online; // Only filter if showOffline is false
-
-      return (
-        matchesSearch &&
-        matchesCountry &&
-        matchesLanguage &&
-        matchesOnlineStatus
-      );
+      const matchesSearch = !searchQuery || 
+        (user.alias && user.alias.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (user.bio && user.bio.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (user.address && user.address.toLowerCase().includes(searchQuery.toLowerCase()));
+      const matchesCountry = !selectedCountry || user.country === selectedCountry;
+      const matchesLanguage = !selectedLanguage || (user.languages && user.languages.includes(selectedLanguage));
+      const matchesOnlineStatus = showOffline || user.is_online;
+      return matchesSearch && matchesCountry && matchesLanguage && matchesOnlineStatus;
     });
   }, [users, searchQuery, selectedCountry, selectedLanguage, showOffline]);
 
@@ -256,17 +151,12 @@ function DiscoveryPage() {
     return listings.filter((listing) => {
       if (!searchQuery) return true;
       const needle = searchQuery.toLowerCase();
-      return (
-        (listing.name && listing.name.toLowerCase().includes(needle)) ||
-        (listing.description &&
-          listing.description.toLowerCase().includes(needle)) ||
-        (listing.owner_alias &&
-          listing.owner_alias.toLowerCase().includes(needle))
-      );
+      return (listing.name && listing.name.toLowerCase().includes(needle)) ||
+             (listing.description && listing.description.toLowerCase().includes(needle)) ||
+             (listing.owner_alias && listing.owner_alias.toLowerCase().includes(needle));
     });
   }, [listings, searchQuery]);
 
-  // Unique Countries & Languages for Dropdowns
   const uniqueCountries = useMemo(() => {
     const countries = new Set(users.map((u) => u.country).filter(Boolean));
     return Array.from(countries).sort();
@@ -274,514 +164,413 @@ function DiscoveryPage() {
 
   const uniqueLanguages = useMemo(() => {
     const langs = new Set<string>();
-    users.forEach((u) => {
-      if (u.languages && Array.isArray(u.languages)) {
-        u.languages.forEach((l) => langs.add(l));
-      }
-    });
+    users.forEach((u) => { if (u.languages) u.languages.forEach((l) => langs.add(l)); });
     return Array.from(langs).sort();
   }, [users]);
 
-  const filteredGroups = useMemo(
-    () => filteredListings.filter((l) => l.type === "group"),
-    [filteredListings],
-  );
-  const filteredChannels = useMemo(
-    () => filteredListings.filter((l) => l.type === "channel"),
-    [filteredListings],
-  );
+  const filteredGroups = useMemo(() => filteredListings.filter((l) => l.type === "group"), [filteredListings]);
+  const filteredChannels = useMemo(() => filteredListings.filter((l) => l.type === "channel"), [filteredListings]);
 
   const showUsers = viewMode === "all" || viewMode === "users";
   const showGroups = viewMode === "all" || viewMode === "groups";
   const showChannels = viewMode === "all" || viewMode === "channels";
-  const visibleUserCount = showUsers ? filteredUsers.length : 0;
-  const visibleGroupCount = showGroups ? filteredGroups.length : 0;
-  const visibleChannelCount = showChannels ? filteredChannels.length : 0;
-  const visibleTotal =
-    visibleUserCount + visibleGroupCount + visibleChannelCount;
+  const visibleTotal = (showUsers ? filteredUsers.length : 0) + (showGroups ? filteredGroups.length : 0) + (showChannels ? filteredChannels.length : 0);
 
   return (
-    <div className="flex flex-col h-full bg-gray-50 dark:bg-gray-900 transition-colors">
-      {/* Header */}
-      <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 shadow-sm flex justify-between items-center sticky top-0 z-10 transition-colors">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => window.dispatchEvent(new Event("open-sidebar"))}
-            className="p-2 -ml-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition md:hidden"
-            aria-label="Menu"
-          >
-            <Menu size={24} className="text-gray-700 dark:text-gray-200" />
-          </button>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-            <Globe className="text-primary-600" />
-            P2P Discovery
-          </h1>
-        </div>
-        <button
-          onClick={() => {
-            setLoading(true);
-            loadData();
+    <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-950 transition-colors relative overflow-hidden">
+      {/* Dot Grid Background (consistent with Elite System) */}
+      <div className="absolute inset-0 z-0 opacity-[0.03] dark:opacity-[0.05] pointer-events-none">
+        <div
+          className="absolute inset-0"
+          style={{
+            backgroundImage:
+              "radial-gradient(circle at 2px 2px, currentColor 1px, transparent 0)",
+            backgroundSize: "24px 24px",
           }}
-          className="p-2 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded-full transition-colors"
-          title="Refresh List"
-        >
-          <RefreshCw size={20} />
-        </button>
+        ></div>
       </div>
 
-      {/* Search & Filter Bar */}
-      <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 shadow-sm space-y-3 transition-colors">
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <Search
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-              size={18}
-            />
-            <input
-              type="text"
-              placeholder="Search users, groups, channels..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-10 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-            />
-            {searchQuery && (
+      {/* Background Blobs (consistent with Elite System) */}
+      <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+        <div className="absolute inset-0 bg-gradient-to-br from-white via-gray-50 to-blue-50/30 dark:from-gray-950 dark:via-gray-950 dark:to-primary-950/20"></div>
+
+        <div
+          className="absolute -top-[10%] -left-[10%] w-[60%] h-[60%] rounded-full opacity-40 dark:opacity-20 blur-[120px] animate-pulse"
+          style={{
+            background: "radial-gradient(circle, var(--color-primary-900) 0%, transparent 70%)",
+            animationDuration: "8s",
+          }}
+        ></div>
+        <div
+          className="absolute -bottom-[10%] -right-[10%] w-[50%] h-[50%] rounded-full opacity-30 dark:opacity-10 blur-[120px] animate-pulse"
+          style={{
+            background: "radial-gradient(circle, var(--color-primary-800) 0%, transparent 70%)",
+            animationDuration: "12s",
+            animationDelay: "2s",
+          }}
+        ></div>
+      </div>
+
+      {/* LAYER 1: Primary Navigation - Elite Centered Sticky Tabs */}
+      <nav className="sticky top-0 z-40 w-full flex items-center justify-center border-b border-black/5 dark:border-white/5 bg-white/40 dark:bg-black/20 backdrop-blur-3xl overflow-x-auto no-scrollbar scrollbar-hide px-3 sm:px-6">
+        <div className="flex items-center gap-1 sm:gap-6">
+          {(["all", "users", "groups", "channels"] as const).map((mode) => {
+            const isActive = viewMode === mode;
+            const config = {
+              all: { icon: LayoutGrid, label: "All", color: "indigo" },
+              users: { icon: User, label: "Users", color: "primary" },
+              groups: { icon: UsersIcon, label: "Groups", color: "emerald" },
+              channels: { icon: Radio, label: "Channels", color: "sky" },
+            }[mode];
+            
+            const Icon = config.icon;
+            const colors = {
+              indigo: "text-indigo-500 bg-indigo-500 shadow-indigo-500/50",
+              primary: "text-primary-500 bg-primary-500 shadow-primary-500/50",
+              emerald: "text-emerald-500 bg-emerald-500 shadow-emerald-500/50",
+              sky: "text-sky-500 bg-sky-500 shadow-sky-500/50",
+            }[config.color] || "text-primary-500 bg-primary-500 shadow-primary-500/50";
+
+            const colorClass = colors.split(" ")[0];
+            const bgClass = colors.split(" ")[1];
+            const glowClass = colors.split(" ")[2];
+
+            return (
               <button
-                onClick={() => setSearchQuery("")}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                key={mode}
+                onClick={() => setViewMode(mode)}
+                className={`relative px-4 py-4 sm:py-5 flex items-center gap-2.5 transition-all duration-300 group flex-shrink-0 ${
+                  isActive ? colorClass : "text-gray-400 hover:text-gray-900 dark:hover:text-white"
+                }`}
               >
-                <X size={16} />
+                <div className={`transition-all duration-500 ${isActive ? "scale-110" : "group-hover:scale-110"}`}>
+                  <Icon size={16} strokeWidth={isActive ? 3 : 2.5} />
+                </div>
+                <span className="hidden sm:inline text-[11px] font-black tracking-widest uppercase">
+                  {config.label}
+                </span>
+
+                {/* Underline Indicator */}
+                {isActive && (
+                  <div className={`absolute bottom-0 left-0 right-0 h-1 rounded-full ${bgClass} shadow-[0_4px_12px_rgba(0,0,0,0.1)] ${glowClass} animate-in fade-in zoom-in duration-500`} />
+                )}
               </button>
-            )}
+            );
+          })}
+        </div>
+      </nav>
+
+      {/* LAYER 2: Utility Row & Advanced Filters */}
+      <section className="flex-shrink-0 border-b border-black/5 dark:border-white/5 bg-white/20 dark:bg-black/10 backdrop-blur-md">
+        <div className="max-w-[2000px] mx-auto p-4 sm:p-6 space-y-6">
+          {/* Main Action Row */}
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+            {/* Search Bar - Elite Style */}
+            <div className="relative group flex-1 w-full">
+              <div className="absolute inset-x-0 -bottom-2 h-10 bg-black/10 dark:bg-white/5 blur-2xl rounded-full opacity-0 group-focus-within:opacity-100 transition-opacity"></div>
+              <div className="relative flex items-center bg-white/40 dark:bg-white/5 backdrop-blur-xl border border-white/20 dark:border-white/10 rounded-[1.5rem] px-5 h-14 shadow-lg group-focus-within:shadow-2xl group-focus-within:border-primary-500/30 transition-all">
+                <Search size={18} className="text-gray-400 mr-4" />
+                <input
+                  type="text"
+                  placeholder="Search community..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="flex-1 bg-transparent border-none outline-none text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 font-bold text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 w-full md:w-auto justify-end">
+              <button
+                onClick={() => setShowFilters(!showFilters)}
+                className={`p-3.5 rounded-2xl transition-all shadow-xl ${
+                  showFilters 
+                    ? "bg-primary-500 text-white shadow-primary-500/30 ring-4 ring-primary-500/10" 
+                    : "bg-white/40 dark:bg-white/5 backdrop-blur-md text-gray-500 dark:text-gray-400 border border-white/20 dark:border-white/10 hover:bg-white/60 dark:hover:bg-white/10"
+                }`}
+                title="Filters"
+              >
+                <Filter size={18} strokeWidth={3} />
+              </button>
+              
+              <button
+                onClick={() => { setLoading(true); loadData(); }}
+                className="p-3.5 rounded-2xl bg-white/40 dark:bg-white/5 backdrop-blur-md text-gray-500 dark:text-gray-400 border border-white/20 dark:border-white/10 hover:bg-primary-500 hover:text-white hover:border-primary-500 transition-all shadow-xl active:rotate-180 duration-500"
+                title="Refresh Discoveries"
+              >
+                <RefreshCw size={18} strokeWidth={3} className={loading ? "animate-spin" : ""} />
+              </button>
+            </div>
           </div>
-          {(viewMode === "all" || viewMode === "users") && (
-            <button
-              onClick={() => setShowFilters(!showFilters)}
-              className={`p-2 rounded-lg border transition-colors flex items-center gap-2 px-3 ${showFilters ? "bg-primary-50 dark:bg-primary-900/20 border-primary-200 dark:border-primary-800 text-primary-600 dark:text-primary-400" : "bg-white dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600"}`}
-            >
-              <Filter size={18} />
-              <span className="hidden sm:inline text-sm font-medium">
-                Filters
-              </span>
-            </button>
+
+          {/* Quick Info & Manual Trigger */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-1">
+             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 text-center sm:text-left">
+               Not finding who you're looking for?
+             </p>
+             <button 
+               onClick={() => setIsEnteringManualAddress(!isEnteringManualAddress)}
+               className={`w-full sm:w-auto px-6 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-sm ${
+                 isEnteringManualAddress 
+                   ? 'bg-rose-500 text-white shadow-rose-500/20' 
+                   : 'bg-primary-500/10 text-primary-600 dark:text-primary-400 hover:bg-primary-500 hover:text-white shadow-primary-500/5'
+               }`}
+             >
+                {isEnteringManualAddress ? "Cancel Connection" : "Connect via address"}
+                <div className="relative">
+                   <Plus size={12} strokeWidth={3} />
+                   {!isEnteringManualAddress && <div className="absolute inset-0 bg-current rounded-full animate-ping opacity-20"></div>}
+                </div>
+             </button>
+          </div>
+
+          {/* Manual Connection Card */}
+          {isEnteringManualAddress && (
+            <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md border border-white/20 dark:border-white/5 p-6 rounded-[2.5rem] shadow-lg shadow-black/5 animate-in slide-in-from-top-2 duration-300">
+               <div className="flex flex-col md:flex-row gap-4">
+                  <div className="flex-1 relative group">
+                     <ExternalLink size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-primary-500/50 group-focus-within:text-primary-500 transition-colors" />
+                     <input
+                        autoFocus
+                        type="text"
+                        placeholder="Paste Maxima Address (Mx...)"
+                        value={manualAddress}
+                        onChange={(e) => setManualAddress(e.target.value)}
+                        className="w-full pl-12 pr-4 py-3.5 bg-black/5 dark:bg-white/5 border border-transparent focus:border-primary-500/30 rounded-2xl focus:outline-none transition-all text-[13px] font-mono dark:text-white placeholder:text-gray-400"
+                     />
+                  </div>
+                  <button
+                    disabled={!manualAddress.startsWith('Mx')}
+                    onClick={() => navigate({ to: "/contact-info/$address", params: { address: manualAddress }, search: { returnTo: "/discovery" } })}
+                    className="px-8 py-3.5 bg-primary-500 text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-95 transition-all shadow-lg shadow-primary-500/20 disabled:opacity-30 disabled:grayscale"
+                  >
+                    Connect Peer
+                    <ArrowRight size={16} strokeWidth={3} />
+                  </button>
+               </div>
+            </div>
           )}
-        </div>
 
-        <div className="flex flex-wrap gap-2">
-          {(["all", "users", "groups", "channels"] as const).map((mode) => (
-            <button
-              key={mode}
-              onClick={() => setViewMode(mode)}
-              className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
-                viewMode === mode
-                  ? "bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300"
-                  : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
-              }`}
-            >
-              {mode === "all"
-                ? "All"
-                : mode.charAt(0).toUpperCase() + mode.slice(1)}
-            </button>
-          ))}
-        </div>
-
-        {/* Expanded Filters */}
-        {showFilters && (viewMode === "all" || viewMode === "users") && (
-          <div className="flex flex-wrap gap-3 pt-2 animate-in slide-in-from-top-2 duration-200">
-            {/* Country Filter */}
-            <div className="flex-1 min-w-[150px]">
+          {/* Filters Panel */}
+          {showFilters && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 animate-in fade-in slide-in-from-top-4 duration-300">
               <select
                 value={selectedCountry}
                 onChange={(e) => setSelectedCountry(e.target.value)}
-                className="w-full p-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white dark:bg-gray-700"
+                className="w-full px-4 py-3 bg-black/5 dark:bg-white/5 border border-white/10 rounded-2xl text-[13px] font-black uppercase tracking-wider dark:text-white outline-none cursor-pointer hover:bg-black/10 transition-colors"
               >
-                <option value="">All Discovered Countries</option>
-                {uniqueCountries.map((c) => (
-                  <option key={c} value={c as string}>
-                    {c as string}
-                  </option>
-                ))}
+                <option value="">All Regions</option>
+                {uniqueCountries.map((c) => <option key={String(c)} value={String(c)}>{String(c)}</option>)}
               </select>
-            </div>
-
-            {/* Language Filter */}
-            <div className="flex-1 min-w-[150px]">
               <select
                 value={selectedLanguage}
                 onChange={(e) => setSelectedLanguage(e.target.value)}
-                className="w-full p-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white dark:bg-gray-700"
+                className="w-full px-4 py-3 bg-black/5 dark:bg-white/5 border border-white/10 rounded-2xl text-[13px] font-black uppercase tracking-wider dark:text-white outline-none cursor-pointer hover:bg-black/10 transition-colors"
               >
-                <option value="">All Discovered Languages</option>
-                {uniqueLanguages.map((l) => (
-                  <option key={l} value={l}>
-                    {l}
-                  </option>
-                ))}
+                <option value="">All Languages</option>
+                {uniqueLanguages.map((l) => <option key={String(l)} value={String(l)}>{String(l)}</option>)}
               </select>
-            </div>
-
-            {/* Show Offline Checkbox */}
-            <div className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg">
-              <input
-                type="checkbox"
-                id="showOffline"
-                checked={showOffline}
-                onChange={(e) => setShowOffline(e.target.checked)}
-                className="w-4 h-4 text-primary-600 bg-gray-100 border-gray-300 rounded focus:ring-primary-500 focus:ring-2"
-              />
-              <label
-                htmlFor="showOffline"
-                className="text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none"
+              <div className="flex items-center gap-3 px-4 py-3 bg-black/5 dark:bg-white/5 rounded-2xl border border-transparent">
+                <input
+                  type="checkbox"
+                  id="showOffline"
+                  checked={showOffline}
+                  onChange={(e) => setShowOffline(e.target.checked)}
+                  className="w-5 h-5 rounded-lg border-gray-300 dark:border-gray-700 text-primary-500 focus:ring-primary-500/20"
+                />
+                <label htmlFor="showOffline" className="text-[11px] font-black uppercase tracking-widest text-gray-400 cursor-pointer select-none">
+                  Online Only
+                </label>
+              </div>
+              <button 
+                onClick={() => { setSelectedCountry(""); setSelectedLanguage(""); setShowOffline(true); }}
+                className="w-full px-4 py-3 text-[11px] font-black uppercase tracking-[0.2em] text-rose-500 hover:bg-rose-500/10 rounded-2xl transition-all"
               >
-                Show offline users
-              </label>
-            </div>
-
-            {(selectedCountry || selectedLanguage || !showOffline) && (
-              <button
-                onClick={() => {
-                  setSelectedCountry("");
-                  setSelectedLanguage("");
-                  setShowOffline(true);
-                }}
-                className="text-sm text-red-500 hover:text-red-700 font-medium px-2"
-              >
-                Clear all
+                Reset Filters
               </button>
-            )}
-          </div>
-        )}
-      </div>
-
-      <div className="px-6 py-2 bg-primary-50 dark:bg-primary-900/10 border-b border-primary-100 dark:border-primary-900/50 text-primary-700 dark:text-primary-400 text-xs flex items-center gap-2">
-        <Info size={14} className="shrink-0" />
-        <span>
-          Discovery is decentralized. It may take up to 60 seconds for all peers
-          to appear.
-        </span>
-      </div>
-
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto">
-        {loading ? (
-          <div className="flex justify-center items-center h-64">
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto mb-4"></div>
-              <p className="text-gray-600">Loading discovered items...</p>
             </div>
-          </div>
-        ) : visibleTotal === 0 ? (
-          <div className="text-center py-20 px-4">
-            <div className="bg-gray-100 dark:bg-gray-800 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Search className="text-gray-400" size={32} />
-            </div>
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white">
-              No results found
-            </h3>
-            <p className="text-gray-500 dark:text-gray-400 mt-2">
-              {searchQuery || selectedCountry || selectedLanguage
-                ? "Try adjusting your search or filters."
-                : "Be the first to join the community!"}
-            </p>
-            {(searchQuery || selectedCountry || selectedLanguage) && (
-              <button
-                onClick={() => {
-                  setSearchQuery("");
-                  setSelectedCountry("");
-                  setSelectedLanguage("");
-                }}
-                className="mt-4 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium"
-              >
-                Clear Filters
-              </button>
-            )}
-          </div>
-        ) : (
-          <>
-            <div className="px-6 py-3 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center transition-colors">
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                Showing{" "}
-                <span className="font-bold text-primary-600 dark:text-primary-400">
-                  {visibleTotal}
-                </span>{" "}
-                of <span className="font-medium">{totalFound}</span> items
-              </p>
-            </div>
+          )}
+        </div>
+      </section>
 
-            {showUsers && (
-              <>
-                <div className="px-6 pt-6 pb-2 flex items-center justify-between">
-                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                    Users
-                  </h2>
-                  <span className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-1 rounded-full">
-                    {filteredUsers.length}
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 px-6 pb-6">
-                  {filteredUsers.map((user) => (
-                    <div
-                      key={user.publickey || user.user_id || Math.random()}
-                      onClick={() => {
-                        const targetAddress = user.publickey || user.user_id;
-                        if (targetAddress) {
-                          navigate({
-                            to: "/contact-info/$address",
-                            params: { address: targetAddress },
-                            search: { returnTo: "/discovery" },
-                          });
-                        }
-                      }}
-                      className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-5 hover:shadow-md transition-all cursor-pointer hover:border-primary-200 dark:hover:border-primary-700"
-                    >
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex items-center gap-3 flex-1">
-                          <div className="relative">
-                            {user.avatar &&
-                            user.avatar.length > 10 &&
-                            user.avatar !== "0x00" ? (
-                              <img
-                                src={user.avatar}
-                                alt={user.alias}
-                                className="w-12 h-12 rounded-full object-cover shadow-sm border border-gray-100"
-                                onError={(e) =>
-                                  ((
-                                    e.target as HTMLImageElement
-                                  ).style.display = "none")
-                                }
-                              />
-                            ) : (
-                              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary-500 to-purple-600 flex items-center justify-center text-white font-bold text-lg shadow-sm">
-                                {(user.alias || "A").charAt(0).toUpperCase()}
+      {/* Main Content Area */}
+      <main className="flex-1 overflow-y-auto p-4 sm:p-6 scrollbar-hide no-scrollbar pb-24">
+        <div className="max-w-[2000px] mx-auto space-y-10">
+          
+          {loading && !visibleTotal ? (
+            <div className="flex flex-col items-center justify-center h-[40vh] space-y-4">
+              <div className="w-12 h-12 border-4 border-primary-500/20 border-t-primary-500 rounded-full animate-spin"></div>
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Gossiping Beacons...</p>
+            </div>
+          ) : (
+            <div className="animate-in fade-in duration-700">
+              {/* SINGLE COLUMN VERTICAL STACK */}
+              {(showUsers || showGroups || showChannels) && (
+                <div className="flex flex-col gap-12">
+                  {/* Users Section */}
+                  {showUsers && (
+                    <section className="space-y-6">
+                      <div className="flex items-center gap-4 bg-primary-500/5 dark:bg-primary-500/10 p-4 rounded-[1.5rem] border border-primary-500/10">
+                        <User className="text-primary-500" size={20} strokeWidth={3} />
+                        <h2 className="text-sm font-black text-primary-500 uppercase tracking-[0.2em]">Community Users ({filteredUsers.length})</h2>
+                        <div className="flex-1 h-px bg-primary-500/10"></div>
+                      </div>
+                      <div className="space-y-3">
+                        {filteredUsers.map((user, idx) => (
+                           <CompactUserRow 
+                             key={user.publickey || user.user_id || `u-${idx}`} 
+                             user={user} 
+                             onClick={() => {
+                               const addr = user.publickey || user.user_id;
+                               if (addr) navigate({ to: "/contact-info/$address", params: { address: addr }, search: { returnTo: "/discovery" } });
+                             }}
+                           />
+                        ))}
+                        {filteredUsers.length === 0 && (
+                          <div className="py-12 flex flex-col items-center justify-center bg-white/40 dark:bg-white/5 rounded-[2.5rem] border border-dashed border-white/20">
+                            <p className="text-gray-400 text-[10px] font-black uppercase tracking-widest">No users discovered yet</p>
+                          </div>
+                        )}
+                      </div>
+                    </section>
+                  )}
+                  {(showGroups || showChannels) && (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                      {/* Groups Section */}
+                      {showGroups && (
+                        <section className="space-y-6">
+                          <div className="flex items-center gap-4 bg-emerald-500/5 dark:bg-emerald-500/10 p-4 rounded-[1.5rem] border border-emerald-500/10">
+                            <UsersIcon className="text-emerald-500" size={20} strokeWidth={3} />
+                            <h2 className="text-sm font-black text-emerald-500 uppercase tracking-[0.2em]">Public Groups ({filteredGroups.length})</h2>
+                            <div className="flex-1 h-px bg-emerald-500/10"></div>
+                          </div>
+                          
+                          <div className="space-y-3">
+                            {filteredGroups.map((l) => (
+                              <CompactListingRow key={l.id} listing={l} color="emerald" onJoin={handleJoinListing} onCopy={handleCopyLink} />
+                            ))}
+                            {filteredGroups.length === 0 && (
+                              <div className="py-12 flex flex-col items-center justify-center bg-white/40 dark:bg-white/5 rounded-[2.5rem] border border-dashed border-white/20">
+                                <p className="text-gray-400 text-[10px] font-black uppercase tracking-widest">No public groups found</p>
                               </div>
                             )}
-                            {user.is_online && (
-                              <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 border-2 border-white rounded-full"></div>
+                          </div>
+                        </section>
+                      )}
+
+                      {/* Channels Section */}
+                      {showChannels && (
+                        <section className="space-y-6">
+                          <div className="flex items-center gap-4 bg-sky-500/5 dark:bg-sky-500/10 p-4 rounded-[1.5rem] border border-sky-500/10">
+                            <Radio className="text-sky-500" size={20} strokeWidth={3} />
+                            <h2 className="text-sm font-black text-sky-500 uppercase tracking-[0.2em]">Broadcast Channels ({filteredChannels.length})</h2>
+                            <div className="flex-1 h-px bg-sky-500/10"></div>
+                          </div>
+
+                          <div className="space-y-3">
+                            {filteredChannels.map((l) => (
+                              <CompactListingRow key={l.id} listing={l} color="sky" onJoin={handleJoinListing} onCopy={handleCopyLink} />
+                            ))}
+                            {filteredChannels.length === 0 && (
+                              <div className="py-12 flex flex-col items-center justify-center bg-white/40 dark:bg-white/5 rounded-[2.5rem] border border-dashed border-white/20">
+                                <p className="text-gray-400 text-[10px] font-black uppercase tracking-widest">No broadcast channels found</p>
+                              </div>
                             )}
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <h3 className="font-bold text-gray-900 dark:text-white truncate">
-                              {user.alias || "Anonymous"}
-                            </h3>
-                            {user.country && (
-                              <p className="text-xs text-primary-600 dark:text-primary-400 font-medium truncate mb-0.5">
-                                {user.country}
-                              </p>
-                            )}
-                            <p
-                              className="text-xs text-gray-400 font-mono truncate"
-                              title={user.publickey || user.user_id || ""}
-                            >
-                              {formatMiddleSegment(
-                                user.publickey || user.user_id || "",
-                              )}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {user.bio && (
-                        <p className="text-gray-600 dark:text-gray-400 text-sm line-clamp-2 mb-3">
-                          {user.bio}
-                        </p>
+                        </section>
                       )}
-
-                      {/* Languages Tag (if available) */}
-                      {user.languages && user.languages.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mb-3">
-                          {user.languages.slice(0, 2).map((lang, idx) => (
-                            <span
-                              key={idx}
-                              className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded border border-gray-200"
-                            >
-                              {lang}
-                            </span>
-                          ))}
-                          {user.languages.length > 2 && (
-                            <span className="text-[10px] bg-gray-50 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1.5 py-0.5 rounded border border-gray-200 dark:border-gray-600">
-                              +{user.languages.length - 2}
-                            </span>
-                          )}
-                        </div>
-                      )}
-
-                      <div className="pt-3 border-t border-gray-100 dark:border-gray-700 flex justify-between items-center text-xs">
-                        <span className="text-gray-500 dark:text-gray-400">
-                          {(() => {
-                            if (!user.last_updated) return "Unknown";
-                            const now = Date.now();
-                            const diff = now - Number(user.last_updated);
-                            const minutes = Math.floor(diff / 60000);
-                            const hours = Math.floor(diff / 3600000);
-                            const days = Math.floor(diff / 86400000);
-
-                            if (minutes < 1) return "Just now";
-                            if (minutes < 60) return `${minutes}m ago`;
-                            if (hours < 24) return `${hours}h ago`;
-                            if (days < 7) return `${days}d ago`;
-                            return new Date(
-                              Number(user.last_updated),
-                            ).toLocaleDateString();
-                          })()}
-                        </span>
-                        {user.is_online ? (
-                          <span className="bg-green-100 text-green-700 px-2 py-1 rounded-full font-medium">
-                            Online
-                          </span>
-                        ) : (
-                          <span className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-1 rounded-full font-medium">
-                            Offline
-                          </span>
-                        )}
-                      </div>
                     </div>
-                  ))}
+                  )}
                 </div>
-              </>
-            )}
+              )}
+            </div>
+          )}
+        </div>
+      </main>
 
-            {showGroups && (
-              <>
-                <div className="px-6 pt-2 pb-2 flex items-center justify-between">
-                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                    Groups
-                  </h2>
-                  <span className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-1 rounded-full">
-                    {filteredGroups.length}
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 px-6 pb-6">
-                  {filteredGroups.map((listing) => (
-                    <div
-                      key={`${listing.owner_publickey}-${listing.id}`}
-                      className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-5 hover:shadow-md transition-all"
-                    >
-                      <div className="flex items-start justify-between mb-2">
-                        <div>
-                          <h3 className="font-bold text-gray-900 dark:text-white truncate">
-                            {listing.name}
-                          </h3>
-                          <p className="text-xs text-gray-500 dark:text-gray-400">
-                            {listing.owner_alias
-                              ? `by ${listing.owner_alias}`
-                              : "Public group"}
-                          </p>
-                        </div>
-                        <span className="text-[10px] uppercase tracking-wide font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 px-2 py-1 rounded-full">
-                          Group
-                        </span>
-                      </div>
-                      {listing.description ? (
-                        <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2 mb-3">
-                          {listing.description}
-                        </p>
-                      ) : (
-                        <p className="text-sm text-gray-400 dark:text-gray-500 mb-3">
-                          No description provided.
-                        </p>
-                      )}
-                      <div className="flex gap-2">
-                        {listing.link && (
-                          <button
-                            onClick={() => handleJoinListing(listing)}
-                            className="px-3 py-1.5 text-xs font-semibold bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
-                          >
-                            Join
-                          </button>
-                        )}
-                        {listing.link && (
-                          <button
-                            onClick={() =>
-                              handleCopyLink(listing.link as string)
-                            }
-                            className="px-3 py-1.5 text-xs font-semibold bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-                          >
-                            Copy Link
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-
-            {showChannels && (
-              <>
-                <div className="px-6 pt-2 pb-2 flex items-center justify-between">
-                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                    Channels
-                  </h2>
-                  <span className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-1 rounded-full">
-                    {filteredChannels.length}
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 px-6 pb-10">
-                  {filteredChannels.map((listing) => (
-                    <div
-                      key={`${listing.owner_publickey}-${listing.id}`}
-                      className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-5 hover:shadow-md transition-all"
-                    >
-                      <div className="flex items-start justify-between mb-2">
-                        <div>
-                          <h3 className="font-bold text-gray-900 dark:text-white truncate">
-                            {listing.name}
-                          </h3>
-                          <p className="text-xs text-gray-500 dark:text-gray-400">
-                            {listing.owner_alias
-                              ? `by ${listing.owner_alias}`
-                              : "Public channel"}
-                          </p>
-                        </div>
-                        <span className="text-[10px] uppercase tracking-wide font-semibold bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300 px-2 py-1 rounded-full">
-                          Channel
-                        </span>
-                      </div>
-                      {listing.description ? (
-                        <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2 mb-3">
-                          {listing.description}
-                        </p>
-                      ) : (
-                        <p className="text-sm text-gray-400 dark:text-gray-500 mb-3">
-                          No description provided.
-                        </p>
-                      )}
-                      <div className="flex gap-2">
-                        {listing.link && (
-                          <button
-                            onClick={() => handleJoinListing(listing)}
-                            className="px-3 py-1.5 text-xs font-semibold bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
-                          >
-                            Join
-                          </button>
-                        )}
-                        {listing.link && (
-                          <button
-                            onClick={() =>
-                              handleCopyLink(listing.link as string)
-                            }
-                            className="px-3 py-1.5 text-xs font-semibold bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-                          >
-                            Copy Link
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-          </>
-        )}
-      </div>
-
-      {/* Toast Notification */}
+      {/* Compact Toast */}
       {showNotification && (
-        <div
-          className={`fixed bottom-4 right-4 ${toastError ? "bg-red-600" : "bg-green-600"} text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-2 animate-slide-up z-50`}
-        >
-          <span>{notificationMessage}</span>
+        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 ${toastError ? "bg-rose-600 shadow-rose-900/20" : "bg-gray-900 dark:bg-white text-white dark:text-black shadow-lg"} px-6 py-2.5 rounded-full z-50 flex items-center gap-2 animate-in slide-in-from-bottom-5`}>
+          <span className="text-[10px] font-black uppercase tracking-widest">{notificationMessage}</span>
         </div>
       )}
+    </div>
+  );
+}
+
+function CompactUserRow({ user, onClick }: { user: UserWithStatus, onClick: () => void }) {
+  return (
+    <div 
+      onClick={onClick}
+      className="group relative transition-all duration-500 animate-in fade-in slide-in-from-bottom-4 rounded-[2.5rem] bg-white/70 dark:bg-gray-900/40 backdrop-blur-md border border-white/20 dark:border-white/5 shadow-lg shadow-black/5 hover:scale-[1.02] active:scale-95 hover:shadow-2xl hover:z-20 p-5 flex items-center gap-5 cursor-pointer"
+    >
+       <div className="relative flex-shrink-0">
+          {user.avatar && user.avatar.length > 10 ? (
+            <img src={user.avatar} className="w-12 h-12 rounded-2xl object-cover bg-gray-200 dark:bg-gray-700 shadow-inner group-hover:scale-110 transition-transform duration-500" />
+          ) : (
+            <div className={`w-12 h-12 rounded-2xl bg-primary-500/10 text-primary-600 flex items-center justify-center font-black text-lg border border-white/20 dark:border-white/10 shadow-inner group-hover:scale-110 transition-transform duration-500`}>
+              {(user.alias || "A").charAt(0).toUpperCase()}
+            </div>
+          )}
+          <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white dark:border-gray-900 ${user.is_online ? "bg-emerald-500 shadow-glow shadow-emerald-500/50 animate-pulse" : "bg-gray-300"}`}></div>
+       </div>
+
+       <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-0.5">
+             <h3 className="text-base font-black text-gray-900 dark:text-white truncate tracking-tight group-hover:text-primary-500 transition-colors uppercase">
+               {user.alias || "Nomad User"}
+             </h3>
+             {user.country && <span className="text-[9px] font-black uppercase text-primary-500 tracking-widest hidden sm:block">{user.country}</span>}
+          </div>
+          <p className="text-xs text-gray-500 dark:text-gray-400 font-bold truncate opacity-70">
+             {user.bio || "Decentralized MetaChain Member"}
+          </p>
+       </div>
+
+       <div className="flex items-center text-primary-500 opacity-0 group-hover:opacity-100 transition-all translate-x-2 group-hover:translate-x-0">
+          <ChevronRight size={18} strokeWidth={3} />
+       </div>
+    </div>
+  );
+}
+
+function CompactListingRow({ listing, color, onJoin, onCopy }: { listing: DiscoveredListing, color: string, onJoin: any, onCopy: any }) {
+  const [copied, setCopied] = useState(false);
+
+  return (
+    <div className="group relative transition-all duration-500 animate-in fade-in slide-in-from-bottom-4 rounded-[2.5rem] bg-white/70 dark:bg-gray-900/40 backdrop-blur-md border border-white/20 dark:border-white/5 shadow-lg shadow-black/5 hover:scale-[1.02] active:scale-95 hover:shadow-2xl hover:z-20 p-5 flex items-center gap-5">
+       <div className={`w-12 h-12 rounded-2xl ${color === 'emerald' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-sky-500/10 text-sky-600'} flex items-center justify-center flex-shrink-0 shadow-inner group-hover:scale-110 transition-transform duration-500`}>
+          {listing.type === 'group' ? <UsersIcon size={22} strokeWidth={2.5} /> : <Radio size={22} strokeWidth={2.5} />}
+       </div>
+
+       <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+             <h3 className="text-base font-black text-gray-900 dark:text-white truncate tracking-tight group-hover:text-primary-500 transition-colors">{listing.name}</h3>
+             <div className="h-4 w-px bg-black/5 dark:bg-white/10 hidden sm:block"></div>
+             <span className="text-[10px] font-black uppercase text-gray-400 truncate tracking-widest hidden sm:block">
+                by {listing.owner_alias || "MetaChain"}
+             </span>
+          </div>
+          <p className="text-xs text-gray-500 dark:text-gray-400 font-medium truncate">
+             {listing.description || "Public decentralized resource."}
+          </p>
+       </div>
+
+       <div className="flex items-center gap-2 pl-4 border-l border-black/5 dark:border-white/10">
+          <button
+            onClick={() => onJoin(listing)}
+            className="px-6 py-2 bg-gradient-to-br from-primary-400 to-primary-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-primary-500/20 hover:scale-105 hover:shadow-primary-500/40 active:scale-95 flex-shrink-0"
+          >
+            Join
+          </button>
+          <button
+            onClick={() => { onCopy(listing.link || ""); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+            className="p-2.5 rounded-xl bg-black/5 dark:bg-white/5 text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-white dark:hover:bg-white/10 transition-all shadow-sm active:scale-90"
+            title="Copy Join Link"
+          >
+            {copied ? <Check size={16} className="text-emerald-500" /> : <Copy size={16} />}
+          </button>
+       </div>
     </div>
   );
 }

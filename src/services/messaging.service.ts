@@ -281,7 +281,8 @@ export async function sendMessage(
         amount,
         date: messageTimestamp,
         customid: customid,
-        sender_seq: seq,
+        // sender_seq is reserved for the sequence number the REMOTE PEER assigned to their messages.
+        // For outgoing messages, our own seq is tracked in MESSAGE_COUNTERS, not stored here.
         originalTimestamp: messageTimestamp,
         forwarded: forwarded,
         reply_to_customid: replyTo?.customid ?? null,
@@ -376,7 +377,7 @@ export async function sendMessage(
 
       // 5. UPDATE TO SENT
       if (saveToDb) {
-        chatService.updateMessageState(
+        await chatService.updateMessageState(
           databasePublicKey,
           messageTimestamp,
           "sent",
@@ -432,7 +433,7 @@ export async function sendMessage(
             );
 
             if (saveToDb) {
-              chatService.updateMessageState(
+              await chatService.updateMessageState(
                 databasePublicKey,
                 messageTimestamp,
                 "sent",
@@ -712,7 +713,7 @@ export async function sendReadReceipt(toPublicKey: string) {
 
     // CRITICAL: Don't mark as 'read' if the message has an active transaction (pending/sent)
     // Use UPPER() for case-insensitivity
-    const sql = `UPDATE CHAT_MESSAGES SET state = 'read' WHERE UPPER(publickey) = UPPER('${dbKey}') AND username != 'Me' AND state != 'read' AND state != 'pending' AND state != 'sent' AND state != 'confirmed'`;
+    const sql = `UPDATE CHAT_MESSAGES SET state = 'read' WHERE UPPER(publickey) = UPPER('${dbKey}') AND username != 'Me' AND state != 'read' AND state != 'pending' AND state != 'sent' AND state != 'confirmed' AND state != 'received'`;
     MDS.sql(sql, (res: any) => {
       console.log("✅ [DB] Marked received messages as read locally:", res);
     });

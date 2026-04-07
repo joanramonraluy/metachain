@@ -10,7 +10,7 @@ import { appContext } from "../AppContext";
 import { groupService } from "../services/group.service";
 import { chatService } from "../services/chat.service";
 import { MDS } from "@minima-global/mds";
-import { ArrowLeft, Check, Camera } from "lucide-react";
+import { ArrowLeft, Check, Camera, Users } from "lucide-react";
 import { compressImage } from "../utils/image";
 import {
   getPublicListingsCount,
@@ -200,30 +200,42 @@ function CreateGroupPage() {
   };
 
   return (
-    <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-900">
-      <div className="bg-primary-600 dark:bg-gray-800 text-white p-4 flex items-center gap-3 shadow-sm border-b dark:border-gray-700">
-        <button
-          onClick={() => navigate({ to: "/" })}
-          className="p-2 hover:bg-white/10 dark:hover:bg-gray-700 rounded-full transition-colors"
-        >
-          <ArrowLeft size={24} />
-        </button>
-        <h1 className="text-xl font-bold">Create Group</h1>
+    <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-900 relative overflow-x-hidden">
+      {/* Background design accents */}
+      <div className="fixed -top-24 -right-24 w-96 h-96 bg-primary-500/10 blur-[100px] rounded-full pointer-events-none" />
+      <div className="fixed -bottom-24 -left-24 w-96 h-96 bg-blue-500/10 blur-[100px] rounded-full pointer-events-none" />
+
+      {/* Sticky Header */}
+      <div className="absolute top-0 inset-x-0 z-50 bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl border-b border-white/20 dark:border-white/5 p-4 flex items-center gap-3 shadow-lg shadow-black/5 transition-all">
+        <div className="max-w-2xl mx-auto w-full flex items-center gap-3">
+          <button
+            onClick={() => navigate({ to: "/" })}
+            className="w-10 h-10 flex items-center justify-center bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 rounded-xl transition-all active:scale-90"
+          >
+            <ArrowLeft size={20} strokeWidth={2.5} className="text-gray-700 dark:text-gray-300" />
+          </button>
+          <h1 className="text-2xl font-black text-gray-900 dark:text-white tracking-tight">
+            Create Group
+          </h1>
+        </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 pb-20">
+      <div className="flex-1 overflow-y-auto pt-24 pb-32 px-4 relative z-10">
         <div className="max-w-2xl mx-auto space-y-6">
           {/* Info banner */}
-          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 text-sm text-blue-700 dark:text-blue-300">
-            <p className="font-semibold mb-1">📢 What is a Group?</p>
-            <p>
-              Groups are shared spaces. Unlike channels, all members can read
-              and publish messages.
+          <div className="bg-primary-500/10 dark:bg-primary-500/20 backdrop-blur-md border border-primary-500/20 rounded-[2rem] p-6 text-sm text-primary-700 dark:text-primary-300 animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <h4 className="font-black text-lg mb-2 flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-primary-500" />
+              What is a Group?
+            </h4>
+            <p className="font-medium leading-relaxed opacity-80">
+              Groups are collaborative shared spaces. Unlike public channels, all members can read
+              and publish messages, making them ideal for teamwork and community discussions.
             </p>
           </div>
 
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 space-y-4">
-            <div className="flex flex-col items-center gap-3">
+          <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[2.5rem] border border-white/20 dark:border-white/5 shadow-2xl p-8 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="flex flex-col items-center gap-6">
               <input
                 type="file"
                 ref={fileInputRef}
@@ -238,7 +250,7 @@ function CreateGroupPage() {
                 disabled={processingAvatar}
                 className="relative group/avatar"
               >
-                <div className="w-24 h-24 rounded-full overflow-hidden bg-gray-100 dark:bg-gray-700 shadow-md flex items-center justify-center">
+                <div className="w-32 h-32 rounded-[2.5rem] overflow-hidden bg-gray-100 dark:bg-gray-700/50 shadow-2xl flex items-center justify-center border-4 border-white/50 dark:border-gray-800/50 transition-all group-hover/avatar:scale-105 group-active/avatar:scale-95 group-hover/avatar:shadow-primary-500/20">
                   {avatar ? (
                     <img
                       src={avatar}
@@ -246,199 +258,235 @@ function CreateGroupPage() {
                       className="w-full h-full object-cover"
                     />
                   ) : (
-                    <span className="text-3xl font-bold text-primary-600 dark:text-primary-400">
-                      {groupName.trim().charAt(0).toUpperCase() || "G"}
+                    <span className="text-4xl font-black text-primary-600 dark:text-primary-400">
+                      {groupName.trim() ? groupName.trim().charAt(0).toUpperCase() : "G"}
                     </span>
                   )}
                 </div>
-                <div className="absolute inset-0 rounded-full bg-black/35 text-white flex items-center justify-center opacity-0 group-hover/avatar:opacity-100 transition-opacity">
+                <div className="absolute inset-0 rounded-[2.5rem] bg-black/40 text-white flex items-center justify-center opacity-0 group-hover/avatar:opacity-100 transition-all backdrop-blur-[2px]">
                   {processingAvatar ? (
-                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
                   ) : (
-                    <Camera size={22} />
+                    <Camera size={28} strokeWidth={2.5} />
                   )}
                 </div>
               </button>
 
               <div className="text-center">
-                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Group Image
-                </p>
+                <h3 className="text-lg font-black text-gray-900 dark:text-white">
+                  Group Profile Picture
+                </h3>
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              <div>
+                <label className="block text-[13px] font-black uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-3 px-1">
+                  Group Name *
+                </label>
+                <input
+                  type="text"
+                  value={groupName}
+                  onChange={(e) => setGroupName(e.target.value)}
+                  placeholder="Enter a creative name"
+                  className="w-full px-6 py-4 border-0 rounded-2xl bg-black/5 dark:bg-white/5 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500/40 focus:bg-white/50 dark:focus:bg-gray-800/50 transition-all font-bold placeholder:text-gray-400 dark:placeholder:text-gray-600"
+                  maxLength={50}
+                />
+              </div>
+
+              <div>
+                <label className="block text-[13px] font-black uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-3 px-1">
+                  Description
+                </label>
+                <div className="relative">
+                  <textarea
+                    value={description}
+                    onChange={(e) => {
+                      if (e.target.value.length <= 255) {
+                        setDescription(e.target.value);
+                      }
+                    }}
+                    placeholder="Briefly describe your group's purpose..."
+                    className="w-full px-6 py-4 border-0 rounded-2xl bg-black/5 dark:bg-white/5 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500/40 focus:bg-white/50 dark:focus:bg-gray-800/50 transition-all font-bold placeholder:text-gray-400 dark:placeholder:text-gray-600 resize-none min-h-[120px]"
+                    maxLength={255}
+                  />
+                  <span
+                    className={`absolute bottom-4 right-4 text-[10px] font-black tracking-widest ${description.length >= 240 ? "text-red-500" : "text-gray-400"}`}
+                  >
+                    {description.length}/255
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="flex items-center justify-between p-5 bg-black/5 dark:bg-white/5 rounded-3xl border border-white/10 dark:border-white/5 transition-all hover:bg-black/10 dark:hover:bg-white/10">
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-[15px] font-black text-gray-900 dark:text-white">
+                    Public Discovery
+                  </span>
+                  <span className="text-[11px] text-gray-400 font-bold uppercase tracking-tight">
+                    Show in community gossip
+                  </span>
+                </div>
                 <button
                   type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={processingAvatar}
-                  className="text-xs text-primary-600 dark:text-primary-400 hover:underline disabled:opacity-50"
+                  onClick={async () => {
+                    if (!isPublic) {
+                      const count = await getPublicListingsCount();
+                      setPublicCount(count);
+                      if (count >= LISTINGS_PUBLIC_LIMIT) {
+                        setPublicError(
+                          `Limit reached (max ${LISTINGS_PUBLIC_LIMIT})`,
+                        );
+                        return;
+                      }
+                    }
+                    setPublicError("");
+                    setIsPublic(!isPublic);
+                  }}
+                  className={`relative inline-flex h-7 w-12 items-center rounded-full transition-all duration-300 focus:outline-none ${
+                    isPublic ? "bg-primary-500 shadow-lg shadow-primary-500/30" : "bg-gray-300 dark:bg-gray-700"
+                  }`}
                 >
-                  {avatar ? "Change image" : "Upload image"}
+                  <span
+                    className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform duration-300 ${
+                      isPublic ? "translate-x-6" : "translate-x-1"
+                    }`}
+                  />
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between p-5 bg-black/5 dark:bg-white/5 rounded-3xl border border-white/10 dark:border-white/5 transition-all hover:bg-black/10 dark:hover:bg-white/10">
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-[15px] font-black text-gray-900 dark:text-white">
+                    Auto-Approve
+                  </span>
+                  <span className="text-[11px] text-gray-400 font-bold uppercase tracking-tight">
+                    Instant join via link
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAutoApprove(!autoApprove)}
+                  className={`relative inline-flex h-7 w-12 items-center rounded-full transition-all duration-300 focus:outline-none ${
+                    autoApprove
+                      ? "bg-primary-500 shadow-lg shadow-primary-500/30"
+                      : "bg-gray-300 dark:bg-gray-700"
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform duration-300 ${
+                      autoApprove ? "translate-x-6" : "translate-x-1"
+                    }`}
+                  />
                 </button>
               </div>
             </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Group Name *
-              </label>
-              <input
-                type="text"
-                value={groupName}
-                onChange={(e) => setGroupName(e.target.value)}
-                placeholder="Enter group name"
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-gray-900 dark:text-white bg-white dark:bg-gray-700 placeholder-gray-400 dark:placeholder-gray-500"
-                maxLength={50}
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Description (optional)
-              </label>
-              <div className="relative">
-                <textarea
-                  value={description}
-                  onChange={(e) => {
-                    if (e.target.value.length <= 255) {
-                      setDescription(e.target.value);
-                    }
-                  }}
-                  placeholder="Enter group description"
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-gray-900 dark:text-white bg-white dark:bg-gray-700 placeholder-gray-400 dark:placeholder-gray-500 resize-none pr-12"
-                  rows={3}
-                  maxLength={255}
-                />
-                <span
-                  className={`absolute bottom-2 right-2 text-[10px] font-medium ${description.length >= 240 ? "text-red-500" : "text-gray-400"}`}
-                >
-                  {description.length}/255
-                </span>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
-              <div className="flex flex-col">
-                <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                  Public Listing
-                </span>
-                <span className="text-xs text-gray-500 dark:text-gray-400">
-                  Make this group discoverable via gossip
-                </span>
-              </div>
-              <button
-                onClick={async () => {
-                  if (!isPublic) {
-                    const count = await getPublicListingsCount();
-                    setPublicCount(count);
-                    if (count >= LISTINGS_PUBLIC_LIMIT) {
-                      setPublicError(
-                        `You already have ${LISTINGS_PUBLIC_LIMIT} public listings. Remove one before adding another.`,
-                      );
-                      return;
-                    }
-                  }
-                  setPublicError("");
-                  setIsPublic(!isPublic);
-                }}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
-                  isPublic ? "bg-primary-600" : "bg-gray-300 dark:bg-gray-600"
-                }`}
-              >
-                <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                    isPublic ? "translate-x-6" : "translate-x-1"
-                  }`}
-                />
-              </button>
-            </div>
+            
             {publicError && (
-              <div className="text-xs text-red-600 dark:text-red-400">
-                {publicError}
+              <div className="text-xs text-red-500 font-bold text-center px-4 animate-in slide-in-from-top-1">
+                ⚠️ {publicError}
               </div>
             )}
-            <div className="text-xs text-gray-500 dark:text-gray-400">
-              Public listings used: {publicCount}/{LISTINGS_PUBLIC_LIMIT}
-            </div>
-
-            <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
-              <div className="flex flex-col">
-                <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                  Automatic Approval
-                </span>
-                <span className="text-xs text-gray-500 dark:text-gray-400">
-                  Users with link join instantly
-                </span>
-              </div>
-              <button
-                onClick={() => setAutoApprove(!autoApprove)}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
-                  autoApprove
-                    ? "bg-primary-600"
-                    : "bg-gray-300 dark:bg-gray-600"
-                }`}
-              >
-                <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                    autoApprove ? "translate-x-6" : "translate-x-1"
-                  }`}
-                />
-              </button>
+            
+            <div className="text-center">
+               <span className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-[0.2em]">
+                Public Listings: {publicCount} / {LISTINGS_PUBLIC_LIMIT}
+              </span>
             </div>
           </div>
 
-          {/* Create Button */}
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
+          {/* Creation State Card - Refined Style */}
+          <div className="flex justify-center animate-in fade-in slide-in-from-bottom-5 duration-600">
             <button
               onClick={handleCreateGroup}
-              disabled={
-                !groupName.trim() || selectedContacts.size === 0 || creating
-              }
-              className="w-full py-3 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 transition-colors disabled:bg-gray-300 disabled:text-gray-100 disabled:cursor-not-allowed dark:disabled:bg-gray-700 dark:disabled:text-gray-400 shadow-md"
+              disabled={!groupName.trim() || selectedContacts.size === 0 || creating}
+              className={`px-10 py-3.5 rounded-2xl font-extrabold text-base uppercase tracking-wider transition-all duration-300 shadow-xl flex items-center justify-center gap-3 ${
+                !groupName.trim() || selectedContacts.size === 0
+                  ? "bg-gray-200 dark:bg-gray-800 text-gray-400 cursor-not-allowed grayscale"
+                  : "bg-gradient-to-br from-primary-400 to-primary-600 text-white shadow-primary-500/20 hover:shadow-primary-500/40 hover:scale-[1.02] active:scale-95"
+              }`}
             >
-              {creating
-                ? "Creating..."
-                : selectedContacts.size > 0
-                  ? `Create Group with ${selectedContacts.size} ${selectedContacts.size === 1 ? "member" : "members"}`
-                  : "Select members to continue"}
+              {creating ? (
+                <>
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span>Creating Group...</span>
+                </>
+              ) : selectedContacts.size > 0 ? (
+                <>
+                  <span>Create Group</span>
+                  <div className="bg-white/20 px-3 py-1 rounded-full text-sm">
+                    {selectedContacts.size}
+                  </div>
+                </>
+              ) : (
+                "Select members to continue"
+              )}
             </button>
           </div>
 
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
-              Add Members ({selectedContacts.size} selected)
+          {/* Member Selection Section */}
+          <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[2.5rem] border border-white/20 dark:border-white/5 shadow-2xl p-8 space-y-6 animate-in fade-in slide-in-from-bottom-6 duration-700">
+            <h2 className="text-2xl font-black text-gray-900 dark:text-white mb-2 leading-tight">
+              Add Members
+              <span className="ml-3 text-sm font-black text-primary-500 bg-primary-500/10 px-3 py-1 rounded-full align-middle">
+                {selectedContacts.size}
+              </span>
             </h2>
 
-            <div className="flex gap-2 mb-4 border-b border-gray-200 dark:border-gray-700">
-              {(["all", "contacts", "community"] as const).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`pb-2 px-3 text-sm font-medium capitalize transition-colors relative ${
-                    activeTab === tab
-                      ? "text-primary-600 dark:text-primary-400 border-b-2 border-primary-600 dark:border-primary-400 -mb-px"
-                      : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                  }`}
-                >
-                  {tab}
-                </button>
-              ))}
+            {/* Floating-style Pill Tab Bar */}
+            <div className="flex p-1 bg-black/5 dark:bg-white/5 rounded-2xl border border-white/10 dark:border-white/5 backdrop-blur-sm shadow-inner group">
+              {(["all", "contacts", "community"] as const).map((tab) => {
+                const isActive = activeTab === tab;
+                return (
+                  <button
+                    key={tab}
+                    onClick={() => setActiveTab(tab)}
+                    className={`flex-1 py-3 text-[13px] font-black uppercase tracking-wider rounded-xl transition-all duration-300 relative z-10 ${
+                      isActive
+                        ? "text-white shadow-xl translate-y-[-1px]"
+                        : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white"
+                    }`}
+                  >
+                    {isActive && (
+                      <div className="absolute inset-0 bg-gradient-to-br from-primary-400 to-primary-600 rounded-xl -z-10 shadow-lg shadow-primary-500/20 animate-in zoom-in-95 duration-200"></div>
+                    )}
+                    <span className="relative z-20">{tab}</span>
+                  </button>
+                );
+              })}
             </div>
 
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search contacts..."
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-gray-900 dark:text-white bg-white dark:bg-gray-700 placeholder-gray-400 dark:placeholder-gray-500 mb-4"
-            />
+            <div className="relative group">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search potential members..."
+                className="w-full px-6 py-4 border-0 rounded-2xl bg-black/5 dark:bg-white/5 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500/40 focus:bg-white/50 dark:focus:bg-gray-800/50 transition-all font-bold placeholder:text-gray-400 dark:placeholder:text-gray-600 pl-12"
+              />
+              <div className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-600 group-focus-within:text-primary-500 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </div>
+            </div>
 
-            <div className="space-y-2 max-h-96 overflow-y-auto">
+            <div className="space-y-3 max-h-[350px] overflow-y-auto pr-2 custom-scrollbar">
               {filteredContacts.length === 0 ? (
-                <p className="text-gray-500 dark:text-gray-400 text-center py-8">
-                  No contacts found
-                </p>
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <div className="w-16 h-16 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400 mb-4">
+                    <Users size={32} />
+                  </div>
+                  <p className="text-gray-500 dark:text-gray-400 font-bold">
+                    No matching members
+                  </p>
+                </div>
               ) : (
                 filteredContacts.map((contact) => {
                   const isSelected = selectedContacts.has(contact.publickey);
-                  const avatar = contact.extradata?.icon
+                  const displayAvatar = contact.extradata?.icon
                     ? decodeURIComponent(contact.extradata.icon)
                     : defaultAvatar;
 
@@ -446,40 +494,46 @@ function CreateGroupPage() {
                     <div
                       key={contact.publickey}
                       onClick={() => toggleContact(contact.publickey)}
-                      className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors ${
+                      className={`flex items-center gap-4 p-4 rounded-3xl cursor-pointer transition-all duration-300 relative group overflow-hidden ${
                         isSelected
-                          ? "bg-primary-50 dark:bg-primary-900/30 border-2 border-[#0088cc] dark:border-primary-500"
-                          : "bg-gray-50 dark:bg-gray-700/50 border-2 border-transparent hover:bg-gray-100 dark:hover:bg-gray-600"
-                      }`}
+                          ? "bg-primary-500/10 border-2 border-primary-500 shadow-lg shadow-primary-500/5"
+                          : "bg-black/5 dark:bg-white/5 border-2 border-transparent hover:bg-black/[0.08] dark:hover:bg-white/[0.08]"
+                      } hover:scale-[1.01] active:scale-[0.98]`}
                     >
+                      {isSelected && (
+                         <div className="absolute inset-x-0 bottom-0 h-1 bg-gradient-to-r from-primary-400 to-primary-600 animate-in slide-in-from-left-full duration-500" />
+                      )}
+
                       <img
-                        src={
-                          avatar.startsWith("data:image")
-                            ? avatar
-                            : defaultAvatar
-                        }
+                        src={displayAvatar.startsWith("data:image") ? displayAvatar : defaultAvatar}
                         alt={contact.extradata?.name || "Contact"}
-                        className="w-10 h-10 rounded-full object-cover"
+                        className="w-12 h-12 rounded-[1.25rem] object-cover ring-2 ring-white/20 dark:ring-gray-800/20"
                         onError={(e: any) => {
                           e.target.src = defaultAvatar;
                         }}
                       />
                       <div className="flex-1 min-w-0">
-                        <p className="font-medium text-gray-900 dark:text-white truncate">
+                        <p className="font-bold text-gray-900 dark:text-white truncate text-[15px]">
                           {contact.extradata?.name || contact.currentaddress}
                         </p>
+                        <p className="text-[11px] font-bold text-gray-400 uppercase tracking-tighter truncate opacity-70">
+                          {contact.type === "contact" ? "Verified Contact" : "From Recent Chats"}
+                        </p>
                       </div>
-                      {isSelected && (
-                        <div className="w-6 h-6 bg-primary-600 rounded-full flex items-center justify-center">
-                          <Check size={16} className="text-white" />
-                        </div>
-                      )}
+                      <div className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all ${
+                        isSelected 
+                          ? "bg-primary-500 text-white shadow-lg shadow-primary-500/40 rotate-0" 
+                          : "bg-black/5 dark:bg-white/5 text-gray-300 dark:text-gray-700 rotate-45"
+                      }`}>
+                        <Check size={20} strokeWidth={4} />
+                      </div>
                     </div>
                   );
                 })
               )}
             </div>
           </div>
+
         </div>
       </div>
     </div>

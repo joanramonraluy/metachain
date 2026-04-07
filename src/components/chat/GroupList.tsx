@@ -174,7 +174,7 @@ export default function GroupList() {
             </div>
 
             {/* Floating Action Button (FAB) for New Group */}
-            <div className="fixed bottom-6 right-6">
+            <div className="fixed bottom-32 md:bottom-10 right-6 z-50">
                 <button
                     onClick={() => navigate({ to: "/create-group" })}
                     className="w-14 h-14 bg-[#0088cc] text-white rounded-full shadow-lg flex items-center justify-center hover:bg-[#0077b5] transition-transform hover:scale-105 active:scale-95"

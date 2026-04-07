@@ -36,10 +36,6 @@ function loadListingsMap(callback) {
 }
 
 function handleGetPeers(pubkey, maxjson) {
-  MDS.log(
-    "🗣️ [GOSSIP] Peer request from " +
-      (maxjson.alias || pubkey.substring(0, 10)),
-  );
 
   loadListingsMap(function (listingsMap) {
     // Fetch known peers
@@ -59,6 +55,7 @@ function handleGetPeers(pubkey, maxjson) {
           var bio = row.BIO || "";
           var timestamp = 0;
 
+          var minimaaddress = row.MINIMAADDRESS || "";
           if (row.EXTRA_DATA) {
             try {
               var extraObj = JSON.parse(row.EXTRA_DATA);
@@ -67,6 +64,7 @@ function handleGetPeers(pubkey, maxjson) {
               languages = extraObj.languages || [];
               if (!bio && extraObj.bio) bio = extraObj.bio;
               timestamp = extraObj.timestamp || 0;
+              if (!minimaaddress && extraObj.minimaaddress) minimaaddress = extraObj.minimaaddress;
             } catch (e) {}
           }
 
@@ -83,6 +81,7 @@ function handleGetPeers(pubkey, maxjson) {
             avatar: avatar,
             country: country,
             languages: languages,
+            minimaaddress: minimaaddress,
             listings: listingEntry ? listingEntry.listings : undefined,
             timestamp: timestamp || (listingEntry ? listingEntry.timestamp : 0),
           });
@@ -120,7 +119,7 @@ function handlePeersResponse(pubkey, maxjson) {
   var peerCount = maxjson.peers ? maxjson.peers.length : 0;
   var senderAlias = pubkey ? pubkey.substring(0, 10) : "P2P-broadcast";
 
-  MDS.log("📥 [GOSSIP] Received " + peerCount + " peers from " + senderAlias);
+  if (peerCount === 0) return;
 
   if (maxjson.peers && Array.isArray(maxjson.peers)) {
     var processedCount = 0;
@@ -145,29 +144,19 @@ function handlePeersResponse(pubkey, maxjson) {
       }
     }
 
-    MDS.log(
-      "📊 [GOSSIP] Summary: " +
-        processedCount +
-        " processed, " +
-        skippedCount +
-        " skipped",
-    );
+    if (skippedCount > 0) MDS.log("⚠️ [GOSSIP] Skipped " + skippedCount + " incomplete peers");
   } else {
     MDS.log("⚠️ [GOSSIP] No valid peers array in response");
   }
 }
 
 function startGossip() {
-  MDS.log("🗣️ [GOSSIP] Starting discovery...");
 
   // Try discovered peers first
   MDS.sql(
     "SELECT * FROM DISCOVERED_PEERS ORDER BY last_seen DESC LIMIT " + (typeof DISCOVERY_LIMIT !== "undefined" ? DISCOVERY_LIMIT : 5),
     function (res) {
       if (res.status && res.rows && res.rows.length > 0) {
-        MDS.log(
-          "🗣️ [GOSSIP] Asking " + res.rows.length + " discovered peers...",
-        );
         var pubkeys = [];
         for (var i = 0; i < res.rows.length; i++) {
           pubkeys.push(res.rows[i].PUBLICKEY);
@@ -202,7 +191,6 @@ function startGossip() {
             ) {
               targets.push(contactRes.response.contacts[i].publickey);
             }
-            MDS.log("🗣️ [GOSSIP] Asking " + targets.length + " contacts...");
             askPeers(targets);
           } else {
             MDS.log(
@@ -264,6 +252,7 @@ function sendWelcomePackage(targetPubkey, targetAlias, targetAddress) {
           var languages = [];
           var bio = row.BIO || "";
           var timestamp = 0;
+          var minimaaddress2 = row.MINIMAADDRESS || "";
 
           if (row.EXTRA_DATA) {
             try {
@@ -273,6 +262,7 @@ function sendWelcomePackage(targetPubkey, targetAlias, targetAddress) {
               languages = extraObj.languages || [];
               if (!bio && extraObj.bio) bio = extraObj.bio;
               timestamp = extraObj.timestamp || 0;
+              if (!minimaaddress2 && extraObj.minimaaddress) minimaaddress2 = extraObj.minimaaddress;
             } catch (e) {}
           }
 
@@ -289,6 +279,7 @@ function sendWelcomePackage(targetPubkey, targetAlias, targetAddress) {
             avatar: avatar,
             country: country,
             languages: languages,
+            minimaaddress: minimaaddress2,
             listings: listingEntry ? listingEntry.listings : undefined,
             timestamp: timestamp || (listingEntry ? listingEntry.timestamp : 0),
           });

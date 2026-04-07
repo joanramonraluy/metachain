@@ -119,7 +119,7 @@ function handleChatMessage(pubkey, maxjson) {
 
     // 2. Insert message to DB if not blocked
     var txpowid = maxjson.txpowid ? escapeSql(maxjson.txpowid) : null;
-    var initialState = txpowid ? "sent" : "received"; // 'sent' triggers blink on receiver side if txpowid exists
+    var initialState = "received"; // incoming messages always start as received; SW checker promotes to confirmed after 3-block confirmation
     var txpowidVal = txpowid ? "'" + txpowid + "'" : "NULL";
     var originalTimestamp = maxjson.timestamp ? maxjson.timestamp : 0;
     // PERSIST CUSTOM ID (already normalized above)
@@ -465,9 +465,9 @@ function handleChatHistoryRequest(pubkey, maxjson) {
     // This gives both sent and received messages in that conversation.
 
     var sql =
-      "SELECT * FROM CHAT_MESSAGES WHERE publickey='" +
+      "SELECT * FROM CHAT_MESSAGES WHERE UPPER(publickey)=UPPER('" +
       safePubkey +
-      "' " +
+      "') " +
       "AND (type='text' OR type='token' OR type='charm') " +
       "AND date > " +
       since +
@@ -983,6 +983,9 @@ function requestChatHistory(toPublicKey, toAddress) {
 function handleSyncStatusCheck(msg, fromKey) {
   var peerLastSeq = msg.last_received_seq || 0;
 
+  // Signal local FE that this peer is back online → triggers OFFLINE_QUEUE drain for messages to them
+  MDS.comms.solo(JSON.stringify({ type: "PEER_ONLINE", publickey: fromKey }));
+
   // Check what is the maximum sequence number we have sent to this user
   // We can infer this from CHAT_MESSAGES where publickey=fromKey AND fromMe=true?
   // Wait, CHAT_MESSAGES stores messages *received* from them or *sent* to them?
@@ -1033,54 +1036,52 @@ function handleSyncStatusCheck(msg, fromKey) {
       myLastSentSeq,
     );
 
-    if (myLastSentSeq > peerLastSeqNum) {
-      var missingCount = myLastSentSeq - peerLastSeqNum;
+    // Always send sync_status_report so the peer can auto-request our history
+    // (bidirectional sync: even if peer claims to be ahead due to stale/contaminated seq data,
+    //  we still respond so they trigger a chat_history_request for our messages)
+    var missingCount = myLastSentSeq > peerLastSeqNum ? myLastSentSeq - peerLastSeqNum : 0;
+    if (missingCount > 0) {
       MDS.log("⚠️ [SMART-SYNC] Peer is missing " + missingCount + " messages.");
-
-      // Optimization: Get preview of the very last message to show in their UI
-      // We find the message with highest ID sent to them?
-      // We don't strictly index our sent 'seq' in CHAT_MESSAGES yet (we just send it).
-      // We might need to query by date DESC.
-      var previewSql =
-        "SELECT message, date, type FROM CHAT_MESSAGES WHERE publickey='" +
-        escapeSql(fromKey) +
-        "' AND state IN ('sent','delivered','read') ORDER BY date DESC LIMIT 1";
-
-      MDS.sql(previewSql, function (pRes) {
-        var lastMsg = pRes.rows && pRes.rows.length > 0 ? pRes.rows[0] : null;
-
-        var reportPayload = {
-          type: "sync_status_report",
-          missing_count: missingCount,
-          my_highest_seq: myLastSentSeq,
-          last_message_preview: lastMsg
-            ? {
-              text:
-                lastMsg.TYPE === "text"
-                  ? lastMsg.MESSAGE
-                  : "[" + lastMsg.TYPE + "]",
-              timestamp: lastMsg.DATE,
-            }
-            : null,
-        };
-
-        // Send report back via Maxima with Address Resolution
-        var hexData = "0x" + utf8ToHex(JSON.stringify(reportPayload)).toUpperCase();
-        smartSend(fromKey, "metachain", hexData, "SMART-SYNC", false);
-      });
     } else {
-      MDS.log("✅ [SMART-SYNC] Peer is up to date.");
+      MDS.log("✅ [SMART-SYNC] Peer is up to date. Sending report for bidirectional sync.");
     }
+
+    var previewSql =
+      "SELECT message, date, type FROM CHAT_MESSAGES WHERE publickey='" +
+      escapeSql(fromKey) +
+      "' AND state IN ('sent','delivered','read') ORDER BY date DESC LIMIT 1";
+
+    MDS.sql(previewSql, function (pRes) {
+      var lastMsg = pRes.rows && pRes.rows.length > 0 ? pRes.rows[0] : null;
+
+      var reportPayload = {
+        type: "sync_status_report",
+        missing_count: missingCount,
+        my_highest_seq: myLastSentSeq,
+        last_message_preview: lastMsg
+          ? {
+            text:
+              lastMsg.TYPE === "text"
+                ? lastMsg.MESSAGE
+                : "[" + lastMsg.TYPE + "]",
+            timestamp: lastMsg.DATE,
+          }
+          : null,
+      };
+
+      var hexData = "0x" + utf8ToHex(JSON.stringify(reportPayload)).toUpperCase();
+      smartSend(fromKey, "metachain", hexData, "SMART-SYNC", false);
+    });
     } // end finishSyncCheck
   }); // end outer MESSAGE_COUNTERS MDS.sql
 }
 
 /**
- * Handle incoming sync status report (PHASE 1 Response)
+ * Handle incoming sync status report (PHASE 1 Response + PHASE 2 Auto-fetch)
  * Peer says: "You are missing X messages. Last one was 'Hello'"
- * We action: Update UI to show "Unread/Syncing" state? or Trigger fetch?
- * For Phase 1: Just Log and maybe emit event for UI.
- * For Phase 2: This will auto-trigger 'sync_data_request'
+ * Phase 1: Emit event to UI for visual feedback.
+ * Phase 2: SW auto-sends chat_history_request to recover missing messages,
+ *          without depending on the UI having the chat open.
  */
 function handleSyncStatusReport(msg, fromKey) {
   MDS.log(
@@ -1091,7 +1092,7 @@ function handleSyncStatusReport(msg, fromKey) {
     " messages.",
   );
 
-  // Emit the report to the frontend so minima.service.ts can present it to the UI
+  // Phase 1: Emit the report to the frontend for UI feedback (syncing indicator)
   var payload = {
     type: "sync_status_report",
     missing_count: msg.missing_count,
@@ -1099,4 +1100,13 @@ function handleSyncStatusReport(msg, fromKey) {
     last_message_preview: msg.last_message_preview,
   };
   MDS.comms.solo(JSON.stringify(payload));
+
+  // Phase 2: Auto-request missing messages from the SW directly, no UI needed
+  MDS.log("🔄 [SMART-SYNC] Phase 2: Auto-requesting missing history from " + fromKey.substring(0, 10));
+  var historyReqPayload = {
+    type: "chat_history_request",
+    timestamp: 0, // SW defaults to last 7 days when 0
+  };
+  var hexData = "0x" + utf8ToHex(JSON.stringify(historyReqPayload)).toUpperCase();
+  smartSend(fromKey, "metachain", hexData, "SMART-SYNC-P2", false);
 }

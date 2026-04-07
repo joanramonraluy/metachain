@@ -926,7 +926,6 @@ VALUES('', UPPER('${safeFrom}'), 'System', 'system', 'Maxima contact declined', 
         }
 
         if (!validChatTypes.includes(json.type)) {
-          console.log(`ℹ️ [MAXIMA] Ignoring non-chat type: ${json.type}`);
           return;
         }
 
@@ -1797,14 +1796,10 @@ VALUES('', UPPER('${safeFrom}'), 'System', 'system', 'Maxima contact declined', 
   }
 
   processEvent(event: any) {
-    // Suppress high-frequency internal Minima events that have no relevance to MetaChain UI
-    const silentEvents = ['MINIMALOG', 'MINING', 'NOTIFYCASCADEBLOCK', 'MDS_TIMER_10SECONDS', 'MDS_TIMER_60SECONDS', 'MDS_TIMER_5MINUTES'];
+    // Only log unusual/unexpected events — MAXIMA, NEWBLOCK, NEWBALANCE, MDSCOMMS are handled below
+    const silentEvents = ['MINIMALOG', 'MINING', 'NOTIFYCASCADEBLOCK', 'MDS_TIMER_10SECONDS', 'MDS_TIMER_60SECONDS', 'MDS_TIMER_5MINUTES', 'MAXIMA', 'NEWBLOCK', 'NEWBALANCE', 'MDSCOMMS', 'MAXIMACONTACTS'];
     if (!silentEvents.includes(event.event)) {
-      console.log("📡 [MINIMA-EVENT] Event received from MDS:", {
-        event: event.event,
-        from: event.data?.from?.substring(0, 10),
-        application: event.data?.application,
-      });
+      console.log("📡 [MINIMA-EVENT] Unexpected event from MDS:", event.event);
     }
 
     if (this.isReconnectEvent(event)) {
@@ -1834,7 +1829,6 @@ VALUES('', UPPER('${safeFrom}'), 'System', 'system', 'Maxima contact declined', 
           }
         }
       }
-      console.log("✉️ [MDS] MAXIMA from:", event.data?.from?.substring(0, 10), "app:", event.data?.application);
       this.processIncomingMessage(event);
     }
 
@@ -1911,6 +1905,14 @@ VALUES('', UPPER('${safeFrom}'), 'System', 'system', 'Maxima contact declined', 
                 },
               }),
             );
+          } else if (parsedMsg.type === "TOKEN_INCOMING_CONFIRMED") {
+            console.log(`💰 [SERVICE] TOKEN_INCOMING_CONFIRMED for msg ID ${parsedMsg.msgId}`);
+            this.notifyNewMessage(parsedMsg);
+          } else if (parsedMsg.type === "PEER_ONLINE") {
+            // A contact just sent us a sync_status_check → they're back online.
+            // Drain our OFFLINE_QUEUE so any queued messages to them get retried now.
+            console.log(`🟢 [SERVICE] Peer back online: ${parsedMsg.publickey?.substring(0, 15)}... triggering queue drain`);
+            offlineQueueService.triggerImmediateRetry("peer_online");
           } else if (
             parsedMsg.type &&
             typeof parsedMsg.type === "string" &&
@@ -1941,8 +1943,10 @@ VALUES('', UPPER('${safeFrom}'), 'System', 'system', 'Maxima contact declined', 
    * then sends 'sync_status_check' to them.
    */
   async sendSyncStatusCheck(publickey: string) {
-    // Query max sender_seq from this peer
-    const sql = `SELECT MAX(sender_seq) as last_seq FROM CHAT_MESSAGES WHERE UPPER(publickey)=UPPER('${publickey}')`;
+    // Query max sender_seq from incoming messages only.
+    // Outgoing messages must NOT have sender_seq set (see messaging.service.ts).
+    // username != 'Me' acts as a belt-and-suspenders filter for historical rows that may have been stored incorrectly.
+    const sql = `SELECT MAX(sender_seq) as last_seq FROM CHAT_MESSAGES WHERE UPPER(publickey)=UPPER('${publickey}') AND sender_seq > 0 AND username != 'Me'`;
 
     try {
       const res = await this.runSQL(sql);
@@ -1967,7 +1971,7 @@ VALUES('', UPPER('${safeFrom}'), 'System', 'system', 'Maxima contact declined', 
         // maxcontacts action:add publickey:0x... OR maxcontacts action:add contact:Mx...
         // Wait, this is 'maxima action:send ...'
 
-        let cmd = `maxima action:send application:metachain poll:true data:0x${dataHex}`;
+        let cmd = `maxima action:send application:metachain poll:false data:0x${dataHex}`;
 
         if (isAddress) {
           cmd += ` to:${addressOrKey}`;

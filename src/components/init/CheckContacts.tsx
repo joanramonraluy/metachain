@@ -4,10 +4,12 @@ import { useContext, useEffect, useState } from "react";
 import { appContext } from "../../AppContext";
 import { MDS } from "@minima-global/mds";
 import { useNavigate } from "@tanstack/react-router";
-import { Plus, VolumeX, UserCheck, LayoutGrid, X, Users, Globe } from "lucide-react";
+import { Plus, VolumeX, UserCheck, LayoutGrid, X, Users, Globe, MessageCircle, ChevronRight, UserPlus, Info, BookUser } from "lucide-react";
+import EmptyState from '../common/EmptyState';
 import { minimaService } from "../../services/minima.service";
 import { personalContactsService } from "../../services/personal-contacts.service";
 import { chatService } from "../../services/chat.service";
+import { useTheme } from "../../context/ThemeContext";
 
 interface Contact {
   currentaddress: string;
@@ -24,6 +26,7 @@ interface Contact {
 
 export default function CheckContacts() {
   const { loaded } = useContext(appContext);
+  const { mode, chatBackground } = useTheme();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [personalContacts, setPersonalContacts] = useState<string[]>([]);
   const [chatOnlyContacts, setChatOnlyContacts] = useState<Contact[]>([]);
@@ -34,6 +37,7 @@ export default function CheckContacts() {
   const [contactAddress, setContactAddress] = useState("");
   const [isAdding, setIsAdding] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [fabMenuOpen, setFabMenuOpen] = useState(false);
 
   // Community Hint State
   const [showCommunityHint, setShowCommunityHint] = useState(() => {
@@ -257,153 +261,213 @@ export default function CheckContacts() {
 
   return (
     <>
-      {/* Add Contact Dialog */}
+      {/* Add Contact Modal - Modernized Premium Style */}
       {showAddContactDialog && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl w-96 max-w-full mx-4">
-            <h3 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">Add Contact</h3>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 transition-all duration-500">
+          <div className="bg-white/80 dark:bg-gray-900/80 backdrop-blur-3xl border border-white/20 dark:border-white/5 rounded-[2.5rem] p-8 w-full max-w-sm shadow-[0_20px_50px_rgba(0,0,0,0.3)] relative overflow-hidden animate-in fade-in zoom-in-95 slide-in-from-bottom-4 duration-300">
+            {/* Background design accents */}
+            <div className="absolute -top-24 -right-24 w-48 h-48 bg-primary-500/10 blur-[60px] rounded-full pointer-events-none" />
+            <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-blue-500/10 blur-[60px] rounded-full pointer-events-none" />
 
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Maxima Address
-              </label>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                Enter the Maxima contact address of the person you want to add
+            <div className="flex flex-col items-center text-center">
+              <div className="w-14 h-14 rounded-2xl bg-primary-500/10 flex items-center justify-center text-primary-500 mb-6 shadow-sm border border-primary-500/10 ring-8 ring-primary-500/5">
+                <UserPlus size={28} strokeWidth={2.5} />
+              </div>
+
+              <h3 className="text-2xl font-black mb-2 text-gray-900 dark:text-white leading-tight">
+                Add New Contact
+              </h3>
+
+              <p className="text-[13px] text-gray-500 dark:text-gray-400 mb-8 font-medium leading-relaxed max-w-[240px] mx-auto">
+                Connect with a peer by pasting their Maxima address (Mx...) or public key.
               </p>
-              <textarea
-                value={contactAddress}
-                onChange={(e) => setContactAddress(e.target.value)}
-                className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:outline-none min-h-[100px] font-mono text-sm"
-                placeholder="Paste Maxima address here..."
-                autoFocus
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && e.ctrlKey) handleAddContact();
-                  if (e.key === 'Escape') setShowAddContactDialog(false);
-                }}
-              />
             </div>
 
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={() => {
-                  setShowAddContactDialog(false);
-                  setContactAddress("");
-                }}
-                className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
-                disabled={isAdding}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleAddContact}
-                className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-md transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={isAdding}
-              >
-                {isAdding ? "Adding..." : "Add Contact"}
-              </button>
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <label className="text-[11px] font-black uppercase tracking-[0.2em] text-gray-400 ml-1">
+                  Peers Address
+                </label>
+                <div className="relative group">
+                  <textarea
+                    placeholder="Mx... or 0x..."
+                    value={contactAddress}
+                    onChange={(e) => setContactAddress(e.target.value)}
+                    className="w-full px-5 py-4 bg-black/5 dark:bg-white/5 border-2 border-transparent focus:border-primary-500/30 rounded-2xl text-[15px] font-mono text-gray-900 dark:text-white focus:outline-none transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600 min-h-[120px] resize-none shadow-inner"
+                    disabled={isAdding}
+                  />
+                  <div className="absolute right-4 bottom-4 opacity-0 group-focus-within:opacity-30 transition-opacity">
+                    <UserPlus size={16} className="text-primary-500" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-3 pt-2">
+                <button
+                  onClick={handleAddContact}
+                  disabled={!contactAddress.trim() || isAdding}
+                  className="w-full py-4 bg-gradient-to-br from-primary-400 to-primary-600 text-white rounded-2xl font-black text-base uppercase tracking-widest shadow-lg shadow-primary-500/30 hover:scale-102 hover:shadow-primary-500/50 active:scale-95 transition-all disabled:opacity-50 disabled:grayscale"
+                >
+                  {isAdding ? (
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <span>Requesting...</span>
+                    </div>
+                  ) : (
+                    "Send Request"
+                  )}
+                </button>
+                <button
+                  onClick={() => {
+                    setShowAddContactDialog(false);
+                    setContactAddress("");
+                  }}
+                  className="w-full py-3.5 text-gray-500 dark:text-gray-400 font-bold uppercase tracking-widest text-[11px] hover:bg-black/5 dark:hover:bg-white/10 rounded-2xl transition-all active:scale-95"
+                  disabled={isAdding}
+                >
+                  Not Now
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-900 transition-colors">
-        {/* Syncing Indicator */}
-        {isSyncing && (
-          <div className="bg-primary-500 text-white px-4 py-2 text-center text-sm font-medium flex items-center justify-center gap-2">
-            <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-            Loading new contact...
+      <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-950 transition-colors relative overflow-hidden">
+        {/* Dot Grid Background (consistent with Inbox) */}
+        <div className="absolute inset-0 z-0 opacity-[0.03] dark:opacity-[0.05] pointer-events-none">
+          <div
+            className="absolute inset-0"
+            style={{
+              backgroundImage:
+                "radial-gradient(circle at 2px 2px, currentColor 1px, transparent 0)",
+              backgroundSize: "24px 24px",
+            }}
+          ></div>
+        </div>
+
+        {/* Background Blobs (consistent with Inbox) */}
+        {chatBackground === "soft-gradient" && (
+          <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+            <div className="absolute inset-0 bg-gradient-to-br from-white via-gray-50 to-blue-50/30 dark:from-gray-950 dark:via-gray-950 dark:to-primary-950/20"></div>
+
+            <div
+              className="absolute -top-[10%] -left-[10%] w-[60%] h-[60%] rounded-full opacity-40 dark:opacity-20 blur-[120px] animate-pulse"
+              style={{
+                background:
+                  mode === "dark"
+                    ? "radial-gradient(circle, var(--color-primary-900) 0%, transparent 70%)"
+                    : "radial-gradient(circle, var(--color-primary-200) 0%, transparent 70%)",
+                animationDuration: "8s",
+              }}
+            ></div>
+            <div
+              className="absolute -bottom-[10%] -right-[10%] w-[50%] h-[50%] rounded-full opacity-30 dark:opacity-10 blur-[120px] animate-pulse"
+              style={{
+                background:
+                  mode === "dark"
+                    ? "radial-gradient(circle, var(--color-primary-800) 0%, transparent 70%)"
+                    : "radial-gradient(circle, var(--color-primary-300) 0%, transparent 70%)",
+                animationDuration: "12s",
+                animationDelay: "2s",
+              }}
+            ></div>
           </div>
         )}
 
-        {/* Tabs */}
-        <div className="bg-white dark:bg-gray-800 flex-shrink-0 px-4 py-3 shadow-sm transition-colors">
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
+        {/* Syncing Indicator */}
+        {isSyncing && (
+          <div className="mx-6 mt-6 bg-primary-500 text-white px-5 py-3 rounded-2xl shadow-xl shadow-primary-500/20 flex items-center justify-center gap-3 animate-in slide-in-from-top-4 duration-500 z-50">
+            <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white"></div>
+            <span className="text-xs font-black uppercase tracking-widest">Bridging New Peer...</span>
+          </div>
+        )}
 
-            <button
-              onClick={() => setActiveTab('all')}
-              className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === 'all'
-                ? 'bg-primary-600 text-white shadow-md'
-                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                }`}
-            >
-              <LayoutGrid size={16} className="flex-shrink-0" />
-              <span className="hidden md:inline">All</span> ({contacts.length + chatOnlyContacts.length})
-            </button>
+        {/* Tabs - Elite Glassy Pills (Sticky at the top) */}
+        <div className="sticky top-0 z-40 w-full flex items-center justify-center border-b border-black/5 dark:border-white/5 bg-white/40 dark:bg-black/20 backdrop-blur-3xl overflow-x-auto no-scrollbar scrollbar-hide px-3 sm:px-6">
+          <div className="flex items-center gap-1 sm:gap-6">
+            {(['all', 'contacts', 'community', 'personal'] as const).map((tab) => {
+              const isActive = activeTab === tab;
+              const config = {
+                all: { icon: LayoutGrid, label: 'All', count: contacts.length + chatOnlyContacts.length, color: 'indigo' },
+                contacts: { icon: Users, label: 'Contacts', count: contacts.length, color: 'indigo' },
+                community: { icon: Globe, label: 'Community', count: chatOnlyContacts.length, color: 'emerald' },
+                personal: { icon: UserCheck, label: 'Personal', count: personalContacts.length, color: 'violet' }
+              }[tab];
 
-            <button
-              onClick={() => setActiveTab('contacts')}
-              className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === 'contacts'
-                ? 'bg-primary-600 text-white shadow-md'
-                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                }`}
-            >
-              <Users size={16} className="flex-shrink-0" />
-              <span className="hidden md:inline">Contacts</span> ({contacts.length})
-            </button>
+              const Icon = config.icon;
+              const colors = {
+                indigo: "text-indigo-500 bg-indigo-500 shadow-indigo-500/50",
+                emerald: "text-emerald-500 bg-emerald-500 shadow-emerald-500/50",
+                violet: "text-violet-500 bg-violet-500 shadow-violet-500/50",
+              }[config.color] || "text-primary-500 bg-primary-500 shadow-primary-500/50";
 
-            <button
-              onClick={() => setActiveTab('community')}
-              className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === 'community'
-                ? 'bg-primary-600 text-white shadow-md'
-                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                }`}
-            >
-              <Globe size={16} className="flex-shrink-0" />
-              <span className="hidden md:inline">Community</span> ({chatOnlyContacts.length})
-            </button>
+              const colorClass = colors.split(" ")[0];
+              const bgClass = colors.split(" ")[1];
+              const glowClass = colors.split(" ")[2];
 
-            <button
-              onClick={() => setActiveTab('personal')}
-              className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center justify-center gap-1.5 ${activeTab === 'personal'
-                ? 'bg-primary-600 text-white shadow-md'
-                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                }`}
-            >
-              <UserCheck size={16} className="flex-shrink-0" />
-              <span className="hidden md:inline">Personal</span> ({personalContacts.length})
-            </button>
+              return (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={`relative px-4 py-4 sm:py-5 flex items-center gap-2.5 transition-all duration-300 group flex-shrink-0 ${
+                    isActive ? colorClass : "text-gray-400 hover:text-gray-900 dark:hover:text-white"
+                  }`}
+                >
+                  <div className={`transition-all duration-500 ${isActive ? "scale-110" : "group-hover:scale-110"}`}>
+                    <Icon size={16} strokeWidth={isActive ? 3 : 2.5} />
+                  </div>
+                  <span className="hidden sm:inline text-[11px] font-black tracking-widest uppercase">
+                    {config.label}
+                  </span>
+                  <span className="opacity-60 text-[10px] font-bold">({config.count})</span>
+
+                  {/* Underline Indicator */}
+                  {isActive && (
+                    <div className={`absolute bottom-0 left-0 right-0 h-1 rounded-full ${bgClass} shadow-[0_4px_12px_rgba(0,0,0,0.1)] ${glowClass} animate-in fade-in zoom-in duration-500`} />
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        {/* Community Hint Banner */}
+        {/* Community Hint Banner - Modernized */}
         {showCommunityHint && (
           <div className="px-4 pt-4">
-            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 rounded-xl p-4 flex items-start gap-3 relative animate-in fade-in slide-in-from-top-2">
-              <div className="bg-blue-100 dark:bg-blue-800 rounded-full p-2 flex-shrink-0 text-blue-600 dark:text-blue-300">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                </svg>
+            <div className="relative overflow-hidden bg-white/70 dark:bg-gray-900/40 backdrop-blur-md border border-white/20 dark:border-white/5 rounded-2xl p-4 flex items-start gap-3 animate-in fade-in slide-in-from-top-4 duration-500 shadow-xl shadow-black/5">
+              <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-transparent pointer-events-none"></div>
+              <div className="relative z-10 bg-blue-100 dark:bg-blue-800/30 rounded-xl p-2.5 flex-shrink-0 text-blue-600 dark:text-blue-400 shadow-sm">
+                <Users size={20} strokeWidth={2.5} />
               </div>
-              <div className="flex-1 min-w-0 pr-6">
-                <h4 className="text-sm font-bold text-gray-900 dark:text-white mb-1">
+              <div className="flex-1 min-w-0 pr-6 relative z-10">
+                <h4 className="text-[15px] font-black text-gray-900 dark:text-white mb-0.5 tracking-tight">
                   Looking for more people?
                 </h4>
-                <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed mb-2">
-                  You can find and connect with other users in the global Community section.
+                <p className="text-[13px] text-gray-500 dark:text-gray-400 leading-snug mb-2 font-medium">
+                  Connect with the global network in the global Community section.
                 </p>
                 <button
                   onClick={() => navigate({ to: '/discovery' })}
-                  className="text-sm font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 inline-flex items-center gap-1 group"
+                  className="text-[13px] font-black text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 inline-flex items-center gap-1 group transition-all"
                 >
                   Go to Community
-                  <svg className="w-4 h-4 transform group-hover:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
-                  </svg>
+                  <ChevronRight size={14} className="transform group-hover:translate-x-0.5 transition-transform" />
                 </button>
               </div>
               <button
-                className="absolute top-2 right-2 p-1.5 text-gray-400 hover:text-gray-500 dark:hover:text-gray-300 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+                className="absolute top-3 right-3 p-1.5 text-gray-400 hover:text-gray-900 dark:hover:text-white rounded-xl hover:bg-black/5 dark:hover:bg-white/10 transition-all z-20"
                 onClick={handleDismissHint}
                 title="Dismiss hint"
               >
-                <X size={16} />
+                <X size={18} />
               </button>
             </div>
           </div>
         )}
 
         {/* Contacts List */}
-        <div className="flex-1 overflow-y-auto p-3">
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-hide no-scrollbar pb-24">
           {(() => {
             // Filter contacts based on active tab
             let displayedContacts: Contact[] = [];
@@ -415,122 +479,203 @@ export default function CheckContacts() {
             } else if (activeTab === 'contacts') {
               displayedContacts = contacts;
             } else {
-              // All
               displayedContacts = [...contacts, ...chatOnlyContacts];
-              // Optional: Sort by last seen? For now just keep order.
             }
 
-            return displayedContacts.length > 0 ? (
-              <div className="space-y-2">
-                {displayedContacts.map((c, i) => (
-                  <div
-                    key={i}
-                    onClick={() =>
-                      navigate({
-                        to: "/chat/$address",
-                        params: {
-                          address: c.publickey || c.currentaddress || c.extradata?.minimaaddress || "",
-                        },
-                      })
-                    }
-                    className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-3 hover:shadow-md cursor-pointer transition-all active:bg-gray-50 dark:active:bg-gray-750"
-                  >
-                    <div className="flex items-center gap-3">
-                      {/* Avatar */}
-                      <div className="relative flex-shrink-0">
-                        <img
-                          src={getAvatar(c)}
-                          alt={c.extradata?.name || "Unknown"}
-                          className="w-12 h-12 rounded-full object-cover bg-gray-200 dark:bg-gray-700"
-                          onError={(e: any) => {
-                            e.target.src = defaultAvatar;
-                          }}
-                        />
-                        {c.samechain && (
-                          <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
-                        )}
-                        {c.muted && (
-                          <div className="absolute -top-1 -right-1 bg-orange-100 dark:bg-orange-900 rounded-full p-0.5 border border-white dark:border-gray-800 shadow-sm">
-                            <VolumeX size={12} className="text-orange-500" />
-                          </div>
-                        )}
-                        {c.publickey && personalContacts.includes(c.publickey) && (
-                          <div className="absolute -top-1 -left-1 bg-primary-100 dark:bg-primary-900 rounded-full p-0.5 border border-white dark:border-gray-800 shadow-sm">
-                            <UserCheck size={12} className="text-primary-600 dark:text-primary-400" />
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Contact Info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-baseline justify-between gap-2">
-                          <h3 className="font-semibold text-gray-900 dark:text-white truncate">
-                            {c.extradata?.name || "Unknown"}
-                          </h3>
+            return displayedContacts.length === 0 ? (
+              <EmptyState
+                icon={
+                  activeTab === 'personal'
+                    ? UserCheck
+                    : activeTab === 'community'
+                      ? Globe
+                      : activeTab === 'contacts'
+                        ? Users
+                        : BookUser
+                }
+                title={
+                  activeTab === 'personal'
+                    ? "No personal contacts"
+                    : activeTab === 'community'
+                      ? "Community silent"
+                      : "Looking for more people?"
+                }
+                description={
+                  activeTab === 'personal'
+                    ? "Mark contacts as personal for quick and prioritized access."
+                    : activeTab === 'community'
+                      ? "Discover other MetaChain users in the community section."
+                      : (
+                        <span>
+                          Add your first contact to start communicating privately or{" "}
+                          <button
+                            onClick={() => navigate({ to: "/discovery" })}
+                            className="text-primary-500 hover:underline font-black"
+                          >
+                            browse the Community
+                          </button>{" "}
+                          to find people you know.
+                        </span>
+                      )
+                }
+                action={
+                  activeTab === 'community'
+                    ? {
+                        label: "Go to Community",
+                        onClick: () => navigate({ to: '/discovery' }),
+                      }
+                    : activeTab === 'personal'
+                      ? {
+                          label: "Browse All",
+                          onClick: () => setActiveTab('all'),
+                        }
+                      : {
+                          label: "Add Contact",
+                          onClick: () => setShowAddContactDialog(true),
+                        }
+                }
+                secondaryAction={
+                  activeTab !== 'community'
+                    ? {
+                        label: "Browse Community",
+                        onClick: () => navigate({ to: '/discovery' }),
+                      }
+                    : undefined
+                }
+                className="h-full"
+              />
+            ) : (
+              displayedContacts.map((contact, index) => (
+                <div
+                  key={index}
+                  className={`group relative p-6 transition-all duration-500 animate-in fade-in slide-in-from-bottom-4 rounded-[2.5rem] ${
+                    timeAgo(contact.lastseen || 0) === "online"
+                      ? "bg-primary-500/15 dark:bg-primary-500/20 shadow-xl shadow-primary-500/10 border border-primary-500/30"
+                      : "bg-white/70 dark:bg-gray-900/40 backdrop-blur-md border border-white/20 dark:border-white/5 shadow-lg shadow-black/5"
+                  } hover:scale-[1.02] active:scale-95 hover:shadow-2xl hover:z-20`}
+                  style={{ animationDelay: `${index * 50}ms` }}
+                >
+                  <div className="flex items-center gap-5">
+                    <div className="relative flex-shrink-0">
+                      <img
+                        src={getAvatar(contact)}
+                        alt={contact.extradata?.name || "Unknown"}
+                        className="w-16 h-16 rounded-[1.5rem] object-cover bg-gray-100 dark:bg-gray-800 shadow-2xl transition-transform duration-500 group-hover:scale-110 pointer-events-none"
+                        onError={(e: any) => {
+                          e.target.src = defaultAvatar;
+                        }}
+                      />
+                      {contact.publickey && personalContacts.includes(contact.publickey) && (
+                        <div className="absolute -top-1.5 -right-1.5 bg-primary-500 rounded-[0.75rem] p-1.5 shadow-2xl shadow-primary-500/50 ring-2 ring-white dark:ring-gray-900 animate-in zoom-in duration-500">
+                          <UserCheck size={12} className="text-white" strokeWidth={4} />
                         </div>
-                        <p className={`text-xs truncate mt-0.5 ${timeAgo(c.lastseen) === 'online'
-                          ? 'text-green-600 dark:text-green-400 font-medium'
-                          : 'text-gray-500 dark:text-gray-400'
-                          }`}>
-                          {timeAgo(c.lastseen)}
-                        </p>
+                      )}
+                      {timeAgo(contact.lastseen || 0) === 'online' && (
+                        <div className="absolute -bottom-1 -left-1 w-4 h-4 bg-green-500 rounded-full border-2 border-white dark:border-gray-900 shadow-glow shadow-green-500/50 animate-pulse"></div>
+                      )}
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-baseline justify-between gap-2 mb-1.5">
+                        <h3 className="font-black text-gray-900 dark:text-white truncate text-base flex items-center gap-2 leading-tight uppercase tracking-tight">
+                          {contact.extradata?.name || "Anonymous Peer"}
+                          {contact.muted && (
+                            <VolumeX size={12} strokeWidth={3} className="text-red-500 opacity-60" />
+                          )}
+                        </h3>
+                        <span className="text-[10px] text-gray-400 dark:text-gray-500 flex-shrink-0 font-black uppercase tracking-widest bg-black/5 dark:bg-white/5 px-2 py-1 rounded-lg">
+                          {timeAgo(contact.lastseen || 0)}
+                        </span>
                       </div>
+                      <p className="text-[13px] text-gray-500 dark:text-gray-400 truncate font-bold">
+                        {contact.publickey ? `PK: ${contact.publickey.substring(0, 10)}...` : "Address only contact"}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 ml-2 transition-all">
+                      <button
+                        onClick={() => navigate({
+                          to: '/contact-info/$address',
+                          params: { address: contact.publickey || contact.currentaddress }
+                        })}
+                        className="w-8 h-8 rounded-lg bg-black/5 dark:bg-white/5 text-primary-500 dark:text-primary-400 hover:bg-primary-500 hover:text-white flex items-center justify-center transition-all shadow-sm"
+                        title="View Profile"
+                      >
+                        <Info size={14} strokeWidth={3} />
+                      </button>
+                      <button
+                        onClick={() => navigate({
+                          to: '/chat/$address',
+                          params: { address: contact.publickey || contact.currentaddress }
+                        })}
+                        className="w-8 h-8 rounded-lg bg-primary-500 text-white flex items-center justify-center transition-all shadow-lg shadow-primary-500/20 active:scale-90"
+                        title="Open Chat"
+                      >
+                        <MessageCircle size={14} strokeWidth={3} />
+                      </button>
                     </div>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center h-full text-gray-500 dark:text-gray-400 p-8 text-center">
-                <div className="bg-primary-50 dark:bg-primary-900/20 p-4 rounded-full mb-4">
-                  {activeTab === 'personal' ? (
-                    <UserCheck className="w-12 h-12 text-primary-600" />
-                  ) : activeTab === 'community' ? (
-                    <Globe className="w-12 h-12 text-primary-600" />
-                  ) : (
-                    <svg className="w-12 h-12 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                    </svg>
-                  )}
                 </div>
-                <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-1">
-                  {activeTab === 'personal'
-                    ? 'No personal contacts yet'
-                    : activeTab === 'community'
-                      ? 'No non-contact chats found'
-                      : activeTab === 'contacts'
-                        ? 'No contacts yet'
-                        : 'No contacts or community chats yet'}
-                </h3>
-                <p className="text-sm mb-6">
-                  {activeTab === 'personal'
-                    ? 'Mark contacts as personal from their contact info page.'
-                    : activeTab === 'community'
-                      ? 'As you chat with users they will appear here.'
-                      : activeTab === 'contacts'
-                        ? 'Add your first contact to start chatting.'
-                        : 'Add your first contact or chat with someone to see them here.'}
-                </p>
-                {(activeTab === 'all' || activeTab === 'contacts') && (
-                  <button
-                    onClick={() => setShowAddContactDialog(true)}
-                    className="px-6 py-2 bg-primary-600 text-white rounded-full font-medium hover:bg-primary-700 transition-colors shadow-sm"
-                  >
-                    Add Contact
-                  </button>
-                )}
-              </div>
+              ))
             );
           })()}
         </div>
 
-        {/* Floating Action Button */}
-        <button
-          onClick={() => setShowAddContactDialog(true)}
-          className="fixed bottom-6 right-6 w-14 h-14 bg-primary-600 hover:bg-primary-700 text-white rounded-full shadow-lg hover:shadow-xl transition-all flex items-center justify-center z-30"
-          title="Add Contact"
-        >
-          <Plus size={24} />
-        </button>
+        {/* FAB Menu Actions - Consistent with Inbox */}
+        {fabMenuOpen && (
+          <div className="fixed bottom-24 right-6 flex flex-col items-end gap-4 z-50 animate-in slide-in-from-bottom-5 fade-in duration-300">
+            <button
+              onClick={() => {
+                setFabMenuOpen(false);
+                navigate({ to: "/discovery" });
+              }}
+              className="flex items-center gap-3 px-5 py-3 bg-white/90 dark:bg-gray-900/90 backdrop-blur-xl rounded-2xl shadow-2xl text-gray-700 dark:text-gray-200 hover:scale-105 active:scale-95 transition-all border border-white/20 dark:border-white/5 active:bg-primary-500/10"
+            >
+              <span className="font-bold text-sm text-gray-600 dark:text-gray-300">Find in Community</span>
+              <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-500 shadow-sm border border-blue-500/10">
+                <Globe size={20} strokeWidth={3} />
+              </div>
+            </button>
+            <button
+              onClick={() => {
+                setFabMenuOpen(false);
+                setShowAddContactDialog(true);
+              }}
+              className="flex items-center gap-3 px-5 py-3 bg-white/90 dark:bg-gray-900/90 backdrop-blur-xl rounded-2xl shadow-2xl text-gray-700 dark:text-gray-200 hover:scale-105 active:scale-95 transition-all border border-white/20 dark:border-white/5 active:bg-primary-500/10"
+            >
+              <span className="font-bold text-sm text-gray-600 dark:text-gray-300">Add via Address</span>
+              <div className="w-10 h-10 rounded-xl bg-primary-500/10 flex items-center justify-center text-primary-500 shadow-sm border border-primary-500/10">
+                <UserPlus size={20} strokeWidth={3} />
+              </div>
+            </button>
+          </div>
+        )}
+
+        {/* Global Transparent Click-Overlay for FAB Menu */}
+        {fabMenuOpen && (
+          <div 
+            className="fixed inset-0 z-40 bg-black/5 dark:bg-black/20 backdrop-blur-[2px] transition-all"
+            onClick={() => setFabMenuOpen(false)}
+          />
+        )}
+
+        {/* FAB Main Button - Consistent with Inbox */}
+        <div className="fixed bottom-32 md:bottom-10 right-6 z-50">
+          <button
+            onClick={() => setFabMenuOpen(!fabMenuOpen)}
+            className={`w-16 h-16 rounded-2xl shadow-2xl flex items-center justify-center transition-all duration-300 hover:scale-110 active:scale-95 group relative overflow-hidden ${
+              fabMenuOpen
+                ? "bg-gray-900 text-white"
+                : "bg-gradient-to-br from-primary-400 to-primary-600 text-white shadow-primary-500/30"
+            }`}
+            title="Manage Contacts"
+          >
+            <div className="absolute inset-0 bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+            <div className={`transition-transform duration-300 ${fabMenuOpen ? "rotate-45 scale-110" : "rotate-0"}`}>
+              <Plus size={32} strokeWidth={3} className="relative z-10" />
+            </div>
+          </button>
+        </div>
       </div>
     </>
   );

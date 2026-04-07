@@ -261,3 +261,64 @@ function handleDeniedTransaction(tx) {
     });
 }
 
+/**
+ * Check incoming token/charm messages in 'received' state that have a txpowid
+ * and promote them to 'confirmed' once 3-block confirmation is achieved.
+ * This runs on the recipient's node.
+ */
+function checkIncomingTransactions() {
+    MDS.log("🔍 [SW-TX-INCOMING] Checking incoming unconfirmed token/charm messages...");
+
+    // Include messages with NULL txpowid — they will be resolved via timestamp search
+    MDS.sql("SELECT * FROM CHAT_MESSAGES WHERE state IN ('received','read') AND username!='Me' AND (type='token' OR type='charm')", function (res) {
+        if (!res.status || res.rows.length === 0) {
+            MDS.log("✅ [SW-TX-INCOMING] No incoming unconfirmed token messages");
+            return;
+        }
+
+        MDS.log("📋 [SW-TX-INCOMING] Found " + res.rows.length + " incoming unconfirmed message(s)");
+
+        for (var i = 0; i < res.rows.length; i++) {
+            (function (msg) {
+                var txpowid = msg.TXPOWID || msg.txpowid;
+                var msgId = msg.ID || msg.id;
+                var msgDate = msg.DATE || msg.date;
+
+                var confirmAndUpdate = function (resolvedTxpowid) {
+                    check3BlockConfirmation(resolvedTxpowid, function (err, status) {
+                        if (err || status !== 'confirmed') return;
+
+                        MDS.log("✅ [SW-TX-INCOMING] 3-Block confirmed incoming tx: " + resolvedTxpowid + " (msg ID " + msgId + ")");
+                        MDS.sql("UPDATE CHAT_MESSAGES SET state='confirmed', txpowid='" + resolvedTxpowid + "' WHERE id=" + msgId, function (updateRes) {
+                            if (updateRes.status) {
+                                MDS.log("✅ [SW-TX-INCOMING] Message ID " + msgId + " marked as confirmed");
+                                MDS.comms.solo(JSON.stringify({
+                                    type: "TOKEN_INCOMING_CONFIRMED",
+                                    msgId: msgId,
+                                    txpowid: resolvedTxpowid
+                                }));
+                            }
+                        });
+                    });
+                };
+
+                if (txpowid && txpowid !== 'null') {
+                    // Fast path: txpowid already stored
+                    confirmAndUpdate(txpowid);
+                } else if (msgDate) {
+                    // Slow path: find real txpowid by timestamp
+                    MDS.log("🔍 [SW-TX-INCOMING] No txpowid for msg " + msgId + ", searching by timestamp " + msgDate);
+                    findInBlockchainOrMempool(msgDate, function (err, foundTxpowid) {
+                        if (err || !foundTxpowid) {
+                            MDS.log("⚠️ [SW-TX-INCOMING] Could not find txpowid for msg " + msgId);
+                            return;
+                        }
+                        MDS.log("✅ [SW-TX-INCOMING] Found txpowid via timestamp: " + foundTxpowid);
+                        confirmAndUpdate(foundTxpowid);
+                    });
+                }
+            })(res.rows[i]);
+        }
+    });
+}
+

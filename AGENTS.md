@@ -1,6 +1,6 @@
 # AGENTS.md - MetaChain Engineering Guide
 
-Last reviewed against codebase: 2026-04-03 (commit `4ac7ec0b` + Delete messages in DMs, Groups and Channels: propagation fixes, SW handler role-check removal, case-insensitive group_id/channel_id WHERE clauses, subscriber PUBLICKEY casing fix)
+Last reviewed against codebase: 2026-04-07 (branch `v0.9` · SMART-SYNC bidirectional fix + seqKey dedup guard)
 Scope: `/home/joanramon/Minima/metachain`
 
 ## 0) Mandatory Update Mandate (Required)
@@ -188,7 +188,13 @@ Do not merge these domains implicitly.
 - `MY_PROFILE` (self policy)
 - `DISCOVERED_PEERS` (peer-advertised policy)
 
-Chat open/send logic in `src/routes/chat/$address.tsx` and `src/services/contact-requests.service.ts` relies on this.
+**Wait state guard (`isActionRestricted`)**: The DM chat view uses a centralized `isActionRestricted` boolean to lock down the interface. It combines `blockReason`, `contactRequest` (incoming), `isPendingOutgoing`, `isBlocked`, and `blockedByThem`.
+- **Dynamic Policy Exception**: If the peer's profile (`DISCOVERED_PEERS`) has `allow_non_contact_chats` set to `true`, `isActionRestricted` evaluates to `false` even if a handshake is pending. This allows immediate communication if the peer permits it.
+- **UI States**: 
+    - Full Restricted: Footer is disabled with "Handshake Required" or "Protocol Restricted" placeholder.
+    - Dynamic Allowed: Footer is enabled with "Message..." placeholder, but the Handshake banner remains visible at the top.
+    - `handleSendMessage` has a code-level guard to prevent accidental submissions in restricted states.
+    - Handshake banners use `sticky top-6` to avoid overlapping with `top-4` date headers.
 
 If this field is missing/stale, app may incorrectly block or allow chat. Schema migrations and beacon parsing must preserve it.
 
@@ -218,6 +224,7 @@ To reduce RPC latency and "No Contact found" error noise, both FE and SW impleme
 ### 6.1 Events/signals in use
 - SW -> FE:
   - `MDS.comms.solo("CHAT_LIST_UPDATE")`
+  - Contact-request lifecycle in SW (`contact_request`, `contact_accepted`, `contact_declined`, `contact_cancelled`, and Maxima equivalents) must emit `CHAT_LIST_UPDATE` after DB persistence so the DM inbox/community tabs refresh without depending on duplicate FE-side MAXIMA handling
   - reconnect signal via `MDS.comms.solo(JSON.stringify({ type: 'RECONNECTED', ... }))`
   - `MDS.comms.solo(JSON.stringify({ type: 'profile_response', publickey, data }))` — SW forwards received profile_response to FE so `ProfileService` can resolve pending promises
   - `MDS.comms.solo(JSON.stringify({ type: 'group_list_updated' }))` — fired by SW after inserting a new group from a `group_invite` (invite-link join path); triggers `GROUP_UPDATE` CustomEvent in FE
@@ -256,6 +263,8 @@ FE handles:
 - showing syncing UI and refresh requests
 
 Do not create independent history merge algorithms in FE.
+
+**SMART-SYNC bidirectional requirement (Critical)**: `handleSyncStatusCheck` MUST always respond with a `sync_status_report` — even when `missing_count = 0` (i.e., the peer is NOT behind). The reason is that `handleSyncStatusReport` on the requesting side always auto-issues a `chat_history_request` upon receiving any report. If the responder only sends the report when the peer is behind, the other direction of the sync is silently skipped: the node that received the `sync_status_check` never learns whether IT is missing messages from the sender. Both sides exchange `sync_status_check` on reconnect → both must always get a `sync_status_report` back → both always auto-request history → full bidirectional recovery. Blocking the report on an "up to date" condition breaks asymmetric reconnect scenarios (bug AG). Do NOT add a guard like `if (myLastSentSeq > peerLastSeq)` around the `sync_status_report` send.
 
 ### 6.4 Protocol Matrix (Ingress -> Persistence -> UI)
 | Protocol / Type | Ingress Owner | Persistence Owner | Primary Tables | FE Refresh Signal |
@@ -336,11 +345,13 @@ Use this mental model:
 
 ### 7.2 Dedup keys
 In practice, dedup depends on combinations of:
-- `customid` (best)
-- `sender_seq`
+- `customid` (best — UUID assigned at send time, globally unique)
+- `sender_seq` — only valid as a dedup key when the message has NO `customid`
 - content + timestamp window fallback
 
 Do not simplify dedup to a single key.
+
+**`seqKey` dedup MUST be guarded by absence of `customId` (Critical)**: The FE `deduplicateMessages` function in `src/routes/chat/$address.tsx` tracks a `seenSeqKeys` set keyed as `seq-them-${sender_seq}`. This catches legacy duplicates from before `customId` was introduced. However, if a sender's `MESSAGE_COUNTERS` seq was ever reset (e.g. after reinstall or DB wipe), different messages can share the same `sender_seq` number. If `seqKey` dedup is applied to messages that already have a valid UUID `customId`, the second message with the same seq-after-reset is falsely treated as a duplicate and silently dropped from the UI — even though both messages exist correctly in the DB. Rule: apply `seqKey` dedup **only** when `!keys.customId`. Messages with a UUID `customId` must be deduped exclusively by `customId` and never by `seqKey` (bug AH).
 
 ### 7.3 Transaction coupling
 For token/charm lifecycle, keep `txpowid` synchronized in both:
@@ -427,13 +438,14 @@ When changing protocol code, log:
 11. **Beacon transport is P2P-only (`MSG_GENMESSAGE`), not Maxima**. Two MetaChain nodes with no shared MetaChain-running P2P neighbor cannot discover each other via beacon. Do not assume discovery will work on sparse mainnet deployments without a common MetaChain relay node or shared MLS for Maxima fallback. See section 4.3.
 12. **`MDS.comms.solo("type")` does NOT support a second callback argument** in the Minima JS/TS bridge. Providing one (a frequent legacy pattern) causes the notification to fail silently. Notifications must be fire-and-forget; let the FE logic handle state transitions via DB reads.
 13. **Blocking Sends (`poll:true`) are prohibited** in hot paths (chat/beacon/history). A blocking send to an offline peer will freeze the Service Worker event loop for ~77 seconds, pausing all gossip, incoming message processing, and DB maintenance. Always use `poll:false`.
-14. **Dual Identity (Mx vs 0x)**: Messages arriving via Service Worker always use Hex Keys. Frontend must query using both the address from the URL (`Mx...`) and the canonical Hex Key (`0x...`) to ensure all messages are visible.
-15. **SW/FE Race Condition**: Maxima events trigger reloads in both SW (persistence) and FE (UI). FE must use a small delay (e.g. 200ms) for `MAXIMA` content reloads to ensure SW has finished its DB work. `CHAT_LIST_UPDATE` signals from SW are deterministic and do not require a delay.
-16. **`MDS.cmd` is NOT callable as a function from the frontend TypeScript context**. `MDS.cmd` in `@minima-global/mds` is a namespace object with typed methods (`MDS.cmd.maxima(...)` etc.), not a function. Calling `(MDS.cmd as any)(rawString, cb)` silently does nothing or ignores `poll:false`. Always use the typed `MDS.cmd.maxima(...)` API for Maxima sends; reserve `MDS.executeRaw` for SQL queries only. See section 5.5.
-17. **H2 BOOLEAN columns return strings, not booleans**. `SELECT allow_non_contact_chats` returns `"true"` or `"false"` (strings), not JS `true`/`false`. All boolean DB checks must handle both: `value === 1 || value === true || value === "1" || value === "true"`. Missing this causes permission gates to always evaluate to `false`.
-18. **`MDSCOMMS` not `MDS_SOLO`**: `MDS.comms.solo()` in the SW fires a **`MDSCOMMS`** event at the frontend, NOT `MDS_SOLO`. The event data structure is `{ event: "MDSCOMMS", data: { public: false, message: "<string>" } }` — the payload string is at `event.data.message`, not `event.data`. In `processEvent` (minima.service.ts), always check `event.event === "MDSCOMMS"` and extract `event.data?.message ?? event.data`. Using the wrong event name means `NEW_CHAT_MESSAGE` and `CHAT_LIST_UPDATE` signals from the SW are silently dropped, causing messages to not appear in the UI unless a MAXIMA fallback fires.
-19. **Profile Request/Response Simplicity**: Profile request/response must NOT use `MDS.executeRaw` SQL lookup or add requestId tracing. The FE uses `MDS.cmd.maxima()` to send directly to `peerAddress`; the SW sends the response via `MDS.cmd()` directly to `requesterAddress` (validating the Mx prefix). Avoid complexity: keep the flow straightforward with regex address validation and fallback-to-publickey logic.
-20. **Public Key Case Inconsistency (`0x` vs `0X`)**: Minima/Maxima returns public keys with lowercase `0x` prefix, but DB `UPPER()` calls and some internal flows store them with uppercase `0X`. Any code that uses `startsWith('0x')` or `Set.has(publickey)` for comparison MUST be case-insensitive (use `.toLowerCase().startsWith('0x')` or normalize both sides with `.toUpperCase()`). This caused silent Maxima send failures and contact list duplication.
+14. **Contact-request visibility depends on SW-issued `CHAT_LIST_UPDATE` after persistence**. `public/service-workers/handlers/contact.handler.js` must fire `MDS.comms.solo("CHAT_LIST_UPDATE")` after saving request rows/system messages (chat + Maxima request lifecycle). Without that signal, DM/frontend remodels can leave incoming requests invisible in inbox/community lists until a manual refresh even though the DB row exists.
+15. **Dual Identity (Mx vs 0x)**: Messages arriving via Service Worker always use Hex Keys. Frontend must query using both the address from the URL (`Mx...`) and the canonical Hex Key (`0x...`) to ensure all messages are visible.
+16. **SW/FE Race Condition**: Maxima events trigger reloads in both SW (persistence) and FE (UI). FE must use a small delay (e.g. 200ms) for `MAXIMA` content reloads to ensure SW has finished its DB work. `CHAT_LIST_UPDATE` signals from SW are deterministic and do not require a delay.
+17. **`MDS.cmd` is NOT callable as a function from the frontend TypeScript context**. `MDS.cmd` in `@minima-global/mds` is a namespace object with typed methods (`MDS.cmd.maxima(...)` etc.), not a function. Calling `(MDS.cmd as any)(rawString, cb)` silently does nothing or ignores `poll:false`. Always use the typed `MDS.cmd.maxima(...)` API for Maxima sends; reserve `MDS.executeRaw` for SQL queries only. See section 5.5.
+18. **H2 BOOLEAN columns return strings, not booleans**. `SELECT allow_non_contact_chats` returns `"true"` or `"false"` (strings), not JS `true`/`false`. All boolean DB checks must handle both: `value === 1 || value === true || value === "1" || value === "true"`. Missing this causes permission gates to always evaluate to `false`.
+19. **`MDSCOMMS` not `MDS_SOLO`**: `MDS.comms.solo()` in the SW fires a **`MDSCOMMS`** event at the frontend, NOT `MDS_SOLO`. The event data structure is `{ event: "MDSCOMMS", data: { public: false, message: "<string>" } }` — the payload string is at `event.data.message`, not `event.data`. In `processEvent` (minima.service.ts), always check `event.event === "MDSCOMMS"` and extract `event.data?.message ?? event.data`. Using the wrong event name means `NEW_CHAT_MESSAGE` and `CHAT_LIST_UPDATE` signals from the SW are silently dropped, causing messages to not appear in the UI unless a MAXIMA fallback fires.
+20. **Profile Request/Response Simplicity**: Profile request/response must NOT use `MDS.executeRaw` SQL lookup or add requestId tracing. The FE uses `MDS.cmd.maxima()` to send directly to `peerAddress`; the SW sends the response via `MDS.cmd()` directly to `requesterAddress` (validating the Mx prefix). Avoid complexity: keep the flow straightforward with regex address validation and fallback-to-publickey logic.
+21. **Public Key Case Inconsistency (`0x` vs `0X`)**: Minima/Maxima returns public keys with lowercase `0x` prefix, but DB `UPPER()` calls and some internal flows store them with uppercase `0X`. Any code that uses `startsWith('0x')` or `Set.has(publickey)` for comparison MUST be case-insensitive (use `.toLowerCase().startsWith('0x')` or normalize both sides with `.toUpperCase()`). This caused silent Maxima send failures and contact list duplication.
 21. **`MDS.cmd("timer X", callback)` fires immediately in Rhino**: In the Minima Service Worker (Rhino/Nashorn engine), `MDS.cmd("timer 30000", cb)` calls `cb` immediately with the command result — it does NOT wait X milliseconds. Use `MDS_TIMER_10SECONDS` (fires every ~10s reliably) combined with `Date.now()` timestamps for real elapsed-time checks. Pattern: store `startedAt: Date.now()` in state, check `Date.now() - startedAt >= threshold` inside a `checkXxxTimeouts()` function called from `MDS_TIMER_10SECONDS` handler. See `checkSyncTimeouts()` in `group.handler.js`.
 22. **Group sync pubkey case normalization**: Public keys stored in `GROUP_MEMBERS` come from SQL as uppercase (`0X30819F...`), but Maxima `msg.data.from` delivers them lowercase (`0x30819f...`). Any `pending`/`paginating` tracking object that uses pubkeys as keys MUST normalize with `.toUpperCase()` on both write and read. Failure causes `delete pending[pubkey]` to silently no-op, leaving remaining count stuck and sync completing only via timeout.
 23. **Mobile long-press menus must not rely on a document-level `click` to close**: In `src/components/chat/ChatsAndGroups.tsx`, the archive/favorite menu is opened from `onTouchStart` after a 500ms timer. Mobile browsers then emit a synthetic `click` on finger release; if the component closes the menu from `document.addEventListener("click", ...)`, the menu appears and disappears immediately. Use `pointerdown` outside detection, keep a ref to the menu container, and ignore outside-close events for a short window right after opening from long-press.
@@ -474,6 +486,12 @@ When changing protocol code, log:
 40. **`group_id` and `channel_id` in SQL WHERE clauses must be case-insensitive**: `GROUP_MESSAGES.group_id` and `CHANNEL_MESSAGES.channel_id` are text columns that can be stored with different casing than the runtime value (especially after reinstall, DB migration, or cross-node invite). Exact-case WHERE clauses (`WHERE group_id='...'`) silently match 0 rows — no error, 0 affected rows. Deletes, read receipts, and all row-specific operations silently no-op. Always use `UPPER(group_id)=UPPER('...')` and `UPPER(channel_id)=UPPER('...')` in UPDATE and SELECT WHERE clauses. This applies in the TypeScript service layer (`group.service.ts`, `channel.service.ts`) and in all SW handlers (`group.handler.js`, `channel.handler.js`).
 
 41. **`loadMessagesFromDB` for groups must handle both uppercase AND lowercase `deleted` field on already-mapped objects**: The group route's `loadMessagesFromDB` in `groups.$groupId.lazy.tsx` re-maps already-mapped `GroupMessage` objects (NOT raw SQL rows). The SW maps the SQL `DELETED` column → lowercase `deleted` when normalizing messages. If the route uses only `row.DELETED` (uppercase), it always gets `undefined` → coerced to `false` → deleted messages reappear on every reload. Always check both casings: `row.DELETED === 1 || row.DELETED === "1" || row.deleted === 1 || row.deleted === "1"`. This pattern generalizes: any field read from an object that may originate from either a raw SQL row OR an already-mapped service object must handle both case variants.
+
+42. **`seqKey` dedup causes false message suppression when sender seq counter has been reset**: `deduplicateMessages` in `src/routes/chat/$address.tsx` uses a `seenSeqKeys` set (`seq-them-${sender_seq}`) to identify duplicate messages. If the sender's `MESSAGE_COUNTERS` sequence was reset at any point (reinstall, DB wipe), different messages can share the same `sender_seq` value. When both old and new messages are merged in the same dedup pass, the old message registers the seqKey first; the new message (which has a distinct UUID `customId`) is then falsely flagged as a duplicate and dropped — even though it exists correctly in the DB and is missing from the UI. Guard: `seqKey` dedup must only apply when `!keys.customId`. See section 7.2 and bug AH.
+
+43. **SMART-SYNC `handleSyncStatusCheck` must ALWAYS send `sync_status_report` — even when peer is up-to-date**: If `handleSyncStatusCheck` only responds when `myLastSentSeq > peerLastSeq`, the other direction of the exchange is broken. The sender of the `sync_status_check` never receives a report → never auto-issues `chat_history_request` for the responder's messages → cannot recover messages it is missing. Corrupted historical `last_received_seq` values (e.g. from prior outgoing contamination) can artificially inflate the peer's reported seq, causing the responder to evaluate "peer is up to date" and stay silent, while the requesting node is actually missing recent messages. Always send `sync_status_report` unconditionally; set `missing_count = max(0, myLastSentSeq - peerLastSeq)` for informational purposes only. See section 6.3 and bug AG.
+
+44. **`sender_seq` contamination from outgoing messages**: `CHAT_MESSAGES.sender_seq` on the local node stores the seq assigned by the REMOTE PEER to their outgoing messages (not the local node's own outgoing seq). Outgoing messages sent by the local node must NOT write to `sender_seq` in the peer's direction — they use `MESSAGE_COUNTERS.next_seq` for their own seq tracking. If outgoing messages accidentally populate `sender_seq` in a direction-agnostic way, the peer's last-received-seq tracking becomes inflated, causing `handleSyncStatusCheck` to see a falsely high `peerLastSeq` and believe no sync is needed. Always confirm that `sender_seq` is only written when processing INBOUND messages from a given peer.
 
 34. **`handleChannelInvite` must fire `CHANNEL_UPDATE` even when the channel already exists**: When a user re-joins via invite link and the channel is already present in the DB, `handleChannelInvite` was silently returning without notifying the frontend. The frontend never dispatched `CHANNEL_UPDATE`, so the channel did not appear in the chat list for the joiner. Fix: on the early-exit path, fire `MDS.comms.solo(JSON.stringify({ type: "CHANNEL_UPDATE", channelId }))` and call `requestChannelHistoryFromSW(channelId)` before returning. This also handles cases where a user reinstalls/resyncs and their DB is partially empty.
 
@@ -584,6 +602,10 @@ Expected: permission gate behavior changes accordingly and beacon updates propag
 | AC | Channels: delete notification never sent to subscribers | `sendChannelDeleteMessage` in `channel.service.ts` iterated over `getChannelSubscribers()` results and used `sub.publickey` (lowercase) as the Maxima destination. MDS SQL returns `PUBLICKEY` (uppercase), so `sub.publickey` was always `undefined`. `sendMaximaMessage(undefined, payload)` silently no-ops — no error, no delivery. Diagnosed via logs: the `[CHANNEL-MAXIMA]` send log that appears in `sendChannelMessage` was entirely absent for delete operations. Fix: `const pk = (sub as any).PUBLICKEY || sub.publickey`. See fragility point #38. |
 | AD | Channel SW handler blocked all incoming delete notifications | `handleChannelMessageDeleted` in `channel.handler.js` queried `CHANNEL_SUBSCRIBERS` to verify the sender had role `admin`/`creator` before proceeding. This lookup returned empty rows due to key case mismatches — causing all incoming deletes to be silently blocked. Only User1 (who initiated the delete) saw the message as deleted; User2 never received the update. Channels are admin-broadcast: no role check is needed on the receiver side. Fix: removed role check and fanout entirely; handler now directly issues the UPDATE and fires `MDS.comms.solo`. See fragility point #39. |
 | Y | Invite-link joiner's group/channel does not appear in chat list | After joining via `mcgrp://` or `mcch://` invite link: the admin received the join request, processed it, and sent back a `group_invite`/`channel_invite`. The joiner's SW correctly inserted the group/channel into the DB and fired `MDS.comms.solo({ type: "group_list_updated" })`. However, `minima.service.ts` MDSCOMMS handler only handled `group_update`, `group_join_requests_update`, `GROUP_SYNC_START`, and `GROUP_SYNC_END` — `group_list_updated` and `group_sync_start` (lowercase) were silently ignored. No `GROUP_UPDATE` CustomEvent was dispatched → `ChatsAndGroups` never re-fetched → group invisible to joiner. Separately, for channels, `handleChannelInvite` exited silently (no `CHANNEL_UPDATE` fired) if the channel already existed in the DB. Fix: added `group_list_updated` and `group_sync_start` to the MDSCOMMS condition in `minima.service.ts`; added `CHANNEL_UPDATE` + `requestChannelHistoryFromSW` to the early-exit path in `channel.handler.js`. See sections 11.33–34. |
+| AE | `requestStatus` reset to 'none' after Maxima contact decline | `checkStatus()` in `contact-info.$address.lazy.tsx` previously queried `CONTACT_REQUESTS` table to determine `requestStatus`. That table is reliable for the receiver side but silently empty on the sender side (because `sendChatRequest` used a `MERGE INTO ... KEY(...)` statement that fails silently in H2 — see AF). When a Maxima contact request was declined, `MAXIMA_CONTACT_REQUESTS` was updated but `CONTACT_REQUESTS` stayed empty, so `requestStatus` fell to `'none'` even though the chat request had already been accepted. Fix: reverted `checkStatus()` to the SYNCGIT reference pattern — queries `CHAT_MESSAGES` for the most-recent system message matching exact texts: `'Chat request sent'`, `'Chat request accepted'`, `'Chat request declined'`, `'Chat request cancelled'` (including legacy `'Contact request …'` variants). This is robust because each state transition always inserts an exact-text system message, and Maxima messages (`'Maxima contact declined'`, `'Maxima contact request sent'`, etc.) use different text and are never matched. Critical: do NOT revert to `CONTACT_REQUESTS`-based checks for `requestStatus` — that table is unreliable on the sender side. |
+| AF | `sendChatRequest` outgoing record silently not inserted into `CONTACT_REQUESTS` | `sendChatRequest()` in `contact-requests.service.ts` used `MERGE INTO CONTACT_REQUESTS ... KEY(from_publickey, to_publickey) VALUES (UPPER('...'), UPPER('...'), ...)`. H2 `MERGE` with `KEY` requires an exact match on the key column values; when the columns already contain UPPER-normalized values but the MERGE expression also applies UPPER(), H2 evaluates the merge condition incorrectly and may silently no-op the insert. Result: the sender's `CONTACT_REQUESTS` row was never created. Fix: replaced MERGE with explicit `DELETE FROM CONTACT_REQUESTS WHERE UPPER(from)=UPPER(...) AND UPPER(to)=UPPER(...)` followed by `INSERT INTO CONTACT_REQUESTS ... VALUES (UPPER('...'), UPPER('...'), ...)`. This matches the proven pattern used in `contact.handler.js` (SW). **Rule**: prefer `DELETE + INSERT` over `MERGE INTO ... KEY(...)` for H2 upserts in this codebase — MERGE is fragile with computed key expressions. |
+| AG | SMART-SYNC unidirectional: node2 missing messages from node1 after reconnect | `handleSyncStatusCheck` in `chat.handler.js` only sent `sync_status_report` when `myLastSentSeq > peerLastSeqNum`. User2's `last_received_seq` was historically contaminated (inflated to 10) from earlier outgoing messages mistakenly written to `sender_seq`. When user1's SW evaluated the check (`my_last_sent=8`, `peer_reported=10`), it concluded the peer was ahead and sent nothing. User2 never received a `sync_status_report` → never auto-issued `chat_history_request` → never received user1's messages. Fix: removed the conditional gate; `sync_status_report` is now always sent. `missing_count = max(0, myLastSentSeq - peerLastSeqNum)` is computed for informational logging only. See sections 6.3 and fragility points #43–44. |
+| AH | seqKey false deduplication: messages 68–69 visible in DB but not rendered in UI | `deduplicateMessages` in `src/routes/chat/$address.tsx` used `seqKey = seq-them-${sender_seq}` for all messages regardless of whether they had a UUID `customId`. User1's `MESSAGE_COUNTERS` sequence had been reset at some earlier point. Older messages already in the `seenSeqKeys` set shared the same `sender_seq` numbers as new messages 68–69. When the merged array `[...finalMessages, ...prev]` was deduped, 68–69 arrived after the old messages in the iteration order and were falsely marked as duplicates and dropped from rendering. The DB had 75 messages; the UI showed only 73. Fix: added `!keys.customId` guard so `seqKey` dedup is applied **only** to messages without a valid UUID — all modern messages have UUIDs and are deduped exclusively by `customId`. See section 7.2 and fragility point #42. |
 
 ## 18) Reply-to-Message Feature
 
@@ -965,16 +987,26 @@ Token and charm messages combine a Minima blockchain transaction with a chat mes
 - **Charm**: transfer of native Minima currency. Identified by `type="charm"` and `amount > 0`.
 
 ### 25.2 Message State Machine
+
+**Sender side** (`CHAT_MESSAGES.state`):
 ```
-pending  →  sent  →  delivered  →  (no "read" state for token/charm)
-                  ↘  confirmed        (blockchain confirms txpowid)
-                  ↘  failed           (transaction rejected)
+pending → sent → delivered → confirmed
+                           ↘ failed
 ```
-- `pending`: saved optimistically before blockchain submission
-- `sent`: Maxima message successfully sent to peer
-- `confirmed`: `transactionPollingService` detects txpowid in a confirmed block
+- `pending`: saved optimistically; Minima in READ mode queues the send as pending approval
+- `sent`: Maxima notification sent after `MDS_PENDING` approval
+- `delivered`: receipt received from peer
+- `confirmed`: `transactionPollingService` detects txpowid in a confirmed block (3+ blocks)
 - `failed`: transaction rejected by consensus
-- Token/charm messages **never reach `read` state** — `handleReadReceipt` skips `type='token'` and `type='charm'`
+
+**Recipient side** (`CHAT_MESSAGES.state`):
+```
+received → confirmed
+```
+- `received`: Maxima message arrived; initial state set by `chat.handler.js` in SW
+- `confirmed`: SW `checkIncomingTransactions()` finds the real txpowid on-chain with 3+ block confirmations
+
+Token/charm messages **never reach `read` state** — `handleReadReceipt` skips `type='token'` and `type='charm'`.
 
 ### 25.3 TRANSACTIONS Table Schema
 ```sql
@@ -1011,18 +1043,44 @@ CREATE TABLE TRANSACTIONS (
 ```
 The receiver's payload omits `tokenid` (added only by sender). Dedup strategy for token/charm uses `txpowid` as an additional key alongside `customid`. See section 7.4.
 
-### 25.5 Confirmation Polling
-`transactionPollingService` (FE) polls every 10 seconds:
-1. Queries Minima `history` command for each pending `txpowid`.
-2. If found in confirmed block: updates `TRANSACTIONS.status='confirmed'` + `CHAT_MESSAGES.state='confirmed'`.
-3. If rejected: updates both to `failed`.
+### 25.5 Pre-PoW txpowid Problem
+When Minima is in **READ mode**, `send` commands go through a pending approval queue. `MDS_PENDING` fires once approved and provides a `txpowid` in its event payload — but this is a **pre-PoW txpowid** (e.g. `0x43F3F0...`). The **real** blockchain txpowid (e.g. `0x00001B...`) is assigned only after Proof-of-Work and differs completely.
 
-The SW also monitors `NEWBLOCK` events to trigger checks. **Do not remove the txpowid link** between the two tables — confirmation logic depends on it.
+Consequences:
+- `txpow txpowid:<pre-pow-id>` returns `not_found` — useless for confirmation
+- The Maxima notification message sent to the recipient also carries the pre-PoW txpowid
+- The real txpowid must be discovered via `txpow address:<myAddr> max:50` searching for `state[0]=<timestamp>` and `state[1]="204"` (MetaChain chain ID)
 
-### 25.6 Important Notes
+The coin-discovery service (`coin-discovery.js`) performs this search and updates `CHAT_MESSAGES.txpowid` with the real blockchain txpowid. Once the DB has the real id, confirmation polling can succeed.
+
+### 25.6 Sender Confirmation Polling
+`transactionPollingService` (FE) polls on NEWBLOCK events:
+1. Calls `txpow txpowid:<id>` for each `TRANSACTIONS` row in `sent` state.
+2. If not found (pre-PoW id): falls back to `txpow address:<myAddr> max:50` searching by `state[0]=<timestamp>`.
+3. If found in confirmed block with 3+ confirmations: updates `TRANSACTIONS.status='confirmed'` + `CHAT_MESSAGES.state='confirmed'`.
+4. If rejected: updates both to `failed`.
+
+### 25.7 Recipient Confirmation — SW `checkIncomingTransactions()`
+Runs in `transaction.handler.js` at every GOSSIP_INTERVAL (~30s) on NEWBLOCK:
+1. Queries `CHAT_MESSAGES WHERE state IN ('received','read') AND type IN ('token','charm') AND username != 'Me'`
+2. For each message **with stored txpowid**: calls `check3BlockConfirmation(txpowid)`.
+3. For each message **without txpowid** (or pre-PoW id that fails): calls `findInBlockchainOrMempool(msgDate)` to find the real txpowid by timestamp, then checks confirmation.
+4. On 3+ confirmations: updates DB state to `'confirmed'` (also updating `txpowid` if resolved from timestamp), then fires `MDS.comms.solo({ type: "TOKEN_INCOMING_CONFIRMED", msgId, txpowid })`.
+5. Frontend receives `MDSCOMMS` event → `TOKEN_INCOMING_CONFIRMED` handler → reloads chat.
+
+### 25.8 UI Status Badge (MessageBubble)
+`MessageBubble.tsx` shows status badges in the token/charm card header:
+- **Sender** (`fromMe=true`): `PROCESSING` (pending/sent/delivered) → `CONFIRMED` (confirmed) → `FAILED`
+- **Recipient** (`fromMe=false`): `RECEIVING` (received) → `CONFIRMED` (confirmed)
+
+Both sides use the same emerald-green `CONFIRMED` badge once the blockchain confirms.
+
+### 25.9 Important Notes
 - Token messages look different on sender vs receiver side (sender has `tokenid`, receiver does not). The dedup strategy intentionally matches on type+timestamp, NOT content. See section 7.4.
 - Charm and token messages share the same `MessageBubble` card component in the UI with status badge and pending animation.
 - The `amount` field in `CHAT_MESSAGES` is INT; in `TRANSACTIONS` it is VARCHAR(64) to support decimal precision.
+- In frontend React code (`$address.tsx`), always use `MDS.cmd(...)` directly — **never** `(window as any).MDS.cmd(...)`. The `MDS` object is imported at module scope; `window.MDS` may be undefined and causes a TypeError crash.
+- `markChatAsOpened` SQL must exclude `state != 'received'` to avoid bypassing the confirmation flow for incoming tokens. See `messaging.service.ts`.
 
 ## 26) Offline Queue
 
@@ -1093,3 +1151,26 @@ pending → sent → delivered → read
 - **Display**: UI shows a "Forwarded" label above the message bubble.
 - **No protocol impact**: forwarding follows the exact same send path as a normal message; `forwarded` is purely informational.
 - **`replyTo` is independent**: forwarding can optionally preserve `replyTo` context but this is a UI decision.
+
+## 28) UI Patterns and Empty States
+
+### 28.1 Standardization: `EmptyState` Component
+A reusable `EmptyState` component (`src/components/common/EmptyState.tsx`) is used to unify all non-data views (empty chats, contacts, or search results).
+- **Mandatory Usage**: Do not implement inline empty state JSX. Use `<EmptyState />` for consistent UX.
+- **Contextual Actions**: Every empty state should offer a clear path forward (e.g., "Add Contact", "Go to Community", "Clear Filters").
+- **Aesthetics**: Uses premium backdrop filters, glassmorphism, and primary gradients to align with the "MetaChain Elite" design system.
+
+### 28.2 Animations and Transitions
+Premium entry animations are powered by custom Tailwind utility classes defined in `src/index.css` under `@layer utilities`:
+- `.animate-in`: Base animation container.
+- `.fade-in`: Opacity transition.
+- `.zoom-in-95`: Scale entry from 95% to 100%.
+- `.slide-in-from-bottom-4`: Vertical entry from below.
+
+Any new "premium" component should leverage these classes for a consistent, fluid feel.
+
+### 28.3 Balanced Elite Restoration (Post-Corruption)
+The Group Info page (`group-info.$groupId.lazy.tsx`) was restored using "Repair Writes" to fix structural JSX imbalances caused by accidental reverts.
+- **Structural Integrity**: Maintains a multi-layered glassmorphism system. Use extreme caution when using `multi_replace` to avoid breaking `div` nesting.
+- **Administrative Dialogs**: Follow a standardized "Elite" model: `fixed inset-0`, `bg-black/40`, `backdrop-blur-sm`, with large `rounded-[3.5rem]` containers and high-contrast `uppercase` actions.
+- **Registry & Ledgers**: Always use the grid-based Elite card system for member lists, banned ledgers, and join queues to ensure layout consistency across administrative tabs.

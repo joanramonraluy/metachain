@@ -1,15 +1,15 @@
 import { useNavigate, createLazyFileRoute } from "@tanstack/react-router";
-import { useState, useEffect, useRef, useCallback, useContext } from 'react';
+import { useState, useEffect, useCallback, useContext } from 'react';
 import ContactActions from "../components/contact/ContactActions";
 import ContactPrivacy from "../components/contact/ContactPrivacy";
 import { ContactTabs, ContactTab } from "../components/contact/ContactTabs";
 import { MDS } from "@minima-global/mds";
-import { ArrowLeft, Copy, Check, MapPin, Globe, Mail, Phone, Twitter, Linkedin, Github, UserCheck } from "lucide-react";
+import { ArrowLeft, Copy, Check, MapPin, Globe, Mail, Twitter, Linkedin, Github, ShieldAlert, Info, ExternalLink, Trash2 } from "lucide-react";
 import { minimaService } from "../services/minima.service";
+import { chatService } from "../services/chat.service";
 import type { ExtendedProfile } from "../services/profile.service";
 import { personalContactsService } from "../services/personal-contacts.service";
 import { appContext } from "../AppContext";
-
 import { resolveHexFromAddress } from "../services/messaging.service";
 import { safeUrl } from "../utils/sanitization";
 
@@ -41,383 +41,197 @@ function ContactInfoPage() {
     const [copiedField, setCopiedField] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
 
-    // const [appStatus, setAppStatus] = useState<'unknown' | 'checking' | 'installed' | 'not_found'>('unknown'); // Unused in new design
-
-    // Extended profile state
     const [extendedProfile, setExtendedProfile] = useState<ExtendedProfile | null>(null);
-    const [profileLoaded, setProfileLoaded] = useState(false); // Track if profile has been loaded at least once
-    const [profileError, setProfileError] = useState<string | null>(null);
-
-    // UI state
-
-
-    // Chat permission state
-    const [userAllowsNonContactChats, setUserAllowsNonContactChats] = useState(true); // Default: assume open
-
-    // Personal contact state
+    const [userAllowsNonContactChats, setUserAllowsNonContactChats] = useState(true);
     const [isPersonalContact, setIsPersonalContact] = useState(false);
     const [togglingPersonal, setTogglingPersonal] = useState(false);
-
-    // Contact source state
     const [isMaximaContact, setIsMaximaContact] = useState(false);
     const [removingContact, setRemovingContact] = useState(false);
-
-    // Tab State
     const [activeTab, setActiveTab] = useState<ContactTab>('profile');
     const [showConfirmDelete, setShowConfirmDelete] = useState(false);
     const [isCheckingProfile, setIsCheckingProfile] = useState(true);
+    const [isBlocked, setIsBlocked] = useState(false);
+    const [maximaRequestPending, setMaximaRequestPending] = useState(false);
+    const [maximaIncomingRequest, setMaximaIncomingRequest] = useState(false);
+    const [sendingMaximaRequest] = useState(false);
+    const [addingContact] = useState(false);
+    const [requestStatus, setRequestStatus] = useState<'none' | 'pending' | 'accepted' | 'declined'>('none');
+    const [hasChatHistory] = useState(false);
 
-    // Sync active tab with search params
     useEffect(() => {
-        if (search.tab) {
-            setActiveTab(search.tab as ContactTab);
-        }
+        if (search.tab) setActiveTab(search.tab as ContactTab);
     }, [search.tab]);
 
-    // Blocking state
-    const [isBlocked, setIsBlocked] = useState(false);
-
-
-
-
-
-    // Handle Block Toggle (Direct - No Confirmation)
-    // 1. Route Identity Normalization (Mx -> Hex)
-    // If the route parameter is an Mx address, resolve it to Hex and redirect
     useEffect(() => {
         if (address.startsWith("Mx") || address.startsWith("MX")) {
             resolveHexFromAddress(address).then((hex) => {
-                if (hex) {
-                    navigate({
-                        to: "/contact-info/$address",
-                        params: { address: hex },
-                        replace: true,
-                    });
-                }
+                if (hex) navigate({ to: "/contact-info/$address", params: { address: hex }, replace: true });
             });
         }
     }, [address, navigate]);
 
     const handleToggleBlock = async () => {
-        console.log("🔘 [CONTACT] handleToggleBlock clicked. Contact:", contact?.publickey, "isBlocked:", isBlocked);
-        if (!contact?.publickey) {
-            console.warn("⚠️ [CONTACT] No public key available for blocking");
-            return;
-        }
-
+        if (!contact?.publickey) return;
         try {
-            // Helper to send system notification to the other user
             const sendSystemNotification = async (type: string, msg: string) => {
                 const target = contact.currentaddress || contact.publickey;
                 if (!target) return;
-
-                console.log(`📤 [CONTACT] Sending ${type} notification to ${target}`);
                 const payload = { type, message: msg, timestamp: Date.now() };
-                const hexData = "0x" + Array.from(new TextEncoder().encode(JSON.stringify(payload)))
-                    .map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
-
-                // Use raw Maxima send to avoid local chat bubble
-                await new Promise<void>((resolve) => {
-                    MDS.cmd.maxima({
-                        params: {
-                            action: "send",
-                            to: target,
-                            application: "metachain",
-                            data: hexData,
-                            poll: false
-                        } as any
-                    }).then(() => resolve());
-                });
+                const hexData = "0x" + Array.from(new TextEncoder().encode(JSON.stringify(payload))).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+                await MDS.cmd.maxima({ params: { action: "send", to: target, application: "metachain", data: hexData, poll: false } as any });
             };
 
             if (isBlocked) {
-                // UNBLOCK
-                console.log("🔓 [CONTACT] Unblocking user...");
-
-                // 1. Send notification FIRST (before unblocking locally might be safer, or parallel)
-                // Actually, if we are unblocking, we can send it.
                 await sendSystemNotification("contact_unblocked", "User has unblocked you");
-
-                // 2. Local Unblock
                 await minimaService.unblockContact(contact.publickey);
                 setIsBlocked(false);
-
-                // Add System Message (Local)
-                await minimaService.insertMessage({
-                    roomname: contact.extradata?.name || "Unknown",
-                    publickey: contact.publickey,
-                    username: "Me",
-                    type: "system",
-                    message: "You unblocked this user",
-                    date: Date.now()
-                });
-
-                console.log("✅ [CONTACT] User unblocked");
+                await minimaService.insertMessage({ roomname: contact.extradata?.name || "Unknown", publickey: contact.publickey, username: "Me", type: "system", message: "You unblocked this user", date: Date.now() });
             } else {
-                // BLOCK (Direct)
-                console.log("🔒 [CONTACT] Blocking user...");
-
-                // 1. Send notification FIRST (Critical: cannot send after blocking)
                 await sendSystemNotification("contact_blocked", "User has blocked you");
-
-                // 2. Local Block
                 await minimaService.blockContact(contact.publickey);
                 setIsBlocked(true);
-
-                // Add System Message (Local)
-                await minimaService.insertMessage({
-                    roomname: contact.extradata?.name || "Unknown",
-                    publickey: contact.publickey,
-                    username: "Me",
-                    type: "system",
-                    message: "You blocked this user",
-                    date: Date.now()
-                });
-
-                console.log("✅ [CONTACT] User blocked");
+                await minimaService.insertMessage({ roomname: contact.extradata?.name || "Unknown", publickey: contact.publickey, username: "Me", type: "system", message: "You blocked this user", date: Date.now() });
             }
         } catch (err) {
-            console.error("❌ [CONTACT] Error toggling block:", err);
-            alert("Failed to update block status.");
+            console.error("❌ Error toggling block:", err);
         }
     };
 
-
     const defaultAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23cbd5e1'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E";
-
     const getAvatar = (c: Contact | null) => {
-        if (!c) return defaultAvatar;
-        if (c.extradata?.icon) {
+        if (c?.extradata?.icon) {
             try {
                 const decoded = decodeURIComponent(c.extradata.icon);
-                // Check if it's a valid data URL, and not a URL ending in /0x00 (no photo)
-                if (decoded.startsWith("data:image") && !decoded.includes("/0x00")) {
-                    return decoded;
-                }
-            } catch (err) {
-                console.warn("⚠️ [AVATAR] Error decoding:", err);
-            }
+                if (decoded.startsWith("data:image") && !decoded.includes("/0x00")) return decoded;
+            } catch (err) {}
         }
         return defaultAvatar;
     };
 
     const fetchContact = async () => {
         try {
-            // First, try to find in contacts
             const res = await MDS.cmd.maxcontacts();
             const list: Contact[] = (res as any)?.response?.contacts || [];
-            const c = list.find(
-                (x) =>
-                    x.publickey === address ||
-                    x.currentaddress === address ||
-                    x.extradata?.minimaaddress === address
-            );
+            const addrUpper = address.toUpperCase();
+            const c = list.find(x => x.publickey?.toUpperCase() === addrUpper || x.currentaddress?.toUpperCase() === addrUpper || x.extradata?.minimaaddress?.toUpperCase() === addrUpper);
 
             if (c) {
-                console.log("✅ [CONTACT] Found in Maxima:", c);
                 setContact(c);
                 setIsMaximaContact(true);
-
-                // FIX: Verify/Update DISCOVERED_PEERS to ensure Chat list resolves name correctly
-                // This acts as a fallback/cache for the ChatsAndGroups component
-                try {
-                    const safePk = c.publickey;
-                    const safeAddr = c.currentaddress?.replace(/'/g, "''") || '';
-                    const safeName = c.extradata?.name?.replace(/'/g, "''") || 'Unknown';
-                    // Don't overwrite existing bio if we don't have one here, but ensure record exists
-                    const now = Date.now();
-
-                    const upsertSql = `
-                        MERGE INTO DISCOVERED_PEERS (publickey, address, alias, last_seen)
-                        KEY(publickey)
-                        VALUES (UPPER('${safePk}'), '${safeAddr}', '${safeName}', ${now})
-                    `;
-                    await MDS.sql(upsertSql);
-                    console.log("💾 [CONTACT] Synced Maxima contact to Discovery DB");
-                } catch (syncErr) {
-                    console.warn("⚠️ [CONTACT] Error syncing to Discovery DB:", syncErr);
-                }
-
-                // ALSO fetch bio from DISCOVERED_PEERS for P2P bio data
-                try {
-                    const bioSql = `SELECT bio FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('${c.publickey}')`;
-                    const bioRes = await MDS.sql(bioSql);
-                    if (bioRes.status && bioRes.rows && bioRes.rows.length > 0 && bioRes.rows[0].BIO) {
-                        console.log("✅ [CONTACT] Found P2P bio:", bioRes.rows[0].BIO);
-                        // Merge bio into contact extradata
-                        setContact(prev => ({
-                            ...prev!,
-                            extradata: {
-                                ...prev?.extradata,
-                                description: bioRes.rows[0].BIO
-                            }
-                        }));
-                    } else {
-                        console.log("ℹ️ [CONTACT] No P2P bio found");
-                    }
-                } catch (bioErr) {
-                    console.warn("⚠️ [CONTACT] Error fetching bio:", bioErr);
+                const pkSql = `SELECT bio, last_seen FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('${c.publickey}')`;
+                const bioRes = await MDS.sql(pkSql);
+                if (bioRes.status && bioRes.rows?.length > 0) {
+                    const row = bioRes.rows[0];
+                    setContact(prev => ({
+                        ...prev!,
+                        lastseen: row.LAST_SEEN ? Number(row.LAST_SEEN) : prev?.lastseen,
+                        extradata: { ...prev?.extradata, description: row.BIO || prev?.extradata?.description }
+                    }));
                 }
             } else {
-                console.log("🔍 [CONTACT] Not in Maxima, checking Discovery...");
-
-                // Try to find in discovered peers (P2P Discovery)
-                // Note: Column names are lowercase in database schema
                 const sql = `SELECT * FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('${address}')`;
                 const discoveryRes = await MDS.sql(sql);
-
-                if (discoveryRes.status && discoveryRes.rows && discoveryRes.rows.length > 0) {
+                if (discoveryRes.status && discoveryRes.rows?.length > 0) {
                     const peer = discoveryRes.rows[0];
-                    console.log("✅ [CONTACT] Found in Discovery:", peer);
-
-                    // Parse extra_data to get extended profile fields
-                    let avatar = "";
-                    let country = "";
-                    let languages: string[] = [];
-
-
+                    let avatar = "", country = "", languages: string[] = [];
                     if (peer.EXTRA_DATA) {
                         try {
                             const extraObj = JSON.parse(peer.EXTRA_DATA);
                             avatar = extraObj.avatar || "";
                             country = extraObj.country || "";
-
-                            // Handle languages: could be array or JSON string
-                            if (typeof extraObj.languages === 'string') {
-                                try {
-                                    languages = JSON.parse(extraObj.languages);
-                                } catch {
-                                    languages = [];
-                                }
-                            } else if (Array.isArray(extraObj.languages)) {
-                                languages = extraObj.languages;
-                            }
-
-                            console.log("📦 [CONTACT] Parsed extra_data:", { avatar: !!avatar, country, languages });
-                        } catch (e) {
-                            console.warn("⚠️ [CONTACT] Failed to parse extra_data:", e);
-                        }
+                            languages = Array.isArray(extraObj.languages) ? extraObj.languages : (typeof extraObj.languages === 'string' ? JSON.parse(extraObj.languages) : []);
+                        } catch {}
                     }
-
-                    // Extract permission from DB (Source of Truth for initial load)
-                    const dbPermission = peer.ALLOW_NON_CONTACT_CHATS;
-                    // Handle various SQL boolean formats (1, true, "1", "true")
-                    if (dbPermission !== undefined && dbPermission !== null) {
-                        const isAllowed = (dbPermission === 1 || dbPermission === "1" || dbPermission === true || dbPermission === "true");
-                        console.log("🔐 [CONTACT] Permission from DB:", isAllowed);
-                        setUserAllowsNonContactChats(isAllowed);
+                    if (peer.ALLOW_NON_CONTACT_CHATS !== undefined) {
+                        setUserAllowsNonContactChats(peer.ALLOW_NON_CONTACT_CHATS === 1 || peer.ALLOW_NON_CONTACT_CHATS === "1" || peer.ALLOW_NON_CONTACT_CHATS === true);
                     }
-
-                    // Convert discovered peer to Contact format
-                    // H2 database returns column names in UPPERCASE
-                    const discoveredContact: Contact = {
-                        publickey: peer.PUBLICKEY,
-                        currentaddress: peer.ADDRESS,  // Use Maxima address, not publickey
-                        extradata: {
-                            name: peer.ALIAS || "Unknown",
-                            description: peer.BIO || "",
-                            icon: avatar // Use parsed avatar from extra_data
-                        },
-                        lastseen: peer.LAST_SEEN ? Number(peer.LAST_SEEN) : undefined
-                    };
-
-                    setContact(discoveredContact);
-                    setIsMaximaContact(false);
-
-                    // IMPORTANT: Populate extended profile from local cache immediately
-                    // This shows Level 1 data (country, languages, avatar) instantly
-                    // But we still allow profile_request to fetch Level 2 data (location, website, etc.)
+                    setContact({ publickey: peer.PUBLICKEY, currentaddress: peer.ADDRESS, extradata: { name: peer.ALIAS || "Unknown", description: peer.BIO || "", icon: avatar }, lastseen: peer.LAST_SEEN ? Number(peer.LAST_SEEN) : undefined });
+                    // Check if this peer is actually a Maxima contact (even if not found in maxcontacts list above)
+                    const maximaContactCheck = await MDS.cmd.maxcontacts();
+                    const maximaList: Contact[] = (maximaContactCheck as any)?.response?.contacts || [];
+                    const isAlreadyMaxima = maximaList.some(x => x.publickey === peer.PUBLICKEY);
+                    setIsMaximaContact(isAlreadyMaxima);
                     if (country || languages.length > 0 || avatar) {
-                        console.log("🎯 [CONTACT] Populating extended profile from local cache");
-                        setExtendedProfile({
-                            name: peer.ALIAS || "Unknown",
-                            bio: peer.BIO || "",
-                            avatar: avatar,
-                            country: country,
-                            languages: languages,
-                            allowNonContactChats: true, // Default assumption for discovered peers
-                            privacy_l2: 'visible',
-                            privacy_l3: 'visible'
-                        });
-                        // DON'T set profileLoaded = true here - we still want to request full profile
-                        // setProfileLoaded(true); // ← Commented to always fetch latest data
+                        setExtendedProfile({ name: peer.ALIAS || "Unknown", bio: peer.BIO || "", avatar, country, languages, allowNonContactChats: true, privacy_l2: 'visible', privacy_l3: 'visible' });
                     }
-                } else {
-                    console.warn("⚠️ [CONTACT] Not found in Discovery either");
                 }
             }
-        } catch (err) {
-            console.error("❌ [CONTACT] Error loading:", err);
-        } finally {
-            setLoading(false);
-        }
+        } catch (err) {} finally { setLoading(false); }
     };
 
-    useEffect(() => {
-        fetchContact();
-    }, [address]);
+    useEffect(() => { fetchContact(); }, [address]);
 
-    // Check Maxima pending request when contact loads
-    useEffect(() => {
-        if (contact?.publickey) {
-            checkMaximaPendingRequest();
-        }
-    }, [contact]);
-
-    // Check for pending outgoing Maxima contact request
-    const checkMaximaPendingRequest = async () => {
+    const checkStatus = useCallback(async () => {
         if (!contact?.publickey) return;
-
         try {
+            // 1. requestStatus via CHAT_MESSAGES (source of truth — matches SYNCGIT reference)
+            const safeAddr = contact.currentaddress ? contact.currentaddress.replace(/'/g, "''") : '';
+            const requestSql = `SELECT * FROM CHAT_MESSAGES
+                                WHERE (UPPER(publickey)=UPPER('${contact.publickey}') ${safeAddr ? `OR UPPER(publickey)=UPPER('${safeAddr}')` : ''})
+                                AND (message='Contact request sent' OR message='Chat request sent'
+                                  OR message='Chat request accepted' OR message='Contact accepted' OR message='User chat accepted'
+                                  OR message='Contact request declined' OR message='Chat request declined'
+                                  OR message='Contact request cancelled' OR message='Chat request cancelled')
+                                ORDER BY date DESC LIMIT 1`;
+            const requestRes = await minimaService.runSQL(requestSql);
+            if (requestRes?.rows?.length > 0) {
+                const msg = requestRes.rows[0].MESSAGE;
+                if (msg === 'Chat request accepted' || msg === 'User chat accepted' || msg === 'Contact accepted') {
+                    setRequestStatus('accepted');
+                } else if (msg === 'Contact request sent' || msg === 'Chat request sent') {
+                    setRequestStatus('pending');
+                } else if (msg === 'Contact request declined' || msg === 'Chat request declined') {
+                    setRequestStatus('declined');
+                } else if (msg === 'Contact request cancelled' || msg === 'Chat request cancelled') {
+                    setRequestStatus('none');
+                }
+            } else {
+                setRequestStatus('none');
+            }
+
+            // 2. Block status
+            const status = await minimaService.getChatStatus(contact.publickey);
+            setIsBlocked(!!status.blocked);
+
+            // 3. Maxima contact requests
             const myInfo = await MDS.cmd.maxima({ params: { action: 'info' } });
-            const myPublicKey = (myInfo.response as any).publickey;
-            const escapeSql = (str: string) => str.replace(/'/g, "''");
+            const myPk = (myInfo.response as any).publickey;
 
-            const sql = `SELECT * FROM MAXIMA_CONTACT_REQUESTS WHERE UPPER(from_publickey)=UPPER('${escapeSql(myPublicKey)}') AND UPPER(to_publickey)=UPPER('${escapeSql(contact.publickey)}') AND status='pending'`;
-            const result = await minimaService.runSQL(sql);
+            const maxOutgoingSql = `SELECT * FROM MAXIMA_CONTACT_REQUESTS WHERE UPPER(from_publickey)=UPPER('${myPk}') AND UPPER(to_publickey)=UPPER('${contact.publickey}') AND status='pending'`;
+            const maxOutgoingRes = await minimaService.runSQL(maxOutgoingSql);
+            setMaximaRequestPending(maxOutgoingRes?.rows?.length > 0);
 
-            setMaximaRequestPending(result.rows && result.rows.length > 0);
-        } catch (err) {
-            console.error('[Maxima Request] Error checking pending:', err);
-        }
-    };
+            const maxAcceptedSql = `SELECT * FROM MAXIMA_CONTACT_REQUESTS WHERE ((UPPER(from_publickey)=UPPER('${myPk}') AND UPPER(to_publickey)=UPPER('${contact.publickey}')) OR (UPPER(from_publickey)=UPPER('${contact.publickey}') AND UPPER(to_publickey)=UPPER('${myPk}'))) AND status='accepted' LIMIT 1`;
+            const maxAcceptedRes = await minimaService.runSQL(maxAcceptedSql);
+            if (maxAcceptedRes?.rows?.length > 0) setIsMaximaContact(true);
 
-    // Load personal contact status
-    useEffect(() => {
-        const loadPersonalStatus = async () => {
-            if (!contact?.publickey) return;
-            const isPersonal = await personalContactsService.isPersonalContact(contact.publickey);
-            setIsPersonalContact(isPersonal);
-        };
-        loadPersonalStatus();
+            const maxIncomingSql = `SELECT * FROM MAXIMA_CONTACT_REQUESTS WHERE UPPER(from_publickey)=UPPER('${contact.publickey}') AND UPPER(to_publickey)=UPPER('${myPk}') AND status='pending'`;
+            const maxIncomingRes = await minimaService.runSQL(maxIncomingSql);
+            setMaximaIncomingRequest(maxIncomingRes?.rows?.length > 0);
+        } catch (err) {}
     }, [contact]);
 
-    // Ref to track if profile request has been initiated
-    const profileRequestedRef = useRef(false);
+    useEffect(() => { checkStatus(); }, [checkStatus]);
 
-    // Reset state when address changes
     useEffect(() => {
-        setExtendedProfile(null);
-        setProfileLoaded(false);
-        setProfileError(null);
-        setIsCheckingProfile(true);
-        profileRequestedRef.current = false;
-    }, [address]);
+        chatService.onChatListUpdate(checkStatus);
+        return () => { chatService.removeChatListUpdateCallback(checkStatus); };
+    }, [checkStatus]);
 
-    // Auto-request extended profile when contact loads
-    useEffect(() => {
+    const handleRequestProfile = async () => {
         if (!contact?.currentaddress || !contact?.publickey) return;
+        setIsCheckingProfile(true);
+        try {
+            const { requestProfile } = await import("../services/profile.service");
+            const profile = await requestProfile(contact.currentaddress, contact.publickey, 30000, true);
+            setExtendedProfile(profile);
+            if (profile.allowNonContactChats !== undefined) setUserAllowsNonContactChats(profile.allowNonContactChats);
+        } catch (err) {
+            // Error handled by UI state
+        } finally { setIsCheckingProfile(false); }
+    };
 
-        // Only check if already requested (not if we have cache data)
-        // This allows us to show cache immediately but still fetch latest
-        if (profileRequestedRef.current) return;
-
-        // Mark as requested
-        profileRequestedRef.current = true;
-
-        // Auto-request profile
-        handleRequestProfile();
-    }, [contact, address]); // Added address dependency to be safe
+    useEffect(() => { if (contact?.currentaddress) handleRequestProfile(); }, [contact]);
 
     const copyToClipboard = (text: string, fieldId: string) => {
         navigator.clipboard.writeText(text);
@@ -425,901 +239,405 @@ function ContactInfoPage() {
         setTimeout(() => setCopiedField(null), 2000);
     };
 
-    const handleRequestProfile = async () => {
-        if (!contact?.currentaddress || !contact?.publickey) {
-            setProfileError('Contact address or publickey not available');
-            return;
-        }
+    if (loading) return (
+      <div className="h-full flex flex-col items-center justify-center bg-gray-50 dark:bg-gray-950">
+        <div className="w-10 h-10 border-4 border-primary-500/20 border-t-primary-500 rounded-full animate-spin"></div>
+      </div>
+    );
 
-        setProfileError(null);
-        setIsCheckingProfile(true);
+    if (!contact) return (
+      <div className="h-full flex flex-col items-center justify-center bg-gray-50 dark:bg-gray-950 p-8 text-center space-y-6">
+        <div className="w-20 h-20 bg-gray-100 dark:bg-white/5 rounded-3xl flex items-center justify-center text-gray-300">
+          <Info size={40} />
+        </div>
+        <div className="space-y-2">
+            <h1 className="text-2xl font-black text-gray-900 dark:text-white tracking-tight">Identity not found</h1>
+            <p className="text-sm text-gray-500 font-bold max-w-xs">We couldn't resolve this node in your local discovery cache or contacts.</p>
+        </div>
+        <button onClick={() => navigate({ to: "/" })} className="px-8 py-3 bg-gray-900 dark:bg-white text-white dark:text-black rounded-2xl font-black text-xs uppercase tracking-widest transition-all active:scale-95">Go to Community</button>
+      </div>
+    );
 
-        try {
-            console.log("🔄 [PROFILE] Requesting extended profile...");
-            // Use dynamic import for code splitting
-            const { requestProfile } = await import("../services/profile.service");
-            // Use Maxima address for sending, publickey for response matching
-            // force=true bypasses throttle since this is an explicit page navigation
-            const profile = await requestProfile(contact.currentaddress, contact.publickey, 30000, true);
-            console.log("🔍 [UI] Profile received, checking fields:", {
-                email: profile.email || 'NOT PRESENT',
-                phone: profile.phone || 'NOT PRESENT',
-                location: profile.location || 'NOT PRESENT',
-                website: profile.website || 'NOT PRESENT'
-            });
-            setExtendedProfile(profile);
-
-            // Extract chat permission setting
-            if (profile.allowNonContactChats !== undefined) {
-                setUserAllowsNonContactChats(profile.allowNonContactChats);
-                console.log("ℹ️ [PROFILE] Chat permission:", profile.allowNonContactChats);
-            }
-
-            setProfileLoaded(true); // Mark profile as loaded
-            console.log("✅ [PROFILE] Extended profile received:", profile);
-        } catch (err) {
-            console.error("❌ [PROFILE] Failed to request:", err);
-
-            // Graceful handling for non-contacts / timeouts
-            // If it times out or fails, it likely means they aren't sharing info or we aren't a contact.
-            // Don't show a scary error, just assume empty/restricted profile.
-            console.log("⚠️ [PROFILE] Assuming restricted access or offline. Continuing with basic info.");
-
-            setProfileLoaded(true); // Mark as "loaded" (even if empty) so UI unlocks
-            setProfileError(null);  // Don't show error to user
-        } finally {
-            setIsCheckingProfile(false);
-        }
-    };
-
-    // Add contact state
-    const [addingContact, setAddingContact] = useState(false);
-    const [requestStatus, setRequestStatus] = useState<'none' | 'pending' | 'accepted' | 'declined'>('none');
-    const [hasChatHistory, setHasChatHistory] = useState(false);
-
-    // Maxima contact request state (MAXIMA_CONTACT_REQUESTS)
-    const [maximaRequestPending, setMaximaRequestPending] = useState(false);
-    const [maximaIncomingRequest, setMaximaIncomingRequest] = useState(false);
-    const [sendingMaximaRequest, setSendingMaximaRequest] = useState(false);
-
-    // Check for existing requests and chat history on load and on message updates
-    const checkStatus = useCallback(async () => {
-        if (!contact?.publickey) return;
-
-        try {
-            console.log("🔍 [CONTACT] Checking request status and history...");
-
-            // 1. Check for request status (sent, accepted, declined, cancelled)
-            // Fix: Check both publickey AND address (in case message was saved with Mx address)
-            const safeAddr = contact.currentaddress ? contact.currentaddress.replace(/'/g, "''") : '';
-            const requestSql = `SELECT * FROM CHAT_MESSAGES 
-                                WHERE (UPPER(publickey)=UPPER('${contact.publickey}') ${safeAddr ? `OR UPPER(publickey)=UPPER('${safeAddr}')` : ''}) 
-                                AND (message='Contact request sent' OR message='Chat request sent' 
-                                  OR message='Chat request accepted' OR message='Contact accepted' OR message='User chat accepted'
-                                  OR message='Contact request declined' OR message='Chat request declined' 
-                                  OR message='Contact request cancelled' OR message='Chat request cancelled') 
-                                ORDER BY date DESC LIMIT 1`;
-            const requestRes = await minimaService.runSQL(requestSql);
-
-            if (requestRes && requestRes.rows && requestRes.rows.length > 0) {
-                const msg = requestRes.rows[0].MESSAGE;
-                console.log(`🔍 [CONTACT DEBUG] Found status message in DB: "${msg}"`, requestRes.rows[0]);
-
-                if (msg === 'Chat request accepted' || msg === 'User chat accepted' || msg === 'Contact accepted') {
-                    // Fix: Chat acceptance is NOW decoupled from Maxima Contact list.
-                    // We trust the message history.
-                    setRequestStatus('accepted');
-                } else if (msg === 'Contact request sent' || msg === 'Chat request sent') {
-                    setRequestStatus('pending');
-                } else if (msg === 'Contact request declined' || msg === 'Chat request declined') {
-                    setRequestStatus('declined'); // Explicitly set to declined to handle re-request logic
-                } else if (msg === 'Contact request cancelled' || msg === 'Chat request cancelled') {
-                    setRequestStatus('none'); // Reset to none after cancellation
-                }
-            } else {
-                setRequestStatus('none');
-            }
-
-            // 2. Check for REAL chat history (exclude system messages, read receipts, delivery reports)
-            // This prevents "Solicitor can send messages" just because a request/decline message exists
-            const historySql = `SELECT * FROM CHAT_MESSAGES 
-                                WHERE UPPER(publickey)=UPPER('${contact.publickey}') 
-                                AND type NOT IN ('system', 'read', 'delivery') 
-                                AND message NOT LIKE 'Contact request%' AND message NOT LIKE 'Chat request%' 
-                                AND state IN ('received', 'read')
-                                LIMIT 1`;
-            const historyRes = await minimaService.runSQL(historySql);
-
-            if (historyRes && historyRes.rows && historyRes.rows.length > 0) {
-                setHasChatHistory(true);
-            } else {
-                setHasChatHistory(false);
-            }
-
-        } catch (err) {
-            console.error("❌ [CONTACT] Error checking status:", err);
-        }
-
-        // 3. Check for Pending Maxima Contact Request (Decoupled from Chat)
-        try {
-            console.log("🔍 [CONTACT] Checking Maxima Contact Request status...");
-            // Check both directions:
-            // 1. Outgoing: I sent request TO contact.publickey
-            // 2. Incoming: Contact locally saved request FROM contact.publickey (if we eventually show that here)
-            // Ideally we need my own key to differentiate, but for 'pending' visualization on this page, 
-            // knowing a request exists involving this peer is usually enough.
-            // For now, let's strictly check OUTGOING requests from ME to THEM, 
-            // since this page is "I am viewing THEM".
-
-            // Note: service.js saves incoming requests. minima.service saves outgoing.
-            // We need to check both to cover all states.
-
-            // Get my public key to differentiate incoming vs outgoing
-            const myInfo = await MDS.cmd.maxima({ params: { action: 'info' } });
-            const myPublicKey = (myInfo.response as any).publickey;
-
-            // Check for OUTGOING requests (I sent to them)
-            const maxOutgoingSql = `SELECT * FROM MAXIMA_CONTACT_REQUESTS 
-                                    WHERE UPPER(from_publickey)=UPPER('${myPublicKey}') 
-                                    AND UPPER(to_publickey)=UPPER('${contact.publickey}') 
-                                    AND status='pending'`;
-            const maxOutgoingRes = await minimaService.runSQL(maxOutgoingSql);
-
-            if (maxOutgoingRes && maxOutgoingRes.rows && maxOutgoingRes.rows.length > 0) {
-                console.log("✅ [CONTACT] Found pending OUTGOING Maxima request:", maxOutgoingRes.rows[0]);
-                setMaximaRequestPending(true);
-            } else {
-                setMaximaRequestPending(false);
-            }
-
-            // Check if Maxima contact request was already accepted (in either direction)
-            const maxAcceptedSql = `SELECT * FROM MAXIMA_CONTACT_REQUESTS
-                                    WHERE ((UPPER(from_publickey)=UPPER('${myPublicKey}') AND UPPER(to_publickey)=UPPER('${contact.publickey}'))
-                                    OR (UPPER(from_publickey)=UPPER('${contact.publickey}') AND UPPER(to_publickey)=UPPER('${myPublicKey}')))
-                                    AND status='accepted' LIMIT 1`;
-            const maxAcceptedRes = await minimaService.runSQL(maxAcceptedSql);
-            if (maxAcceptedRes && maxAcceptedRes.rows && maxAcceptedRes.rows.length > 0) {
-                console.log("✅ [CONTACT] Maxima contact request already accepted");
-                setIsMaximaContact(true);
-            }
-
-            // Check for INCOMING requests (they sent to me)
-            const maxIncomingSql = `SELECT * FROM MAXIMA_CONTACT_REQUESTS 
-                                    WHERE UPPER(from_publickey)=UPPER('${contact.publickey}') 
-                                    AND UPPER(to_publickey)=UPPER('${myPublicKey}') 
-                                    AND status='pending'`;
-
-            console.log("🔍 [CONTACT DEBUG] Checking Incoming SQL:", maxIncomingSql);
-            console.log("🔍 [CONTACT DEBUG] Contact PK:", contact.publickey);
-            console.log("🔍 [CONTACT DEBUG] My PK:", myPublicKey);
-
-            const maxIncomingRes = await minimaService.runSQL(maxIncomingSql);
-            console.log("🔍 [CONTACT DEBUG] Incoming Result:", maxIncomingRes);
-
-            if (maxIncomingRes && maxIncomingRes.rows && maxIncomingRes.rows.length > 0) {
-                console.log("✅ [CONTACT] Found pending INCOMING Maxima request:", maxIncomingRes.rows[0]);
-                setMaximaIncomingRequest(true);
-            } else {
-                setMaximaIncomingRequest(false);
-            }
-
-        } catch (err) {
-            console.error("❌ [CONTACT] Error checking Maxima requests:", err);
-        }
-
-        // 4. Check Block Status
-        try {
-            const status = await minimaService.getChatStatus(contact.publickey);
-            setIsBlocked(!!status.blocked);
-        } catch (err) {
-            console.warn("⚠️ [CONTACT] Failed to fetch chat status:", err);
-        }
-
-    }, [contact]);
-
-    // Initial check and listener for updates
-    useEffect(() => {
-        checkStatus();
-
-        // Listen for new messages (declines, accepts) to update UI in real-time
-        const handleNewMessage = (msg: any) => {
-            if (msg.type === 'contact_declined' || msg.type === 'contact_accepted') {
-                console.log(`🔔 [CONTACT] Received ${msg.type}, refreshing status...`);
-                // Wait a moment for DB insert
-                setTimeout(checkStatus, 500);
-            }
-        };
-
-        minimaService.onNewMessage(handleNewMessage);
-
-        return () => {
-            minimaService.removeNewMessageCallback(handleNewMessage);
-        };
-    }, [checkStatus]);
-
-    const handleSendContactRequest = async () => {
-        if (!contact?.currentaddress) {
-            alert("Cannot send request: No Maxima address available");
-            return;
-        }
-        setAddingContact(true);
-        try {
-            await minimaService.sendChatRequest(contact.currentaddress, userName || "Unknown", userAvatar || "", contact.publickey);
-            setRequestStatus('pending'); // Optimistic update
-
-            // Navigate to chat
-            navigate({
-                to: "/chat/$address",
-                params: { address: contact.publickey },
-                search: { requestPending: true }
-            });
-        } catch (err: any) {
-            console.error("❌ [CONTACT] Exception sending request:", err);
-            alert(`Error sending chat request: ${err.message || err}`);
-        } finally {
-            setAddingContact(false);
-        }
-    };
-
-    const handleCancelRequest = async () => {
-        if (!contact?.publickey) return;
-
-        const confirmed = confirm("Are you sure you want to cancel this chat request?");
-        if (!confirmed) return;
-
-        setAddingContact(true);
-        try {
-            await minimaService.cancelChatRequest(contact.publickey);
-            setRequestStatus('none'); // Clear pending status
-            console.log("✅ [CONTACT] Request cancelled");
-        } catch (err: any) {
-            console.error("❌ [CONTACT] Error cancelling request:", err);
-            alert(`Error cancelling request: ${err.message || err}`);
-        } finally {
-            setAddingContact(false);
-        }
-    };
-
-    const handleSendMaximaRequest = async () => {
-        if (!contact?.currentaddress) {
-            alert("Error: Cannot find user's Maxima address.");
-            return;
-        }
-
-        setSendingMaximaRequest(true);
-        try {
-            await minimaService.sendMaximaContactRequest(contact.currentaddress, contact.publickey);
-            setMaximaRequestPending(true);
-            console.log("✅ [Maxima Contact] Request sent");
-
-            // Navigate to chat immediately so user sees the "Request sent" system message
-            navigate({
-                to: "/chat/$address",
-                params: { address: contact.publickey }
-            });
-        } catch (err: any) {
-            console.error("❌ [Maxima Contact] Error sending request:", err);
-            alert(`Error sending Maxima contact request: ${err.message || err}`);
-        } finally {
-            setSendingMaximaRequest(false);
-        }
-    };
-
-    const handleCancelMaximaRequest = async () => {
-        if (!contact?.publickey) return;
-
-        const confirmed = confirm("Are you sure you want to cancel this Maxima contact request?");
-        if (!confirmed) return;
-
-        setSendingMaximaRequest(true);
-        try {
-            await minimaService.cancelMaximaContactRequest(contact.publickey);
-            setMaximaRequestPending(false);
-            console.log("✅ [Maxima Contact] Request cancelled");
-        } catch (err: any) {
-            console.error("❌ [Maxima Contact] Error cancelling request:", err);
-            alert(`Error cancelling request: ${err.message || err}`);
-        } finally {
-            setSendingMaximaRequest(false);
-        }
-    };
-
-
-
-    const handleRemoveContact = () => {
-        if (!contact?.publickey) return;
-        setShowConfirmDelete(true);
-    };
-
-    const executeRemoveContact = async () => {
-        if (!contact?.publickey) return;
-
-        setShowConfirmDelete(false);
-        setRemovingContact(true);
-        console.log("🗑️ [CONTACT] Starting removal...");
-
-        try {
-            console.log("🗑️ [CONTACT] Calling Maxima remove...");
-
-            console.log("🗑️ [CONTACT] Sending removal notification first...");
-
-            // Send removal notification to the removed contact
+    const contactActionsProps = {
+        isMaximaContact,
+        userAllowsNonContactChats,
+        maximaIncomingRequest,
+        requestStatus,
+        hasChatHistory,
+        maximaRequestPending,
+        sendingMaximaRequest,
+        addingContact,
+        onNavigateChat: () => navigate({ to: "/chat/$address", params: { address: contact.publickey } }),
+        onCancelRequest: async () => { await minimaService.cancelChatRequest(contact.publickey); checkStatus(); },
+        onSendContactRequest: async () => { 
             try {
-                const removalPayload = {
-                    type: "maxima_contact_removed",
-                    timestamp: Date.now()
-                };
-                const hexData = "0x" + Array.from(new TextEncoder().encode(JSON.stringify(removalPayload)))
-                    .map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
-
-                await new Promise<any>((resolve) => {
-                    MDS.executeRaw(`maxima action:send publickey:${contact.publickey} application:metachain data:${hexData} poll:false`, resolve);
+                // Navigate immediately to the chat page to provide instant feedback
+                navigate({ 
+                    to: "/chat/$address", 
+                    params: { address: contact.publickey },
+                    search: { requestPending: true }
                 });
-                console.log("📤 [CONTACT] Removal notification sent");
-            } catch (notifyErr) {
-                console.warn("⚠️ [CONTACT] Could not send removal notification:", notifyErr);
+                // Then send the request in the background
+                await minimaService.sendChatRequest(contact.currentaddress, userName || "Unknown", userAvatar || "", contact.publickey); 
+                setRequestStatus('pending');
+            } catch (err) {
+                console.error("Failed to send chat request:", err);
             }
-
-            // Call Maxima to remove contact
-            // Prefer ID if available, otherwise try publickey as contact
-            console.log("🗑️ [CONTACT] Calling Maxima remove...");
-            const params: any = {
-                action: "remove"
-            };
-
-            if (contact.id) {
-                params.id = contact.id;
-            } else {
-                params.publickey = contact.publickey;
+        },
+        onCancelMaximaRequest: async () => { await minimaService.cancelMaximaContactRequest(contact.publickey); setMaximaRequestPending(false); },
+        onSendMaximaRequest: async () => { 
+            try {
+                // Navigate immediately to provide instant feedback
+                navigate({ 
+                    to: "/chat/$address", 
+                    params: { address: contact.publickey },
+                    search: { requestPending: true }
+                });
+                // Send request in background
+                await minimaService.sendMaximaContactRequest(contact.currentaddress, contact.publickey); 
+                setMaximaRequestPending(true); 
+            } catch (err) {
+                console.error("Failed to send maxima request:", err);
             }
-
-            const response = await MDS.cmd.maxcontacts(params);
-
-            console.log("🗑️ [CONTACT] Response received:", response);
-
-            if (response.status) {
-                console.log("✅ [CONTACT] Removed successfully");
-
-                // Insert local system message inside success block
-                /* Notification sent earlier */
-
-                // Insert local system message
-                try {
-                    const escapeSql = (str: string) => str.replace(/'/g, "''");
-                    const safePk = escapeSql(contact.publickey);
-                    const insertSql = `INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp) 
-                                       VALUES('', UPPER('${safePk}'), 'System', 'system', 'You removed this contact', '', 'sent', 0, ${Date.now()}, NULL, ${Date.now()})`;
-                    await MDS.sql(insertSql);
-                    console.log("💾 [CONTACT] Local system message inserted");
-                } catch (sqlErr) {
-                    console.warn("⚠️ [CONTACT] Could not insert system message:", sqlErr);
-                }
-
-                // Optimistic UI update - Immediate feedback
-                setIsMaximaContact(false);
-                setExtendedProfile(null);
-                setProfileError(null);
-                setRequestStatus('none');
-                setIsPersonalContact(false);
-
-
-                // Don't fetch immediately - let optimistic UI stay
-                // The contact will be removed from maxcontacts once the Maxima message is processed
-
-                // Stay on page so user sees it's now a non-contact
-                // navigate({ to: "/" }); 
-            } else {
-                console.error("❌ [CONTACT] Failed to remove:", response.error);
-                alert(`Failed to remove contact: ${response.error || 'Unknown error'}`);
+        },
+        isBlocked,
+        onToggleBlock: handleToggleBlock,
+        removingContact,
+        isCheckingProfile,
+        onPing: isMaximaContact ? async () => {
+            if (!contact?.publickey) return;
+            try {
+                await minimaService.sendPing(contact.publickey);
+                // Optional: show a toast or feedback
+            } catch (err) {
+                console.error("❌ Error sending ping:", err);
             }
-        } catch (err) {
-            console.error("❌ [CONTACT] Error removing:", err);
-            alert(`Error removing contact: ${err}`);
-        } finally {
-            setRemovingContact(false);
-            console.log("🗑️ [CONTACT] Removal finished");
-        }
+        } : undefined
     };
 
-    if (loading) {
-        return (
-            <div className="h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
-            </div>
-        );
-    }
-
-    if (!contact) {
-        return (
-            <div className="h-screen flex flex-col items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
-                <p className="text-gray-500 dark:text-gray-400 mb-4">Contact not found</p>
-                <button
-                    onClick={() => navigate({ to: "/" })}
-                    className="px-4 py-2 bg-primary-500 text-white rounded-lg"
-                >
-                    Go Back
-                </button>
-
-                {/* Custom Confirmation Modal removed from here */}
-            </div>
-        );
-    }
-
-    // Get display data from contact
-    const contactName = contact?.extradata?.name || "Unknown";
-    const displayPubkey = contact?.publickey || "";
-    const displayLastSeen = contact?.lastseen;
+    const contactName = contact?.extradata?.name || "Nomad User";
     const avatarUrl = getAvatar(contact);
-    const p2pBio = contact?.extradata?.description || "";
+    const isOnline = !!contact.lastseen && (Date.now() - contact.lastseen < 300000);
 
     return (
-        <div className="h-full overflow-y-auto bg-gray-50 dark:bg-gray-900 transition-colors">
-            {/* Header */}
-            <div className="bg-white dark:bg-gray-800 px-4 py-3 flex items-center gap-3 shadow-sm sticky top-0 z-10 border-b border-gray-200 dark:border-gray-700 transition-colors">
+        <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-950 overflow-hidden">
+            <style>{`
+                @keyframes profileFade {
+                    from { opacity: 0; transform: translateY(10px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
+                .profile-animate {
+                    animation: profileFade 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+                }
+                .glow-emerald {
+                    box-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
+                }
+            `}</style>
+
+            {/* ELITE STICKY HEADER */}
+            <header className="sticky top-0 z-50 bg-white/70 dark:bg-gray-950/70 backdrop-blur-2xl border-b border-white/20 dark:border-white/5 px-6 py-4 flex items-center justify-between">
                 <button
-                    onClick={() => {
-                        if (search.returnTo) {
-                            navigate({ to: search.returnTo });
-                        } else {
-                            navigate({ to: '/' });
-                        }
-                    }}
-                    className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors text-gray-600 dark:text-gray-300"
+                    onClick={() => search.returnTo ? navigate({ to: search.returnTo }) : navigate({ to: '/' })}
+                    className="p-3 bg-gray-100 dark:bg-white/5 rounded-2xl hover:scale-110 active:scale-95 transition-all text-gray-900 dark:text-white group"
                 >
-                    <ArrowLeft size={24} />
+                    <ArrowLeft size={20} className="stroke-[3] group-hover:-translate-x-1 transition-transform" />
                 </button>
-                <div className="flex items-center gap-3 overflow-hidden">
-                    <img
-                        src={avatarUrl}
-                        alt={contactName}
-                        className="w-10 h-10 rounded-full object-cover bg-gray-200 dark:bg-gray-700 flex-shrink-0"
-                        onError={(e) => {
-                            (e.target as HTMLImageElement).src = defaultAvatar;
-                        }}
-                    />
-                    <div className="flex flex-col min-w-0">
-                        <h1 className="text-lg font-semibold text-gray-800 dark:text-white truncate leading-tight">
-                            {contactName}
-                        </h1>
-                        <span className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                            Contact Info
-                        </span>
+                <div className="flex-1 text-center px-4">
+                   <span className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400 opacity-60">Identity Profile</span>
+                </div>
+                <div className="w-12 h-12 flex items-center justify-center">
+                    <Info size={18} className="text-gray-300 opacity-20" />
+                </div>
+            </header>
+
+            <div className="flex-1 overflow-y-auto l-scrollbar">
+                {/* HERO HEADER - BALANCED ELITE */}
+                <div className="relative pt-16 pb-12 px-6 sm:px-12 bg-white dark:bg-gray-950">
+                    <div className="absolute inset-0 bg-gradient-to-b from-primary-500/5 to-transparent pointer-events-none"></div>
+                    <div className="max-w-screen-xl mx-auto flex flex-col items-center text-center space-y-8">
+                        <div className="relative profile-animate">
+                            <div className="absolute -inset-6 bg-primary-500/10 rounded-full blur-3xl opacity-50"></div>
+                            <div className="relative group/avatar">
+                                <div className="absolute -inset-1.5 bg-gradient-to-tr from-primary-500 to-indigo-600 rounded-[3rem] blur opacity-20 group-hover/avatar:opacity-40 transition-opacity duration-700"></div>
+                                <img
+                                    src={avatarUrl}
+                                    className="relative w-32 h-32 sm:w-40 sm:h-40 rounded-[2.75rem] object-cover border-2 border-white/20 dark:border-white/10 shadow-2xl transition-all duration-700 group-hover/avatar:scale-[1.02]"
+                                    onError={(e) => { (e.target as HTMLImageElement).src = defaultAvatar; }}
+                                />
+                                <div className={`absolute -bottom-2 -right-2 w-9 h-9 rounded-full border-4 border-white dark:border-gray-950 transition-all shadow-xl ${isOnline ? "bg-emerald-500 glow-emerald" : "bg-gray-300"}`}>
+                                    {isOnline && <div className="absolute inset-0 rounded-full bg-emerald-500 animate-ping opacity-30"></div>}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="space-y-4 profile-animate" style={{ animationDelay: '100ms' }}>
+                            <h1 className="text-4xl sm:text-5xl font-black text-gray-900 dark:text-white tracking-tighter leading-none uppercase">{contactName}</h1>
+                            
+                            <div className="flex flex-wrap items-center justify-center gap-3">
+                                <div className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-[0.2em] border shadow-sm ${
+                                    isMaximaContact 
+                                        ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20" 
+                                        : maximaRequestPending
+                                            ? "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20 animate-pulse"
+                                            : maximaIncomingRequest
+                                                ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 animate-pulse"
+                                                : "bg-gray-100 dark:bg-white/5 text-gray-400 border-gray-200 dark:border-white/5"
+                                }`}>
+                                    {isMaximaContact ? "Maxima Established" : maximaRequestPending ? "Sync Pending" : maximaIncomingRequest ? "Incoming Sync" : "No Maxima Link"}
+                                </div>
+                                {isOnline && (
+                                    <div className="px-4 py-1.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[10px] font-black uppercase tracking-[0.2em]">
+                                        Peer Online
+                                    </div>
+                                )}
+                                {isPersonalContact && (
+                                    <div className="px-4 py-1.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[10px] font-black uppercase tracking-[0.2em]">
+                                        Trusted Status
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        <p className="max-w-xl text-sm sm:text-base text-gray-500 dark:text-gray-400 font-medium leading-relaxed profile-animate" style={{ animationDelay: '200ms' }}>
+                            {contact?.extradata?.description || "Decentralized identity without a public biography. Connect to learn more about this network node."}
+                        </p>
+
+                        <div className="flex flex-wrap justify-center gap-3 profile-animate" style={{ animationDelay: '300ms' }}>
+                             <div className="px-5 py-2.5 bg-gray-100 dark:bg-white/5 rounded-2xl flex items-center gap-3 border border-white/5 transition-all group cursor-pointer hover:bg-white dark:hover:bg-white/10 shadow-sm" onClick={() => contact && copyToClipboard(contact.publickey, 'pk')}>
+                                <span className="text-[10px] font-black text-gray-400 group-hover:text-primary-500 transition-colors uppercase tracking-widest">PK: {contact?.publickey?.substring(0, 12)}...</span>
+                                {copiedField === 'pk' ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} className="text-gray-400 group-hover:text-primary-500" />}
+                             </div>
+                        </div>
                     </div>
+                </div>
+
+                {/* TABS NAVIGATION - CENTERED ELITE */}
+                <div className="flex justify-center -mt-4 relative z-10">
+                    <ContactTabs activeTab={activeTab} onTabChange={setActiveTab} />
+                </div>
+
+                {/* TAB CONTENT - WRAPPER */}
+                <div className="max-w-3xl mx-auto px-6 py-12 sm:px-12 pb-32">
+                    {activeTab === "profile" && (
+                      <div className="space-y-12 profile-animate">
+                        <div className="space-y-12">
+                          <section className="space-y-8 text-center">
+                            <div className="flex items-center gap-6">
+                              <div className="flex-1 h-px bg-gradient-to-r from-transparent to-gray-200 dark:to-gray-800"></div>
+                              <h2 className="text-[10px] font-black uppercase tracking-[0.4em] text-gray-400 font-black shrink-0 opacity-60">
+                                Profile Ledger
+                              </h2>
+                              <div className="flex-1 h-px bg-gradient-to-l from-transparent to-gray-200 dark:to-gray-800"></div>
+                            </div>
+                                   
+                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                                <ProfileAttribute icon={MapPin} label="Origin" value={extendedProfile?.country || 'P2P Network'} color="primary" />
+                                <ProfileAttribute icon={Globe} label="Languages" value={extendedProfile?.languages?.join(', ') || 'Global Protocol'} color="emerald" />
+                                {extendedProfile?.website && (
+                                    <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md p-8 rounded-[2.75rem] border border-white/20 dark:border-white/5 flex flex-col gap-3 shadow-lg shadow-black/5 items-center text-center group hover:border-primary-500/20 transition-all">
+                                        <div className="w-12 h-12 rounded-2xl bg-primary-500/10 flex items-center justify-center text-primary-500 group-hover:scale-110 transition-transform">
+                                           <Globe size={22} />
+                                        </div>
+                                        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 opacity-60">Node Website</span>
+                                        <a href={safeUrl(extendedProfile.website)} target="_blank" className="text-sm font-black text-gray-900 dark:text-white flex items-center gap-2 hover:text-primary-500 transition-colors uppercase tracking-tight">
+                                          {extendedProfile.website.length > 25 ? extendedProfile.website.substring(0, 25) + '...' : extendedProfile.website} <ExternalLink size={14} />
+                                        </a>
+                                    </div>
+                                )}
+                                {extendedProfile?.email && (
+                                    <ProfileAttribute icon={Mail} label="Secure Mail" value={extendedProfile.email} color="rose" />
+                                )}
+                             </div>
+                          </section>
+
+                          {extendedProfile?.social && Object.keys(extendedProfile.social).length > 0 && (
+                              <section className="space-y-8 text-center">
+                                 <div className="flex items-center gap-6">
+                                    <div className="flex-1 h-px bg-gradient-to-r from-transparent to-gray-200 dark:to-gray-800"></div>
+                                    <h2 className="text-[10px] font-black uppercase tracking-[0.4em] text-gray-400 opacity-60">Identity Links</h2>
+                                    <div className="flex-1 h-px bg-gradient-to-l from-transparent to-gray-200 dark:to-gray-800"></div>
+                                 </div>
+                                 <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[3rem] border border-white/20 dark:border-white/5 p-8 shadow-lg shadow-black/5 flex flex-wrap justify-center gap-4">
+                                    {extendedProfile.social.twitter && <SocialPill icon={Twitter} label="Twitter" value={`@${extendedProfile.social.twitter}`} url={`https://twitter.com/${extendedProfile.social.twitter}`} />}
+                                    {extendedProfile.social.github && <SocialPill icon={Github} label="GitHub" value={extendedProfile.social.github} url={`https://github.com/${extendedProfile.social.github}`} />}
+                                    {extendedProfile.social.linkedin && <SocialPill icon={Linkedin} label="LinkedIn" value="Profile" url={`https://linkedin.com/in/${extendedProfile.social.linkedin}`} />}
+                                 </div>
+                              </section>
+                          )}
+
+                          <div className="space-y-8 px-2">
+                              <ContactActions {...contactActionsProps} mode="connection" />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {activeTab === 'settings' && (
+                        <div className="max-w-2xl mx-auto space-y-8 profile-animate">
+                            <ContactActions {...contactActionsProps} mode="privacy" />
+
+                            {isMaximaContact && (
+                                <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[3rem] border border-white/20 dark:border-white/5 p-10 shadow-lg shadow-black/5">
+                                    <div className="flex items-center gap-4 mb-8">
+                                        <div className="w-12 h-12 rounded-2xl bg-rose-500/10 flex items-center justify-center text-rose-500">
+                                            <Trash2 size={22} />
+                                        </div>
+                                        <div className="flex flex-col">
+                                            <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-0.5">Maxima Link</span>
+                                            <h3 className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-tight">Remove Contact</h3>
+                                        </div>
+                                    </div>
+                                    <p className="text-xs text-gray-500 font-medium mb-8 px-1 leading-relaxed opacity-70">
+                                        Removing this identity will halt automatic folder synchronization. Conversation history is preserved locally.
+                                    </p>
+                                    <button
+                                        onClick={() => setShowConfirmDelete(true)}
+                                        disabled={removingContact}
+                                        className="w-full px-6 py-5 rounded-[1.5rem] font-black text-[10px] sm:text-[11px] uppercase tracking-[0.1em] bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white border border-rose-500/20 flex items-center justify-center gap-3 transition-all active:scale-95 disabled:opacity-50"
+                                    >
+                                        <Trash2 size={16} strokeWidth={3} />
+                                        {removingContact ? "Removing..." : "Remove Maxima Contact"}
+                                    </button>
+                                </div>
+                            )}
+
+                            {isMaximaContact ? (
+                                <ContactPrivacy
+                                    isPersonalContact={isPersonalContact}
+                                    togglingPersonal={togglingPersonal}
+                                    onTogglePersonal={async () => {
+                                        setTogglingPersonal(true);
+                                        try {
+                                            const success = await personalContactsService.togglePersonalContact(contact.publickey);
+                                            if (success) setIsPersonalContact(!isPersonalContact);
+                                        } finally { setTogglingPersonal(false); }
+                                    }}
+                                />
+                            ) : (
+                                <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[2.5rem] border border-dashed border-white/20 dark:border-white/5 p-10 text-center space-y-4 shadow-lg shadow-black/5">
+                                    <div className="w-16 h-16 bg-gray-100 dark:bg-white/5 rounded-[1.75rem] flex items-center justify-center mx-auto text-gray-300">
+                                       <Info size={30} />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Personal Status Locked</h4>
+                                        <p className="text-xs font-medium text-gray-500 leading-relaxed px-8 opacity-70">
+                                            Trusted Status (Level 3) requires an active Maxima contact relationship to enable automatic folder synchronization.
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+                            
+                            <div className="p-10 bg-amber-500/5 border border-amber-500/10 rounded-[2.75rem] space-y-6 shadow-xl shadow-amber-500/5">
+                                <div className="flex items-center gap-4 text-amber-500">
+                                   <div className="w-12 h-12 bg-amber-500/10 rounded-2xl flex items-center justify-center">
+                                      <ShieldAlert size={24} />
+                                   </div>
+                                   <h3 className="font-black uppercase tracking-widest text-sm">Security Advisory</h3>
+                                </div>
+                                <p className="text-sm font-medium text-amber-700/70 dark:text-amber-300/60 leading-relaxed">
+                                   Established contacts via Maxima can track your base folder address changes automatically. Use "Personal Status" only for entities you've verified through out-of-band communication.
+                                </p>
+                            </div>
+                        </div>
+                    )}
+
+                    {activeTab === 'tech' && (
+                        <div className="max-w-4xl mx-auto space-y-8 profile-animate">
+                            <section className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[3rem] border border-white/20 dark:border-white/5 overflow-hidden shadow-lg shadow-black/5">
+                                <div className="px-10 py-8 border-b border-white/10 dark:border-white/5 bg-black/5">
+                                   <h3 className="text-[10px] font-black uppercase tracking-[0.4em] text-gray-400 opacity-60 text-center">Protocol Identity Ledger</h3>
+                                </div>
+                                <div className="divide-y divide-gray-50 dark:divide-gray-800">
+                                   <TechRow label="P2P Public Key" value={contact.publickey} onCopy={() => copyToClipboard(contact.publickey, 'tk1')} copied={copiedField === 'tk1'} />
+                                   <TechRow label="Maxima Address" value={contact.currentaddress} onCopy={() => copyToClipboard(contact.currentaddress, 'tk2')} copied={copiedField === 'tk2'} />
+                                   {contact.extradata?.minimaaddress && <TechRow label="Smart Address" value={contact.extradata.minimaaddress} onCopy={() => copyToClipboard(contact.extradata!.minimaaddress!, 'tk3')} copied={copiedField === 'tk3'} />}
+                                   <TechRow label="Identity Beat" value={contact.lastseen ? new Date(contact.lastseen).toLocaleString() : 'Protocol Heartbeat Missing'} />
+                                   <TechRow label="Chain State" value={contact.samechain ? 'Coherent Sync' : 'Divergent Sequence'} />
+                                </div>
+                            </section>
+
+                            <div className="text-center opacity-40">
+                               <p className="text-[9px] font-black uppercase tracking-[0.5em] text-gray-500">Immutable Cryptographic Identity</p>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
 
-            {/* Tab Navigation */}
-            <ContactTabs activeTab={activeTab} onTabChange={setActiveTab} />
-
-            <div className="max-w-4xl mx-auto px-4 pb-20">
-                {/* 
-                 * TAB 1: PROFILE (Overview)
-                 * Contains Connection Status + User Profile Info
-                 */}
-                {activeTab === 'profile' && (
-                    <div className="space-y-6">
-                        {/* Profile Loading Error */}
-                        {profileError && (
-                            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-red-100 dark:border-red-900/30 p-6 text-center">
-                                <p className="text-red-600 dark:text-red-400 mb-3">{profileError}</p>
-                                <button
-                                    onClick={handleRequestProfile}
-                                    className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
-                                >
-                                    Retry
-                                </button>
-                            </div>
-                        )}
-
-
-                        {/* Basic Profile Info */}
-                        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-6 flex flex-col items-center text-center transition-colors">
-                            <div className="relative mb-4">
-                                <img
-                                    src={avatarUrl}
-                                    alt={contactName}
-                                    className="w-24 h-24 rounded-full object-cover border-4 border-white dark:border-gray-700 shadow-md bg-gray-50 dark:bg-gray-900"
-                                    onError={(e) => {
-                                        (e.target as HTMLImageElement).src = defaultAvatar;
-                                    }}
-                                />
-                                {isMaximaContact && (
-                                    <div className="absolute bottom-0 right-0 bg-green-500 border-2 border-white rounded-full p-1 shadow-sm" title="Maxima Contact">
-                                        <Check size={12} className="text-white" strokeWidth={3} />
-                                    </div>
-                                )}
-                            </div>
-                            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-1 px-4 break-words w-full text-center">{contactName}</h2>
-
-                            {displayLastSeen && (
-                                <div className="text-xs text-gray-400 dark:text-gray-500 mb-4 flex items-center gap-1 bg-gray-50 dark:bg-gray-900 px-2 py-1 rounded">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-gray-400"></span>
-                                    Last seen: {new Date(displayLastSeen).toLocaleString()}
-                                </div>
-                            )}
-
-                            <p className="text-sm text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-900 px-3 py-1 rounded-full font-mono mb-6 truncate max-w-xs cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-                                onClick={() => copyToClipboard(contact?.publickey || "", "pk-main")}
-                                title="Click to copy public key"
-                            >
-                                {contact?.publickey ? `${contact.publickey.substring(0, 10)}...${contact.publickey.substring(contact.publickey.length - 8)}` : "Loading..."}
-                            </p>
-
-                            {/* Extended Profile Details */}
-                            {isCheckingProfile && (
-                                <div className="w-full border-t border-gray-100 dark:border-gray-700 pt-6 mt-2 flex justify-center">
-                                    <div className="animate-spin h-6 w-6 border-4 border-primary-500 border-t-transparent rounded-full" />
-                                </div>
-                            )}
-                            {!isCheckingProfile && profileLoaded && (
-                                <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-4 text-left border-t border-gray-100 dark:border-gray-700 pt-6 mt-2">
-
-                                    {/* Level 2 Privacy Warning */}
-                                    {extendedProfile?.privacy_l2 === 'hidden' && (
-                                        <div className="md:col-span-2 bg-purple-50 dark:bg-purple-900/20 p-2 rounded-lg text-center text-xs text-purple-700 dark:text-purple-400 font-medium">
-                                            Level 2 details hidden by user
-                                        </div>
-                                    )}
-
-                                    {/* Bio */}
-                                    {(contact?.extradata?.description || p2pBio) && (
-                                        <div className="bg-gray-50 dark:bg-gray-900/50 p-3 rounded-lg flex items-start gap-3 md:col-span-2">
-                                            <div className="bg-white dark:bg-gray-800 p-2 rounded-md shadow-sm text-purple-500 dark:text-purple-400 mt-0.5">
-                                                <UserCheck size={18} />
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                                <span className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-0.5">Bio</span>
-                                                <p className="text-sm text-gray-700 dark:text-gray-300 italic break-words whitespace-pre-wrap">
-                                                    "{contact?.extradata?.description || p2pBio}"
-                                                </p>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {/* Location */}
-                                    {(extendedProfile?.country || extendedProfile?.location) && (
-                                        <div className="bg-gray-50 dark:bg-gray-900/50 p-3 rounded-lg flex items-start gap-3">
-                                            <div className="bg-white dark:bg-gray-800 p-2 rounded-md shadow-sm text-primary-500 dark:text-primary-400 mt-0.5">
-                                                <MapPin size={18} />
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                                <span className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-0.5">Location</span>
-                                                <span className="font-medium text-gray-900 dark:text-gray-100 break-words block">
-                                                    {[extendedProfile?.location, extendedProfile?.country].filter(Boolean).join(", ")}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {/* Languages */}
-                                    {extendedProfile?.languages && extendedProfile.languages.length > 0 && (
-                                        <div className="bg-gray-50 dark:bg-gray-900/50 p-3 rounded-lg flex items-start gap-3">
-                                            <div className="bg-white dark:bg-gray-800 p-2 rounded-md shadow-sm text-green-500 dark:text-green-400 mt-0.5">
-                                                <Globe size={18} />
-                                            </div>
-                                            <div>
-                                                <span className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-0.5">Languages</span>
-                                                <div className="flex flex-wrap gap-1">
-                                                    {extendedProfile.languages.map((lang: string, idx: number) => (
-                                                        <span key={idx} className="text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-1.5 py-0.5 rounded text-gray-700 dark:text-gray-300 font-medium">
-                                                            {lang}
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {/* Website */}
-                                    {extendedProfile?.website && safeUrl(extendedProfile.website) && (
-                                        <div className="bg-gray-50 dark:bg-gray-900/50 p-3 rounded-lg flex items-start gap-3">
-                                            <div className="bg-white dark:bg-gray-800 p-2 rounded-md shadow-sm text-primary-500 dark:text-primary-400 mt-0.5">
-                                                <Globe size={18} />
-                                            </div>
-                                            <div className="flex-1 min-w-0 overflow-hidden">
-                                                <span className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-0.5">Website</span>
-                                                <a href={safeUrl(extendedProfile.website)} target="_blank" rel="noopener noreferrer" className="font-medium text-primary-600 dark:text-primary-400 hover:underline truncate block">
-                                                    {extendedProfile.website}
-                                                </a>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {/* Social Links */}
-                                    {extendedProfile?.social && Object.keys(extendedProfile.social).length > 0 && (
-                                        <div className="bg-gray-50 dark:bg-gray-900/50 p-3 rounded-lg flex items-start gap-3">
-                                            <div className="bg-white dark:bg-gray-800 p-2 rounded-md shadow-sm text-indigo-500 dark:text-indigo-400 mt-0.5">
-                                                <UserCheck size={18} />
-                                            </div>
-                                            <div className="flex-1 min-w-0 overflow-hidden">
-                                                <span className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-0.5">Social</span>
-                                                <div className="flex flex-col gap-1">
-                                                    {extendedProfile.social.twitter && (
-                                                        <a href={`https://twitter.com/${extendedProfile.social.twitter}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:text-primary-500 dark:hover:text-primary-400 truncate max-w-full">
-                                                            <Twitter size={14} className="flex-shrink-0" /> <span className="truncate">@{extendedProfile.social.twitter}</span>
-                                                        </a>
-                                                    )}
-                                                    {extendedProfile.social.linkedin && (
-                                                        <a href={`https://linkedin.com/in/${extendedProfile.social.linkedin}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:text-primary-700 dark:hover:text-primary-400 truncate max-w-full">
-                                                            <Linkedin size={14} className="flex-shrink-0" /> <span className="truncate">/in/{extendedProfile.social.linkedin}</span>
-                                                        </a>
-                                                    )}
-                                                    {extendedProfile.social.github && (
-                                                        <a href={`https://github.com/${extendedProfile.social.github}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white truncate max-w-full">
-                                                            <Github size={14} className="flex-shrink-0" /> <span className="truncate">{extendedProfile.social.github}</span>
-                                                        </a>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
-
-
-                                    {/* Level 3 Privacy Warning - Show when L3 is marked as hidden in response */}
-                                    {extendedProfile?.privacy_l3 === 'hidden' && (
-                                        <div className="md:col-span-2 bg-amber-50 dark:bg-amber-900/20 p-2 rounded-lg text-center text-xs text-amber-700 dark:text-amber-400 font-medium">
-                                            Level 3 details hidden by user
-                                        </div>
-                                    )}
-
-                                    {/* Contact Details (Level 3) - Show when we receive the data (backend already handles privacy filtering) */}
-                                    {(extendedProfile?.email || extendedProfile?.phone) && (
-                                        <>
-                                            {extendedProfile?.email && (
-                                                <div className="bg-gray-50 dark:bg-gray-900/50 p-3 rounded-lg flex items-start gap-3">
-                                                    <div className="bg-white dark:bg-gray-800 p-2 rounded-md shadow-sm text-red-500 dark:text-red-400 mt-0.5">
-                                                        <Mail size={18} />
-                                                    </div>
-                                                    <div className="flex-1 min-w-0">
-                                                        <span className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-0.5">Email</span>
-                                                        <a href={`mailto:${extendedProfile.email}`} className="font-medium text-primary-600 dark:text-primary-400 hover:underline break-all block">
-                                                            {extendedProfile.email}
-                                                        </a>
-                                                    </div>
-                                                </div>
-                                            )}
-                                            {extendedProfile?.phone && (
-                                                <div className="bg-gray-50 dark:bg-gray-900/50 p-3 rounded-lg flex items-start gap-3">
-                                                    <div className="bg-white dark:bg-gray-800 p-2 rounded-md shadow-sm text-gray-500 dark:text-gray-400 mt-0.5">
-                                                        <Phone size={18} />
-                                                    </div>
-                                                    <div className="flex-1 min-w-0">
-                                                        <span className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-0.5">Phone</span>
-                                                        <a href={`tel:${extendedProfile.phone}`} className="font-medium text-primary-600 dark:text-primary-400 hover:underline break-all block">
-                                                            {extendedProfile.phone}
-                                                        </a>
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </>
-                                    )}
-                                </div>
-                            )}
+            {/* ELITE DELETE MODAL */}
+            {showConfirmDelete && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-gray-950/80 backdrop-blur-2xl animate-in fade-in duration-300">
+                    <div className="bg-white dark:bg-gray-900 rounded-[3rem] p-10 max-w-sm w-full shadow-[0_50px_100px_rgba(0,0,0,0.5)] border border-gray-100 dark:border-white/5 text-center space-y-8 animate-in zoom-in-95 curve-spring">
+                        <div className="w-20 h-20 bg-rose-500 rounded-[2rem] text-white flex items-center justify-center mx-auto shadow-2xl shadow-rose-500/30 rotate-6 group-hover:rotate-0 transition-transform">
+                            <Trash2 size={40} strokeWidth={2.5} />
                         </div>
-
-                    </div>
-                )}
-
-                {/* 
-                 * TAB 2: SETTINGS (Privacy)
-                 * Contains Privacy Controls + Remove Button
-                 */}
-                {activeTab === 'settings' && (
-                    <div className="space-y-6">
-                        {/* Connection Status */}
-                        {contact?.publickey && (
-                            <ContactActions
-                                isMaximaContact={isMaximaContact}
-                                userAllowsNonContactChats={userAllowsNonContactChats}
-                                maximaIncomingRequest={maximaIncomingRequest}
-                                requestStatus={requestStatus}
-                                hasChatHistory={hasChatHistory}
-                                maximaRequestPending={maximaRequestPending}
-                                sendingMaximaRequest={sendingMaximaRequest}
-                                addingContact={addingContact}
-                                isBlocked={isBlocked}
-                                isCheckingProfile={isCheckingProfile}
-                                onToggleBlock={handleToggleBlock}
-                                onNavigateChat={() => {
-                                    if (!contact?.publickey) return;
-                                    navigate({ to: "/chat/$address", params: { address: contact.publickey } });
-                                }}
-                                onCancelRequest={handleCancelRequest}
-                                onSendContactRequest={handleSendContactRequest}
-                                onCancelMaximaRequest={handleCancelMaximaRequest}
-                                onSendMaximaRequest={handleSendMaximaRequest}
-                                onRemoveContact={handleRemoveContact}
-                                removingContact={removingContact}
-                            />
-                        )}
-
-                        {isMaximaContact ? (
-                            <ContactPrivacy
-                                isPersonalContact={isPersonalContact}
-                                togglingPersonal={togglingPersonal}
-                                onTogglePersonal={async () => {
-                                    if (!contact?.publickey) return;
-                                    setTogglingPersonal(true);
-                                    try {
-                                        const success = await personalContactsService.togglePersonalContact(contact.publickey);
-                                        if (success) {
-                                            setIsPersonalContact(!isPersonalContact);
-                                        }
-                                    } catch (err) {
-                                        console.error('[ContactInfo] Error toggling personal contact:', err);
-                                    } finally {
-                                        setTogglingPersonal(false);
-                                    }
-                                }}
-                            />
-                        ) : (
-                            <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-8 text-center border border-dashed border-gray-300 dark:border-gray-700">
-                                <p className="text-gray-500 dark:text-gray-400">
-                                    Only available for Maxima contacts.
-                                </p>
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                {/* 
-                 * TAB 3: TECH DATA
-                 * Contains Raw JSON Data
-                 */}
-                {
-                    activeTab === 'tech' && (
-                        <div className="space-y-6">
-                            {/* Public Key & Address */}
-                            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden transition-colors">
-                                {/* Public Key */}
-                                {displayPubkey && (
-                                    <div className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors group border-b border-gray-100 dark:border-gray-700">
-                                        <div className="flex items-center justify-between mb-1">
-                                            <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Public Key</span>
-                                            <button
-                                                onClick={() => copyToClipboard(displayPubkey, 'pubkey')}
-                                                className="text-primary-600 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-primary-50 rounded"
-                                                title="Copy"
-                                            >
-                                                {copiedField === 'pubkey' ? <Check size={16} /> : <Copy size={16} />}
-                                            </button>
-                                        </div>
-                                        <p className="text-sm font-mono text-gray-800 dark:text-gray-200 break-all">{displayPubkey}</p>
-                                    </div>
-                                )}
-
-                                {/* Minima Address */}
-                                {contact?.extradata?.minimaaddress && (
-                                    <div className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors group border-b border-gray-100 dark:border-gray-700">
-                                        <div className="flex items-center justify-between mb-1">
-                                            <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Minima Address</span>
-                                            <button
-                                                onClick={() => copyToClipboard(contact.extradata?.minimaaddress || "", 'minima')}
-                                                className="text-primary-600 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-primary-50 rounded"
-                                                title="Copy"
-                                            >
-                                                {copiedField === 'minima' ? <Check size={16} /> : <Copy size={16} />}
-                                            </button>
-                                        </div>
-                                        <p className="text-sm font-mono text-gray-800 dark:text-gray-200 break-all">{contact.extradata.minimaaddress}</p>
-                                    </div>
-                                )}
-
-                                {/* Maxima Address */}
-                                {contact?.currentaddress && (
-                                    <div className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors group border-b border-gray-100 dark:border-gray-700">
-                                        <div className="flex items-center justify-between mb-1">
-                                            <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Maxima Address</span>
-                                            <button
-                                                onClick={() => copyToClipboard(contact.currentaddress, 'maxima')}
-                                                className="text-primary-600 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-primary-50 rounded"
-                                                title="Copy"
-                                            >
-                                                {copiedField === 'maxima' ? <Check size={16} /> : <Copy size={16} />}
-                                            </button>
-                                        </div>
-                                        <p className="text-sm font-mono text-gray-800 dark:text-gray-200 break-all">{contact.currentaddress}</p>
-                                    </div>
-                                )}
-
-                                {/* My Address */}
-                                {contact?.myaddress && (
-                                    <div className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors group border-b border-gray-100 dark:border-gray-700">
-                                        <div className="flex items-center justify-between mb-1">
-                                            <span className="text-sm font-medium text-gray-500 dark:text-gray-400">My Address (for this contact)</span>
-                                            <button
-                                                onClick={() => copyToClipboard(contact.myaddress || "", 'myaddr')}
-                                                className="text-primary-600 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-primary-50 rounded"
-                                                title="Copy"
-                                            >
-                                                {copiedField === 'myaddr' ? <Check size={16} /> : <Copy size={16} />}
-                                            </button>
-                                        </div>
-                                        <p className="text-sm font-mono text-gray-800 dark:text-gray-200 break-all">{contact.myaddress}</p>
-                                    </div>
-                                )}
-
-                                {/* Last Seen */}
-                                {contact?.lastseen && (
-                                    <div className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors group border-b border-gray-100 dark:border-gray-700">
-                                        <div className="flex items-center justify-between mb-1">
-                                            <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Last Seen</span>
-                                        </div>
-                                        <p className="text-sm text-gray-800 dark:text-gray-200">{new Date(contact.lastseen).toLocaleString()}</p>
-                                        <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{contact.lastseen} ms</p>
-                                    </div>
-                                )}
-
-                                {/* Same Chain */}
-                                {contact?.samechain !== undefined && (
-                                    <div className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors group border-b border-gray-100 dark:border-gray-700">
-                                        <div className="flex items-center justify-between mb-1">
-                                            <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Same Chain</span>
-                                        </div>
-                                        <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full ${contact.samechain ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'}`}>
-                                            <span className={`w-1.5 h-1.5 rounded-full ${contact.samechain ? 'bg-green-500' : 'bg-orange-500'}`} />
-                                            {contact.samechain ? 'Yes' : 'No'}
-                                        </span>
-                                    </div>
-                                )}
-
-                                {/* Chat Permissions */}
-                                {profileLoaded && (
-                                    <div className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors group">
-                                        <div className="flex items-center justify-between mb-1">
-                                            <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Direct Chats</span>
-                                        </div>
-                                        <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full ${userAllowsNonContactChats ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'}`}>
-                                            <span className={`w-1.5 h-1.5 rounded-full ${userAllowsNonContactChats ? 'bg-green-500' : 'bg-gray-400'}`} />
-                                            {userAllowsNonContactChats ? 'Open to everyone' : 'Contacts only'}
-                                        </span>
-                                    </div>
-                                )}
-                            </div>
-
-
+                        <div className="space-y-3">
+                             <h3 className="text-2xl font-black text-gray-900 dark:text-white tracking-tighter uppercase leading-none">Sever Connection?</h3>
+                             <p className="text-xs font-medium text-gray-500 leading-relaxed px-4 opacity-70">
+                                Removing this identity from your contacts will halt automatic synchronization. Conversation history is preserved locally.
+                             </p>
                         </div>
-                    )
-                }
-            </div >
-
-            {/* Custom Confirmation Modal */}
-            {
-                showConfirmDelete && contact && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-                        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6 animate-in fade-in zoom-in duration-200 border border-gray-200 dark:border-gray-700">
-                            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Remove Contact?</h3>
-                            <p className="text-gray-600 dark:text-gray-300 mb-6">
-                                Are you sure you want to remove <span className="font-semibold text-gray-900 dark:text-white">{contact.extradata?.name || 'this contact'}</span>?
-                                <br /><br />
-                                The chat history will be preserved, but they will be removed from your contact list.
-                            </p>
-                            <div className="flex gap-3 justify-end">
-                                <button
-                                    onClick={() => setShowConfirmDelete(false)}
-                                    className="px-4 py-2 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg font-medium transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={executeRemoveContact}
-                                    className="px-4 py-2 bg-red-600 text-white hover:bg-red-700 rounded-lg font-medium transition-colors flex items-center gap-2"
-                                >
-                                    {removingContact ? (
-                                        <>
-                                            <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                            Removing...
-                                        </>
-                                    ) : (
-                                        "Yes, Remove"
-                                    )}
-                                </button>
-                            </div>
+                        <div className="flex flex-col gap-3">
+                            <button onClick={async () => { setRemovingContact(true); await minimaService.runSQL(`DELETE FROM MAXIMA_CONTACT_REQUESTS WHERE (UPPER(from_publickey)=UPPER('${contact.publickey}') OR UPPER(to_publickey)=UPPER('${contact.publickey}'))`); setShowConfirmDelete(false); setRemovingContact(false); setIsMaximaContact(false); }} className="w-full py-5 bg-rose-500 text-white rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-xl shadow-rose-500/30 active:scale-95 transition-all">Confirm Removal</button>
+                            <button onClick={() => setShowConfirmDelete(false)} className="w-full py-5 bg-gray-100 dark:bg-white/10 text-gray-900 dark:text-white rounded-[1.5rem] font-black text-xs uppercase tracking-widest active:scale-95 transition-all">Keep Identity</button>
                         </div>
                     </div>
-                )
-            }
+                </div>
+            )}
 
-        </div >
+        </div>
     );
 }
+
+function ProfileAttribute({ icon: Icon, label, value, color }: any) {
+  const colors: any = {
+    primary: "text-primary-500 bg-primary-500/10",
+    emerald: "text-emerald-500 bg-emerald-500/10",
+    rose: "text-rose-500 bg-rose-500/10",
+  };
+  return (
+    <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md p-6 rounded-[2.5rem] border border-white/20 dark:border-white/5 flex flex-col gap-3 group hover:border-primary-500/20 transition-all shadow-lg shadow-black/5">
+      <div
+        className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110 ${colors[color]}`}
+      >
+        <Icon size={20} />
+      </div>
+      <div>
+        <span className="block text-[10px] font-black uppercase tracking-widest text-gray-400 mb-0.5">
+          {label}
+        </span>
+        <span className="text-sm font-black text-gray-900 dark:text-gray-100 truncate block uppercase tracking-tight">
+          {value}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function SocialPill({ icon: Icon, label, value, url }: any) {
+    return (
+        <a href={url} target="_blank" className="flex items-center gap-3 px-5 py-2.5 bg-gray-100 dark:bg-white/5 rounded-full border border-transparent hover:border-primary-500/20 hover:bg-white dark:hover:bg-gray-900 transition-all group">
+            <Icon size={14} className="text-gray-500 group-hover:text-primary-500 transition-colors" />
+            <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 group-hover:text-gray-900 dark:group-hover:text-gray-100 transition-colors">{label}</span>
+            <span className="text-[10px] font-mono text-gray-400/60">{value}</span>
+        </a>
+    );
+}
+
+function TechRow({ label, value, onCopy, copied }: any) {
+    return (
+        <div className="px-8 py-5 flex items-center justify-between group hover:bg-gray-50 dark:hover:bg-white/5 transition-all">
+            <div className="min-w-0 pr-4">
+                <span className="block text-[9px] font-black uppercase tracking-widest text-gray-400 mb-1">{label}</span>
+                <p className="text-[10px] font-mono text-gray-900 dark:text-gray-100 truncate break-all opacity-80">{value}</p>
+            </div>
+            {onCopy && (
+                <button onClick={onCopy} className="p-2.5 rounded-xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 text-gray-400 hover:text-primary-500 hover:border-primary-500/30 transition-all opacity-0 group-hover:opacity-100">
+                    {copied ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+                </button>
+            )}
+        </div>
+    );
+}
+
+export default ContactInfoPage;

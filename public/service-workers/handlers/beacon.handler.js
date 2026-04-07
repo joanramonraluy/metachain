@@ -58,7 +58,7 @@ function buildJoinLink(listingType, joinPayload) {
 function buildPublicListings(myPubkey, myAddress, callback) {
   var listings = [];
   var groupSql =
-    "SELECT group_id, name, description, created_date FROM GROUPS WHERE COALESCE(is_public, FALSE) = TRUE AND (archived IS NULL OR archived = FALSE)";
+    "SELECT group_id, name, description, created_date FROM GROUPS WHERE (is_public=TRUE OR is_public='1' OR is_public='true') AND (archived IS NULL OR archived=FALSE OR archived='0' OR archived='false')";
   MDS.sql(groupSql, function (groupRes) {
     if (groupRes.status && groupRes.rows) {
       for (var i = 0; i < groupRes.rows.length; i++) {
@@ -87,7 +87,7 @@ function buildPublicListings(myPubkey, myAddress, callback) {
     }
 
     var channelSql =
-      "SELECT channel_id, name, description, created_date FROM CHANNELS WHERE COALESCE(is_public, FALSE) = TRUE AND (archived IS NULL OR archived = FALSE)";
+      "SELECT channel_id, name, description, created_date FROM CHANNELS WHERE (is_public=TRUE OR is_public='1' OR is_public='true') AND (archived IS NULL OR archived=FALSE OR archived='0' OR archived='false')";
     MDS.sql(channelSql, function (channelRes) {
       if (channelRes.status && channelRes.rows) {
         for (var j = 0; j < channelRes.rows.length; j++) {
@@ -260,7 +260,7 @@ function handleBeacon(beacon, source) {
       1,
     );
 
-    MDS.log("📡 [BEACON] " + beacon.alias + " from " + source);
+    if (source !== "GOSSIP") MDS.log("📡 [BEACON] " + beacon.alias + " from " + source);
 
     saveBeaconListings(beacon, now);
 
@@ -363,7 +363,6 @@ function saveBeaconWithBio(
             "')",
           function (updateRes) {
             if (updateRes.status) {
-              MDS.log("✅ [BEACON] Touched last_seen for: " + beacon.alias);
             }
           },
         );
@@ -389,7 +388,6 @@ function saveBeaconWithBio(
             "')",
           function (updateRes) {
             if (updateRes.status) {
-              MDS.log("✅ [BEACON] Touched last_seen for: " + beacon.alias);
             }
           },
         );
@@ -412,16 +410,16 @@ function saveBeaconWithBio(
       var lastSeenToSave = now; // Default for direct
       if (source === "GOSSIP") {
         lastSeenToSave = incomingTimestamp > 0 ? incomingTimestamp : now;
-        MDS.log(
-          "🗣️ [GOSSIP-TIME] Using original timestamp " +
-            lastSeenToSave +
-            " for " +
-            beacon.alias,
-        );
       }
 
+      // Only include minimaaddress in MERGE if non-empty, to avoid overwriting a valid
+      // address already saved from a profile_response with an empty gossip value.
+      var hasMinimaAddr = !!(beacon.minimaaddress);
+      var minimaAddrCol = hasMinimaAddr ? ", minimaaddress" : "";
+      var minimaAddrVal = hasMinimaAddr ? ", '" + escapeSql(beacon.minimaaddress) + "'" : "";
+
       var discoverySql =
-        "MERGE INTO DISCOVERED_PEERS (publickey, alias, bio, address, last_seen, source, allow_non_contact_chats, extra_data) " +
+        "MERGE INTO DISCOVERED_PEERS (publickey, alias, bio, address, last_seen, source, allow_non_contact_chats, extra_data" + minimaAddrCol + ") " +
         "KEY (publickey) " +
         "VALUES (UPPER('" +
         beacon.pubkey +
@@ -439,7 +437,7 @@ function saveBeaconWithBio(
         allowNonContactChats +
         ", '" +
         extraData +
-        "')";
+        "'" + minimaAddrVal + ")";
 
       // If it's a direct message, we clean up first to ensure we have exactly one fresh entry with the validated IP
       if (isDirect) {
@@ -467,7 +465,6 @@ function saveBeaconWithBio(
         // For GOSSIP, just merge (Task 3 applies via lastSeenToSave)
         MDS.sql(discoverySql, function (res) {
           if (res.status) {
-            MDS.log("✅ [BEACON] Saved: " + beacon.alias);
             promoteToUserRegistry(beacon, now);
           } else {
             MDS.log("❌ [BEACON] Save failed: " + JSON.stringify(res));

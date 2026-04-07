@@ -7,12 +7,11 @@ import { chatService } from "../services/chat.service";
 import {
   ArrowLeft,
   UserPlus,
-  UserX,
+  User,
   Search,
   ShieldCheck,
   ShieldAlert,
   MessageSquare,
-  Info,
   Users,
   X,
   Edit2,
@@ -22,6 +21,8 @@ import {
   Database,
   History,
   Trash2,
+  ChevronRight,
+  SlidersHorizontal,
 } from "lucide-react";
 import { MDS } from "@minima-global/mds";
 import { ChannelTabs, ChannelTab } from "../components/channel/ChannelTabs";
@@ -64,11 +65,8 @@ function ChannelInfoPage() {
 
   const [isEditingName, setIsEditingName] = useState(false);
   const [newName, setNewName] = useState("");
-  const [savingName, setSavingName] = useState(false);
-
   const [isEditingDesc, setIsEditingDesc] = useState(false);
   const [newDesc, setNewDesc] = useState("");
-  const [savingDesc, setSavingDesc] = useState(false);
   const [avatar, setAvatar] = useState<string | null>(null);
   const [savingAvatar, setSavingAvatar] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -365,7 +363,6 @@ function ChannelInfoPage() {
       return;
     }
 
-    setSavingName(true);
     try {
       await channelService.updateChannelDetails(
         channelId,
@@ -379,8 +376,6 @@ function ChannelInfoPage() {
     } catch (err) {
       console.error("Failed to rename channel:", err);
       setNewName(channelName);
-    } finally {
-      setSavingName(false);
     }
   };
 
@@ -390,7 +385,6 @@ function ChannelInfoPage() {
       return;
     }
 
-    setSavingDesc(true);
     try {
       await channelService.updateChannelDetails(
         channelId,
@@ -404,8 +398,6 @@ function ChannelInfoPage() {
     } catch (err) {
       console.error("Failed to update description:", err);
       setNewDesc(description);
-    } finally {
-      setSavingDesc(false);
     }
   };
 
@@ -478,225 +470,172 @@ function ChannelInfoPage() {
   }
 
   return (
-    <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-900">
-      {/* HEADER */}
-      <div className="sticky top-0 z-10 bg-white/80 dark:bg-gray-800/80 backdrop-blur-md border-b border-gray-200 dark:border-gray-700 px-4 py-3 flex items-center gap-3">
-        <button
-          onClick={() => {
-            if (search.returnTo) {
-              navigate({ to: search.returnTo });
-            } else {
-              navigate({ to: `/channels/${channelId}` });
-            }
-          }}
-          className="p-2 -ml-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors text-gray-700 dark:text-gray-200"
-        >
-          <ArrowLeft size={20} />
-        </button>
-        <div className="flex flex-col min-w-0">
-          <h1 className="text-lg font-semibold text-gray-800 dark:text-white truncate leading-tight">
-            {channelName}
-          </h1>
-          <span className="text-xs text-gray-500 dark:text-gray-400 truncate">
-            Channel Info
-          </span>
+    <div className="h-full flex flex-col bg-gray-50 dark:bg-black/95 transition-colors">
+      {/* ELITE STICKY HEADER */}
+      <div className="sticky top-0 z-50 bg-white/70 dark:bg-black/40 backdrop-blur-3xl border-b border-black/5 dark:border-white/5">
+        <div className="max-w-4xl mx-auto px-6 h-20 flex items-center justify-between">
+          <div className="flex items-center gap-6">
+            <button
+              onClick={() => {
+                if (search.returnTo) {
+                  navigate({ to: search.returnTo });
+                } else {
+                  navigate({ to: `/channels/${channelId}` });
+                }
+              }}
+              className="w-12 h-12 bg-black/5 dark:bg-white/5 rounded-2xl flex items-center justify-center text-gray-500 hover:text-gray-900 dark:hover:text-white transition-all hover:scale-105 active:scale-95"
+            >
+              <ArrowLeft size={20} strokeWidth={3} />
+            </button>
+            <div className="flex flex-col">
+              <span className="text-[10px] font-black text-primary-500 uppercase tracking-[0.4em] mb-0.5">Community Registry</span>
+              <h1 className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-tight">Channel Manifest</h1>
+            </div>
+          </div>
+          <div className="p-1 min-w-[3rem] h-12 bg-primary-500/10 rounded-2xl flex items-center justify-center text-primary-500 font-black text-xs">
+            LIVE
+          </div>
         </div>
       </div>
 
-      {/* Tab Navigation */}
-      <ChannelTabs activeTab={activeTab} onTabChange={setActiveTab} />
-
-      <div className="flex-1 overflow-y-auto p-4 pb-10">
-        <div className="max-w-2xl mx-auto space-y-6">
-          {activeTab === "profile" && (
-            <div className="space-y-6">
-              {/* CHANNEL IDENTITY CARD */}
-              <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col items-center relative">
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  className="hidden"
-                  accept="image/*"
-                  onChange={handleAvatarFileSelect}
-                />
-                <div className="relative group/avatar mb-4">
-                  <div
-                    className={`w-24 h-24 rounded-full flex items-center justify-center text-white text-4xl font-bold shadow-lg overflow-hidden ${!avatar ? "bg-primary-500 shadow-primary-500/30" : "bg-gray-200 dark:bg-gray-700"}`}
-                  >
-                    {avatar ? (
-                      <img
-                        src={avatar}
-                        alt={channelName}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      channelName.charAt(0).toUpperCase()
-                    )}
+      <div className="flex-1 overflow-y-auto custom-scrollbar">
+        {/* COMMON HERO SECTION */}
+        <div className="max-w-4xl mx-auto pt-10 pb-12 px-6">
+          <div className="flex flex-col items-center text-center space-y-8">
+            {/* Elite Avatar Hub */}
+            <div className="relative group/avatar">
+              <div className="absolute -inset-4 bg-gradient-to-tr from-primary-500 to-sky-500 rounded-full blur-2xl opacity-0 group-hover/avatar:opacity-20 transition-opacity duration-1000" />
+              <div className="relative w-40 h-40 rounded-[3rem] bg-white dark:bg-gray-900 border-4 border-white dark:border-gray-800 shadow-2xl overflow-hidden group-hover/avatar:scale-105 transition-transform duration-500">
+                {avatar ? (
+                  <img src={avatar} alt={channelName} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center bg-gray-100 dark:bg-white/5 text-5xl font-black text-gray-300 dark:text-gray-700 uppercase tracking-tighter">
+                    {channelName.charAt(0)}
                   </div>
+                )}
 
-                  {isAdmin && (
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={savingAvatar}
-                      className="absolute inset-0 flex items-center justify-center bg-black/40 text-white rounded-full opacity-0 group-hover/avatar:opacity-100 transition-opacity"
-                    >
-                      {savingAvatar ? (
-                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
-                      ) : (
-                        <Camera size={24} />
-                      )}
-                    </button>
-                  )}
+                {isAdmin && (
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="absolute inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center text-white opacity-0 group-hover/avatar:opacity-100 transition-all duration-300"
+                  >
+                    <Camera size={32} strokeWidth={2.5} className="scale-75 group-hover/avatar:scale-100 transition-transform" />
+                  </button>
+                )}
+                <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleAvatarFileSelect} />
+              </div>
+              
+              {savingAvatar && (
+                <div className="absolute -bottom-2 -right-2 w-10 h-10 bg-white dark:bg-gray-800 rounded-2xl shadow-xl flex items-center justify-center border border-black/5 dark:border-white/10 animate-in zoom-in">
+                  <div className="w-5 h-5 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
                 </div>
+              )}
+            </div>
+
+            {/* Name & Manifest Description */}
+            <div className="space-y-4 max-w-2xl">
+              <div className="relative group/name inline-block">
                 {isEditingName ? (
-                  <div className="flex items-center gap-2 mb-2 w-full max-w-xs">
+                  <div className="flex items-center gap-4 bg-white/50 dark:bg-white/5 backdrop-blur-xl p-2 rounded-[2rem] border border-primary-500/30 animate-in zoom-in-95">
                     <input
                       type="text"
                       value={newName}
                       onChange={(e) => setNewName(e.target.value)}
+                      className="bg-transparent border-none text-2xl font-black text-gray-900 dark:text-white text-center focus:ring-0 uppercase tracking-tight px-6"
                       autoFocus
                       onBlur={handleSaveName}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") handleSaveName();
-                        if (e.key === "Escape") {
-                          setNewName(channelName);
-                          setIsEditingName(false);
-                        }
-                      }}
-                      className="flex-1 bg-gray-50 dark:bg-gray-900 border border-primary-500 rounded-lg px-3 py-1.5 text-gray-900 dark:text-white text-center font-semibold focus:outline-none"
-                      disabled={savingName}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSaveName()}
                     />
-                    <button
-                      onClick={handleSaveName}
-                      disabled={savingName}
-                      className="p-1.5 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors disabled:opacity-50"
-                    >
-                      <Check size={18} />
-                    </button>
                   </div>
                 ) : (
-                  <div className="flex items-center justify-center gap-2 mb-1 w-full relative group/name">
-                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white text-center break-all px-8">
+                  <div className="flex items-center justify-center gap-4">
+                    <h2 className="text-3xl font-black text-gray-900 dark:text-white uppercase tracking-tighter leading-none">
                       {channelName}
-                    </h1>
+                    </h2>
                     {isAdmin && (
                       <button
-                        onClick={() => {
-                          setNewName(channelName);
-                          setIsEditingName(true);
-                        }}
-                        className="absolute right-0 p-1.5 text-gray-400 opacity-0 group-hover/name:opacity-100 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-900/30 rounded-full transition-all"
-                        title="Rename Channel"
+                        onClick={() => { setNewName(channelName); setIsEditingName(true); }}
+                        className="w-10 h-10 rounded-xl bg-black/5 dark:bg-white/5 flex items-center justify-center text-gray-400 hover:text-primary-500 opacity-0 group-hover/name:opacity-100 transition-all"
                       >
-                        <Edit2 size={16} />
-                      </button>
-                    )}
-                  </div>
-                )}
-
-                {isEditingDesc ? (
-                  <div className="w-full mt-3 mb-4 flex flex-col items-end gap-2">
-                    <div className="relative w-full">
-                      <textarea
-                        value={newDesc}
-                        onChange={(e) => {
-                          if (e.target.value.length <= 255) {
-                            setNewDesc(e.target.value);
-                          }
-                        }}
-                        autoFocus
-                        onBlur={handleSaveDesc}
-                        onKeyDown={(e) => {
-                          if (e.key === "Escape") {
-                            setNewDesc(description);
-                            setIsEditingDesc(false);
-                          }
-                        }}
-                        className="w-full bg-gray-50 dark:bg-gray-900 border border-primary-500 rounded-lg px-3 py-2 text-sm text-gray-700 dark:text-gray-300 focus:outline-none resize-none pr-12"
-                        rows={3}
-                        placeholder="Add a channel description..."
-                        disabled={savingDesc}
-                      />
-                      <span
-                        className={`absolute bottom-2 right-2 text-[10px] font-medium ${newDesc.length >= 240 ? "text-red-500" : "text-gray-400"}`}
-                      >
-                        {newDesc.length}/255
-                      </span>
-                    </div>
-                  </div>
-                ) : (
-                  <div
-                    className={`mt-3 mb-4 w-full relative group/desc flex items-start ${description ? "justify-center text-center" : "justify-center"}`}
-                  >
-                    {description ? (
-                      <p className="text-gray-600 dark:text-gray-300 text-sm italic px-8 whitespace-pre-wrap text-center max-w-sm break-words">
-                        {description}
-                      </p>
-                    ) : isAdmin ? (
-                      <p
-                        className="text-gray-400 dark:text-gray-500 text-sm italic cursor-pointer hover:text-primary-500 transition-colors"
-                        onClick={() => {
-                          setNewDesc(description);
-                          setIsEditingDesc(true);
-                        }}
-                      >
-                        Add a description...
-                      </p>
-                    ) : null}
-
-                    {description && isAdmin && (
-                      <button
-                        onClick={() => {
-                          setNewDesc(description);
-                          setIsEditingDesc(true);
-                        }}
-                        className="absolute right-0 top-0 p-1.5 text-gray-400 opacity-0 group-hover/desc:opacity-100 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-900/30 rounded-full transition-all"
-                        title="Edit Description"
-                      >
-                        <Edit2 size={14} />
+                        <Edit2 size={16} strokeWidth={3} />
                       </button>
                     )}
                   </div>
                 )}
               </div>
 
+              <div className="relative group/desc">
+                {isEditingDesc ? (
+                  <div className="bg-white/50 dark:bg-white/5 backdrop-blur-xl p-6 rounded-[2rem] border border-primary-500/30 animate-in zoom-in-95">
+                    <textarea
+                      value={newDesc}
+                      onChange={(e) => setNewDesc(e.target.value)}
+                      className="w-full bg-transparent border-none text-sm font-black text-gray-900 dark:text-white text-center focus:ring-0 uppercase tracking-widest leading-relaxed resize-none"
+                      rows={3}
+                      autoFocus
+                      onBlur={handleSaveDesc}
+                    />
+                    <p className="text-[9px] font-black text-primary-500 text-right mt-2 uppercase tracking-widest">{newDesc.length}/255</p>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center">
+                    <p className="text-xs font-black text-gray-400 dark:text-gray-500 uppercase tracking-[0.2em] leading-relaxed max-w-lg">
+                      {description || "No registry description provided for this decentralized entity."}
+                    </p>
+                    {isAdmin && (
+                      <button
+                        onClick={() => { setNewDesc(description); setIsEditingDesc(true); }}
+                        className="mt-4 px-4 py-1.5 rounded-full bg-black/5 dark:bg-white/5 text-[9px] font-black text-gray-400 hover:text-primary-500 opacity-0 group-hover/desc:opacity-100 transition-all uppercase tracking-[0.2em]"
+                      >
+                        Edit Manifest
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ELITE NAVIGATOR */}
+        <ChannelTabs activeTab={activeTab} onTabChange={setActiveTab} />
+
+        <div className="max-w-4xl mx-auto p-6 pb-24">
+          {activeTab === "profile" && (
+            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-10 duration-700">
               {/* CHAT STATISTICS */}
-              <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 space-y-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <Info size={18} className="text-primary-500" />
-                  <h3 className="font-semibold text-gray-900 dark:text-white">
-                    Chat Statistics
-                  </h3>
+              <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[3rem] p-10 border border-white/20 dark:border-white/5 shadow-xl shadow-black/5">
+                <div className="flex items-center gap-4 mb-10">
+                  <div className="w-12 h-12 bg-primary-500/10 rounded-2xl flex items-center justify-center text-primary-500">
+                    <MessageSquare size={22} strokeWidth={3} />
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.4em] mb-0.5">Analytics Hub</span>
+                    <h3 className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-tight">Chat Statistics</h3>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl">
-                    <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center text-blue-600 dark:text-blue-400">
-                      <MessageSquare size={20} />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="group flex items-center gap-6 p-8 bg-gray-50/50 dark:bg-white/5 rounded-[2.5rem] border border-white/5 hover:border-primary-500/20 transition-all">
+                    <div className="w-14 h-14 bg-blue-500/10 rounded-2xl flex items-center justify-center text-blue-500 group-hover:scale-110 transition-transform">
+                      <MessageSquare size={24} strokeWidth={3} />
                     </div>
                     <div>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">
-                        Messages
-                      </p>
-                      <p className="text-sm font-bold text-gray-900 dark:text-white">
-                        {stats.total} total ({stats.mine} mine)
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Messages</p>
+                      <p className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-tight">
+                        {stats.total} TOTAL <span className="text-primary-500 ml-1">({stats.mine} MINE)</span>
                       </p>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl">
-                    <div className="w-10 h-10 bg-orange-100 dark:bg-orange-900/30 rounded-full flex items-center justify-center text-orange-600 dark:text-orange-400">
-                      <History size={20} />
+                  <div className="group flex items-center gap-6 p-8 bg-gray-50/50 dark:bg-white/5 rounded-[2.5rem] border border-white/5 hover:border-orange-500/20 transition-all">
+                    <div className="w-14 h-14 bg-orange-500/10 rounded-2xl flex items-center justify-center text-orange-500 group-hover:scale-110 transition-transform">
+                      <History size={24} strokeWidth={3} />
                     </div>
                     <div>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">
-                        History
-                      </p>
-                      <p className="text-sm font-bold text-gray-900 dark:text-white">
-                        Since{" "}
-                        {stats.firstDate
-                          ? new Date(stats.firstDate).toLocaleDateString()
-                          : "N/A"}
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">History Terminal</p>
+                      <p className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-tight">
+                        EST. {stats.firstDate ? new Date(stats.firstDate).toLocaleDateString(undefined, { month: 'short', year: 'numeric' }) : "N/A"}
                       </p>
                     </div>
                   </div>
@@ -704,51 +643,40 @@ function ChannelInfoPage() {
               </div>
 
               {/* TECHNICAL DATA */}
-              <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 space-y-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <Database size={18} className="text-primary-500" />
-                  <h3 className="font-semibold text-gray-900 dark:text-white">
-                    Technical Data
-                  </h3>
+              <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[3rem] p-10 border border-white/20 dark:border-white/5 shadow-xl shadow-black/5">
+                <div className="flex items-center gap-4 mb-10">
+                  <div className="w-12 h-12 bg-primary-500/10 rounded-2xl flex items-center justify-center text-primary-500">
+                    <Database size={20} strokeWidth={3} />
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.4em] mb-0.5">System Core</span>
+                    <h3 className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-tight">Technical Data</h3>
+                  </div>
                 </div>
 
-                <div className="space-y-3">
-                  <div className="group relative">
-                    <p className="text-xs text-gray-500 dark:text-gray-400 font-medium mb-1">
-                      Channel ID (Public Key)
-                    </p>
-                    <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-transparent hover:border-primary-200 dark:hover:border-primary-900/50 transition-all">
-                      <p className="text-xs font-mono text-gray-800 dark:text-gray-200 break-all pr-8">
-                        {channelId}
-                      </p>
+                <div className="space-y-6">
+                  <div className="space-y-4">
+                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-2 text-center italic">Channel Identification Hash</p>
+                    <div className="relative group/id p-8 bg-gray-50/50 dark:bg-white/10 rounded-[2.5rem] border border-white/10 font-mono text-xs font-black text-primary-500 break-all select-all text-center">
+                      {channelId}
                       <button
-                        onClick={() =>
-                          copyToClipboard(channelId || "", "channelid")
-                        }
-                        className="absolute right-3 top-1/2 -translate-y-1/2 p-2 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg text-gray-400 hover:text-primary-500 opacity-0 group-hover:opacity-100 transition-all shadow-sm"
+                        onClick={() => copyToClipboard(channelId || "", "channelid")}
+                        className="absolute right-6 top-1/2 -translate-y-1/2 w-12 h-12 bg-white dark:bg-gray-800 rounded-2xl flex items-center justify-center text-gray-400 hover:text-primary-500 opacity-0 group-hover/id:opacity-100 transition-all shadow-xl"
                       >
-                        {copiedField === "channelid" ? (
-                          <Check size={14} className="text-green-500" />
-                        ) : (
-                          <Copy size={14} />
-                        )}
+                        {copiedField === "channelid" ? <Check size={18} strokeWidth={3} className="text-green-500" /> : <Copy size={18} strokeWidth={3} />}
                       </button>
                     </div>
                   </div>
 
-                  <div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 font-medium mb-1">
-                      My Role
-                    </p>
-                    <div className="inline-flex items-center px-3 py-1 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 rounded-full text-xs font-mono font-bold uppercase tracking-wider">
-                      {myPublicKey &&
-                      creatorPublicKey &&
-                      myPublicKey.toLowerCase() ===
-                        creatorPublicKey.toLowerCase()
-                        ? "creator"
-                        : isAdmin
-                          ? "admin"
-                          : "subscriber"}
+                  <div className="flex items-center justify-between p-8 bg-gray-50/50 dark:bg-white/5 rounded-[2.5rem] border border-white/5">
+                    <div>
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Authorization Tier</p>
+                      <h4 className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-tight">
+                        {myPublicKey && creatorPublicKey && myPublicKey.toLowerCase() === creatorPublicKey.toLowerCase() ? "Creator" : isAdmin ? "Administrator" : "Subscriber"}
+                      </h4>
+                    </div>
+                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${isAdmin ? "bg-primary-500 text-white shadow-lg shadow-primary-500/20" : "bg-gray-100 dark:bg-white/5 text-gray-400"}`}>
+                      {isAdmin ? <ShieldCheck size={22} strokeWidth={3} /> : <User size={22} strokeWidth={3} />}
                     </div>
                   </div>
                 </div>
@@ -757,154 +685,98 @@ function ChannelInfoPage() {
           )}
 
           {activeTab === "settings" && (
-            <div className="space-y-6">
-              {/* SUBSCRIBERS LIST */}
-              <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
-                <div className="p-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Users size={18} className="text-gray-500" />
-                    <span className="font-semibold text-gray-900 dark:text-white">
-                      Subscribers
-                    </span>
+            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-10 duration-700">
+              {/* SUBSCRIBERS REGISTRY */}
+              <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[3rem] p-10 border border-white/20 dark:border-white/5 shadow-xl shadow-black/5">
+                <div className="flex items-center justify-between mb-10">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-primary-500/10 rounded-2xl flex items-center justify-center text-primary-500">
+                      <Users size={22} strokeWidth={3} />
+                    </div>
+                    <div className="flex flex-col text-left">
+                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.4em] mb-0.5">Community Index</span>
+                      <h3 className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-tight">Channel Subscribers</h3>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {isAdmin && (
-                      <button
-                        onClick={handleOpenInvite}
-                        className="flex items-center gap-1.5 text-xs font-semibold text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/30 hover:bg-primary-100 dark:hover:bg-primary-900/50 px-3 py-1.5 rounded-full transition-colors"
-                      >
-                        <UserPlus size={13} />
-                        Add
-                      </button>
-                    )}
-                    <span className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-1 rounded-full">
-                      {subscribers.length}
-                    </span>
-                  </div>
+                  {isAdmin && (
+                    <button
+                      onClick={handleOpenInvite}
+                      className="flex items-center gap-3 px-6 py-3 bg-primary-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-primary-600 transition-all shadow-lg shadow-primary-500/20 active:scale-95"
+                    >
+                      <UserPlus size={16} strokeWidth={3} />
+                      Authorize
+                    </button>
+                  )}
                 </div>
 
-                <div className="divide-y divide-gray-100 dark:divide-gray-700">
+                <div className="space-y-3">
                   {subscribers.length === 0 ? (
-                    <div className="p-8 text-center text-gray-500">
-                      No subscribers found.
+                    <div className="py-20 text-center bg-gray-50/50 dark:bg-white/5 rounded-[3rem] border border-dashed border-gray-200 dark:border-white/10">
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] italic">No compatible profiles discovered</p>
                     </div>
                   ) : (
                     subscribers.map((sub: any, i) => {
                       const pk = sub.publickey;
                       const name = sub.username;
                       const role = sub.role;
-                      const isMe =
-                        pk &&
-                        myPublicKey &&
-                        pk.toLowerCase() === myPublicKey.toLowerCase();
+                      const isMe = pk && myPublicKey && pk.toLowerCase() === myPublicKey.toLowerCase();
 
                       return (
                         <div
                           key={pk || i}
-                          className={`relative flex items-center z-0 ${isMe ? "bg-primary-50/50 dark:bg-primary-900/10" : "hover:bg-gray-100 dark:hover:bg-gray-700/50"}`}
+                          className={`group flex items-center p-4 rounded-[2.5rem] border border-transparent transition-all ${
+                            isMe ? "bg-primary-500/5 border-primary-500/20" : "hover:bg-white dark:hover:bg-white/10 hover:border-black/5 dark:hover:border-white/10"
+                          }`}
                         >
-                          <button
-                            onClick={() => {
-                              if (!isMe) {
-                                navigate({
-                                  to: `/contact-info/${pk}`,
-                                  search: {
-                                    returnTo: `/channel-info/${channelId}`,
-                                  },
-                                });
-                              }
-                            }}
-                            className={`flex-1 p-4 flex items-center gap-3 transition-all text-left group min-w-0
-                                                                  ${
-                                                                    isMe
-                                                                      ? "cursor-default"
-                                                                      : "cursor-pointer active:scale-[0.99]"
-                                                                  }`}
+                          <div
+                            className="w-14 h-14 rounded-2xl overflow-hidden bg-gray-200 dark:bg-gray-800 border-2 border-white dark:border-gray-700 shadow-sm flex-shrink-0 cursor-pointer group-hover:scale-105 transition-transform"
+                            onClick={() => !isMe && navigate({ to: `/contact-info/${pk}`, search: { returnTo: `/channel-info/${channelId}` } })}
                           >
                             {sub.avatar ? (
-                              <img
-                                src={sub.avatar}
-                                alt={name || "Subscriber"}
-                                className="w-10 h-10 rounded-full object-cover bg-gray-200 dark:bg-gray-700 flex-shrink-0"
-                                onError={(e: any) => {
-                                  e.target.style.display = "none";
-                                  const fallback = e.target
-                                    .nextElementSibling as HTMLDivElement | null;
-                                  if (fallback) {
-                                    fallback.style.display = "flex";
-                                  }
-                                }}
-                              />
-                            ) : null}
-                            <div
-                              className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 flex-shrink-0 items-center justify-center text-gray-600 dark:text-gray-300 font-medium text-sm group-hover:bg-gray-300 dark:group-hover:bg-gray-600 transition-colors"
-                              style={{ display: sub.avatar ? "none" : "flex" }}
-                            >
-                              {isMe
-                                ? "You"
-                                : name &&
-                                    name !== "Unknown Member" &&
-                                    name !== "Unknown"
-                                  ? name.charAt(0).toUpperCase()
-                                  : "?"}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div>
-                                <p className="text-sm font-medium text-gray-900 dark:text-white truncate flex items-center gap-2">
-                                  {isMe
-                                    ? "You"
-                                    : name &&
-                                        name !== "Unknown Member" &&
-                                        name !== "Unknown"
-                                      ? name
-                                      : shortenKey(pk)}
-                                  {pk &&
-                                  creatorPublicKey &&
-                                  pk.toLowerCase() ===
-                                    creatorPublicKey.toLowerCase() ? (
-                                    <span className="text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-400 px-1.5 py-0.5 rounded-md uppercase tracking-wide flex-shrink-0">
-                                      Creator
-                                    </span>
-                                  ) : role === "admin" ? (
-                                    <span className="text-[10px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-400 px-1.5 py-0.5 rounded-md uppercase tracking-wide flex-shrink-0">
-                                      Admin
-                                    </span>
-                                  ) : null}
-                                </p>
-                                <p className="text-xs text-gray-500 dark:text-gray-400 truncate font-mono">
-                                  {shortenKey(pk)}
-                                </p>
+                              <img src={sub.avatar} className="w-full h-full object-cover" alt="" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-xl font-black text-gray-400 dark:text-gray-600 uppercase">
+                                {isMe ? "U" : (name && name !== "Unknown Member" ? name.charAt(0) : "?")}
                               </div>
-                            </div>
-                          </button>
+                            )}
+                          </div>
+
+                          <div className="ml-5 flex-1 min-w-0 text-left">
+                            <p className="text-sm font-black text-gray-900 dark:text-gray-100 uppercase tracking-tight truncate mb-0.5 flex items-center gap-2">
+                              {isMe ? "You (Owner)" : name}
+                              {pk && creatorPublicKey && pk.toLowerCase() === creatorPublicKey.toLowerCase() ? (
+                                <span className="text-[8px] font-black bg-amber-500/10 text-amber-500 px-2 py-0.5 rounded-md uppercase tracking-wider">Founder</span>
+                              ) : role === "admin" ? (
+                                <span className="text-[8px] font-black bg-blue-500/10 text-blue-500 px-2 py-0.5 rounded-md uppercase tracking-wider">Staff</span>
+                              ) : null}
+                            </p>
+                            <p className="text-[8px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest font-mono truncate">
+                              {shortenKey(pk)}
+                            </p>
+                          </div>
 
                           {isAdmin && !isMe && (
-                            <div className="flex items-center gap-1 pr-3 flex-shrink-0">
+                            <div className="flex items-center gap-2 ml-4">
                               {role === "subscriber" ? (
                                 <button
                                   onClick={() => handleUpdateRole(pk, "admin")}
-                                  className="p-1.5 text-sky-600 hover:text-sky-700 dark:hover:text-sky-400 transition-colors rounded-full hover:bg-sky-50 dark:hover:bg-sky-900/20"
-                                  title="Promote to admin"
+                                  className="w-10 h-10 bg-sky-500/10 text-sky-500 rounded-xl flex items-center justify-center hover:bg-sky-500 hover:text-white transition-all shadow-lg shadow-sky-500/20"
                                 >
-                                  <ShieldCheck size={18} />
+                                  <ShieldCheck size={18} strokeWidth={3} />
                                 </button>
                               ) : (
                                 <button
-                                  onClick={() =>
-                                    handleUpdateRole(pk, "subscriber")
-                                  }
-                                  className="p-1.5 text-amber-600 hover:text-amber-700 dark:hover:text-amber-400 transition-colors rounded-full hover:bg-amber-50 dark:hover:bg-amber-900/20"
-                                  title="Demote to subscriber"
+                                  onClick={() => handleUpdateRole(pk, "subscriber")}
+                                  className="w-10 h-10 bg-amber-500/10 text-amber-500 rounded-xl flex items-center justify-center hover:bg-amber-500 hover:text-white transition-all shadow-lg shadow-amber-500/20"
                                 >
-                                  <ShieldAlert size={18} />
+                                  <ShieldAlert size={18} strokeWidth={3} />
                                 </button>
                               )}
                               <button
                                 onClick={() => handleRemove(pk)}
-                                className="p-1.5 text-red-500 hover:text-red-700 dark:hover:text-red-400 transition-colors rounded-full hover:bg-red-50 dark:hover:bg-red-900/20"
-                                title="Remove subscriber"
+                                className="w-10 h-10 bg-red-500/10 text-red-500 rounded-xl flex items-center justify-center hover:bg-red-500 hover:text-white transition-all shadow-lg shadow-red-500/20"
                               >
-                                <UserX size={18} />
+                                <Trash2 size={18} strokeWidth={3} />
                               </button>
                             </div>
                           )}
@@ -915,112 +787,83 @@ function ChannelInfoPage() {
                 </div>
               </div>
 
-              {/* PUBLIC LISTING */}
+              {/* ACCESS PROTOCOLS */}
               {isAdmin && (
-                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Users size={18} className="text-primary-500" />
-                      <span className="font-semibold text-gray-900 dark:text-white">
-                        Public Listing
-                      </span>
+                <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[3rem] p-10 border border-white/20 dark:border-white/5 shadow-xl shadow-black/5">
+                  <div className="flex items-center gap-4 mb-10">
+                    <div className="w-12 h-12 bg-primary-500/10 rounded-2xl flex items-center justify-center text-primary-500">
+                      <SlidersHorizontal size={22} strokeWidth={3} />
                     </div>
-                  </div>
-                  <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
-                    <div className="flex flex-col">
-                      <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                        Discoverable via gossip
-                      </span>
-                      <span className="text-xs text-gray-500 dark:text-gray-400">
-                        Adds this channel to your public listings
-                      </span>
+                    <div className="flex flex-col text-left">
+                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.4em] mb-0.5">Control Panel</span>
+                      <h3 className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-tight">Access Protocols</h3>
                     </div>
-                    <button
-                      onClick={handleTogglePublicListing}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
-                        isPublic
-                          ? "bg-primary-600"
-                          : "bg-gray-300 dark:bg-gray-600"
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          isPublic ? "translate-x-6" : "translate-x-1"
-                        }`}
-                      />
-                    </button>
-                  </div>
-                  {publicError && (
-                    <div className="text-xs text-red-600 dark:text-red-400">
-                      {publicError}
-                    </div>
-                  )}
-                  <div className="text-xs text-gray-500 dark:text-gray-400">
-                    Public listings used: {publicCount}/{LISTINGS_PUBLIC_LIMIT}
-                  </div>
-                </div>
-              )}
-
-              {/* GENERATE INVITE LINK */}
-              {isAdmin && (
-                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-4">
-                  <div className="mb-3 flex items-center gap-2">
-                    <Users size={18} className="text-primary-500" />
-                    <span className="font-semibold text-gray-900 dark:text-white">
-                      Invite Link
-                    </span>
                   </div>
 
-                  {inviteLink ? (
-                    <div className="space-y-3">
-                      <div className="p-3 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-600 break-all text-sm font-mono text-gray-600 dark:text-gray-300 relative group/link">
-                        {inviteLink}
-                        <button
-                          onClick={handleCopyLink}
-                          className="absolute right-2 top-2 p-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md text-gray-500 hover:text-primary-500 transition-colors shadow-sm"
-                          title="Copy Invite Link"
-                        >
-                          {inviteLinkCopied ? (
-                            <Check size={14} className="text-green-500" />
-                          ) : (
-                            <Copy size={14} />
-                          )}
-                        </button>
+                  <div className="space-y-4">
+                    {/* Global Discovery toggle */}
+                    <div className="group flex items-center justify-between p-8 bg-white/40 dark:bg-black/5 rounded-[2.5rem] border border-white/10 hover:border-primary-500/20 hover:shadow-xl transition-all duration-500">
+                      <div className="flex flex-col min-w-0 pr-6 text-left">
+                        <span className="text-[11px] font-black text-gray-900 dark:text-white uppercase tracking-[0.2em] mb-1">Global Discovery</span>
+                        <span className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase leading-relaxed max-w-[200px] opacity-70">Broadcast channel via gossip network</span>
                       </div>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                        Share this link carefully. Anyone with this link can
-                        request to join the channel.
-                      </p>
+                      <button
+                        onClick={handleTogglePublicListing}
+                        className={`relative inline-flex h-9 w-16 flex-shrink-0 items-center rounded-2xl transition-all duration-500 ease-in-out border-2 overflow-hidden ${isPublic ? "bg-primary-500 border-primary-400 shadow-[0_0_25px_rgba(59,130,246,0.5)]" : "bg-black/10 dark:bg-white/5 border-white/5"}`}
+                      >
+                        <div className={`absolute inset-0 bg-gradient-to-tr from-white/10 to-transparent opacity-0 hover:opacity-100 transition-opacity`} />
+                        <span className={`inline-block h-6 w-6 transform rounded-xl bg-white shadow-[0_4px_12px_rgba(0,0,0,0.2)] transition-all duration-500 ease-in-out ${isPublic ? "translate-x-9" : "translate-x-1"}`} />
+                      </button>
                     </div>
-                  ) : (
-                    <button
-                      onClick={handleGenerateInvite}
-                      disabled={generatingLink}
-                      className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 font-medium rounded-lg hover:bg-primary-100 dark:hover:bg-primary-900/50 transition-colors disabled:opacity-50"
-                    >
-                      {generatingLink ? (
-                        "Generating..."
+
+                    {publicError && <p className="text-[9px] font-black text-red-500 uppercase tracking-widest px-4">{publicError}</p>}
+                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest px-4 text-left">Listing Utilization: {publicCount} / {LISTINGS_PUBLIC_LIMIT}</p>
+
+                    <div className="mt-8 pt-8 border-t border-white/5 space-y-6">
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-2 text-left">Access Manifest / Invite Token</p>
+                      {inviteLink ? (
+                        <div className="space-y-4">
+                          <div className="relative group/link p-8 bg-gray-50/50 dark:bg-white/10 rounded-[2.5rem] border border-white/10 font-mono text-xs font-black text-primary-500 break-all select-all text-center">
+                            {inviteLink}
+                            <button
+                              onClick={handleCopyLink}
+                              className="absolute right-6 top-1/2 -translate-y-1/2 w-12 h-12 bg-white dark:bg-gray-800 rounded-2xl flex items-center justify-center text-gray-400 hover:text-primary-500 opacity-0 group-hover/link:opacity-100 transition-all shadow-xl"
+                            >
+                              {inviteLinkCopied ? <Check size={18} strokeWidth={3} className="text-green-500" /> : <Copy size={18} strokeWidth={3} />}
+                            </button>
+                          </div>
+                          <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest text-center italic">Protocol warning: tokens grant persistent registry access.</p>
+                        </div>
                       ) : (
-                        <>
-                          <Copy size={16} />
-                          Generate Invite Link
-                        </>
+                        <button
+                          onClick={handleGenerateInvite}
+                          disabled={generatingLink}
+                          className="w-full flex items-center justify-center gap-4 py-8 bg-black/5 dark:bg-white/5 text-gray-400 dark:text-gray-500 rounded-[2.5rem] font-black uppercase tracking-[0.3em] hover:bg-primary-500 hover:text-white active:scale-[0.98] transition-all shadow-2xl hover:shadow-primary-500/20 disabled:opacity-50"
+                        >
+                          {generatingLink ? "Transmitting..." : <><Copy size={20} strokeWidth={3} /> Generate Registry Token</>}
+                        </button>
                       )}
-                    </button>
-                  )}
+                    </div>
+                  </div>
                 </div>
               )}
 
-              {/* EXIT CHANNEL BUTTON */}
-              <div className="bg-white dark:bg-gray-800 rounded-2xl overflow-hidden shadow-sm border border-gray-100 dark:border-gray-700">
+              {/* EXIT TERMINAL */}
+              <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[3rem] p-2 border border-red-500/10 shadow-xl overflow-hidden group">
                 <button
                   onClick={() => setShowDeleteConfirm(true)}
-                  className="w-full flex items-center gap-3 p-4 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-left font-medium"
+                  className="w-full h-24 flex items-center justify-between px-10 text-red-500 hover:bg-red-500 hover:text-white transition-all rounded-[2.5rem] group"
                 >
-                  <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
-                    <Trash2 size={20} />
+                  <div className="flex items-center gap-6 text-left">
+                    <div className="w-12 h-12 bg-red-500/10 rounded-2xl flex items-center justify-center group-hover:bg-red-400 transition-colors shadow-inner">
+                      <Trash2 size={24} strokeWidth={3} />
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[10px] font-black uppercase tracking-[0.4em] opacity-60">Session Management</span>
+                      <span className="text-sm font-black uppercase tracking-tight">Expunge Registry Connection</span>
+                    </div>
                   </div>
-                  Exit Channel
+                  <ChevronRight size={24} strokeWidth={3} className="opacity-0 group-hover:opacity-100 -translate-x-4 group-hover:translate-x-0 transition-all font-black" />
                 </button>
               </div>
             </div>
@@ -1028,158 +871,153 @@ function ChannelInfoPage() {
         </div>
       </div>
 
-      {/* EXIT CONFIRMATION DIALOG */}
+      {/* ELITE EXIT CONFIRMATION */}
       {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-sm w-full p-6 animate-in zoom-in-95 fade-in duration-200 border border-gray-200 dark:border-gray-700">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">
-              Exit Channel?
-            </h3>
-            <p className="text-gray-600 dark:text-gray-300 mb-6">
-              Are you sure you want to exit this channel? You will no longer
-              receive new messages.
-            </p>
-            <div className="flex gap-3">
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[100] p-6 animate-in fade-in duration-300">
+          <div className="bg-white dark:bg-gray-900 rounded-[3rem] shadow-2xl p-10 border border-white/20 dark:border-white/10 max-w-sm w-full animate-in zoom-in-95 duration-300">
+            <div className="w-16 h-16 bg-red-500/10 rounded-2xl flex items-center justify-center text-red-500 mb-6 mx-auto">
+              <Trash2 size={32} strokeWidth={3} />
+            </div>
+            <h3 className="text-lg font-black text-gray-900 dark:text-white mb-2 text-center uppercase tracking-tight">Expunge Connection?</h3>
+            <p className="text-xs font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest text-center mb-8 leading-relaxed">Incoming data streams will be terminated. This action is recorded and permanent.</p>
+            <div className="grid grid-cols-2 gap-4">
               <button
                 onClick={() => setShowDeleteConfirm(false)}
-                className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-medium"
+                className="py-4 bg-gray-100 dark:bg-white/5 text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest rounded-2xl hover:bg-gray-200 dark:hover:bg-white/10 transition-all"
               >
-                Cancel
+                Abort
               </button>
               <button
                 onClick={() => {
                   setShowDeleteConfirm(false);
                   handleExitChannel();
                 }}
-                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
+                className="py-4 bg-red-500 text-white text-[10px] font-black uppercase tracking-widest rounded-2xl hover:bg-red-600 transition-all shadow-lg shadow-red-500/20"
               >
-                Exit
+                Expunge
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Invite Modal */}
+      {/* ELITE AUTHORIZE MODAL */}
       {showInvite && (
-        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md max-h-[80vh] flex flex-col animate-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200 overflow-hidden">
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center z-[100] p-6 animate-in fade-in duration-300">
+          <div className="bg-white dark:bg-gray-900 rounded-t-[3rem] sm:rounded-[4rem] shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col border border-white/20 dark:border-white/10 animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-500 overflow-hidden">
             {/* Modal header */}
-            <div className="p-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
-              <h3 className="font-bold text-gray-900 dark:text-white text-lg">
-                Invite Subscriber
-              </h3>
+            <div className="p-10 pb-6 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-primary-500/10 rounded-2xl flex items-center justify-center text-primary-500">
+                  <UserPlus size={22} strokeWidth={3} />
+                </div>
+                <div className="flex flex-col text-left">
+                  <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.4em] mb-0.5">Authorization Flow</span>
+                  <h3 className="text-lg font-black text-gray-900 dark:text-white uppercase tracking-tight">Expand Registry</h3>
+                </div>
+              </div>
               <button
                 onClick={() => setShowInvite(false)}
-                className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
+                className="w-12 h-12 bg-gray-100 dark:bg-white/5 rounded-2xl flex items-center justify-center text-gray-400 hover:text-gray-900 dark:hover:text-white transition-all hover:rotate-90"
               >
-                <X size={20} />
+                <X size={20} strokeWidth={3} />
               </button>
             </div>
 
-            {/* Search */}
-            <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700">
-              <div className="relative">
+            {/* Enhanced Search & Filter */}
+            <div className="px-10 space-y-6 mb-6">
+              <div className="flex gap-2">
+                {(["all", "contacts", "community"] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setInviteTab(tab)}
+                    className={`h-10 px-6 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${inviteTab === tab
+                        ? "bg-primary-500 text-white shadow-lg shadow-primary-500/20"
+                        : "bg-gray-100 dark:bg-white/5 text-gray-400 dark:text-gray-500 hover:bg-gray-200 dark:hover:bg-white/10"
+                      }`}
+                  >
+                    {tab}
+                  </button>
+                ))}
+              </div>
+
+              <div className="relative group">
                 <Search
-                  size={16}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                  size={18}
+                  strokeWidth={3}
+                  className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-primary-500 transition-colors"
                 />
                 <input
                   type="text"
                   value={inviteSearch}
                   onChange={(e) => setInviteSearch(e.target.value)}
-                  placeholder="Search people..."
-                  className="w-full pl-9 pr-4 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400"
+                  placeholder="Search Global Index..."
+                  className="w-full pl-16 pr-6 h-16 bg-gray-50/50 dark:bg-white/5 border border-white/5 rounded-[2rem] text-sm font-black text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:border-primary-500/50 focus:ring-4 focus:ring-primary-500/10 transition-all uppercase tracking-widest"
+                  autoFocus
                 />
               </div>
             </div>
 
-            {/* Tabs */}
-            <div className="flex gap-2 px-4 pt-1 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50">
-              {(["all", "contacts", "community"] as const).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setInviteTab(tab)}
-                  className={`pb-2 pt-2 px-2 text-xs font-bold capitalize transition-colors relative ${
-                    inviteTab === tab
-                      ? "text-sky-600 dark:text-sky-400 border-b-2 border-sky-600 dark:border-sky-400 -mb-px"
-                      : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                  }`}
-                >
-                  {tab}
-                </button>
-              ))}
-            </div>
-
-            {/* People list */}
-            <div className="overflow-y-auto flex-1 divide-y divide-gray-100 dark:divide-gray-700">
+            {/* Registry Results list */}
+            <div className="overflow-y-auto flex-1 px-10 pb-10 space-y-2 custom-scrollbar">
               {people.filter((p) => {
-                const name =
-                  p.extradata?.name || p.currentaddress || p.publickey;
-                const matchesSearch = name
-                  .toLowerCase()
-                  .includes(inviteSearch.toLowerCase());
+                const searchStr = (p.extradata?.name || p.currentaddress || p.publickey).toLowerCase();
+                const matchesSearch = searchStr.includes(inviteSearch.toLowerCase());
                 if (!matchesSearch) return false;
                 if (inviteTab === "contacts") return p.type === "contact";
                 if (inviteTab === "community") return p.type === "community";
                 return true;
               }).length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-10 px-4 text-center">
-                  <div className="w-12 h-12 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-gray-400 mb-3">
-                    <Users size={24} />
-                  </div>
-                  <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">
-                    No results found.
-                  </p>
-                  <p className="text-gray-400 dark:text-gray-500 text-xs mt-1">
-                    Try a different search term or category.
-                  </p>
+                <div className="py-20 text-center bg-gray-50/50 dark:bg-white/5 rounded-[3rem] border border-dashed border-gray-200 dark:border-white/10">
+                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] italic">No compatible profiles discovered</p>
                 </div>
               ) : (
                 people
                   .filter((p) => {
-                    const name =
-                      p.extradata?.name || p.currentaddress || p.publickey;
-                    const matchesSearch = name
-                      .toLowerCase()
-                      .includes(inviteSearch.toLowerCase());
+                    const searchStr = (p.extradata?.name || p.currentaddress || p.publickey).toLowerCase();
+                    const matchesSearch = searchStr.includes(inviteSearch.toLowerCase());
                     if (!matchesSearch) return false;
                     if (inviteTab === "contacts") return p.type === "contact";
-                    if (inviteTab === "community")
-                      return p.type === "community";
+                    if (inviteTab === "community") return p.type === "community";
                     return true;
                   })
-                  .map((person) => {
-                    const name =
-                      person.extradata?.name ||
-                      person.currentaddress ||
-                      person.publickey;
-                    return (
-                      <div
-                        key={person.publickey}
-                        className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50/50 dark:hover:bg-gray-800/50 transition-colors"
-                      >
-                        <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-gray-600 dark:text-gray-300 font-bold flex-shrink-0 shadow-sm">
-                          {name.charAt(0).toUpperCase()}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-gray-900 dark:text-white truncate text-sm">
-                            {name}
-                          </p>
-                          <p className="text-[10px] text-gray-500 dark:text-gray-400 capitalize font-medium">
-                            {person.type}
-                          </p>
-                        </div>
-                        <button
-                          onClick={() => handleInvite(person)}
-                          disabled={inviting === person.publickey}
-                          className="px-4 py-1.5 bg-sky-600 text-white text-xs font-bold rounded-full hover:bg-sky-700 active:bg-sky-800 transition-all disabled:opacity-50 shadow-sm shadow-sky-500/10"
-                        >
-                          {inviting === person.publickey ? "..." : "Invite"}
-                        </button>
+                  .map((person) => (
+                    <div
+                      key={person.publickey}
+                      className="group flex items-center p-4 bg-gray-50/50 dark:bg-white/5 rounded-[2rem] border border-transparent hover:border-primary-500/20 hover:bg-white dark:hover:bg-white/10 transition-all font-black uppercase tracking-widest"
+                    >
+                      <div className="w-14 h-14 rounded-2xl overflow-hidden bg-gray-200 dark:bg-gray-800 border-2 border-white dark:border-gray-700 shadow-sm flex-shrink-0 group-hover:scale-105 transition-transform">
+                        {person.extradata?.icon ? (
+                          <img src={person.extradata.icon} className="w-full h-full object-cover" alt="" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-xl font-black text-gray-400 dark:text-gray-600 uppercase">
+                            {(person.extradata?.name || person.currentaddress || "?").charAt(0)}
+                          </div>
+                        )}
                       </div>
-                    );
-                  })
+
+                      <div className="ml-5 flex-1 min-w-0 text-left">
+                        <p className="text-sm font-black text-gray-900 dark:text-gray-100 uppercase tracking-tight truncate mb-0.5">
+                          {person.extradata?.name || person.currentaddress || shortenKey(person.publickey)}
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[8px] font-black text-primary-500 uppercase tracking-widest">{person.type}</span>
+                          <span className="w-1 h-1 bg-gray-300 dark:bg-gray-700 rounded-full" />
+                          <p className="text-[8px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest font-mono truncate">
+                            {shortenKey(person.publickey)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => handleInvite(person)}
+                        disabled={inviting === person.publickey}
+                        className="px-6 py-3 bg-primary-500 text-white text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-primary-600 active:scale-95 transition-all shadow-lg shadow-primary-500/20 disabled:opacity-50"
+                      >
+                        {inviting === person.publickey ? "..." : "Authorize"}
+                      </button>
+                    </div>
+                  ))
               )}
             </div>
           </div>

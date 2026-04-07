@@ -14,8 +14,8 @@ function RouteComponent() {
 
   const fetchNetworkStatus = () => {
     setNetworkLoading(true);
-    // Correct command is 'status' not 'network'
-    (MDS.cmd as any).status({ params: {} }, (res: any) => {
+    // @ts-ignore
+    MDS.cmd.status({ params: {} }, (res: any) => {
       setNetworkLoading(false);
       setLastUpdated(Date.now());
       if (res.status) {
@@ -26,146 +26,163 @@ function RouteComponent() {
 
   useEffect(() => {
     fetchNetworkStatus();
-    // Poll every 10s
     const interval = setInterval(fetchNetworkStatus, 10000);
     return () => clearInterval(interval);
   }, []);
 
   return (
-    <div className="max-w-4xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden transition-colors">
-
-        {/* Header */}
-        <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Globe className="text-green-500" />
-            <h2 className="text-xl font-semibold text-gray-800 dark:text-white">Network</h2>
-          </div>
-          <button
-            onClick={fetchNetworkStatus}
-            disabled={networkLoading}
-            className="p-2 text-gray-500 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 rounded-lg transition-colors disabled:opacity-50"
-            title="Refresh network status"
-          >
-            <RefreshCw size={18} className={networkLoading ? "animate-spin" : ""} />
-          </button>
+    <div className="max-w-4xl mx-auto py-8 px-4 sm:px-6 lg:px-8 space-y-10 animate-in fade-in slide-in-from-bottom-6 duration-700">
+      
+      {/* Unified Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+           <div className="w-12 h-12 rounded-[1.25rem] bg-gradient-to-br from-green-400 to-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+              <Globe className="text-white" size={24} strokeWidth={2.5} />
+           </div>
+           <div>
+              <h2 className="text-2xl font-black text-gray-900 dark:text-white tracking-tight">Network</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Real-time status of your decentralized node.</p>
+           </div>
         </div>
-
-        <div className="p-6">
-          {networkLoading && !networkStatus ? (
-            <div className="flex items-center justify-center py-8">
-              <RefreshCw size={24} className="animate-spin text-gray-400" />
-            </div>
-          ) : networkStatus ? (
-            <>
-              {/* Health Status Badge */}
-              <div className={`flex items-center gap-3 p-4 rounded-xl mb-6 ${networkStatus.network?.connected > 3
-                ? 'bg-green-50 dark:bg-green-900/20 border border-green-100 dark:border-green-900/50'
-                : networkStatus.network?.connected > 0
-                  ? 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-100 dark:border-yellow-900/50'
-                  : 'bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/50'
-                }`}>
-                <div className={`p-2 rounded-full ${networkStatus.network?.connected > 3
-                  ? 'bg-green-100 text-green-600'
-                  : networkStatus.network?.connected > 0
-                    ? 'bg-yellow-100 text-yellow-600'
-                    : 'bg-red-100 text-red-600'
-                  }`}>
-                  <Check size={20} />
-                </div>
-                <div>
-                  <h3 className={`font-semibold ${networkStatus.network?.connected > 3
-                    ? 'text-green-800 dark:text-green-400'
-                    : networkStatus.network?.connected > 0
-                      ? 'text-yellow-800 dark:text-yellow-400'
-                      : 'text-red-800 dark:text-red-400'
-                    }`}>
-                    {networkStatus.network?.connected > 3
-                      ? 'Network running smoothly'
-                      : networkStatus.network?.connected > 0
-                        ? 'Limited connection'
-                        : 'No connection'}
-                  </h3>
-                  <p className={`text-sm ${networkStatus.network?.connected > 3
-                    ? 'text-green-600 dark:text-green-300'
-                    : networkStatus.network?.connected > 0
-                      ? 'text-yellow-600 dark:text-yellow-300'
-                      : 'text-red-600 dark:text-red-300'
-                    }`}>
-                    {networkStatus.network?.connected > 3
-                      ? 'Connected to Minima network'
-                      : networkStatus.network?.connected > 0
-                        ? 'Few active connections'
-                        : 'No active connections'}
-                  </p>
-                </div>
-              </div>
-
-              {/* Network Metrics */}
-              <div className="space-y-4">
-                {/* Connections */}
-                <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-primary-100 dark:bg-primary-900/30 rounded-lg text-primary-600 dark:text-primary-400">
-                      <Globe size={18} />
-                    </div>
-                    <span className="font-medium text-gray-700 dark:text-gray-300">Connections</span>
-                  </div>
-                  <span className="text-lg font-bold text-gray-900 dark:text-white">
-                    {networkStatus.network?.connected || 0} nodes
-                  </span>
-                </div>
-
-                {/* Current Block */}
-                <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg text-purple-600 dark:text-purple-400">
-                      <span className="text-sm font-bold">⛓️</span>
-                    </div>
-                    <span className="font-medium text-gray-700 dark:text-gray-300">Current Block</span>
-                  </div>
-                  <span className="text-lg font-bold text-gray-900 dark:text-white">
-                    #{networkStatus.chain?.block?.toLocaleString() || 0}
-                  </span>
-                </div>
-
-                {/* Last Block Time */}
-                <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-lg text-orange-600 dark:text-orange-400">
-                      <span className="text-sm font-bold">🕐</span>
-                    </div>
-                    <span className="font-medium text-gray-700 dark:text-gray-300">Last Update</span>
-                  </div>
-                  <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">
-                    {networkStatus.chain?.time || 'N/A'}
-                  </span>
-                </div>
-
-                {/* Minima Version */}
-                <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-gray-200 dark:bg-gray-600 rounded-lg text-gray-600 dark:text-gray-300">
-                      <Info size={18} />
-                    </div>
-                    <span className="font-medium text-gray-700 dark:text-gray-300">Version</span>
-                  </div>
-                  <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">
-                    Minima {networkStatus.version || 'N/A'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Last Updated Timestamp */}
-              <div className="mt-6 text-center text-xs text-gray-500 dark:text-gray-400">
-                Updated {Math.floor((Date.now() - lastUpdated) / 1000)} seconds ago
-              </div>
-            </>
-          ) : (
-            <p className="text-gray-500 text-center py-4">Unable to load network data</p>
-          )}
-        </div>
+        <button
+          onClick={fetchNetworkStatus}
+          disabled={networkLoading}
+          className="w-12 h-12 flex items-center justify-center rounded-2xl bg-white/70 dark:bg-white/5 backdrop-blur-md border border-white/20 dark:border-white/10 hover:scale-110 active:scale-95 transition-all shadow-sm hover:shadow-xl disabled:opacity-50 group"
+          title="Refresh network status"
+        >
+          <RefreshCw size={20} className={`${networkLoading ? "animate-spin" : "group-hover:rotate-180"} transition-transform duration-700 text-gray-600 dark:text-gray-400`} />
+        </button>
       </div>
+
+      <div className="grid grid-cols-1 gap-8">
+        {networkLoading && !networkStatus ? (
+          <div className="flex flex-col items-center justify-center py-24 space-y-4">
+             <div className="relative">
+                <div className="w-16 h-16 border-4 border-primary-500/20 border-t-primary-500 rounded-full animate-spin"></div>
+                <div className="absolute inset-0 flex items-center justify-center">
+                   <Globe className="text-primary-500/50" size={20} />
+                </div>
+             </div>
+             <p className="text-xs font-black uppercase tracking-[0.3em] text-gray-400">Syncing Node Status</p>
+          </div>
+        ) : networkStatus ? (
+          <>
+            {/* Primary Health Status Card */}
+            <section className={`relative overflow-hidden bg-white/40 dark:bg-gray-900/40 backdrop-blur-md border p-10 rounded-[3.5rem] shadow-2xl transition-all duration-500 ${
+              networkStatus.network?.connected > 3 ? 'border-emerald-500/20 shadow-emerald-500/10' :
+              networkStatus.network?.connected > 0 ? 'border-amber-500/20 shadow-amber-500/10' :
+              'border-red-500/20 shadow-red-500/10'
+            }`}>
+               {/* Decorative Background Elements */}
+               <div className={`absolute -top-24 -right-24 w-64 h-64 blur-[100px] rounded-full opacity-20 ${
+                 networkStatus.network?.connected > 3 ? 'bg-emerald-500' :
+                 networkStatus.network?.connected > 0 ? 'bg-amber-500' :
+                 'bg-red-500'
+               }`}></div>
+
+               <div className="relative flex flex-col md:flex-row items-center gap-8">
+                  <div className="relative">
+                     <div className={`w-24 h-24 rounded-[2.5rem] flex items-center justify-center shadow-inner ${
+                       networkStatus.network?.connected > 3 ? 'bg-emerald-500 text-white' :
+                       networkStatus.network?.connected > 0 ? 'bg-amber-500 text-white' :
+                       'bg-red-500 text-white'
+                     }`}>
+                        <Check size={40} strokeWidth={3} />
+                     </div>
+                     <div className={`absolute -bottom-1 -right-1 w-8 h-8 rounded-full border-4 border-white dark:border-gray-900 flex items-center justify-center ${
+                       networkStatus.network?.connected > 3 ? 'bg-emerald-500' :
+                       networkStatus.network?.connected > 0 ? 'bg-amber-500' :
+                       'bg-red-500'
+                     }`}>
+                        <div className="w-2 h-2 rounded-full bg-white animate-pulse"></div>
+                     </div>
+                  </div>
+
+                  <div className="text-center md:text-left space-y-2">
+                     <h3 className="text-2xl font-black text-gray-900 dark:text-white tracking-tight">
+                       {networkStatus.network?.connected > 3
+                         ? 'Network Healthy'
+                         : networkStatus.network?.connected > 0
+                           ? 'Limited Connectivity'
+                           : 'Connection Lost'}
+                     </h3>
+                     <p className="text-sm font-medium text-gray-500 dark:text-gray-400 max-w-sm">
+                       {networkStatus.network?.connected > 3
+                         ? 'Your node is fully synchronized and communicating with the decentralized web.'
+                         : networkStatus.network?.connected > 0
+                           ? 'Only a few peers are currently reachable. Communication might be delayed.'
+                           : 'Unable to detect active peers. Check your internet connection or P2P settings.'}
+                     </p>
+                  </div>
+               </div>
+            </section>
+
+            {/* Metrics Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+               <MetricCard 
+                 icon={<Globe size={20} />} 
+                 label="Peers" 
+                 value={networkStatus.network?.connected || 0} 
+                 unit="Connected"
+                 color="text-primary-500"
+                 bgColor="bg-primary-500/10"
+               />
+               <MetricCard 
+                 icon={<span className="text-lg">⛓️</span>} 
+                 label="Block Height" 
+                 value={networkStatus.chain?.block?.toLocaleString() || 0} 
+                 unit={`#${Math.floor(networkStatus.chain?.block / 1000)}K`}
+                 color="text-purple-500"
+                 bgColor="bg-purple-500/10"
+               />
+               <MetricCard 
+                 icon={<span className="text-lg">🕐</span>} 
+                 label="Latency" 
+                 value={networkStatus.chain?.time?.split(' ')[0] || '1s'} 
+                 unit="Avg Response"
+                 color="text-orange-500"
+                 bgColor="bg-orange-500/10"
+               />
+               <MetricCard 
+                 icon={<Info size={20} />} 
+                 label="Protocol" 
+                 value={networkStatus.version || '1.0'} 
+                 unit="Minima Core"
+                 color="text-gray-500"
+                 bgColor="bg-gray-500/10"
+               />
+            </div>
+
+            {/* Last Updated Footer */}
+            <div className="flex items-center justify-center gap-2 pt-4">
+               <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
+               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">
+                  Last verified {Math.floor((Date.now() - lastUpdated) / 1000)}s ago
+               </span>
+            </div>
+          </>
+        ) : (
+          <div className="bg-red-500/10 border border-red-500/20 p-8 rounded-[2.5rem] text-center">
+             <p className="text-red-600 dark:text-red-400 font-black text-sm uppercase tracking-widest">Initialization Failed</p>
+             <p className="text-sm text-gray-500 mt-2">Could not establish communication with the Minima RPC service.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MetricCard({ icon, label, value, unit, color, bgColor }: { icon: any, label: string, value: string | number, unit: string, color: string, bgColor: string }) {
+  return (
+    <div className="bg-white/70 dark:bg-white/5 backdrop-blur-md border border-white/20 dark:border-white/10 p-7 rounded-[2.5rem] shadow-sm hover:shadow-xl hover:scale-105 transition-all group">
+       <div className={`w-10 h-10 rounded-xl ${bgColor} ${color} flex items-center justify-center mb-6 group-hover:rotate-12 transition-transform`}>
+          {icon}
+       </div>
+       <div className="space-y-1">
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">{label}</p>
+          <p className="text-2xl font-black text-gray-900 dark:text-white tracking-tight">{value}</p>
+          <p className="text-[10px] font-black uppercase tracking-widest text-emerald-500 opacity-80">{unit}</p>
+       </div>
     </div>
   );
 }

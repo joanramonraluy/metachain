@@ -200,9 +200,11 @@ export async function sendChatRequest(toAddress: string, myName: string, myAvata
         const myPublicKey = await getMyPublicKey();
         const safeMyPublicKey = escapeSql(myPublicKey);
 
+        const deleteOutgoingSql = `DELETE FROM CONTACT_REQUESTS WHERE UPPER(from_publickey)=UPPER('${safeMyPublicKey}') AND UPPER(to_publickey)=UPPER('${safeHexPublicKey}')`;
+        await runSQL(deleteOutgoingSql);
+
         const insertRequestSql = `
-            MERGE INTO CONTACT_REQUESTS (from_publickey, to_publickey, from_name, status, created_at, updated_at)
-            KEY(from_publickey, to_publickey)
+            INSERT INTO CONTACT_REQUESTS (from_publickey, to_publickey, from_name, status, created_at, updated_at)
             VALUES (UPPER('${safeMyPublicKey}'), UPPER('${safeHexPublicKey}'), '${escapeSql(myName)}', 'pending', ${now}, ${now})
         `;
         await runSQL(insertRequestSql);

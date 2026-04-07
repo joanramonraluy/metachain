@@ -11,13 +11,19 @@ import {
 import { useNavigate, createLazyFileRoute } from "@tanstack/react-router";
 import { appContext } from "../AppContext";
 import {
-  Settings,
+  ArrowLeft,
   Trash2,
   Star,
   Archive,
   Info,
   Image as ImageIcon,
   CheckCircle2,
+  MoreVertical,
+  ChevronRight,
+  ShieldCheck,
+  History,
+  Zap,
+  Radio,
 } from "lucide-react";
 import { groupService } from "../services/group.service";
 import MessageBubble from "../components/chat/MessageBubble";
@@ -128,7 +134,7 @@ function ChatPage() {
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const cursorPositionRef = useRef<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -500,13 +506,12 @@ function ChatPage() {
       SEND TEXT MESSAGE
   ---------------------------------------------------------------------------- */
   const handleSendMessage = async () => {
-    if (!input.trim()) return;
-    if (!address || !userName || !myPublicKey) return;
-
+    const messageText = input.trim();
+    if (!messageText || !address) return;
     const customId = `group_${address}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const currentReplyTo = replyingTo;
     const newMsg: ParsedMessage = {
-      text: input,
+      text: messageText,
       fromMe: true,
       charm: null,
       amount: null,
@@ -523,7 +528,7 @@ function ChatPage() {
     try {
       await groupService.sendGroupMessage(
         address,
-        input,
+        messageText,
         "text",
         myPublicKey,
         userName,
@@ -739,188 +744,130 @@ function ChatPage() {
       RENDER
   ---------------------------------------------------------------------------- */
   return (
-    <div className="flex-1 w-full flex flex-col bg-[#E5DDD5] dark:bg-gray-900 min-h-0">
-      {/* HEADER - Fixed at top */}
-      <div className="bg-primary-600 dark:bg-gray-800 text-white p-4 pt-[calc(1rem+env(safe-area-inset-top))] px-4 flex items-center gap-3 flex-shrink-0 shadow-sm z-30 transition-colors border-b border-primary-700 dark:border-gray-700">
-        {/* Back button */}
-        <button
-          onClick={() => navigate({ to: "/" })}
-          className="p-2 hover:bg-white/10 rounded-full transition-colors"
-          title="Back"
-        >
-          <svg
-            className="w-6 h-6"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M10 19l-7-7m0 0l7-7m-7 7h18"
-            />
-          </svg>
-        </button>
-
-        <div className="flex items-center gap-3 flex-1 min-w-0">
-          <div className="w-12 h-12 rounded-full bg-primary-500 flex items-center justify-center text-white font-bold text-xl flex-shrink-0 overflow-hidden">
-            {contact?.extradata?.icon ? (
-              <img
-                src={contact.extradata.icon}
-                alt={contact?.extradata?.name || "Group"}
-                className="w-full h-full object-cover"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).src = defaultAvatar;
-                }}
-              />
-            ) : (
-              contact?.extradata?.name?.charAt(0).toUpperCase() || "G"
-            )}
-          </div>
-          <div className="flex flex-col leading-tight flex-1 min-w-0">
-            <strong className="text-[16px] truncate font-semibold flex items-center gap-1.5">
-              {contact?.extradata?.name || "Group"}
-              {isFavorite && (
-                <Star
-                  size={14}
-                  fill="#fbbf24"
-                  stroke="#f59e0b"
-                  className="flex-shrink-0"
-                />
-              )}
-            </strong>
-            <span className="text-xs opacity-80 flex items-center gap-1.5 min-w-0">
-              <span className="truncate">{memberCount} Group members</span>
-              {isSyncing && (
-                <>
-                  <span className="text-gray-400 opacity-60">·</span>
-                  <span className="flex items-center gap-1 text-sky-200 animate-pulse whitespace-nowrap text-[11px] font-medium leading-none">
-                    <svg
-                      className="w-3 h-3 animate-spin"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                    >
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                      ></circle>
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                      ></path>
-                    </svg>
-                    Syncing...
-                  </span>
-                </>
-              )}
-            </span>
-          </div>
-        </div>
-
-        {/* Header Actions */}
-        <div className="flex gap-4 relative" ref={menuRef}>
+    <div className="flex-1 w-full flex flex-col bg-[#f8fafc] dark:bg-gray-950 min-h-0">
+      {/* ELITE STICKY HEADER */}
+      <div className="sticky top-0 z-[70] w-full pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pt-[env(safe-area-inset-top)] backdrop-blur-xl bg-white/70 dark:bg-gray-900/60 border-b border-white/20 dark:border-white/5 shadow-2xl shadow-black/5 transition-all duration-500">
+        <div className="max-w-screen-xl mx-auto px-6 h-28 flex items-center gap-6">
+          {/* Elite Back Navigation */}
           <button
-            className="opacity-80 hover:opacity-100"
-            onClick={() => setShowMenu(!showMenu)}
+            onClick={() => navigate({ to: "/" })}
+            className="group relative w-14 h-14 flex items-center justify-center bg-gray-100 dark:bg-white/5 rounded-2xl hover:bg-primary-500 hover:text-white transition-all duration-500 active:scale-95 shadow-inner"
           >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"
-              />
-            </svg>
+            <div className="absolute inset-0 bg-primary-500 rounded-2xl opacity-0 group-hover:opacity-100 blur-xl transition-opacity duration-500" />
+            <ArrowLeft size={24} strokeWidth={3} className="relative z-10" />
           </button>
 
-          {/* Dropdown Menu */}
-          {showMenu && (
-            <div className="absolute top-10 right-0 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 min-w-[200px] z-50 animate-in slide-in-from-top-2 fade-in duration-200">
-              <button
-                className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 rounded-t-lg transition-colors text-left"
-                onClick={() => {
-                  setShowMenu(false);
-                  navigate({
-                    to: "/group-info/$groupId",
-                    params: { groupId: address },
-                    search: { returnTo: `/groups/${address}` },
-                  });
-                }}
-              >
-                <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
-                  <Info size={16} />
+          <div className="flex items-center gap-5 flex-1 min-w-0">
+            {/* Elite Avatar Hub */}
+            <div
+              className="relative group cursor-pointer"
+              onClick={() => navigate({ to: `/group-info/${address}` })}
+            >
+              <div className="absolute inset-0 bg-primary-500 rounded-[1.5rem] blur-2xl opacity-0 group-hover:opacity-30 transition-opacity duration-500" />
+              <div className="w-16 h-16 rounded-[1.5rem] border-2 border-white dark:border-gray-800 bg-gray-200 dark:bg-gray-800 flex items-center justify-center text-gray-400 dark:text-gray-500 font-black text-2xl flex-shrink-0 overflow-hidden shadow-2xl relative z-10 group-hover:scale-105 transition-transform duration-500">
+                {contact?.extradata?.icon ? (
+                  <img
+                    src={contact.extradata.icon}
+                    alt={contact?.extradata?.name || "Group"}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = defaultAvatar;
+                    }}
+                  />
+                ) : (
+                  <span className="uppercase">{contact?.extradata?.name?.charAt(0) || "G"}</span>
+                )}
+              </div>
+              {isSyncing && (
+                <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-primary-500 rounded-full border-4 border-white dark:border-gray-900 flex items-center justify-center z-20 animate-bounce">
+                  <Zap size={10} strokeWidth={4} className="text-white" fill="currentColor" />
                 </div>
-                <span className="font-medium">Group Info</span>
-              </button>
-              <button
-                className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
-                onClick={() => {
-                  setShowMenu(false);
-                  navigate({
-                    to: "/group-info/$groupId",
-                    params: { groupId: address },
-                    search: { returnTo: `/groups/${address}`, tab: "settings" },
-                  });
-                }}
-              >
-                <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
-                  <Settings size={16} />
-                </div>
-                <span className="font-medium">Actions</span>
-              </button>
-              <button
-                className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
-                onClick={() => {
-                  setShowMenu(false);
-                  handleToggleFavorite();
-                }}
-              >
-                <div className="w-8 h-8 rounded-full bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center text-yellow-600 dark:text-yellow-400">
-                  <Star size={16} fill={isFavorite ? "currentColor" : "none"} />
-                </div>
-                <span className="font-medium">
-                  {isFavorite ? "Unfavorite Group" : "Favorite Group"}
-                </span>
-              </button>
-              <button
-                className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
-                onClick={() => {
-                  setShowMenu(false);
-                  handleToggleArchive();
-                }}
-              >
-                <div className="w-8 h-8 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center text-orange-600 dark:text-orange-400">
-                  <Archive size={16} />
-                </div>
-                <span className="font-medium">
-                  {isArchived ? "Unarchive Group" : "Archive Group"}
-                </span>
-              </button>
-              <button
-                className="flex items-center gap-3 w-full p-3 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 rounded-b-lg transition-colors text-left border-t border-gray-100 dark:border-gray-700"
-                onClick={() => {
-                  setShowMenu(false);
-                  setShowDeleteConfirm(true);
-                }}
-              >
-                <div className="w-8 h-8 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center text-red-600 dark:text-red-400">
-                  <Trash2 size={16} />
-                </div>
-                <span className="font-medium">Exit Group</span>
-              </button>
+              )}
             </div>
-          )}
+
+            <div className="flex flex-col text-left min-w-0">
+              <div className="flex items-center gap-2">
+                <h1 className="text-lg font-black text-gray-900 dark:text-white truncate uppercase tracking-tight">
+                  {contact?.extradata?.name || "Group Registry"}
+                </h1>
+                {isFavorite && (
+                  <Star
+                    size={16}
+                    fill="#fbbf24"
+                    stroke="#fbbf24"
+                    className="flex-shrink-0 drop-shadow-[0_0_8px_rgba(251,191,36,0.4)]"
+                  />
+                )}
+              </div>
+              <div className="flex items-center gap-3 overflow-hidden">
+                <span className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-[0.3em] whitespace-nowrap">
+                  {memberCount} MEMBERS
+                </span>
+                {isSyncing ? (
+                  <span className="flex items-center gap-2 text-[9px] font-black text-primary-500 uppercase tracking-widest animate-pulse whitespace-nowrap">
+                    <div className="w-1.5 h-1.5 rounded-full bg-primary-500 shadow-[0_0_10px_rgba(59,130,246,0.8)]" />
+                    Synchronizing Grid
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-2 text-[9px] font-black text-emerald-500 uppercase tracking-widest whitespace-nowrap">
+                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.8)]" />
+                    Protocol Stable
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Elite Header Actions */}
+          <div className="flex gap-4 relative pr-4" ref={menuRef}>
+            <button
+              onClick={() => setShowMenu(!showMenu)}
+              className={`w-14 h-14 flex items-center justify-center rounded-2xl transition-all duration-500 ${showMenu ? "bg-primary-500 text-white shadow-lg shadow-primary-500/30" : "bg-gray-100 dark:bg-white/5 text-gray-500 hover:text-primary-500 shadow-inner"}`}
+            >
+              <MoreVertical size={24} strokeWidth={3} />
+            </button>
+
+            {showMenu && (
+              <div className="absolute top-20 right-0 w-[280px] backdrop-blur-2xl bg-white/95 dark:bg-gray-900/95 rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.2)] border border-white/20 dark:border-white/5 py-4 overflow-hidden z-[100] animate-in slide-in-from-top-4 fade-in duration-500">
+                <div className="px-6 py-4 mb-2 border-b border-gray-100 dark:border-white/5">
+                  <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.4em]">Grid Operations</span>
+                </div>
+
+                {[
+                  { label: "Group Profile", icon: Info, action: () => navigate({ to: `/group-info/${address}` }), color: "text-blue-500", bg: "bg-blue-500/10" },
+                  { label: "Manage Roles", icon: ShieldCheck, action: () => navigate({ to: `/group-info/${address}`, search: { returnTo: `/groups/${address}`, tab: "settings" } }), color: "text-primary-500", bg: "bg-primary-500/10" },
+                  { label: isFavorite ? "Dismiss Star" : "Star Registry", icon: Star, action: handleToggleFavorite, color: "text-amber-500", bg: "bg-amber-500/10", fill: isFavorite },
+                  { label: isArchived ? "Restore Vault" : "Archive Vault", icon: Archive, action: handleToggleArchive, color: "text-orange-500", bg: "bg-orange-500/10" },
+                ].map((item, idx) => (
+                  <button
+                    key={idx}
+                    className="w-full flex items-center justify-between px-6 py-5 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors group/item"
+                    onClick={() => { setShowMenu(false); item.action(); }}
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className={`w-11 h-11 ${item.bg} ${item.color} rounded-xl flex items-center justify-center group-hover/item:scale-110 transition-transform duration-500 shadow-sm`}>
+                        <item.icon size={20} strokeWidth={3} fill={item.fill ? "currentColor" : "none"} />
+                      </div>
+                      <span className="text-[11px] font-black text-gray-700 dark:text-gray-200 uppercase tracking-widest">{item.label}</span>
+                    </div>
+                    <ChevronRight size={16} className="text-gray-300 dark:text-gray-600 opacity-0 group-hover/item:opacity-100 transition-all -translate-x-2 group-hover:translate-x-0" />
+                  </button>
+                ))}
+
+                <div className="mt-2 pt-2 border-t border-gray-100 dark:border-white/5">
+                  <button
+                    className="w-full flex items-center gap-4 px-6 py-5 text-red-500 hover:bg-red-500/10 transition-colors group/del"
+                    onClick={() => { setShowMenu(false); setShowDeleteConfirm(true); }}
+                  >
+                    <div className="w-11 h-11 bg-red-500/10 rounded-xl flex items-center justify-center group-hover/del:bg-red-500 group-hover/del:text-white transition-all duration-500">
+                      <Trash2 size={20} strokeWidth={3} />
+                    </div>
+                    <span className="text-[11px] font-black uppercase tracking-widest">Expunge Registry</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1019,53 +966,46 @@ function ChatPage() {
           </div>
         </div>
       )}
-
-      {/* Delete Confirmation Dialog */}
+      {/* ELITE DELETE CONFIRMATION */}
       {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-sm w-full p-6 animate-in zoom-in-95 fade-in duration-200 border border-gray-200 dark:border-gray-700">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">
-              Exit Group?
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[100] p-6 animate-in fade-in duration-300">
+          <div className="bg-white dark:bg-gray-900 rounded-[3rem] shadow-2xl max-w-sm w-full p-10 animate-in zoom-in-95 duration-500 border border-white/20 dark:border-white/5 text-center">
+            <div className="w-20 h-20 bg-red-500/10 rounded-3xl flex items-center justify-center text-red-500 mx-auto mb-8 shadow-inner">
+              <Trash2 size={40} strokeWidth={2.5} />
+            </div>
+            <h3 className="text-2xl font-black text-gray-900 dark:text-white mb-4 uppercase tracking-tighter">
+              Expunge Registry?
             </h3>
-            <p className="text-gray-600 dark:text-gray-300 mb-6">
-              Are you sure you want to exit this group? You will no longer
-              receive new messages.
+            <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-10 leading-relaxed uppercase tracking-widest">
+              CAUTION: This will disconnect your node from this encrypted grid. All session history will be inaccessible.
             </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowDeleteConfirm(false)}
-                className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-medium"
-              >
-                Cancel
-              </button>
+            <div className="flex flex-col gap-4">
               <button
                 onClick={() => {
                   setShowDeleteConfirm(false);
                   handleDeleteChat();
                 }}
-                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
+                className="w-full py-5 bg-red-600 text-white rounded-2xl hover:bg-red-700 transition-all duration-500 font-black uppercase tracking-[0.2em] shadow-lg shadow-red-600/20 active:scale-95"
               >
-                Exit
+                Confirm Expunge
+              </button>
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="w-full py-5 bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 rounded-2xl hover:bg-gray-200 dark:hover:bg-white/10 transition-all duration-500 font-black uppercase tracking-[0.2em] active:scale-95"
+              >
+                Abort
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* CHAT BODY - Scrollable */}
+      {/* ELITE CHAT BODY */}
       <div
         ref={scrollContainerRef}
-        className={`flex-1 overflow-y-auto flex flex-col p-2 sm:p-4 relative transition-colors
-          ${
-            chatBackground === "diagonal"
-              ? "bg-gray-50 dark:bg-gray-900"
-              : chatBackground === "default"
-                ? "bg-gray-50 dark:bg-gray-900"
-                : "bg-gray-50 dark:bg-gray-900" /* Base for patterns */
-          }
-        `}
+        className="flex-1 overflow-y-auto flex flex-col p-4 sm:p-8 relative transition-colors bg-[#f8fafc] dark:bg-gray-950"
       >
-        {/* Pattern Overlays - Fixed positioning ensures they cover full screen even with scroll */}
+        {/* Pattern Overlays */}
         {chatBackground === "dots" && (
           <div
             className="fixed inset-0 opacity-[0.05] dark:opacity-[0.1] pointer-events-none z-0"
@@ -1094,287 +1034,253 @@ function ChatPage() {
         )}
 
         {showForwardSuccess && (
-          <div className="sticky top-0 z-40 mb-2 mx-2 mt-2 pointer-events-none">
-            <div className="bg-emerald-50/95 dark:bg-emerald-900/30 backdrop-blur-sm border border-emerald-200 dark:border-emerald-800 rounded-lg shadow-sm p-3 animate-in fade-in slide-in-from-top-2 duration-300">
-              <div className="flex items-center gap-3">
-                <div className="flex-shrink-0 w-8 h-8 bg-emerald-100 dark:bg-emerald-900/50 rounded-full flex items-center justify-center">
+          <div className="sticky top-4 z-40 mb-6 mx-auto w-full max-w-sm pointer-events-none">
+            <div className="backdrop-blur-2xl bg-emerald-500/90 dark:bg-emerald-500/20 border border-emerald-400/30 rounded-3xl shadow-[0_20px_40px_rgba(16,185,129,0.2)] p-5 animate-in fade-in slide-in-from-top-6 duration-700">
+              <div className="flex items-center gap-5">
+                <div className="flex-shrink-0 w-12 h-12 bg-white dark:bg-emerald-500/20 rounded-2xl flex items-center justify-center shadow-lg">
                   <CheckCircle2
-                    size={16}
+                    size={24}
                     className="text-emerald-600 dark:text-emerald-400"
                   />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-emerald-900 dark:text-emerald-100 leading-none">
-                    Message Forwarded!
+                  <p className="text-[10px] font-black text-emerald-900 dark:text-emerald-400 uppercase tracking-[0.3em] leading-none mb-1">
+                    Grid Transmission
                   </p>
-                  <p className="text-[11px] text-emerald-700 dark:text-emerald-400 mt-1 leading-none">
-                    Sent successfully
+                  <p className="text-sm font-black text-white dark:text-emerald-50 content-none uppercase tracking-tight">
+                    Forwarded successfully
                   </p>
                 </div>
               </div>
             </div>
           </div>
         )}
+
         {messages.length === 0 && (
-          <div className="flex-1 flex items-center justify-center z-0">
-            <div className="bg-[#FFF5C4] dark:bg-yellow-900/30 text-gray-800 dark:text-yellow-100 text-[12.5px] p-3 rounded-lg shadow-sm text-center max-w-xs leading-relaxed select-none border border-yellow-200 dark:border-yellow-800">
-              <span className="text-yellow-600 mr-1">🔒</span>
-              Messages are end-to-end encrypted. No one outside of this chat,
-              not even MetaChain, can read or listen to them.
+          <div className="flex-1 flex flex-col items-center justify-center z-10 opacity-60">
+            <div className="w-24 h-24 bg-primary-500/5 rounded-[2rem] flex items-center justify-center text-primary-500/20 mb-6 border border-primary-500/10">
+              <Zap size={48} strokeWidth={1} />
+            </div>
+            <div className="backdrop-blur-sm bg-white/5 dark:bg-white/5 border border-white/10 p-8 rounded-[2.5rem] shadow-xl text-center max-w-sm">
+              <p className="text-[11px] font-black text-gray-500 dark:text-gray-400 uppercase tracking-[0.4em] mb-4">Registry Status: Empty</p>
+              <p className="text-sm font-black text-gray-400 dark:text-gray-500 uppercase tracking-tight">
+                This grid has no recorded communications.
+              </p>
             </div>
           </div>
         )}
 
-        {messages
-          .filter((m) => m.status !== "pending" && m.status !== "zombie")
-          .map((msg, i, arr) => {
-            const currentDate = new Date(msg.timestamp || 0).toDateString();
-            const prevDate =
-              i > 0 ? new Date(arr[i - 1].timestamp || 0).toDateString() : null;
-            const showDate = currentDate !== prevDate;
-            const isFirstInGroup =
-              i === 0 ||
-              arr[i - 1].senderPublicKey !== msg.senderPublicKey ||
-              arr[i - 1].type === "system" ||
-              showDate;
-            const isLastInGroup =
-              i === arr.length - 1 ||
-              arr[i + 1].senderPublicKey !== msg.senderPublicKey ||
-              arr[i + 1].type === "system" ||
-              (i < arr.length - 1 &&
-                new Date(arr[i + 1].timestamp || 0).toDateString() !==
-                  currentDate);
+        <div className="flex flex-col gap-1">
+          {messages
+            .filter((m) => m.status !== "pending" && m.status !== "zombie")
+            .map((msg, i, arr) => {
+              const currentDate = new Date(msg.timestamp || 0).toDateString();
+              const prevDate =
+                i > 0 ? new Date(arr[i - 1].timestamp || 0).toDateString() : null;
+              const showDate = currentDate !== prevDate;
+              const isFirstInGroup =
+                i === 0 ||
+                arr[i - 1].senderPublicKey !== msg.senderPublicKey ||
+                arr[i - 1].type === "system" ||
+                showDate;
+              const isLastInGroup =
+                i === arr.length - 1 ||
+                arr[i + 1].senderPublicKey !== msg.senderPublicKey ||
+                arr[i + 1].type === "system" ||
+                (i < arr.length - 1 &&
+                  new Date(arr[i + 1].timestamp || 0).toDateString() !==
+                    currentDate);
 
-            return (
-              <div
-                key={`${msg.timestamp}-${msg.text || "no-text"}-${i}`}
-                className="flex flex-col w-full z-0 relative"
-              >
-                {showDate && msg.timestamp && (
-                  <div className="flex justify-center my-3 sticky top-2 z-10">
-                    <span className="text-xs text-gray-600 dark:text-gray-300 font-medium bg-[#E1F3FB] dark:bg-gray-800 border border-white/50 dark:border-gray-700 px-3 py-1.5 rounded-lg shadow-sm uppercase tracking-wide backdrop-blur-sm">
-                      {new Date(msg.timestamp).toLocaleDateString("en-US", {
-                        month: "long",
-                        day: "numeric",
-                      })}
-                    </span>
-                  </div>
-                )}
-                {msg.type === "system" ? (
-                  <div className="flex justify-center my-4 z-10 w-full">
-                    <span className="text-xs text-center text-gray-500 bg-gray-100/80 dark:bg-gray-800/80 dark:text-gray-400 px-4 py-2 rounded-xl backdrop-blur-sm max-w-[80%] mx-auto">
-                      {msg.text}
-                    </span>
-                  </div>
-                ) : (
-                  <MessageBubble
-                    fromMe={msg.fromMe}
-                    text={msg.text}
-                    charm={msg.charm}
-                    amount={msg.amount}
-                    timestamp={msg.timestamp}
-                    status={msg.status}
-                    tokenAmount={msg.tokenAmount}
-                    type={msg.type}
-                    filedata={msg.filedata}
-                    senderName={
-                      msg.fromMe
-                        ? userName || "You"
-                        : msg.senderPublicKey
-                          ? contactsMap[msg.senderPublicKey]?.name ||
-                            msg.senderUsername ||
-                            msg.senderPublicKey.substring(0, 6)
-                          : msg.senderUsername || "Unknown"
-                    }
-                    senderImage={
-                      msg.fromMe
-                        ? userAvatar
-                        : msg.senderPublicKey
-                          ? contactsMap[msg.senderPublicKey]?.icon
+              return (
+                <div
+                  key={`${msg.timestamp}-${msg.text || "no-text"}-${i}`}
+                  className="flex flex-col w-full z-10 relative"
+                >
+                  {showDate && msg.timestamp && (
+                    <div className="flex justify-center my-8 sticky top-2 z-20">
+                      <span className="text-[10px] font-black text-gray-400 dark:text-gray-500 bg-white/80 dark:bg-gray-900/80 border border-white/20 dark:border-white/5 px-6 py-2 rounded-full shadow-2xl uppercase tracking-[0.3em] backdrop-blur-xl">
+                        {new Date(msg.timestamp).toLocaleDateString("en-US", {
+                          month: "long",
+                          day: "numeric",
+                          year: "numeric"
+                        })}
+                      </span>
+                    </div>
+                  )}
+
+                  {msg.type === "system" ? (
+                    <div className="flex justify-center my-6 z-10 w-full animate-in fade-in duration-1000">
+                      <div className="flex items-center gap-3 bg-gray-100/50 dark:bg-white/5 px-6 py-3 rounded-2xl backdrop-blur-sm border border-black/5 dark:border-white/5">
+                        <History size={14} className="text-gray-400" />
+                        <span className="text-[10px] font-black text-gray-500 dark:text-gray-400 uppercase tracking-widest">
+                          {msg.text}
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <MessageBubble
+                      fromMe={msg.fromMe}
+                      text={msg.text}
+                      charm={msg.charm}
+                      amount={msg.amount}
+                      timestamp={msg.timestamp}
+                      status={msg.status}
+                      tokenAmount={msg.tokenAmount}
+                      type={msg.type}
+                      filedata={msg.filedata}
+                      senderName={
+                        msg.fromMe
+                          ? userName || "YOU"
+                          : msg.senderPublicKey
+                            ? contactsMap[msg.senderPublicKey]?.name ||
+                              msg.senderUsername ||
+                              msg.senderPublicKey.substring(0, 6)
+                            : msg.senderUsername || "UNKNOWN"
+                      }
+                      senderImage={
+                        msg.fromMe
+                          ? userAvatar
+                          : msg.senderPublicKey
+                            ? contactsMap[msg.senderPublicKey]?.icon
+                            : undefined
+                      }
+                      forwarded={msg.forwarded}
+                      showName={isFirstInGroup}
+                      showAvatar={isLastInGroup}
+                      currentChatId={address}
+                      onAvatarClick={
+                        !msg.fromMe && msg.senderPublicKey
+                          ? () =>
+                              navigate({
+                                to: `/contact-info/${msg.senderPublicKey}`,
+                                search: { returnTo: `/groups/${address}` },
+                              })
                           : undefined
-                    }
-                    forwarded={msg.forwarded}
-                    showName={isFirstInGroup}
-                    showAvatar={isLastInGroup}
-                    currentChatId={address}
-                    onAvatarClick={
-                      !msg.fromMe && msg.senderPublicKey
-                        ? () =>
-                            navigate({
-                              to: `/contact-info/${msg.senderPublicKey}`,
-                              search: { returnTo: `/groups/${address}` },
-                            })
-                        : undefined
-                    }
-                    replyTo={msg.replyTo}
-                    deleted={msg.deleted}
-                    onDelete={
-                      (msg.fromMe ||
-                        myRole === "admin" ||
-                        myRole === "creator") &&
-                      !msg.deleted &&
-                      msg.customid
-                        ? () => handleDeleteGroupMessage(msg.customid!)
-                        : undefined
-                    }
-                    onReply={() => {
-                      const senderName = msg.fromMe
-                        ? userName || "You"
-                        : msg.senderPublicKey
-                          ? contactsMap[msg.senderPublicKey]?.name ||
-                            msg.senderUsername ||
-                            "Unknown"
-                          : msg.senderUsername || "Unknown";
-                      setReplyingTo({
-                        customid: msg.customid || "",
-                        text: msg.text || (msg.type === "image" ? "Image" : ""),
-                        senderName,
-                        type: msg.type || "text",
-                      });
-                      setTimeout(() => inputRef.current?.focus(), 50);
-                    }}
-                  />
-                )}
-              </div>
-            );
-          })}
+                      }
+                      replyTo={msg.replyTo}
+                      deleted={msg.deleted}
+                      onDelete={
+                        (msg.fromMe ||
+                          myRole === "admin" ||
+                          myRole === "creator") &&
+                        !msg.deleted &&
+                        msg.customid
+                          ? () => handleDeleteGroupMessage(msg.customid!)
+                          : undefined
+                      }
+                      onReply={() => {
+                        const senderName = msg.fromMe
+                          ? userName || "YOU"
+                          : msg.senderPublicKey
+                            ? contactsMap[msg.senderPublicKey]?.name ||
+                              msg.senderUsername ||
+                              "UNKNOWN"
+                            : msg.senderUsername || "UNKNOWN";
+                        setReplyingTo({
+                          customid: msg.customid || "",
+                          text: msg.text || (msg.type === "image" ? "Image" : ""),
+                          senderName,
+                          type: msg.type || "text",
+                        });
+                        setTimeout(() => inputRef.current?.focus(), 50);
+                      }}
+                    />
+                  )}
+                </div>
+              );
+            })}
+        </div>
 
-        <div ref={messagesEndRef} />
+        <div ref={messagesEndRef} className="h-4" />
       </div>
 
-      {/* REPLY BANNER */}
+      {/* ELITE REPLY INTERFACE */}
       {replyingTo && (
-        <div className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-700/60 border-t border-gray-200 dark:border-gray-600 flex items-center gap-2">
-          <div className="flex-1 min-w-0 pl-2 border-l-2 border-primary-400">
-            <p className="text-[10px] font-semibold text-primary-600 dark:text-primary-400 truncate">
-              {replyingTo.senderName}
-            </p>
-            <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate">
-              {replyingTo.type === "image" ? "📷 Image" : replyingTo.text}
-            </p>
-          </div>
-          <button
-            onClick={() => setReplyingTo(null)}
-            className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 flex-shrink-0"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+        <div className="mx-6 mb-4 animate-in slide-in-from-bottom-4 duration-500">
+          <div className="backdrop-blur-2xl bg-white/80 dark:bg-gray-900/80 border border-white/20 dark:border-white/5 rounded-[1.5rem] p-4 flex items-center gap-4 shadow-2xl relative overflow-hidden group">
+            <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-primary-500 shadow-[0_0_15px_rgba(59,130,246,0.5)]" />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[9px] font-black text-primary-500 uppercase tracking-[0.2em]">Context Link</span>
+                <span className="text-[9px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-[0.2em]">{replyingTo.senderName}</span>
+              </div>
+              <p className="text-xs font-bold text-gray-900 dark:text-gray-100 truncate uppercase tracking-tight">
+                {replyingTo.type === "image" ? "IMAGE PAYLOAD" : replyingTo.text}
+              </p>
+            </div>
+            <button
+              onClick={() => setReplyingTo(null)}
+              className="w-10 h-10 flex items-center justify-center bg-gray-100 dark:bg-white/5 text-gray-400 hover:text-red-500 rounded-xl transition-all duration-300"
             >
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
+              <Trash2 size={16} strokeWidth={3} />
+            </button>
+          </div>
         </div>
       )}
-      {/* INPUT BAR - Fixed at bottom */}
-      <div className="p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] bg-white dark:bg-gray-800 flex gap-1 items-center flex-shrink-0 z-10 relative border-t border-gray-200 dark:border-gray-700">
-        <div className="flex-1 min-w-0 bg-white dark:bg-gray-700 rounded-2xl flex items-center border border-gray-200 dark:border-gray-600 focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-transparent shadow-sm px-3 py-2 transition-all cursor-text relative">
-          {/* EMOJI PICKER CONTAINER */}
-          <div
-            ref={emojiPickerRef}
-            className={`absolute bottom-full mb-2 left-0 z-50 transition-all duration-200 shadow-2xl rounded-xl border border-gray-100 dark:border-gray-700 ${!showEmojiPicker ? "opacity-0 scale-95 pointer-events-none invisible" : "opacity-100 scale-100 visible"}`}
-          >
-            <Suspense
-              fallback={
-                <div className="h-[350px] w-[300px] bg-white dark:bg-gray-800 animate-pulse rounded-xl" />
-              }
-            >
-              <EmojiPicker
-                onEmojiClick={onEmojiClick}
-                theme={mode === "dark" ? ("dark" as any) : ("light" as any)}
-                width={320}
-                height={400}
-                searchDisabled={true}
-                skinTonesDisabled
-                previewConfig={{ showPreview: false }}
+
+      {/* ELITE INPUT HUB */}
+      <div className="px-6 pb-10 pt-2 relative z-50">
+        <div className="max-w-screen-xl mx-auto flex items-end gap-4">
+          <div className="flex-1 relative group">
+            {/* Glassmorphic Backing */}
+            <div className="absolute inset-0 bg-white/40 dark:bg-gray-900/40 backdrop-blur-3xl rounded-[2.5rem] border border-white/20 dark:border-white/5 shadow-2xl transition-all duration-500 group-focus-within:border-primary-500/50 group-focus-within:bg-white/60 dark:group-focus-within:bg-gray-900/60" />
+
+            <div className="relative flex items-center px-4 py-3 min-h-[72px]">
+              {/* Emoji Trigger */}
+              <div ref={emojiPickerRef} className="relative">
+                <div className={`absolute bottom-full mb-6 left-0 z-50 transition-all duration-500 ${!showEmojiPicker ? "opacity-0 scale-95 pointer-events-none translate-y-4" : "opacity-100 scale-100 translate-y-0"}`}>
+                  <div className="backdrop-blur-3xl bg-white/95 dark:bg-gray-900/95 rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.3)] border border-white/20 dark:border-white/5 overflow-hidden">
+                    <Suspense fallback={<div className="h-[350px] w-[320px] bg-white dark:bg-gray-800 animate-pulse" />}>
+                      <EmojiPicker
+                        onEmojiClick={onEmojiClick}
+                        theme={mode === "dark" ? ("dark" as any) : ("light" as any)}
+                        width={320}
+                        height={400}
+                        searchDisabled
+                        skinTonesDisabled
+                        previewConfig={{ showPreview: false }}
+                      />
+                    </Suspense>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                  className={`w-12 h-12 flex items-center justify-center rounded-2xl transition-all duration-500 ${showEmojiPicker ? "bg-primary-500 text-white" : "text-gray-400 hover:text-primary-500 bg-gray-100/50 dark:bg-white/5"}`}
+                >
+                  <Radio size={24} strokeWidth={2.5} />
+                </button>
+              </div>
+
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }}
+                onFocus={() => setShowEmojiPicker(false)}
+                placeholder="ENCRYPTED TRANSMISSION..."
+                className="flex-1 bg-transparent border-none focus:outline-none focus:ring-0 text-sm font-bold text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-600 px-4 py-2 resize-none max-h-48 uppercase tracking-widest leading-relaxed"
+                rows={1}
+                style={{ minHeight: "24px" }}
               />
-            </Suspense>
+
+              <input type="file" ref={fileInputRef} accept="image/*" className="hidden" onChange={handleImageSelect} />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="w-12 h-12 flex items-center justify-center rounded-2xl text-gray-400 hover:text-primary-500 bg-gray-100/50 dark:bg-white/5 transition-all duration-500 mx-1"
+              >
+                <ImageIcon size={22} strokeWidth={2.5} />
+              </button>
+            </div>
           </div>
 
           <button
-            className={`p-1 mr-1 rounded-full transition-colors flex-shrink-0 ${showEmojiPicker ? "text-primary-500" : "text-gray-400 hover:text-gray-600"}`}
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowEmojiPicker(!showEmojiPicker);
-            }}
-            title="Emoji"
+            onClick={handleSendMessage}
+            disabled={!input.trim()}
+            className={`w-[72px] h-[72px] flex items-center justify-center rounded-[2rem] transition-all duration-500 shadow-2xl active:scale-90 flex-shrink-0 ${!input.trim() ? "bg-gray-100 dark:bg-white/5 text-gray-300 dark:text-gray-600" : "bg-primary-500 text-white shadow-primary-500/30 hover:scale-105"}`}
           >
-            <svg
-              className="w-6 h-6"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
+            <Zap size={28} strokeWidth={3} fill={input.trim() ? "currentColor" : "none"} />
           </button>
-
-          <input
-            type="file"
-            ref={fileInputRef}
-            accept="image/*"
-            className="hidden"
-            onChange={handleImageSelect}
-          />
-          <button
-            className={`p-1 mr-1 rounded-full transition-colors flex-shrink-0 text-gray-400 hover:text-gray-600`}
-            onClick={(e) => {
-              e.stopPropagation();
-              fileInputRef.current?.click();
-            }}
-            title="Attach Image"
-          >
-            <ImageIcon className="w-5 h-5" />
-          </button>
-
-          <input
-            ref={inputRef}
-            onFocus={() => setShowEmojiPicker(false)}
-            onKeyUp={(e) => {
-              cursorPositionRef.current = e.currentTarget.selectionStart;
-            }}
-            onClick={(e) => {
-              cursorPositionRef.current = e.currentTarget.selectionStart;
-            }}
-            onSelect={(e) => {
-              cursorPositionRef.current = e.currentTarget.selectionStart;
-            }}
-            className="flex-1 bg-transparent outline-none text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 text-[15px] max-h-32 py-1"
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
-            placeholder="Type a message"
-          />
         </div>
-
-        <button
-          className={`ml-1 p-2 rounded-full transition-all duration-200 shadow-sm
-            ${input.trim() ? "bg-primary-600 text-white hover:bg-primary-700 transform hover:scale-105" : "bg-gray-200 text-gray-400 cursor-default"}`}
-          onClick={handleSendMessage}
-          disabled={!input.trim()}
-        >
-          <svg
-            className="w-5 h-5 translate-x-0.5"
-            viewBox="0 0 24 24"
-            fill="currentColor"
-          >
-            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path>
-          </svg>
-        </button>
       </div>
     </div>
   );

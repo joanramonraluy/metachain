@@ -1,6 +1,7 @@
 import { ReactNode, useEffect, useState } from "react";
 import SideMenu from "./SideMenu";
 import Header from "./Header";
+import BottomNav from "./BottomNav";
 import { useRouterState } from "@tanstack/react-router";
 
 interface AppLayoutProps {
@@ -22,7 +23,6 @@ export default function AppLayout({ children }: AppLayoutProps) {
     "/contact-info/",
     "/create-channel",
     "/create-group",
-    "/discovery",
   ];
   const hasCustomHeader = customHeaderRoutes.some((route) => currentPath.startsWith(route));
 
@@ -33,7 +33,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
   }, []);
 
   return (
-    <div className="flex bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 h-full w-full overflow-hidden transition-colors">
+    <div className="flex bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 h-full w-full overflow-hidden transition-colors">
       <SideMenu isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
 
       <div className="flex-1 flex flex-col relative min-h-0 min-w-0">
@@ -43,9 +43,11 @@ export default function AppLayout({ children }: AppLayoutProps) {
         )}
 
         {/* Main content area */}
-        <main className="flex-1 flex flex-col relative min-h-0 min-w-0">
+        <main className={`flex-1 flex flex-col relative min-h-0 min-w-0 ${!hasCustomHeader ? "pb-32 md:pb-0" : ""}`}>
           {children}
         </main>
+
+        {!hasCustomHeader && <BottomNav />}
       </div>
     </div>
   );

@@ -8,6 +8,11 @@ import { MDS } from "@minima-global/mds";
 // Queue map: publicKey -> Promise chain to strictly serialize execution
 const seqQueues: { [key: string]: Promise<void> } = {};
 
+// In-memory fallback counters used when MDS is unresponsive (Minima offline)
+const offlineSeqCounters: { [key: string]: number } = {};
+
+const SEQ_MDS_TIMEOUT_MS = 4000;
+
 /**
  * Run SQL query with Promise wrapper
  */
@@ -925,13 +930,25 @@ export function getAndIncrementSequenceNumber(
 
   // 2. Chain our new task to run AFTER the previous one finishes
   const myTask = previousTask.then(() => {
-    return new Promise<number>((resolve, reject) => {
+    return new Promise<number>((resolve) => {
       const safePubkey = escapeSql(publicKey);
+      let settled = false;
+
+      // Fallback: if MDS doesn't respond in time (Minima offline), use in-memory counter
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        const fallback = (offlineSeqCounters[publicKey] || 1);
+        offlineSeqCounters[publicKey] = fallback + 1;
+        console.warn(`⚠️ [SEQ-MUTEX] MDS timeout — using offline fallback seq ${fallback} for ${safePubkey.substring(0, 20)}...`);
+        resolve(fallback);
+      }, SEQ_MDS_TIMEOUT_MS);
 
       // Step 1: Check if counter exists
       const checkSql = `SELECT next_seq FROM MESSAGE_COUNTERS WHERE UPPER(publickey)=UPPER('${safePubkey}')`;
 
       MDS.sql(checkSql, (res: any) => {
+        if (settled) return;
         if (res.status && res.rows && res.rows.length > 0) {
           // Counter exists - get current value
           const currentSeq = parseInt(res.rows[0].NEXT_SEQ);
@@ -940,16 +957,20 @@ export function getAndIncrementSequenceNumber(
           const updateSql = `UPDATE MESSAGE_COUNTERS SET next_seq = next_seq + 1 WHERE UPPER(publickey)=UPPER('${safePubkey}')`;
 
           MDS.sql(updateSql, (updateRes: any) => {
+            if (settled) return;
+            clearTimeout(timer);
+            settled = true;
             if (updateRes.status) {
               console.log(
                 `📊 [SEQ-MUTEX] Got seq ${currentSeq}, incremented to ${currentSeq + 1} for ${safePubkey.substring(0, 20)}...`,
               );
+              offlineSeqCounters[publicKey] = currentSeq + 1;
               resolve(currentSeq);
             } else {
-              console.error(
-                `❌ [SEQ-MUTEX] Failed to increment: ${updateRes.error}`,
-              );
-              reject(updateRes.error);
+              console.error(`❌ [SEQ-MUTEX] Failed to increment: ${updateRes.error}`);
+              const fallback = (offlineSeqCounters[publicKey] || 1);
+              offlineSeqCounters[publicKey] = fallback + 1;
+              resolve(fallback);
             }
           });
         } else {
@@ -957,16 +978,20 @@ export function getAndIncrementSequenceNumber(
           const insertSql = `INSERT INTO MESSAGE_COUNTERS (publickey, next_seq) VALUES ('${safePubkey}', 2)`;
 
           MDS.sql(insertSql, (insertRes: any) => {
+            if (settled) return;
+            clearTimeout(timer);
+            settled = true;
             if (insertRes.status) {
               console.log(
                 `📊 [SEQ-MUTEX] Created counter for ${safePubkey.substring(0, 20)}..., returning 1`,
               );
+              offlineSeqCounters[publicKey] = 2;
               resolve(1);
             } else {
-              console.error(
-                `❌ [SEQ-MUTEX] Failed to create counter: ${insertRes.error}`,
-              );
-              reject(insertRes.error);
+              console.error(`❌ [SEQ-MUTEX] Failed to create counter: ${insertRes.error}`);
+              const fallback = (offlineSeqCounters[publicKey] || 1);
+              offlineSeqCounters[publicKey] = fallback + 1;
+              resolve(fallback);
             }
           });
         }

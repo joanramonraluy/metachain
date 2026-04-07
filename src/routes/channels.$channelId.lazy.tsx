@@ -19,10 +19,15 @@ import {
   Archive,
   Image as ImageIcon,
   CheckCircle2,
+  Zap,
+  ChevronRight,
+  MoreVertical,
+  ArrowLeft,
 } from "lucide-react";
 import { channelService } from "../services/channel.service";
 import { compressImage } from "../utils/image";
 import { useTheme } from "../context/ThemeContext";
+import MessageBubble from "../components/chat/MessageBubble";
 import { EmojiClickData } from "emoji-picker-react";
 
 const EmojiPicker = lazy(() => import("emoji-picker-react"));
@@ -478,234 +483,182 @@ function ChannelPage() {
     }
   };
 
-  // -------------------------------------------------------------------------
-  // Render
-  // -------------------------------------------------------------------------
-  const isReadOnly = !isAdmin;
-
+  /* ----------------------------------------------------------------------------
+      RENDER
+  ---------------------------------------------------------------------------- */
   return (
-    <div className="flex-1 w-full flex flex-col bg-[#E5DDD5] dark:bg-gray-900 min-h-0">
-      {/* HEADER */}
-      <div className="bg-primary-600 dark:bg-gray-800 text-white p-4 pt-[calc(1rem+env(safe-area-inset-top))] px-4 flex items-center gap-3 flex-shrink-0 shadow-sm z-30 transition-colors border-b border-primary-700 dark:border-gray-700">
-        <button
-          onClick={() => navigate({ to: "/" })}
-          className="p-2 hover:bg-white/10 rounded-full transition-colors"
-        >
-          <svg
-            className="w-6 h-6"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M10 19l-7-7m0 0l7-7m-7 7h18"
-            />
-          </svg>
-        </button>
-
-        <div className="flex items-center gap-3 flex-1 min-w-0">
-          <div className="w-12 h-12 rounded-full bg-sky-500 flex items-center justify-center text-white flex-shrink-0 overflow-hidden">
-            {channelAvatar ? (
-              <img
-                src={channelAvatar}
-                alt={channelName}
-                className="w-full h-full object-cover"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).src = defaultAvatar;
-                }}
-              />
-            ) : (
-              <Radio size={22} />
-            )}
-          </div>
-          <div className="flex flex-col leading-tight flex-1 min-w-0">
-            <strong className="text-[16px] truncate font-semibold flex items-center gap-1.5">
-              {channelName}
-              {isFavorite && (
-                <Star
-                  size={14}
-                  fill="#fbbf24"
-                  stroke="#f59e0b"
-                  className="flex-shrink-0"
-                />
-              )}
-            </strong>
-            <span className="text-xs opacity-80 flex items-center gap-1.5 min-w-0">
-              <span className="truncate">
-                {subscriberCount} subscriber{subscriberCount !== 1 ? "s" : ""}
-                {isAdmin ? " · admin" : " · read-only"}
-              </span>
-              {isSyncing && (
-                <>
-                  <span className="text-gray-400 opacity-60">·</span>
-                  <span className="flex items-center gap-1 text-sky-200 animate-pulse whitespace-nowrap text-[11px] font-medium leading-none">
-                    <svg
-                      className="w-3 h-3 animate-spin"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                    >
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                      ></circle>
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                      ></path>
-                    </svg>
-                    Syncing...
-                  </span>
-                </>
-              )}
-            </span>
-          </div>
-        </div>
-
-        {/* Menu */}
-        <div className="relative" ref={menuRef}>
+    <div className="flex-1 w-full flex flex-col bg-[#f8fafc] dark:bg-gray-950 min-h-0">
+      {/* ELITE STICKY HEADER */}
+      <div className="sticky top-0 z-[70] w-full pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pt-[env(safe-area-inset-top)] backdrop-blur-xl bg-white/70 dark:bg-gray-900/60 border-b border-white/20 dark:border-white/5 shadow-2xl shadow-black/5 transition-all duration-500">
+        <div className="max-w-screen-xl mx-auto px-6 h-28 flex items-center gap-6">
+          {/* Elite Back Navigation */}
           <button
-            className="opacity-80 hover:opacity-100 p-2"
-            onClick={() => setShowMenu(!showMenu)}
+            onClick={() => navigate({ to: "/" })}
+            className="group relative w-14 h-14 flex items-center justify-center bg-gray-100 dark:bg-white/5 rounded-2xl hover:bg-primary-500 hover:text-white transition-all duration-500 active:scale-95 shadow-inner"
           >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"
-              />
-            </svg>
+            <div className="absolute inset-0 bg-primary-500 rounded-2xl opacity-0 group-hover:opacity-100 blur-xl transition-opacity duration-500" />
+            <ArrowLeft size={24} strokeWidth={3} className="relative z-10" />
           </button>
 
-          {showMenu && (
-            <div className="absolute top-10 right-0 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 min-w-[180px] z-50 animate-in slide-in-from-top-2 fade-in duration-200">
-              <button
-                className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 rounded-t-lg transition-colors text-left"
-                onClick={() => {
-                  setShowMenu(false);
-                  navigate({
-                    to: "/channel-info/$channelId",
-                    params: { channelId },
-                  });
-                }}
-              >
-                <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
-                  <Info size={16} />
+          <div className="flex items-center gap-5 flex-1 min-w-0">
+            {/* Elite Avatar Hub */}
+            <div
+              className="relative group cursor-pointer"
+              onClick={() => navigate({ to: `/channel-info/${channelId}` })}
+            >
+              <div className="absolute inset-0 bg-primary-500 rounded-[1.5rem] blur-2xl opacity-0 group-hover:opacity-30 transition-opacity duration-500" />
+              <div className="w-16 h-16 rounded-[1.5rem] border-2 border-white dark:border-gray-800 bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400 dark:text-gray-500 font-black text-2xl flex-shrink-0 overflow-hidden shadow-2xl relative z-10 group-hover:scale-105 transition-transform duration-500">
+                {channelAvatar ? (
+                  <img
+                    src={channelAvatar}
+                    alt={channelName}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = defaultAvatar;
+                    }}
+                  />
+                ) : (
+                  <Radio size={28} strokeWidth={2.5} />
+                )}
+              </div>
+              {isSyncing && (
+                <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-primary-500 rounded-full border-4 border-white dark:border-gray-900 flex items-center justify-center z-20 animate-bounce">
+                  <Zap size={10} strokeWidth={4} className="text-white" fill="currentColor" />
                 </div>
-                <span className="font-medium">Channel Info</span>
-              </button>
-              <button
-                className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
-                onClick={() => {
-                  setShowMenu(false);
-                  navigate({
-                    to: "/channel-info/$channelId",
-                    params: { channelId },
-                    search: {
-                      returnTo: `/channels/${channelId}`,
-                      tab: "settings",
-                    },
-                  });
-                }}
-              >
-                <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
-                  <Settings size={16} />
-                </div>
-                <span className="font-medium">Actions</span>
-              </button>
-              <button
-                className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
-                onClick={() => {
-                  setShowMenu(false);
-                  handleToggleFavorite();
-                }}
-              >
-                <div className="w-8 h-8 rounded-full bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center text-yellow-600 dark:text-yellow-400">
-                  <Star size={16} fill={isFavorite ? "currentColor" : "none"} />
-                </div>
-                <span className="font-medium">
-                  {isFavorite ? "Unfavorite Channel" : "Favorite Channel"}
-                </span>
-              </button>
-              <button
-                className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
-                onClick={() => {
-                  setShowMenu(false);
-                  handleToggleArchive();
-                }}
-              >
-                <div className="w-8 h-8 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center text-orange-600 dark:text-orange-400">
-                  <Archive size={16} />
-                </div>
-                <span className="font-medium">
-                  {isArchived ? "Unarchive Channel" : "Archive Channel"}
-                </span>
-              </button>
-              <button
-                className="flex items-center gap-3 w-full p-3 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 rounded-b-lg transition-colors text-left border-t border-gray-100 dark:border-gray-700"
-                onClick={() => {
-                  setShowMenu(false);
-                  setShowDeleteConfirm(true);
-                }}
-              >
-                <div className="w-8 h-8 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center text-red-600 dark:text-red-400">
-                  <Trash2 size={16} />
-                </div>
-                <span className="font-medium">Exit Channel</span>
-              </button>
+              )}
             </div>
-          )}
+
+            <div className="flex flex-col text-left min-w-0">
+              <div className="flex items-center gap-2">
+                <h1 className="text-lg font-black text-gray-900 dark:text-white truncate uppercase tracking-tight">
+                  {channelName}
+                </h1>
+                {isFavorite && (
+                  <Star
+                    size={16}
+                    fill="#fbbf24"
+                    stroke="#fbbf24"
+                    className="flex-shrink-0 drop-shadow-[0_0_8px_rgba(251,191,36,0.4)]"
+                  />
+                )}
+              </div>
+              <div className="flex items-center gap-3 overflow-hidden">
+                <span className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-[0.3em] whitespace-nowrap">
+                  {subscriberCount} SUBSCRIBERS
+                </span>
+                {isSyncing ? (
+                  <span className="flex items-center gap-2 text-[9px] font-black text-primary-500 uppercase tracking-widest animate-pulse whitespace-nowrap">
+                    <div className="w-1.5 h-1.5 rounded-full bg-primary-500 shadow-[0_0_10px_rgba(59,130,246,0.8)]" />
+                    Synchronizing Grid
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-2 text-[9px] font-black text-emerald-500 uppercase tracking-widest whitespace-nowrap">
+                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.8)]" />
+                    Broadcast Active
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Elite Header Actions */}
+          <div className="flex gap-4 relative pr-4" ref={menuRef}>
+            <button
+              onClick={() => setShowMenu(!showMenu)}
+              className={`w-14 h-14 flex items-center justify-center rounded-2xl transition-all duration-500 ${showMenu ? "bg-primary-500 text-white shadow-lg shadow-primary-500/30" : "bg-gray-100 dark:bg-white/5 text-gray-500 hover:text-primary-500 shadow-inner"}`}
+            >
+              <MoreVertical size={24} strokeWidth={3} />
+            </button>
+
+            {showMenu && (
+              <div className="absolute top-20 right-0 w-[240px] backdrop-blur-2xl bg-white/95 dark:bg-gray-900/95 rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.2)] border border-white/20 dark:border-white/5 py-4 overflow-hidden z-[100] animate-in slide-in-from-top-4 fade-in duration-500">
+                <div className="px-6 py-4 mb-2 border-b border-gray-100 dark:border-white/5">
+                  <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.4em]">Grid Registry</span>
+                </div>
+
+                {[
+                  { label: "Channel Info", icon: Info, action: () => navigate({ to: "/channel-info/$channelId", params: { channelId } }), color: "text-blue-500", bg: "bg-blue-500/10" },
+                  { label: "Actions", icon: Settings, action: () => navigate({ to: "/channel-info/$channelId", params: { channelId }, search: { returnTo: `/channels/${channelId}`, tab: "settings" } }), color: "text-primary-500", bg: "bg-primary-500/10" },
+                  { label: isFavorite ? "Dismiss Star" : "Star Registry", icon: Star, action: handleToggleFavorite, color: "text-amber-500", bg: "bg-amber-500/10", fill: isFavorite },
+                  { label: isArchived ? "Restore Vault" : "Archive Vault", icon: Archive, action: handleToggleArchive, color: "text-orange-500", bg: "bg-orange-500/10" },
+                ].map((item, idx) => (
+                  <button
+                    key={idx}
+                    className="w-full flex items-center justify-between px-6 py-5 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors group/item"
+                    onClick={() => { setShowMenu(false); item.action(); }}
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className={`w-11 h-11 ${item.bg} ${item.color} rounded-xl flex items-center justify-center group-hover/item:scale-110 transition-transform duration-500 shadow-sm`}>
+                        <item.icon size={20} strokeWidth={3} fill={item.fill ? "currentColor" : "none"} />
+                      </div>
+                      <span className="text-[11px] font-black text-gray-700 dark:text-gray-200 uppercase tracking-widest">{item.label}</span>
+                    </div>
+                    <ChevronRight size={16} className="text-gray-300 dark:text-gray-600 opacity-0 group-hover/item:opacity-100 transition-all -translate-x-2 group-hover:translate-x-0" />
+                  </button>
+                ))}
+
+                <div className="mt-2 pt-2 border-t border-gray-100 dark:border-white/5">
+                  <button
+                    className="w-full flex items-center gap-4 px-6 py-5 text-red-500 hover:bg-red-500/10 transition-colors group/del"
+                    onClick={() => { setShowMenu(false); setShowDeleteConfirm(true); }}
+                  >
+                    <div className="w-11 h-11 bg-red-500/10 rounded-xl flex items-center justify-center group-hover/del:bg-red-500 group-hover/del:text-white transition-all duration-500">
+                      <Trash2 size={20} strokeWidth={3} />
+                    </div>
+                    <span className="text-[11px] font-black uppercase tracking-widest">Exit Channel</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* READ-ONLY BANNER for non-admins */}
-      {isReadOnly && (
-        <div className="bg-sky-50 dark:bg-sky-900/20 border-b border-sky-200 dark:border-sky-800 px-4 py-2 flex items-center gap-2 text-sky-700 dark:text-sky-300 text-xs">
-          <Radio size={12} />
-          <span>This is a channel. Only admins can post messages.</span>
+      {/* ELITE BROADCAST POLICY BANNER */}
+      {!isAdmin && (
+        <div className="mx-6 mt-6 animate-in slide-in-from-top-4 duration-700">
+          <div className="backdrop-blur-2xl bg-sky-500/10 border border-sky-400/20 rounded-[2rem] p-6 flex items-center gap-5 shadow-xl shadow-sky-500/5">
+            <div className="w-12 h-12 bg-sky-500/20 rounded-2xl flex items-center justify-center text-sky-500 shadow-inner">
+              <Radio size={24} strokeWidth={2.5} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] font-black text-sky-600 dark:text-sky-400 uppercase tracking-[0.3em] mb-1">Grid Policy: Read-Only</p>
+              <p className="text-sm font-black text-gray-900 dark:text-sky-100 uppercase tracking-tight">Only Grid Admins can broadcast to this registry.</p>
+            </div>
+          </div>
         </div>
       )}
 
-      {/* Delete Confirm Dialog */}
+      {/* ELITE DELETE CONFIRMATION */}
       {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-sm w-full p-6 animate-in zoom-in-95 fade-in duration-200">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[100] p-6 animate-in fade-in duration-300">
+          <div className="bg-white dark:bg-gray-900 rounded-[3rem] shadow-2xl max-w-sm w-full p-10 animate-in zoom-in-95 duration-500 border border-white/20 dark:border-white/5 text-center">
+            <div className="w-20 h-20 bg-red-500/10 rounded-3xl flex items-center justify-center text-red-500 mx-auto mb-8 shadow-inner">
+              <Trash2 size={40} strokeWidth={2.5} />
+            </div>
+            <h3 className="text-2xl font-black text-gray-900 dark:text-white mb-4 uppercase tracking-tighter">
               Exit Channel?
             </h3>
-            <p className="text-gray-600 dark:text-gray-300 mb-6">
+            <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-10 leading-relaxed uppercase tracking-widest">
               {isAdmin
-                ? "This will permanently delete the channel and all its messages."
-                : "You will stop receiving messages from this channel."}
+                ? "WARNING: This will permanently expunge this channel and all recorded history from the grid."
+                : "CAUTION: You will stop receiving broadcasts from this registry signal."}
             </p>
-            <div className="flex gap-3">
+            <div className="flex gap-4">
               <button
                 onClick={() => setShowDeleteConfirm(false)}
-                className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-medium"
+                className="flex-1 py-5 bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 rounded-2xl hover:bg-gray-200 dark:hover:bg-white/10 transition-all duration-500 font-black uppercase tracking-[0.2em] active:scale-95"
               >
-                Cancel
+                Abort
               </button>
               <button
                 onClick={() => {
                   setShowDeleteConfirm(false);
                   handleDelete();
                 }}
-                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
+                className="flex-1 py-5 bg-red-600 text-white rounded-2xl hover:bg-red-700 transition-all duration-500 font-black uppercase tracking-[0.2em] shadow-lg shadow-red-600/20 active:scale-95"
               >
-                Exit
+                Exit Signal
               </button>
             </div>
           </div>
@@ -719,385 +672,210 @@ function ChannelPage() {
           ${chatBackground === "dots" ? "" : chatBackground === "grid" ? "" : ""}`}
       >
         {showForwardSuccess && (
-          <div className="sticky top-0 z-40 mb-2 mx-2 mt-2 pointer-events-none">
-            <div className="bg-emerald-50/95 dark:bg-emerald-900/30 backdrop-blur-sm border border-emerald-200 dark:border-emerald-800 rounded-lg shadow-sm p-3 animate-in fade-in slide-in-from-top-2 duration-300">
-              <div className="flex items-center gap-3">
-                <div className="flex-shrink-0 w-8 h-8 bg-emerald-100 dark:bg-emerald-900/50 rounded-full flex items-center justify-center">
-                  <CheckCircle2
-                    size={16}
-                    className="text-emerald-600 dark:text-emerald-400"
-                  />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-emerald-900 dark:text-emerald-100 leading-none">
-                    Message Forwarded!
-                  </p>
-                  <p className="text-[11px] text-emerald-700 dark:text-emerald-400 mt-1 leading-none">
-                    Sent successfully
-                  </p>
-                </div>
+          <div className="sticky top-0 z-40 animate-in fade-in slide-in-from-top-4 duration-500">
+            <div className="backdrop-blur-2xl bg-emerald-500/10 border border-emerald-500/20 rounded-3xl p-4 flex items-center gap-4 shadow-xl shadow-emerald-500/5">
+              <div className="w-10 h-10 bg-emerald-500/20 rounded-xl flex items-center justify-center text-emerald-500 shadow-inner">
+                <CheckCircle2 size={20} strokeWidth={3} />
+              </div>
+              <div className="flex-1">
+                <p className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest mb-0.5">Broadcast Success</p>
+                <p className="text-sm font-black text-gray-900 dark:text-emerald-100 uppercase tracking-tight">Signal forwarded to destination grid.</p>
               </div>
             </div>
           </div>
         )}
-        {/* Background patterns (same as group chat) */}
-        {chatBackground === "dots" && (
-          <div
-            className="fixed inset-0 opacity-[0.05] dark:opacity-[0.1] pointer-events-none z-0"
-            style={{
-              backgroundImage: `radial-gradient(#0f172a 1.5px, transparent 1.5px)`,
-              backgroundSize: "24px 24px",
-            }}
-          />
-        )}
-        {chatBackground === "grid" && (
-          <div
-            className="fixed inset-0 opacity-[0.4] dark:opacity-[0.05] pointer-events-none z-0"
-            style={{
-              backgroundImage: `linear-gradient(#cbd5e1 1px, transparent 1px), linear-gradient(to right, #cbd5e1 1px, transparent 1px)`,
-              backgroundSize: "20px 20px",
-            }}
-          />
-        )}
-        {chatBackground === "diagonal" && (
-          <div
-            className="fixed inset-0 opacity-[0.4] dark:opacity-[0.1] pointer-events-none z-0"
-            style={{
-              backgroundImage: `repeating-linear-gradient(45deg, #e2e8f0 0px, #e2e8f0 2px, transparent 2px, transparent 12px)`,
-            }}
-          />
-        )}
+        {/* Elite Pattern Overlays */}
+        <div className="absolute inset-0 pointer-events-none z-0">
+          {chatBackground === "dots" && (
+            <div
+              className="absolute inset-0 opacity-[0.03] dark:opacity-[0.07]"
+              style={{
+                backgroundImage: `radial-gradient(#000 1px, transparent 1px)`,
+                backgroundSize: "24px 24px",
+              }}
+            />
+          )}
+          {chatBackground === "grid" && (
+            <div
+              className="absolute inset-0 opacity-[0.02] dark:opacity-[0.05]"
+              style={{
+                backgroundImage: `linear-gradient(#000 1px, transparent 1px), linear-gradient(to right, #000 1px, transparent 1px)`,
+                backgroundSize: "32px 32px",
+              }}
+            />
+          )}
+          {chatBackground === "diagonal" && (
+            <div
+              className="absolute inset-0 opacity-[0.02] dark:opacity-[0.05]"
+              style={{
+                backgroundImage: `repeating-linear-gradient(45deg, #000 0px, #000 1px, transparent 1px, transparent 10px)`,
+              }}
+            />
+          )}
+        </div>
 
         {messages.length === 0 && (
-          <div className="flex-1 flex items-center justify-center z-0">
-            <div className="bg-[#FFF5C4] dark:bg-yellow-900/30 text-gray-800 dark:text-yellow-100 text-[12.5px] p-3 rounded-lg shadow-sm text-center max-w-xs leading-relaxed select-none border border-yellow-200 dark:border-yellow-800">
-              <span className="mr-1">📢</span>
-              {isAdmin
-                ? "No posts yet. Be the first to publish a message!"
-                : "No messages yet."}
+          <div className="flex-1 flex items-center justify-center relative z-10">
+            <div className="max-w-xs w-full text-center p-10 backdrop-blur-2xl bg-white/40 dark:bg-gray-900/40 border border-white/20 dark:border-white/5 rounded-[3rem] shadow-2xl animate-in zoom-in-95 duration-700">
+              <div className="w-20 h-20 bg-primary-500/10 rounded-[2rem] flex items-center justify-center text-primary-500 mx-auto mb-8 shadow-inner">
+                <Radio size={40} strokeWidth={2.5} />
+              </div>
+              <h3 className="text-xl font-black text-gray-900 dark:text-white mb-3 uppercase tracking-tighter">Empty Grid</h3>
+              <p className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-[0.2em] leading-relaxed">
+                {isAdmin
+                  ? "Initialize the broadcast channel. Be the first to publish a signal to this grid."
+                  : "No signals recorded in this broadcast channel yet."}
+              </p>
             </div>
           </div>
         )}
 
-        {messages.map((msg, i, arr) => {
-          const currentDate = new Date(msg.timestamp).toDateString();
-          const prevDate =
-            i > 0 ? new Date(arr[i - 1].timestamp).toDateString() : null;
-          const showDate = currentDate !== prevDate;
-          const isFirstInGroup =
-            i === 0 ||
-            arr[i - 1].senderPublicKey !== msg.senderPublicKey ||
-            arr[i - 1].type === "system" ||
-            showDate;
-          const isLastInGroup =
-            i === arr.length - 1 ||
-            arr[i + 1].senderPublicKey !== msg.senderPublicKey ||
-            arr[i + 1].type === "system" ||
-            (i < arr.length - 1 &&
-              new Date(arr[i + 1].timestamp).toDateString() !== currentDate);
+        <div className="space-y-4 relative z-10">
+          {messages.map((msg, i, arr) => {
+            const currentDate = new Date(msg.timestamp).toDateString();
+            const prevDate = i > 0 ? new Date(arr[i - 1].timestamp).toDateString() : null;
+            const showDate = currentDate !== prevDate;
 
-          return (
-            <div
-              key={msg.id || `${msg.timestamp}-${msg.senderPublicKey}-${i}`}
-              className="flex flex-col w-full z-0 relative"
-            >
-              {showDate && msg.timestamp > 0 && (
-                <div className="flex justify-center my-3 sticky top-2 z-10">
-                  <span className="text-xs text-gray-600 dark:text-gray-300 font-medium bg-[#E1F3FB] dark:bg-gray-800 border border-white/50 dark:border-gray-700 px-3 py-1.5 rounded-lg shadow-sm uppercase tracking-wide backdrop-blur-sm">
-                    {new Date(msg.timestamp).toLocaleDateString("en-US", {
-                      month: "long",
-                      day: "numeric",
-                    })}
-                  </span>
-                </div>
-              )}
-              {msg.type === "system" ? (
-                <div className="flex justify-center my-4">
-                  <span className="text-xs text-center text-gray-500 bg-gray-100/80 dark:bg-gray-800/80 dark:text-gray-400 px-4 py-2 rounded-xl backdrop-blur-sm max-w-[80%] mx-auto">
-                    {msg.text}
-                  </span>
-                </div>
-              ) : (
-                /* Channel messages — always full-width, sender on left, styled consistently */
-                <div className="flex gap-3 mb-3 items-start">
-                  {/* Sender avatar */}
-                  {isLastInGroup ? (
-                    <div className="w-8 h-8 rounded-full bg-sky-500 flex items-center justify-center text-white text-xs font-bold flex-shrink-0 mt-0.5 shadow-sm">
-                      {msg.senderUsername?.charAt(0).toUpperCase() || "?"}
-                    </div>
-                  ) : (
-                    <div className="w-8 flex-shrink-0" />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-baseline gap-2 mb-1">
-                      {isFirstInGroup && (
-                        <span className="text-xs font-semibold text-sky-600 dark:text-sky-400">
-                          {msg.senderUsername || "Admin"}
-                        </span>
-                      )}
-                      <span className="text-[10px] text-gray-400">
-                        {msg.timestamp > 0
-                          ? new Date(msg.timestamp).toLocaleTimeString([], {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })
-                          : ""}
+            return (
+              <div key={msg.id || `${msg.timestamp}-${msg.senderPublicKey}-${i}`} className="flex flex-col">
+                {showDate && msg.timestamp > 0 && (
+                  <div className="flex justify-center my-8">
+                    <div className="px-5 py-2 backdrop-blur-2xl bg-gray-100/50 dark:bg-white/5 border border-white/20 dark:border-white/5 rounded-2xl shadow-sm overflow-hidden relative">
+                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent animate-shimmer" />
+                      <span className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-[0.4em] relative z-10">
+                        {new Date(msg.timestamp).toLocaleDateString("en-US", {
+                          month: "long",
+                          day: "numeric",
+                          year: "numeric",
+                        })}
                       </span>
-                      {msg.forwarded && (
-                        <div className="flex items-center gap-1 mb-1 opacity-60 text-[10px] font-medium italic">
-                          <svg
-                            width="10"
-                            height="10"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <path d="M15 3h6v6" />
-                            <path d="M10 14L21 3" />
-                            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                          </svg>
-                          <span>Forwarded</span>
-                        </div>
-                      )}
                     </div>
-                    {msg.deleted ? (
-                      <div className="px-4 py-2 rounded-2xl rounded-tl-sm bg-gray-100 dark:bg-gray-800/50 border border-dashed border-gray-300 dark:border-gray-600 text-gray-400 dark:text-gray-500 text-sm italic max-w-lg">
-                        This message was deleted
-                      </div>
-                    ) : (
-                      <div className="bg-white dark:bg-gray-800 rounded-2xl rounded-tl-sm px-4 py-2.5 shadow-sm max-w-lg border border-gray-100 dark:border-gray-700">
-                        {msg.replyTo && (
-                          <div className="flex items-stretch gap-1.5 mb-2 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700/60 border-l-2 border-gray-400 dark:border-gray-500">
-                            <div className="flex-1 px-2 py-1.5 min-w-0">
-                              <p className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 truncate">
-                                {msg.replyTo.senderName || "Unknown"}
-                              </p>
-                              <p className="text-[11px] text-gray-600 dark:text-gray-300 truncate opacity-80">
-                                {msg.replyTo.type === "image"
-                                  ? "📷 Image"
-                                  : msg.replyTo.text}
-                              </p>
-                            </div>
-                          </div>
-                        )}
-                        {msg.type === "image" ||
-                        msg.filedata?.startsWith("data:image/") ? (
-                          <div
-                            className="relative group rounded-xl overflow-hidden cursor-pointer"
-                            onClick={() => window.open(msg.filedata, "_blank")}
-                          >
-                            <img
-                              src={msg.filedata}
-                              alt="Attached Image"
-                              className="max-w-[280px] max-h-[400px] object-cover rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm transition-transform duration-300 group-hover:scale-105"
-                              loading="lazy"
-                            />
-                          </div>
-                        ) : (
-                          <p className="text-gray-900 dark:text-gray-100 text-sm whitespace-pre-wrap break-words">
-                            {msg.text}
-                          </p>
-                        )}
-                      </div>
-                    )}
-                    {isAdmin && !msg.deleted && (
-                      <div className="flex items-center gap-2 mt-1">
-                        <button
-                          onClick={() => {
-                            setReplyingTo({
-                              customid: msg.customid || "",
-                              text:
-                                msg.text ||
-                                (msg.type === "image" ? "Image" : ""),
-                              senderName: msg.senderUsername || "Admin",
-                              type: msg.type || "text",
-                            });
-                            setTimeout(() => inputRef.current?.focus(), 50);
-                          }}
-                          className="flex items-center gap-1 text-[11px] text-gray-400 hover:text-emerald-500 dark:hover:text-emerald-400 transition-colors"
-                        >
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="12"
-                            height="12"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <polyline points="9 17 4 12 9 7" />
-                            <path d="M20 18v-2a4 4 0 0 0-4-4H4" />
-                          </svg>
-                          Reply
-                        </button>
-                        {msg.sender_seq != null && (
-                          <button
-                            onClick={() =>
-                              handleDeleteChannelMessage(msg.sender_seq!)
-                            }
-                            className="flex items-center gap-1 text-[11px] text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
-                          >
-                            <Trash2 size={12} />
-                            Delete
-                          </button>
-                        )}
-                      </div>
-                    )}
                   </div>
-                </div>
-              )}
-            </div>
-          );
-        })}
+                )}
 
+                {msg.type === "system" ? (
+                  <div className="flex justify-center my-4">
+                    <span className="text-[10px] font-black text-center text-primary-500/60 bg-primary-500/5 px-6 py-2 rounded-full uppercase tracking-widest border border-primary-500/10">
+                      {msg.text}
+                    </span>
+                  </div>
+                ) : (
+                  <MessageBubble
+                    fromMe={msg.fromMe}
+                    text={msg.text}
+                    timestamp={msg.timestamp}
+                    type={msg.type}
+                    filedata={msg.filedata}
+                    senderName={msg.senderUsername || (msg.fromMe ? "You" : "Admin")}
+                    forwarded={msg.forwarded}
+                    showName={true}
+                    showAvatar={true}
+                    deleted={msg.deleted}
+                    replyTo={msg.replyTo}
+                    currentChatId={channelId}
+                    onReply={isAdmin ? () => {
+                      setReplyingTo({
+                        customid: msg.customid || "",
+                        text: msg.text || (msg.type === "image" ? "Image" : ""),
+                        senderName: msg.senderUsername || "Admin",
+                        type: msg.type || "text",
+                      });
+                      setTimeout(() => inputRef.current?.focus(), 50);
+                    } : undefined}
+                    onDelete={isAdmin && msg.sender_seq != null ? () => handleDeleteChannelMessage(msg.sender_seq!) : undefined}
+                  />
+                )}
+              </div>
+            );
+          })}
+        </div>
         <div ref={messagesEndRef} />
       </div>
 
-      {/* REPLY BANNER */}
+      {/* ELITE REPLY INTERFACE */}
       {isAdmin && replyingTo && (
-        <div className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-700/60 border-t border-gray-200 dark:border-gray-600 flex items-center gap-2">
-          <div className="flex-1 min-w-0 pl-2 border-l-2 border-primary-400">
-            <p className="text-[10px] font-semibold text-primary-600 dark:text-primary-400 truncate">
-              {replyingTo.senderName}
-            </p>
-            <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate">
-              {replyingTo.type === "image" ? "📷 Image" : replyingTo.text}
-            </p>
-          </div>
-          <button
-            onClick={() => setReplyingTo(null)}
-            className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 flex-shrink-0"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+        <div className="mx-6 mb-4 animate-in slide-in-from-bottom-4 duration-500">
+          <div className="backdrop-blur-2xl bg-white/80 dark:bg-gray-900/80 border border-white/20 dark:border-white/10 rounded-2xl p-4 flex items-center gap-4 shadow-xl">
+            <div className="w-1 bg-primary-500 rounded-full self-stretch" />
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] font-black text-primary-500 uppercase tracking-widest mb-1">Replying to signal</p>
+              <p className="text-[11px] font-bold text-gray-900 dark:text-gray-100 truncate opacity-80 uppercase tracking-tight">
+                {replyingTo.senderName}: {replyingTo.type === "image" ? "📷 Image Source" : replyingTo.text}
+              </p>
+            </div>
+            <button
+              onClick={() => setReplyingTo(null)}
+              className="w-8 h-8 flex items-center justify-center rounded-xl bg-gray-100 dark:bg-white/5 text-gray-400 hover:text-red-500 transition-colors"
             >
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
+              <Trash2 size={16} strokeWidth={2.5} />
+            </button>
+          </div>
         </div>
       )}
-      {/* INPUT BAR — only for admins */}
+
+      {/* ELITE INPUT HUB — Admins Only */}
       {isAdmin && (
-        <div className="p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] bg-white dark:bg-gray-800 flex gap-1 items-center flex-shrink-0 z-10 relative border-t border-gray-200 dark:border-gray-700">
-          <div className="flex-1 min-w-0 bg-white dark:bg-gray-700 rounded-2xl flex items-center border border-gray-200 dark:border-gray-600 focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-transparent shadow-sm px-3 py-2 transition-all relative">
-            {/* Emoji Picker */}
-            <div
-              ref={emojiPickerRef}
-              className={`absolute bottom-full mb-2 left-0 z-50 transition-all duration-200 shadow-2xl rounded-xl border border-gray-100 dark:border-gray-700 ${!showEmojiPicker ? "opacity-0 scale-95 pointer-events-none invisible" : "opacity-100 scale-100 visible"}`}
-            >
-              <Suspense
-                fallback={
-                  <div className="h-[350px] w-[300px] bg-white dark:bg-gray-800 animate-pulse rounded-xl" />
-                }
-              >
-                <EmojiPicker
-                  onEmojiClick={onEmojiClick}
-                  theme={mode === "dark" ? ("dark" as any) : ("light" as any)}
-                  width={320}
-                  height={400}
-                  searchDisabled
-                  skinTonesDisabled
-                  previewConfig={{ showPreview: false }}
+        <div className="px-6 pb-10 pt-2 relative z-50">
+          <div className="max-w-screen-xl mx-auto flex items-end gap-4">
+            <div className="flex-1 relative group">
+              {/* Glassmorphic Backing */}
+              <div className="absolute inset-0 bg-white/40 dark:bg-gray-900/40 backdrop-blur-3xl rounded-[2.5rem] border border-white/20 dark:border-white/5 shadow-2xl transition-all duration-500 group-focus-within:border-primary-500/50 group-focus-within:bg-white/60 dark:group-focus-within:bg-gray-900/60" />
+
+              <div className="relative flex items-center px-4 py-3 min-h-[72px]">
+                {/* Emoji Trigger */}
+                <div ref={emojiPickerRef} className="relative">
+                  <div className={`absolute bottom-full mb-6 left-0 z-50 transition-all duration-500 ${!showEmojiPicker ? "opacity-0 scale-95 pointer-events-none translate-y-4" : "opacity-100 scale-100 translate-y-0"}`}>
+                    <div className="backdrop-blur-3xl bg-white/95 dark:bg-gray-900/95 rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.3)] border border-white/20 dark:border-white/5 overflow-hidden">
+                      <Suspense fallback={<div className="h-[350px] w-[320px] bg-white dark:bg-gray-800 animate-pulse" />}>
+                        <EmojiPicker
+                          onEmojiClick={onEmojiClick}
+                          theme={mode === "dark" ? ("dark" as any) : ("light" as any)}
+                          width={320}
+                          height={400}
+                          searchDisabled
+                          skinTonesDisabled
+                          previewConfig={{ showPreview: false }}
+                        />
+                      </Suspense>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                    className={`w-12 h-12 flex items-center justify-center rounded-2xl transition-all duration-500 ${showEmojiPicker ? "bg-primary-500 text-white" : "text-gray-400 hover:text-primary-500 bg-gray-100/50 dark:bg-white/5"}`}
+                  >
+                    <Radio size={24} strokeWidth={2.5} />
+                  </button>
+                </div>
+
+                <textarea
+                  ref={inputRef}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                  placeholder="ENCRYPTED SIGNAL..."
+                  className="flex-1 bg-transparent border-none focus:outline-none focus:ring-0 text-sm font-bold text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-600 px-4 py-2 resize-none max-h-48 uppercase tracking-widest leading-relaxed"
+                  rows={1}
+                  style={{ minHeight: "24px" }}
                 />
-              </Suspense>
+
+                <input type="file" ref={fileInputRef} accept="image/*" className="hidden" onChange={handleImageSelect} />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-12 h-12 flex items-center justify-center rounded-2xl text-gray-400 hover:text-primary-500 bg-gray-100/50 dark:bg-white/5 transition-all duration-500 mx-1"
+                >
+                  <ImageIcon size={22} strokeWidth={2.5} />
+                </button>
+              </div>
             </div>
 
             <button
-              className={`p-1 mr-1 rounded-full transition-colors flex-shrink-0 ${showEmojiPicker ? "text-primary-500" : "text-gray-400 hover:text-gray-600"}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowEmojiPicker(!showEmojiPicker);
-              }}
-              title="Emoji"
+              onClick={handleSend}
+              disabled={!input.trim() || sending}
+              className={`w-[72px] h-[72px] flex items-center justify-center rounded-[2rem] transition-all duration-500 shadow-2xl active:scale-90 flex-shrink-0 ${!input.trim() || sending ? "bg-gray-100 dark:bg-white/5 text-gray-300 dark:text-gray-600" : "bg-primary-500 text-white shadow-primary-500/30 hover:scale-105"}`}
             >
-              <svg
-                className="w-6 h-6"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
+              <Zap size={28} strokeWidth={3} fill={input.trim() ? "currentColor" : "none"} />
             </button>
-
-            <input
-              type="file"
-              ref={fileInputRef}
-              accept="image/*"
-              className="hidden"
-              onChange={handleImageSelect}
-            />
-            <button
-              className={`p-1 mr-1 rounded-full transition-colors flex-shrink-0 text-gray-400 hover:text-gray-600`}
-              onClick={(e) => {
-                e.stopPropagation();
-                fileInputRef.current?.click();
-              }}
-              title="Attach Image"
-            >
-              <ImageIcon className="w-5 h-5" />
-            </button>
-
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSend();
-                }
-              }}
-              onSelect={(e) => {
-                cursorPositionRef.current = (
-                  e.target as HTMLTextAreaElement
-                ).selectionStart;
-              }}
-              placeholder="Publish a message..."
-              rows={1}
-              className="flex-1 bg-transparent outline-none text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 text-sm resize-none max-h-32 overflow-y-auto leading-6"
-              style={{ minHeight: "24px" }}
-            />
           </div>
-
-          <button
-            onClick={handleSend}
-            disabled={!input.trim() || sending}
-            className="ml-1 w-10 h-10 bg-primary-600 flex-shrink-0 rounded-full flex items-center justify-center hover:bg-primary-700 transition-colors disabled:bg-gray-300 dark:disabled:bg-gray-600 disabled:cursor-not-allowed shadow-md"
-          >
-            <svg
-              className="w-5 h-5 text-white"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
-              />
-            </svg>
-          </button>
         </div>
       )}
     </div>

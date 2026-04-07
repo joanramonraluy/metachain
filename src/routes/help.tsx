@@ -1,20 +1,21 @@
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, Link } from "@tanstack/react-router"
 import { useState } from "react"
 import {
   HelpCircle,
   ChevronDown,
   ChevronUp,
-  MessageCircle,
   Users,
   Shield,
   Globe,
   Zap,
-  Settings,
   Radio,
   Share2,
   Server,
   Smartphone,
   Repeat,
+  Activity,
+  ArrowRight,
+  Database,
 } from "lucide-react"
 
 export const Route = createFileRoute("/help")({
@@ -35,139 +36,155 @@ function Help() {
       icon: Zap,
       color: "sky",
       content: (
-        <div className="space-y-4">
-          <p className="text-gray-700 dark:text-gray-300">
-            Welcome to MetaChain! Follow these steps to join the decentralized
-            network:
+        <div className="space-y-6">
+          <p className="text-gray-700 dark:text-gray-300 font-medium text-lg leading-relaxed">
+            Welcome to MetaChain. Your node is now your sovereign gateway to the decentralized messaging ecosystem. Follow these steps to initialize:
           </p>
-          <ol className="list-decimal list-inside space-y-3 text-gray-700 dark:text-gray-300">
-            <li>
-              <strong className="text-gray-900 dark:text-white">
-                Profile Setup
-              </strong>{" "}
-              - Go to{" "}
-              <span className="font-semibold px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-xs border border-gray-200 dark:border-gray-700">
-                Settings → Profile
-              </span>{" "}
-              to set your identity (alias, bio, avatar).
-            </li>
-            <li>
-              <strong className="text-gray-900 dark:text-white">
-                Enable P2P Discovery
-              </strong>{" "}
-              - Your node will broadcast an encrypted "beacon" to nearby peers,
-              making you visible in their{" "}
-              <span className="font-semibold text-primary-600">Community</span>{" "}
-              tab.
-            </li>
-            <li>
-              <strong className="text-gray-900 dark:text-white">
-                Find People
-              </strong>{" "}
-              - Browse the{" "}
-              <span className="font-semibold text-primary-600">Discovery</span>{" "}
-              section to find other users, groups, and channels.
-            </li>
-            <li>
-              <strong className="text-gray-900 dark:text-white">
-                Start Communicating
-              </strong>{" "}
-              - Send messages, share tokens, or join public spaces.
-            </li>
-          </ol>
+          <div className="grid grid-cols-1 gap-4">
+            {[
+              { step: "1", title: "Identity Configuration", desc: "Set your alias, bio, and avatar in Settings. This identity is the 'envelope' for your decentralized communications.", to: "/settings/profile", label: "Configure" },
+              { step: "2", title: "Enable Discovery", desc: "MetaChain nodes broadcast P2P 'beacons' to find neighbors. Ensure your node is active to be visible in the community.", to: "/settings/discovery", label: "Check" },
+              { step: "3", title: "Find & Connect", desc: "Browse the Discovery section to find other users and send Chat Requests to establish secure sessions.", to: "/discovery", label: "Go" },
+            ].map((item, idx) => (
+              <div key={idx} className="flex gap-5 p-6 rounded-3xl bg-black/5 dark:bg-white/5 border border-white/10 group/item transition-all hover:bg-white dark:hover:bg-white/10">
+                <div className="w-10 h-10 rounded-full bg-primary-500 text-white flex items-center justify-center font-black text-sm shrink-0 shadow-lg">
+                  {item.step}
+                </div>
+                <div className="flex-1">
+                  <h4 className="font-black text-gray-900 dark:text-white uppercase tracking-tight mb-1">{item.title}</h4>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 font-medium leading-relaxed mb-3">
+                    {item.desc}
+                  </p>
+                  {item.to && (
+                    <Link to={item.to} className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-widest text-primary-500 hover:gap-3 transition-all">
+                      {item.label} <ArrowRight size={14} />
+                    </Link>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       ),
     },
     {
-      id: "community-discovery",
-      title: "Community & Discovery",
+      id: "discovery-mechanics",
+      title: "Discovery Mechanics",
       icon: Globe,
       color: "indigo",
       content: (
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <h4 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-              <Share2 size={16} className="text-indigo-500" />
-              P2P Beacons & Gossip
-            </h4>
-            <p className="text-sm text-gray-700 dark:text-gray-300">
-              MetaChain uses a reactive multi-hop relay. When you discover a
-              peer, you automatically exchange catalogs of known users. This
-              "Gossip" protocol helps everyone find each other without a central
-              server.
-            </p>
+        <div className="space-y-8">
+          <div className="p-8 rounded-[2.5rem] bg-indigo-500/5 border border-indigo-500/10 flex flex-col md:flex-row items-center gap-8">
+            <div className="w-20 h-20 rounded-3xl bg-indigo-500/10 flex items-center justify-center text-indigo-500 shrink-0">
+              <Radio size={40} className="animate-pulse" />
+            </div>
+            <div>
+              <h4 className="text-xl font-black text-gray-900 dark:text-white uppercase tracking-tight mb-2 leading-none">P2P Beacons</h4>
+              <p className="text-sm text-gray-500 dark:text-gray-400 font-medium leading-relaxed">
+                Your node sends persistent P2P Beacons to find neighbors. These beacons propagate only between MetaChain nodes that are direct peers in the Minima network, creating a private, resilient discovery layer.
+              </p>
+            </div>
           </div>
 
-          <div className="space-y-2">
-            <h4 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-              <Server size={16} className="text-indigo-500" />
-              MLS (Reachability)
-            </h4>
-            <p className="text-sm text-gray-700 dark:text-gray-300">
-              The <strong>Mobile Lookup Service</strong> acts as a discovery
-              hub. If you are in a sparse network, configuring a Static MLS in{" "}
-              <span className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-xs">
-                Settings → Discovery
-              </span>{" "}
-              ensures you stay reachable even when you don't share direct P2P
-              neighbors with your contacts.
-            </p>
-          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="p-8 rounded-[2.5rem] bg-black/5 dark:bg-white/5 border border-white/10 space-y-4 group/box transition-all hover:bg-indigo-500/5 hover:border-indigo-500/20">
+              <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center shadow-inner group-hover/box:scale-110 transition-transform">
+                 <Share2 size={24} strokeWidth={2.5} />
+              </div>
+              <h4 className="text-lg font-black text-gray-900 dark:text-white uppercase tracking-tight">The Gossip Chain</h4>
+              <p className="text-xs text-gray-600 dark:text-gray-400 font-medium leading-relaxed opacity-80">
+                When two MetaChain nodes meet, they automatically exchange catalogs of known users. This 'Multi-hop Gossip' protocol allows you to discover peers who are not your direct neighbors but are visible to your contacts.
+              </p>
+            </div>
 
-          <div className="space-y-2">
-            <h4 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-              <Radio size={16} className="text-indigo-500" />
-              Public Listings
-            </h4>
-            <p className="text-sm text-gray-700 dark:text-gray-300">
-              Want to grow your community? Toggle <strong>"Public Listing"</strong>{" "}
-              when creating a group or channel. It will be advertised via your
-              beacon and appear in the <strong>Community</strong> tab of all
-              discovered peers.
-            </p>
+            <div className="p-8 rounded-[2.5rem] bg-black/5 dark:bg-white/5 border border-white/10 space-y-4 group/box transition-all hover:bg-emerald-500/5 hover:border-emerald-500/20">
+              <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center shadow-inner group-hover/box:scale-110 transition-transform">
+                 <Server size={24} strokeWidth={2.5} />
+              </div>
+              <h4 className="text-lg font-black text-gray-900 dark:text-white uppercase tracking-tight">Discovery Hub (MLS)</h4>
+              <p className="text-xs text-gray-600 dark:text-gray-400 font-medium leading-relaxed opacity-80">
+                In sparse networks, discovery can be difficult. Configuring a **Static MLS Server** in Discovery Settings ensures you stay visible to the global community even if you have no direct MetaChain neighbors.
+              </p>
+            </div>
           </div>
         </div>
       ),
     },
     {
-      id: "messaging",
-      title: "Advanced Messaging",
-      icon: MessageCircle,
+      id: "history-sync",
+      title: "History & Self-Healing",
+      icon: Activity,
       color: "emerald",
       content: (
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <h4 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-              <Repeat size={16} className="text-emerald-500" />
-              Reply to Message
-            </h4>
-            <p className="text-sm text-gray-700 dark:text-gray-300">
-              Long-press or swipe on a message to reply. This creates a visual
-              thread, making complex conversations easier to follow.
-            </p>
+        <div className="space-y-8">
+          <div className="p-10 rounded-[3rem] bg-emerald-500/5 border border-emerald-500/10 relative overflow-hidden group">
+            <div className="relative z-10 flex flex-col md:flex-row gap-10 items-center">
+              <div className="w-24 h-24 bg-emerald-500 rounded-[2rem] flex items-center justify-center text-white shadow-[0_20px_50px_rgba(16,185,129,0.3)] shrink-0">
+                <Repeat size={48} className="animate-spin" style={{ animationDuration: '8s' }} />
+              </div>
+              <div className="space-y-4">
+                <h4 className="text-2xl font-black text-gray-900 dark:text-white uppercase tracking-tight">Intelligent Auto-Repair</h4>
+                <p className="text-sm text-gray-600 dark:text-gray-400 font-medium leading-relaxed max-w-2xl">
+                  Decentralized networks occasionally drop packets. MetaChain background workers monitor your message sequence counters per-contact. If a gap is detected (e.g., sequence jumps from 4 to 6), the app automatically requests the missing messages (#5) from your peer silently.
+                </p>
+              </div>
+            </div>
           </div>
 
-          <div className="space-y-2">
-            <h4 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-              <Smartphone size={16} className="text-emerald-500" />
-              Automatic Synchronization
-            </h4>
-            <p className="text-sm text-gray-700 dark:text-gray-300">
-              MetaChain automatically detects missing messages (gaps) in your
-              history using sequence numbers. Background sync workers ensure
-              your chat history is consistent across all your Minima nodes.
-            </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {[
+              { icon: Smartphone, title: "Background Sync", desc: "Message recovery runs in a dedicated Service Worker, separate from the UI." },
+              { icon: Database, title: "History Merging", desc: "Inbound history responses are merged into your local DB with strict deduplication." },
+              { icon: Zap, title: "Pending Queue", desc: "If you are offline, outgoing messages are queued and retried automatically." }
+            ].map((item, idx) => (
+              <div key={idx} className="p-8 rounded-[2.5rem] bg-white/40 dark:bg-white/5 border border-white/20 dark:border-white/10 shadow-sm transition-all hover:scale-105">
+                <div className="w-12 h-12 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center mb-6">
+                  <item.icon size={24} strokeWidth={2.5} />
+                </div>
+                <h4 className="text-lg font-black text-gray-900 dark:text-white uppercase tracking-tight mb-3 leading-none">{item.title}</h4>
+                <p className="text-[13px] text-gray-500 dark:text-gray-400 font-medium leading-relaxed opacity-70">{item.desc}</p>
+              </div>
+            ))}
           </div>
+        </div>
+      ),
+    },
+    {
+      id: "privacy",
+      title: "Decentralized Privacy",
+      icon: Shield,
+      color: "amber",
+      content: (
+        <div className="space-y-8">
+          <p className="text-gray-700 dark:text-gray-300 font-medium text-lg leading-relaxed">
+            MetaChain enforces a three-tier permission model. Your data is only shared according to your explicit visibility settings:
+          </p>
 
-          <div className="space-y-2">
-            <h4 className="font-semibold text-gray-900 dark:text-white">
-              Token & Charm Interactions
-            </h4>
-            <p className="text-sm text-gray-700 dark:text-gray-300">
-              Send Minima <strong>Tokens</strong> 💰 or <strong>Charms</strong>{" "}
-              ✨ directly in chat. These are real blockchain transactions
-              embedded within your communication flow.
-            </p>
+          <div className="grid grid-cols-1 gap-4">
+            {[
+              { level: "L1", color: "blue", title: "Public Discovery", desc: "Shared via Beacons with any discovered peer. Contains only non-sensitive data.", items: ["Alias", "Bio Snapshot", "Public Lists"] },
+              { level: "L2", color: "purple", title: "Profile Response", desc: "Sent only when you accept a Chat Request. Includes richer identity data.", items: ["Full Bio", "Social Metadata", "Wallet Addr"] },
+              { level: "L3", color: "amber", title: "Secure Chat", desc: "The highest protection. End-to-end encrypted messaging via Maxima protocol.", items: ["Messages", "Media", "Transfers"] }
+            ].map((item, idx) => (
+              <div key={idx} className="flex flex-col sm:flex-row gap-6 p-8 rounded-[2.5rem] bg-white/40 dark:bg-white/5 border border-white/20 dark:border-white/10 shadow-xl shadow-black/5 group/privacy hover:scale-[1.01] transition-all">
+                <div className={`w-16 h-16 rounded-[1.5rem] bg-${item.color}-500/10 flex items-center justify-center text-${item.color}-500 shrink-0 font-black text-xl shadow-inner group-hover/privacy:scale-110 transition-transform`}>
+                  {item.level}
+                </div>
+                <div className="flex-1">
+                  <h5 className="text-xl font-black text-gray-900 dark:text-white uppercase tracking-tight mb-2 leading-none">{item.title}</h5>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 font-medium leading-relaxed mb-4 opacity-70">
+                    {item.desc}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {item.items.map((field, i) => (
+                      <span key={i} className="px-3 py-1 rounded-full bg-black/5 dark:bg-white/10 text-[10px] font-black uppercase tracking-widest text-gray-400">
+                        {field}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       ),
@@ -178,359 +195,152 @@ function Help() {
       icon: Users,
       color: "violet",
       content: (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="p-3 bg-violet-50 dark:bg-violet-900/20 border border-violet-100 dark:border-violet-800 rounded-xl">
-              <h5 className="font-bold text-violet-900 dark:text-violet-200 text-sm mb-1">
-                Groups
-              </h5>
-              <p className="text-xs text-violet-700 dark:text-violet-300">
-                Collaborative spaces for up to 50 members. Everyone can chat and
-                share.
+        <div className="space-y-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
+            <div className="p-10 rounded-[3rem] bg-violet-500/5 border border-violet-500/10 relative overflow-hidden group">
+              <div className="absolute -top-10 -right-10 w-40 h-40 bg-violet-500/10 rounded-full blur-3xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
+              <h5 className="text-2xl font-black text-violet-900 dark:text-violet-200 uppercase tracking-tight mb-4 leading-none">P2P Groups</h5>
+              <p className="text-sm text-violet-700/80 dark:text-violet-300/80 font-medium leading-relaxed mb-6">
+                Multi-participant chat rooms. Any member can send messages. Admin roles control invitations, moderation, and public listing status.
               </p>
+              <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-violet-500 text-white rounded-full text-xs font-black uppercase tracking-widest">
+                Collaborative
+              </div>
             </div>
-            <div className="p-3 bg-sky-50 dark:bg-sky-900/20 border border-sky-100 dark:border-sky-800 rounded-xl">
-              <h5 className="font-bold text-sky-900 dark:text-sky-200 text-sm mb-1">
-                Channels
-              </h5>
-              <p className="text-xs text-sky-700 dark:text-sky-300">
-                Broadcast spaces. Only admins can post; subscribers can read and
-                react.
+            
+            <div className="p-10 rounded-[3rem] bg-sky-500/5 border border-sky-500/10 relative overflow-hidden group">
+               <div className="absolute -top-10 -right-10 w-40 h-40 bg-sky-500/10 rounded-full blur-3xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
+              <h5 className="text-2xl font-black text-sky-900 dark:text-sky-200 uppercase tracking-tight mb-4 leading-none">Broadcast Channels</h5>
+              <p className="text-sm text-sky-700/80 dark:text-sky-300/80 font-medium leading-relaxed mb-6">
+                One-to-many broadcast channels. Only admins can publish; subscribers can read, react, and reply but cannot broadcast to the entire list.
               </p>
+              <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-sky-500 text-white rounded-full text-xs font-black uppercase tracking-widest">
+                Broadcast Only
+              </div>
             </div>
           </div>
 
-          <div className="space-y-2">
-            <h4 className="font-semibold text-gray-900 dark:text-white">
-              Auto-Approve Joiners
-            </h4>
-            <p className="text-sm text-gray-700 dark:text-gray-300">
-              Groups can be configured to <strong>Auto-Approve</strong> join
-              requests. If enabled, anyone with the invite link or who finds the
-              group in "Community" can join instantly. Otherwise, the admin must
-              manually approve their request.
+          <div className="p-8 rounded-[2.5rem] bg-black/5 dark:bg-white/5 border border-white/10 group transition-all hover:border-violet-500/30">
+            <h4 className="text-xl font-black text-gray-900 dark:text-white uppercase tracking-tight mb-3 leading-none">Auto-Approve Strategy</h4>
+            <p className="text-sm text-gray-500 dark:text-gray-400 font-medium leading-relaxed opacity-80">
+              Groups can be 'Public'—meaning they are advertised via your Discovery Beacon. If 'Auto-Approve' is enabled, users can join instantly from their community tab. Otherwise, an admin must approve their request in the 'Join Requests' tab.
             </p>
           </div>
         </div>
       ),
     },
-    {
-      id: "privacy",
-      title: "Privacy Levels",
-      icon: Shield,
-      color: "amber",
-      content: (
-        <div className="space-y-4">
-          <p className="text-gray-700 dark:text-gray-300">
-            Your data is yours. MetaChain uses a three-level privacy system:
-          </p>
-
-          <div className="space-y-3">
-            <div className="flex gap-4 p-4 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-2xl shadow-sm">
-              <div className="w-12 h-12 rounded-xl bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 shrink-0">
-                <span className="font-bold">L1</span>
-              </div>
-              <div>
-                <h5 className="font-bold text-gray-900 dark:text-white">
-                  Discovery Profile
-                </h5>
-                <p className="text-xs text-gray-500">
-                  Shared with everyone. Includes: Alias, Bio.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex gap-4 p-4 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-2xl shadow-sm">
-              <div className="w-12 h-12 rounded-xl bg-purple-50 dark:bg-purple-900/30 flex items-center justify-center text-purple-600 shrink-0">
-                <span className="font-bold">L2</span>
-              </div>
-              <div>
-                <h5 className="font-bold text-gray-900 dark:text-white">
-                  Additional Info
-                </h5>
-                <p className="text-xs text-gray-500">
-                  Shared with contacts or public. Includes: Socials, Bio detail.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex gap-4 p-4 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-2xl shadow-sm">
-              <div className="w-12 h-12 rounded-xl bg-amber-50 dark:bg-amber-900/30 flex items-center justify-center text-amber-600 shrink-0">
-                <span className="font-bold">L3</span>
-              </div>
-              <div>
-                <h5 className="font-bold text-gray-900 dark:text-white">
-                  Private Contact
-                </h5>
-                <p className="text-xs text-gray-500">
-                  Only for personal contacts. Includes: Email, Phone.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      ),
-    },
-    {
-      id: "troubleshooting",
-      title: "Troubleshooting",
-      icon: Settings,
-      color: "rose",
-      content: (
-        <div className="space-y-5">
-          <div className="space-y-2">
-            <h5 className="font-bold text-gray-900 dark:text-white text-sm">
-              Can't see discovered users?
-            </h5>
-            <ul className="list-disc list-inside text-sm text-gray-600 dark:text-gray-400 space-y-1">
-              <li>
-                Ensure <strong>Discovery</strong> is enabled in Settings.
-              </li>
-              <li>Wait 30-60 seconds for beacons to propagate.</li>
-              <li>
-                Check your P2P connectivity in the Minima node status.
-              </li>
-            </ul>
-          </div>
-
-          <div className="space-y-2">
-            <h5 className="font-bold text-gray-900 dark:text-white text-sm">
-              Messages not sending via Public Key?
-            </h5>
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              If a contact is offline, MetaChain tries to resolve their{" "}
-              <strong>Maxima Address</strong>. Ensure you have high discovery
-              quality or manually set an MLS server to improve unicast delivery.
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <h5 className="font-bold text-gray-900 dark:text-white text-sm">
-              Slow performance or high battery usage?
-            </h5>
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              Reduce the <strong>Gossip Peer Limit</strong> in Discovery
-              settings. We recommend 5-10 peers for a stable experience.
-            </p>
-          </div>
-        </div>
-      ),
-    },
-    {
-      id: "faq",
-      title: "FAQ",
-      icon: HelpCircle,
-      color: "gray",
-      content: (
-        <div className="space-y-4">
-          <div>
-            <h5 className="font-medium text-gray-900 dark:text-white">
-              What is MetaChain?
-            </h5>
-            <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">
-              MetaChain is a decentralized messaging app built on the Minima
-              blockchain, offering secure, private communication with built-in
-              token transfers.
-            </p>
-          </div>
-
-          <div>
-            <h5 className="font-medium text-gray-900 dark:text-white">
-              Is my data private?
-            </h5>
-            <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">
-              Yes! All messages are end-to-end encrypted. Your profile data is
-              only shared according to your privacy settings.
-            </p>
-          </div>
-
-          <div>
-            <h5 className="font-medium text-gray-900 dark:text-white">
-              What are Charms?
-            </h5>
-            <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">
-              Charms are special tokens you can send to show appreciation,
-              similar to reactions or likes, but as blockchain tokens.
-            </p>
-          </div>
-
-          <div>
-            <h5 className="font-medium text-gray-900 dark:text-white">
-              How does Discovery work?
-            </h5>
-            <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">
-              MetaChain uses P2P beacons to broadcast your profile to nearby
-              peers. You can control what information is shared in Privacy
-              settings.
-            </p>
-          </div>
-
-          <div>
-            <h5 className="font-medium text-gray-900 dark:text-white">
-              What is the recommended Gossip Peer Limit?
-            </h5>
-            <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">
-              We recommend 5 peers for optimal performance. This balances
-              network discovery with data usage.
-            </p>
-          </div>
-        </div>
-      ),
-    },
-  ]
-
-  const colorStyles: Record<string, string> = {
-    sky: "bg-sky-50 dark:bg-sky-950/40 text-sky-600 dark:text-sky-400",
-    indigo: "bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400",
-    emerald: "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400",
-    violet: "bg-violet-50 dark:bg-violet-950/40 text-violet-600 dark:text-violet-400",
-    amber: "bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400",
-    rose: "bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400",
-    gray: "bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400",
-  }
-
-  const activeColorStyles: Record<string, string> = {
-    sky: "bg-sky-500 shadow-sky-500/30",
-    indigo: "bg-indigo-500 shadow-indigo-500/30",
-    emerald: "bg-emerald-500 shadow-emerald-500/30",
-    violet: "bg-violet-500 shadow-violet-500/30",
-    amber: "bg-amber-500 shadow-amber-500/30",
-    rose: "bg-rose-500 shadow-rose-500/30",
-    gray: "bg-gray-600 shadow-gray-600/30",
-  }
+  ];
 
   return (
-    <div className="h-full overflow-y-auto bg-gray-50 dark:bg-gray-950 transition-colors">
-      <style>{`
-        @keyframes fadeInDown {
-          from { opacity: 0; transform: translateY(-10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .animate-fade-in-down {
-          animation: fadeInDown 0.3s ease-out forwards;
-        }
-      `}</style>
-      <div className="max-w-4xl mx-auto p-4 sm:p-8 space-y-8">
-        {/* Premium Header */}
-        <div className="relative bg-white dark:bg-gray-900 rounded-[2.5rem] shadow-xl shadow-primary-500/5 border border-gray-100 dark:border-gray-800 p-8 sm:p-12 text-center overflow-hidden transition-all group">
-          <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 bg-primary-500/10 rounded-full blur-3xl group-hover:scale-110 transition-transform duration-700"></div>
-          <div className="absolute bottom-0 left-0 -ml-16 -mb-16 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl group-hover:scale-110 transition-transform duration-700 delay-100"></div>
+    <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-950 transition-colors relative overflow-hidden overflow-y-auto l-scrollbar">
+      {/* Dot Grid Background */}
+      <div className="absolute inset-0 z-0 opacity-[0.03] dark:opacity-[0.05] pointer-events-none">
+        <div
+          className="absolute inset-0"
+          style={{
+            backgroundImage:
+              "radial-gradient(circle at 2px 2px, currentColor 1px, transparent 0)",
+            backgroundSize: "24px 24px",
+          }}
+        ></div>
+      </div>
 
-          <div className="relative z-10">
-            <div className="w-20 h-20 bg-gradient-to-br from-primary-500 to-indigo-600 rounded-3xl mx-auto flex items-center justify-center mb-6 shadow-lg shadow-primary-500/20 transform group-hover:rotate-6 transition-transform duration-500">
-              <HelpCircle size={40} className="text-white" />
-            </div>
-            <h1 className="text-4xl sm:text-5xl font-black text-gray-900 dark:text-white mb-4 tracking-tight">
-              Help Center
-            </h1>
-            <p className="max-w-md mx-auto text-gray-600 dark:text-gray-400 text-lg leading-relaxed">
-              Master the decentralized world of MetaChain. Everything you need
-              to know, in one place.
-            </p>
+      {/* Elite Background Blobs */}
+      <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+        <div className="absolute inset-0 bg-gradient-to-br from-white via-gray-50 to-blue-50/30 dark:from-gray-950 dark:via-gray-950 dark:to-primary-950/20"></div>
+
+        <div
+          className="absolute top-[10%] right-[10%] w-[50%] h-[50%] rounded-full opacity-40 dark:opacity-20 blur-[120px] animate-pulse"
+          style={{
+            background: "radial-gradient(circle, var(--color-primary-900) 0%, transparent 70%)",
+            animationDuration: "14s",
+          }}
+        ></div>
+        <div
+          className="absolute bottom-[10%] left-[10%] w-[40%] h-[40%] rounded-full opacity-30 dark:opacity-10 blur-[120px] animate-pulse"
+          style={{
+            background: "radial-gradient(circle, var(--color-primary-800) 0%, transparent 70%)",
+            animationDuration: "20s",
+            animationDelay: "5s",
+          }}
+        ></div>
+      </div>
+
+      <div className="relative z-10 max-w-5xl mx-auto py-16 px-4 sm:px-10 space-y-12 animate-in fade-in slide-in-from-bottom-8 duration-1000">
+        <div className="text-center space-y-4 mb-20 px-4">
+          <div className="w-20 h-20 bg-primary-500 rounded-[1.75rem] mx-auto flex items-center justify-center text-white mb-10 shadow-[0_15px_40px_rgba(var(--color-primary-500),0.3)] transform rotate-6">
+            <HelpCircle size={40} strokeWidth={2.5} />
           </div>
+          <h1 className="text-4xl sm:text-5xl font-black text-gray-900 dark:text-white uppercase tracking-tighter leading-none">
+             MetaChain Support
+          </h1>
+          <p className="text-base sm:text-xl text-gray-500 dark:text-gray-400 font-medium tracking-tight opacity-80">
+            Official Self-Sovereign Messaging Documentation
+          </p>
         </div>
 
-        {/* FAQ Area with a bit of grid for desktop */}
-        <div className="space-y-4">
-          <div className="flex items-center justify-between mb-2 px-2">
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-              Knowledge Base
-            </h2>
-            <div className="h-px flex-1 mx-4 bg-gray-200 dark:bg-gray-800"></div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4">
-            {sections.map((section) => {
-              const Icon = section.icon
-              const isOpen = openSection === section.id
-
-              return (
-                <div
-                  key={section.id}
-                  className={`bg-white dark:bg-gray-900 rounded-[1.5rem] shadow-sm border transition-all duration-300 ${
-                    isOpen
-                      ? "border-primary-500/30 ring-4 ring-primary-500/5 shadow-md shadow-primary-500/10"
-                      : "border-gray-100 dark:border-gray-800 hover:border-gray-200 dark:hover:border-gray-700"
-                  }`}
-                >
-                  <button
-                    onClick={() => toggleSection(section.id)}
-                    className="w-full px-6 py-5 flex items-center justify-between group/btn text-left"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div
-                        className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-300 ${
-                          isOpen
-                            ? `${activeColorStyles[section.color]} text-white shadow-lg`
-                            : `${colorStyles[section.color]} group-hover/btn:scale-105`
-                        }`}
-                      >
-                        <Icon size={24} />
-                      </div>
-                      <div>
-                        <h3 className="font-bold text-gray-900 dark:text-white text-lg tracking-tight group-hover/btn:text-primary-600 dark:group-hover/btn:text-primary-400 transition-colors">
-                          {section.title}
-                        </h3>
-                        {!isOpen && (
-                          <p className="text-xs text-gray-400 dark:text-gray-500 font-medium">
-                            Click to expand details
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    <div
-                      className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 ${
-                        isOpen
-                          ? "bg-primary-100 dark:bg-primary-900/40 text-primary-600"
-                          : "bg-gray-50 dark:bg-gray-800 text-gray-400"
-                      }`}
-                    >
-                      {isOpen ? (
-                        <ChevronUp size={18} />
-                      ) : (
-                        <ChevronDown size={18} />
-                      )}
-                    </div>
-                  </button>
-
-                  {isOpen && (
-                    <div className="px-6 pb-6 pt-2 animate-fade-in-down">
-                      <div className="h-px w-full bg-gray-100 dark:bg-gray-800 mb-6 mx-auto"></div>
-                      <div className="prose prose-sm dark:prose-invert max-w-none text-gray-700 dark:text-gray-300 leading-relaxed">
-                        {section.content}
-                      </div>
-                    </div>
+        <div className="space-y-6">
+          {sections.map((section, idx) => (
+            <div
+              key={section.id}
+              className={`group overflow-hidden bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[2.5rem] sm:rounded-[3rem] border border-white/20 dark:border-white/5 shadow-lg shadow-black/5 transition-all duration-700 ${
+                openSection === section.id ? "ring-2 ring-primary-500/20" : "hover:border-primary-500/20"
+              }`}
+              style={{ animationDelay: `${idx * 100}ms` }}
+            >
+              <button
+                onClick={() => toggleSection(section.id)}
+                className="w-full flex items-center justify-between p-8 sm:p-10 text-left transition-all hover:bg-white/20 dark:hover:bg-white/5"
+              >
+                <div className="flex items-center gap-6">
+                  <div className={`w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-${section.color}-500/10 flex items-center justify-center text-${section.color}-500 group-hover:scale-110 transition-transform shadow-inner`}>
+                    <section.icon size={28} strokeWidth={2.5} />
+                  </div>
+                  <h2 className="text-xl sm:text-2xl font-black text-gray-900 dark:text-white uppercase tracking-tight leading-none">
+                    {section.title}
+                  </h2>
+                </div>
+                <div className="w-12 h-12 rounded-full flex items-center justify-center bg-black/5 dark:bg-white/10 text-gray-400 group-hover:bg-primary-500 group-hover:text-white transition-all shadow-xl">
+                  {openSection === section.id ? (
+                    <ChevronUp size={24} strokeWidth={3} />
+                  ) : (
+                    <ChevronDown size={24} strokeWidth={3} />
                   )}
                 </div>
-              )
-            })}
+              </button>
+
+              {openSection === section.id && (
+                <div className="p-8 sm:p-12 pt-0 border-t border-white/10 animate-in fade-in slide-in-from-top-6 duration-500">
+                   {section.content}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-20 p-10 sm:p-14 rounded-[3rem] sm:rounded-[4.5rem] bg-gradient-to-br from-primary-600 to-indigo-700 text-white shadow-2xl text-center relative overflow-hidden group">
+          <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_50%_120%,rgba(255,255,255,0.2),transparent)] opacity-60"></div>
+          <div className="relative z-10 space-y-8">
+            <h2 className="text-2xl sm:text-4xl font-black uppercase tracking-tighter leading-none">
+              Still Need Help?
+            </h2>
+            <p className="text-base sm:text-lg text-primary-100 font-medium max-w-2xl mx-auto opacity-90 leading-relaxed">
+              Join the official Minima Global community on Discord to ask questions directly to the developers and community guides.
+            </p>
+            <div className="flex justify-center">
+              <button 
+                className="px-10 py-5 bg-white text-primary-600 rounded-[2rem] text-xs sm:text-sm font-black uppercase tracking-[0.3em] shadow-2xl hover:scale-105 active:scale-95 transition-all"
+                onClick={() => window.open('https://discord.gg/minima', '_blank')}
+              >
+                Join Discord Server
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Premium Footer */}
-        <div className="relative mt-8 p-10 bg-gradient-to-br from-gray-900 to-black rounded-[2.5rem] overflow-hidden text-center shadow-2xl">
-          <div className="absolute top-0 left-0 w-full h-full opacity-10 bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:20px_20px]"></div>
-          <p className="relative z-10 text-white font-medium mb-4">
-            Still have questions?
-          </p>
-          <div className="relative z-10 flex flex-wrap justify-center gap-4">
-            <a
-              href="/about"
-              className="px-8 py-3 bg-white text-gray-900 rounded-2xl font-bold text-sm hover:bg-gray-100 transition-all shadow-xl hover:shadow-white/10 active:scale-95"
-            >
-              System Status
-            </a>
-            <button
-              className="px-8 py-3 bg-transparent border-2 border-white/20 text-white rounded-2xl font-bold text-sm hover:bg-white/10 transition-all active:scale-95"
-              onClick={() => window.open("https://minima.global", "_blank")}
-            >
-              Minima Docs
-            </button>
-          </div>
-          <p className="relative z-10 text-[10px] text-gray-500 mt-8 uppercase tracking-[0.2em]">
-            MetaChain v0.9 • Powered by Minima P2P
-          </p>
-        </div>
+        <p className="text-center py-10 text-xs font-black uppercase tracking-widest text-gray-400 dark:text-gray-500 opacity-60">
+           Manual Version 1.1 • Fully Updated April 2026
+        </p>
       </div>
     </div>
   )

@@ -6,7 +6,7 @@ import { Capacitor } from '@capacitor/core';
 // Define available themes
 export type ThemeColor = 'sky' | 'cyan' | 'teal' | 'emerald' | 'slate' | 'gray' | 'zinc' | 'neutral' | 'stone';
 export type ThemeMode = 'light' | 'dark';
-export type ChatBackground = 'default' | 'dots' | 'grid' | 'diagonal';
+export type ChatBackground = 'default' | 'dots' | 'grid' | 'diagonal' | 'soft-gradient';
 
 interface ThemeContextType {
     currentTheme: ThemeColor;

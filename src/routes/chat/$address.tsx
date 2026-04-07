@@ -19,11 +19,20 @@ import {
   Wallet,
   Info,
   Archive,
-  Settings,
-  Users,
+
   Star,
-  Image as ImageIcon,
   CheckCircle2,
+  SlidersHorizontal,
+  ArrowLeft,
+  MoreVertical,
+  ChevronRight,
+  ShieldCheck,
+  Zap,
+  X,
+  Radio,
+  Paperclip,
+  Activity,
+  ShieldAlert,
 } from "lucide-react";
 import MessageBubble from "../../components/chat/MessageBubble";
 import { compressImage } from "../../utils/image";
@@ -70,6 +79,7 @@ export const Route = createFileRoute("/chat/$address")({
 interface Contact {
   currentaddress: string;
   publickey: string; // Added: needed to send messages
+  allow_non_contact_chats?: boolean; // NEW: check if peer allows messages from strangers
   extradata?: {
     minimaaddress?: string;
     name?: string;
@@ -84,7 +94,7 @@ interface ParsedMessage {
   charm: { id: string } | null;
   amount: number | null;
   timestamp?: number;
-  status?: "pending" | "sent" | "delivered" | "read" | "failed" | "zombie";
+  status?: "pending" | "sent" | "delivered" | "read" | "failed" | "zombie" | "confirmed" | "received";
   tokenAmount?: { amount: string; tokenName: string }; // For token transfer messages
   isSystem?: boolean; // For system messages (centered)
   isCharm?: boolean; // For charm messages
@@ -105,20 +115,7 @@ interface ParsedMessage {
   deleted?: boolean;
 }
 
-// Helper function to format relative time
-function formatRelativeTime(timestamp: number): string {
-  const now = Date.now();
-  const diff = now - timestamp;
-  const seconds = Math.floor(diff / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-  const days = Math.floor(hours / 24);
 
-  if (days > 0) return `${days} day${days > 1 ? "s" : ""} ago`;
-  if (hours > 0) return `${hours} hour${hours > 1 ? "s" : ""} ago`;
-  if (minutes > 0) return `${minutes} minute${minutes > 1 ? "s" : ""} ago`;
-  return "just now";
-}
 
 function ChatPage() {
   // Helper to remove duplicate messages (favors UUID/customid, then seq, then timestamp)
@@ -148,7 +145,11 @@ function ChatPage() {
       let isDuplicate = false;
 
       if (keys.customId && seenCustomIds.has(keys.customId)) isDuplicate = true;
-      if (!isDuplicate && keys.seqKey && seenSeqKeys.has(keys.seqKey))
+      // Only use seqKey dedup when there is no customId — if a message has a UUID,
+      // that's the authoritative identifier. SeqKey dedup on UUID messages causes
+      // false positives when the sender's seq counter has been reset (different
+      // messages end up sharing the same sender_seq number).
+      if (!isDuplicate && keys.seqKey && !keys.customId && seenSeqKeys.has(keys.seqKey))
         isDuplicate = true;
       if (!isDuplicate && seenTimeKeys.has(keys.timeKey)) isDuplicate = true;
 
@@ -259,18 +260,17 @@ function ChatPage() {
   const [input, setInput] = useState("");
   const [showTransferSelector, setShowTransferSelector] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showReadModeWarning, setShowReadModeWarning] = useState(false);
+  const [pendingAction, setPendingAction] = useState<(() => Promise<void>) | null>(null);
 
   const [showMenu, setShowMenu] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [showChatInfo, setShowChatInfo] = useState(false);
   const [isArchived, setIsArchived] = useState(false);
   const [isFavorite, setIsFavorite] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
   const [blockedByThem, setBlockedByThem] = useState(false);
 
-  // Restore Read Mode state (Parent Managed)
-  const [showReadModeWarning, setShowReadModeWarning] = useState(false);
-  const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
+  // Block reason state
 
   const [showInviteDialog, setShowInviteDialog] = useState(false);
   const [inviteSending, setInviteSending] = useState(false);
@@ -420,6 +420,7 @@ function ChatPage() {
   // Contact request state
   const [contactRequest, setContactRequest] = useState<any | null>(null);
   const [processingRequest, setProcessingRequest] = useState(false);
+
   // Chat blocking state
   const [blockReason, setBlockReason] = useState<
     | "none"
@@ -428,6 +429,7 @@ function ChatPage() {
     | "incoming_restricted"
     | "no_permission"
   >("none");
+
 
   // Request notification permissions on app load (Android 13+)
   useEffect(() => {
@@ -450,8 +452,6 @@ function ChatPage() {
       window.removeEventListener("FORWARD_SUCCESS", handleForwardSuccess);
   }, []);
 
-  const defaultAvatar =
-    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23cbd5e1'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E";
 
   const decodeStoredAvatar = (avatar?: string | null) => {
     if (!avatar || avatar === "0x00") return "";
@@ -490,14 +490,7 @@ function ChatPage() {
     }
   };
 
-  const getAvatar = (c: Contact | null) => {
-    if (!c) return defaultAvatar;
 
-    const avatar = decodeStoredAvatar(c.extradata?.icon);
-    if (avatar) return avatar;
-
-    return defaultAvatar;
-  };
 
   /* ----------------------------------------------------------------------------
       GET CONTACT INFO
@@ -580,7 +573,7 @@ function ChatPage() {
               const safeKey = c.publickey.replace(/'/g, "''");
               const dpRes: any = await withTimeout(
                 MDS.sql(
-                  `SELECT MINIMAADDRESS, AVATAR, EXTRA_DATA FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('${safeKey}') LIMIT 1`,
+                  `SELECT MINIMAADDRESS, AVATAR, ALLOW_NON_CONTACT_CHATS, EXTRA_DATA FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('${safeKey}') LIMIT 1`,
                 ),
                 2000,
               ).catch(() => ({ status: false }));
@@ -589,10 +582,19 @@ function ChatPage() {
 
                 const dpRow = dpRes.rows[0];
                 const discoveryAvatar = getDiscoveryAvatar(dpRow);
+                const dpAllowAll = dpRow.ALLOW_NON_CONTACT_CHATS === 1 || dpRow.ALLOW_NON_CONTACT_CHATS === true || dpRow.ALLOW_NON_CONTACT_CHATS === "1" || dpRow.ALLOW_NON_CONTACT_CHATS === "true";
+                c.allow_non_contact_chats = dpAllowAll;
+                let dpMinimaAddr = dpRow.MINIMAADDRESS || "";
+                if (!dpMinimaAddr && dpRow.EXTRA_DATA) {
+                  try {
+                    const parsedExtra = typeof dpRow.EXTRA_DATA === "string" ? JSON.parse(dpRow.EXTRA_DATA) : dpRow.EXTRA_DATA;
+                    dpMinimaAddr = parsedExtra?.minimaaddress || "";
+                  } catch { /* ignore */ }
+                }
                 c.extradata = {
                   ...c.extradata,
                   minimaaddress:
-                    dpRow.MINIMAADDRESS || c.extradata?.minimaaddress || "",
+                    dpMinimaAddr || c.extradata?.minimaaddress || "",
                   icon: c.extradata?.icon || discoveryAvatar,
                 };
 
@@ -630,7 +632,7 @@ function ChatPage() {
             : address;
           const safeQueryKey = queryKey.replace(/'/g, "''");
 
-          const discoverySql = `SELECT * FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('${safeQueryKey}')`;
+          const discoverySql = `SELECT *, ALLOW_NON_CONTACT_CHATS FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('${safeQueryKey}')`;
           let discoveryRes: any = await withTimeout(
             MDS.sql(discoverySql),
             3000,
@@ -673,11 +675,13 @@ function ChatPage() {
                 );
               }
 
+              const dpAllowAll = peer.ALLOW_NON_CONTACT_CHATS === 1 || peer.ALLOW_NON_CONTACT_CHATS === true || peer.ALLOW_NON_CONTACT_CHATS === "1" || peer.ALLOW_NON_CONTACT_CHATS === "true";
               const discoveryAvatar = getDiscoveryAvatar(peer);
 
               contactToSet = {
                 publickey: peer.PUBLICKEY,
                 currentaddress: peer.ADDRESS || address,
+                allow_non_contact_chats: dpAllowAll,
                 extradata: {
                   name: peer.ALIAS || "Unknown",
                   minimaaddress:
@@ -920,6 +924,26 @@ function ChatPage() {
     );
     setIsPendingOutgoing(hasPendingOutgoing);
 
+    // Check for OUTGOING Maxima contact requests (treated as pending outgoing for the permission guard)
+    try {
+      const escapeSqlLocal = (str: string) => str.replace(/'/g, "''");
+      const myPk = myPublicKey || "";
+      if (myPk) {
+        const outMaximaSql = `SELECT * FROM MAXIMA_CONTACT_REQUESTS
+                              WHERE UPPER(from_publickey)=UPPER('${escapeSqlLocal(myPk)}')
+                              AND UPPER(to_publickey)=UPPER('${escapeSqlLocal(contact.publickey)}')
+                              AND status='pending'`;
+        const outMaximaRes = await minimaService.runSQL(outMaximaSql);
+        const hasPendingMaximaOutgoing = outMaximaRes?.rows?.length > 0;
+        if (hasPendingMaximaOutgoing && !hasPendingOutgoing) {
+          // Treat as pending outgoing for the permission guard too
+          setIsPendingOutgoing(true);
+        }
+      }
+    } catch (err) {
+      console.warn("⚠️ [CHAT] Error checking outgoing Maxima request:", err);
+    }
+
     // Check for INCOMING requests (they sent to me)
     const hasPendingIncoming = await minimaService.checkIncomingChatRequest(
       contact.publickey,
@@ -1039,17 +1063,30 @@ function ChatPage() {
           );
           setBlockReason("none");
         } else {
-          // HISTORY OVERRIDE
-          const historySql = `SELECT * FROM CHAT_MESSAGES WHERE UPPER(publickey)=UPPER('${sPeer}') AND type!='system' LIMIT 1`;
-          const histRes = await new Promise<any>((resolve) =>
-            MDS.sql(historySql, resolve),
-          );
+          // Also check MAXIMA_CONTACT_REQUESTS for accepted state
+          const maximaAcceptedSql = `SELECT * FROM MAXIMA_CONTACT_REQUESTS
+                     WHERE (UPPER(from_publickey)=UPPER('${sPeer}') OR UPPER(to_publickey)=UPPER('${sPeer}'))
+                     AND status='accepted'`;
+          const maximaAcceptedRes = await new Promise<any>((resolve) => MDS.sql(maximaAcceptedSql, resolve));
 
-          if (histRes.status && histRes.rows && histRes.rows.length > 0) {
+          if (maximaAcceptedRes.status && maximaAcceptedRes.rows && maximaAcceptedRes.rows.length > 0) {
             console.log(
-              "🔓 [CHAT] Override: Found CHAT HISTORY -> Allow (Implied Contact)",
+              "🔓 [CHAT] Override: Found ACCEPTED Maxima request in DB -> Allow",
             );
             setBlockReason("none");
+          } else {
+            // HISTORY OVERRIDE
+            const historySql = `SELECT * FROM CHAT_MESSAGES WHERE UPPER(publickey)=UPPER('${sPeer}') AND type!='system' LIMIT 1`;
+            const histRes = await new Promise<any>((resolve) =>
+              MDS.sql(historySql, resolve),
+            );
+
+            if (histRes.status && histRes.rows && histRes.rows.length > 0) {
+              console.log(
+                "🔓 [CHAT] Override: Found CHAT HISTORY -> Allow (Implied Contact)",
+              );
+              setBlockReason("none");
+            }
           }
         }
       } catch (sqlErr) {
@@ -1063,6 +1100,7 @@ function ChatPage() {
       !requestPendingHandled.current
     ) {
       requestPendingHandled.current = true;
+      setIsPendingOutgoing(true); // OPTIMISTIC: show bubble immediately
       loadMessagesFromDB();
     }
   }, [contact, searchParams]);
@@ -1225,9 +1263,6 @@ function ChatPage() {
       }
 
       const fetchKeys = [address, resolvedKey].filter(Boolean) as string[];
-      console.log(
-        `🔄 [CHAT] Fetching messages from DB for: ${fetchKeys.join(", ")}`,
-      );
       const rawMessages: any = await withTimeout(
         minimaService.getMessages(fetchKeys),
         5000,
@@ -1297,6 +1332,7 @@ function ChatPage() {
             isToken,
             isCharm,
             tokenAmount,
+            txpowid: row.TXPOWID || row.txpowid || null,
             username: row.USERNAME,
             // ROBUST FIX: Case-insensitive check and log for debugging
             isSystem: (() => {
@@ -1358,17 +1394,196 @@ function ChatPage() {
                 await transactionService.findPendingTransactionByStateId(
                   msg.timestamp,
                 );
-              if (tx) {
-                // If we find a transaction with pending or sent status, show as pending in UI
-                if (tx.status === "pending" || tx.status === "sent") {
-                  console.log(
-                    `🔄 [CHAT-DB] Found ${tx.status.toUpperCase()} tx for message ${msg.timestamp}. Showing as 'pending' in UI.`,
-                  );
-                  finalStatus = "pending";
-                }
-              } else if (finalStatus === "pending") {
-                // No pending/sent transaction found — this message is already confirmed
+              if (!tx && finalStatus === "pending") {
+                // No active transaction found for an orphaned pending message — treat as confirmed
                 finalStatus = "confirmed";
+              }
+            }
+
+            // Check incoming tokens still in 'received' state: verify 3-block confirmation directly.
+            // NOTE: The txpowid stored from the Maxima message is the pre-PoW id and may not be
+            // findable via 'txpow txpowid:X'. Fall back to searching by originalTimestamp.
+            if (
+              (msg.isToken || msg.isCharm) &&
+              !msg.fromMe &&
+              finalStatus === "received"
+            ) {
+              const originalTs =
+                msg.originalTimestamp || msg.timestamp;
+
+              const checkConfirmation = (
+                txpowid: string | null,
+                resolve: (v: boolean) => void,
+              ) => {
+                MDS.executeRaw("status", (statusRes: any) => {
+                  const currentBlock =
+                    statusRes?.response?.chain?.block;
+                  if (!currentBlock) {
+                    resolve(false);
+                    return;
+                  }
+                  if (txpowid) {
+                    MDS.executeRaw(
+                      `txpow txpowid:${txpowid}`,
+                      (txRes: any) => {
+                        const txBlock = txRes?.response?.header?.block;
+                        if (txBlock !== undefined && txBlock !== null) {
+                          resolve(
+                            parseInt(currentBlock) - parseInt(txBlock) >= 3,
+                          );
+                        } else {
+                          resolve(false);
+                        }
+                      },
+                    );
+                  } else {
+                    resolve(false);
+                  }
+                });
+              };
+
+              const isConfirmed = await new Promise<boolean>((resolve) => {
+                if (!originalTs) {
+                  resolve(false);
+                  return;
+                }
+                // Try stored txpowid first (fast path)
+                if (msg.txpowid && msg.txpowid !== "null") {
+                  MDS.executeRaw(
+                    `txpow txpowid:${msg.txpowid}`,
+                    (txRes: any) => {
+                      const txBlock = txRes?.response?.header?.block;
+                      if (txBlock !== undefined && txBlock !== null) {
+                        // Fast path succeeded
+                        MDS.executeRaw(
+                          "status",
+                          (statusRes: any) => {
+                            const currentBlock =
+                              statusRes?.response?.chain?.block;
+                            resolve(
+                              currentBlock !== undefined &&
+                                parseInt(currentBlock) -
+                                  parseInt(txBlock) >=
+                                  3,
+                            );
+                          },
+                        );
+                        return;
+                      }
+                      // Stored txpowid didn't work — search by timestamp (real blockchain id)
+                      console.log(
+                        `🔍 [CHAT] txpow lookup failed for stored id, searching by timestamp ${originalTs}...`,
+                      );
+                      MDS.executeRaw(
+                        "getaddress",
+                        (addrRes: any) => {
+                          const myAddr =
+                            addrRes?.response?.miniaddress;
+                          if (!myAddr) {
+                            resolve(false);
+                            return;
+                          }
+                          MDS.executeRaw(
+                            `txpow address:${myAddr} max:50`,
+                            (histRes: any) => {
+                              const txpows = Array.isArray(
+                                histRes?.response,
+                              )
+                                ? histRes.response
+                                : histRes?.response
+                                  ? [histRes.response]
+                                  : [];
+                              const tsStr = String(originalTs);
+                              let realTxpowid: string | null = null;
+                              for (const tp of txpows) {
+                                const state =
+                                  tp?.body?.txn?.state;
+                                if (
+                                  Array.isArray(state) &&
+                                  state.length >= 2 &&
+                                  state[1]?.data === "204" &&
+                                  state[0]?.data === tsStr
+                                ) {
+                                  realTxpowid = tp.txpowid;
+                                  break;
+                                }
+                              }
+                              if (realTxpowid) {
+                                console.log(
+                                  `✅ [CHAT] Found real txpowid: ${realTxpowid}`,
+                                );
+                                // Update DB with correct txpowid
+                                MDS.sql(
+                                  `UPDATE CHAT_MESSAGES SET txpowid='${realTxpowid}' WHERE id=${msg.id}`,
+                                  () => {},
+                                );
+                                checkConfirmation(realTxpowid, resolve);
+                              } else {
+                                resolve(false);
+                              }
+                            },
+                          );
+                        },
+                      );
+                    },
+                  );
+                } else {
+                  // No stored txpowid at all — search directly by timestamp
+                  MDS.executeRaw(
+                    "getaddress",
+                    (addrRes: any) => {
+                      const myAddr = addrRes?.response?.miniaddress;
+                      if (!myAddr) {
+                        resolve(false);
+                        return;
+                      }
+                      MDS.executeRaw(
+                        `txpow address:${myAddr} max:50`,
+                        (histRes: any) => {
+                          const txpows = Array.isArray(histRes?.response)
+                            ? histRes.response
+                            : histRes?.response
+                              ? [histRes.response]
+                              : [];
+                          const tsStr = String(originalTs);
+                          let realTxpowid: string | null = null;
+                          for (const tp of txpows) {
+                            const state = tp?.body?.txn?.state;
+                            if (
+                              Array.isArray(state) &&
+                              state.length >= 2 &&
+                              state[1]?.data === "204" &&
+                              state[0]?.data === tsStr
+                            ) {
+                              realTxpowid = tp.txpowid;
+                              break;
+                            }
+                          }
+                          if (realTxpowid) {
+                            MDS.sql(
+                              `UPDATE CHAT_MESSAGES SET txpowid='${realTxpowid}' WHERE id=${msg.id}`,
+                              () => {},
+                            );
+                            checkConfirmation(realTxpowid, resolve);
+                          } else {
+                            resolve(false);
+                          }
+                        },
+                      );
+                    },
+                  );
+                }
+              });
+
+              if (isConfirmed) {
+                finalStatus = "confirmed";
+                console.log(
+                  `✅ [CHAT] Incoming token confirmed via frontend check: msg ${msg.id}`,
+                );
+                MDS.sql(
+                  `UPDATE CHAT_MESSAGES SET state='confirmed' WHERE id=${msg.id}`,
+                  () => {},
+                );
               }
             }
 
@@ -1488,7 +1703,7 @@ function ChatPage() {
   const [appStatus, setAppStatus] = useState<
     "unknown" | "checking" | "installed" | "not_found" | "offline"
   >("unknown");
-  const [lastSeen, setLastSeen] = useState<number | null>(null);
+  // const [lastSeen, setLastSeen] = useState<number | null>(null);
 
   /* ----------------------------------------------------------------------------
       LISTEN FOR INCOMING MESSAGES
@@ -1565,7 +1780,7 @@ function ChatPage() {
             // No Pong received yet. Decide fallback based on "Known" status.
             if (isKnownUser) {
               // Set last seen timestamp when offline
-              setLastSeen(lastSeenTimestamp);
+              // setLastSeen(lastSeenTimestamp);
               console.log("🕐 [PING] Last seen:", lastSeenTimestamp);
               return "offline";
             } else {
@@ -1584,7 +1799,7 @@ function ChatPage() {
         if (payload.from === contact?.publickey) {
           console.log("✅ [PING] Pong received from current contact");
           setAppStatus("installed");
-          setLastSeen(null); // Clear last seen when user is online
+          // setLastSeen(null); // Clear last seen when user is online
           // Save that this user has the app installed
           if (contact.publickey) {
             minimaService.setAppInstalled(contact.publickey);
@@ -1803,6 +2018,13 @@ function ChatPage() {
         return;
       }
 
+      // Handle incoming token/charm confirmation from SW
+      if (payload.type === "TOKEN_INCOMING_CONFIRMED") {
+        console.log(`💰 [CHAT] Incoming token confirmed (msg ID ${payload.msgId}). Reloading...`);
+        loadMessagesFromDB();
+        return;
+      }
+
       // Handle Sync Completion and Generic List Updates from SW
       if (
         payload.type === "CHAT_LIST_UPDATE" ||
@@ -1949,6 +2171,11 @@ function ChatPage() {
   };
 
   const handleSendMessage = async () => {
+    if (isActionRestricted) {
+      console.warn("⚠️ [CHAT] Send blocked: Handshake or Protocol restriction active");
+      return;
+    }
+
     // Guard to prevent concurrent sends
     if (isSendingRef.current) return;
 
@@ -1999,6 +2226,9 @@ function ChatPage() {
       // OPTIMISTIC UPDATE: Clear input immediately to make UI feel responsive
       setInput("");
       setReplyingTo(null);
+      // Release send lock immediately after optimistic UI update so user can type/send next message.
+      // seqQueues in database.service.ts serializes concurrent sends safely.
+      isSendingRef.current = false;
 
       // FIX: Use publickey (0x) for reliable DB storage, fallback to currentaddress for network
       // This ensures messages are always stored with the same key format as the URL param
@@ -2283,6 +2513,46 @@ function ChatPage() {
   };
 
   /* ----------------------------------------------------------------------------
+      RESOLVE MINIMA ADDRESS
+      Tries contact.extradata.minimaaddress first, then falls back to DISCOVERED_PEERS
+  ---------------------------------------------------------------------------- */
+  const resolveMinimaAddress = async (c: Contact): Promise<string | null> => {
+    if (c.extradata?.minimaaddress) return c.extradata.minimaaddress;
+    if (!c.publickey) return null;
+    try {
+      const safeKey = c.publickey.replace(/'/g, "''");
+      const res: any = await new Promise((resolve) =>
+        MDS.sql(
+          `SELECT MINIMAADDRESS, EXTRA_DATA FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('${safeKey}') LIMIT 1`,
+          resolve,
+        ),
+      );
+      if (res?.status && res.rows?.length > 0) {
+        const row = res.rows[0];
+        let addr: string = row.MINIMAADDRESS || "";
+        // Fallback: parse EXTRA_DATA which may contain minimaaddress
+        if (!addr && row.EXTRA_DATA) {
+          try {
+            const parsed = typeof row.EXTRA_DATA === "string"
+              ? JSON.parse(row.EXTRA_DATA)
+              : row.EXTRA_DATA;
+            addr = parsed?.minimaaddress || "";
+          } catch { /* ignore */ }
+        }
+        if (addr) {
+          setContact((prev) =>
+            prev ? { ...prev, extradata: { ...prev.extradata, minimaaddress: addr } } : prev,
+          );
+          return addr;
+        }
+      }
+    } catch { /* ignore */ }
+    // Address not found — request profile so next attempt works
+    requestProfileThrottled(c.currentaddress, c.publickey, "resolve-address");
+    return null;
+  };
+
+  /* ----------------------------------------------------------------------------
       SEND CHARM
   ---------------------------------------------------------------------------- */
   const executeSendCharm = async (charmId: string, amount: number) => {
@@ -2290,19 +2560,10 @@ function ChatPage() {
       `DEBUG: executeSendCharm called. charmId=${charmId}, amount=${amount}`,
     );
 
-    // STRICT CHECK: Must have Minima Address (Wallet) for Charms too?
-    // Actually Charms might NOT need wallet address if amount is 0?
-    // BUT sendCharmWithTokens uses 'send' command which implies amount transfer usually.
-    // If amount > 0, we need address. If amount = 0, maybe not?
-    // Let's stick to strict to be safe.
-    if (!contact?.publickey || !contact?.extradata?.minimaaddress) {
-      console.error("DEBUG: executeSendCharm ABORTED. Missing contact info:", {
-        hasPublicKey: !!contact?.publickey,
-        hasMinimaAddress: !!contact?.extradata?.minimaaddress,
-      });
-      alert(
-        "Cannot send Charm: Contact hasn't shared their Wallet Address yet.",
-      );
+    if (!contact?.publickey) return;
+    const resolvedCharmAddr = await resolveMinimaAddress(contact);
+    if (!resolvedCharmAddr) {
+      alert("Wallet address not yet available. A profile sync has been requested — please try again in a few seconds.");
       return;
     }
     // Use sender's name (from context) for payload, recipient's name for roomname
@@ -2318,12 +2579,10 @@ function ChatPage() {
       );
 
       // FIX: Ensure address is valid for Minima (remove @host if present)
-      let destAddress = contact.extradata.minimaaddress;
-      if (destAddress && destAddress.includes("@")) {
+      let destAddress = resolvedCharmAddr;
+      if (destAddress.includes("@")) {
         destAddress = destAddress.split("@")[0];
       }
-
-      if (!contact?.publickey) throw new Error("Missing public key");
 
       const response = await minimaService.sendCharmWithTokens(
         contact.publickey,
@@ -2376,18 +2635,10 @@ function ChatPage() {
       `DEBUG: executeSendToken called. tokenId=${tokenId}, amount=${amount}`,
     );
 
-    // STRICT CHECK: Must have Minima Address (Wallet)
-    if (!contact?.extradata?.minimaaddress || !contact?.publickey) {
-      console.error(
-        "DEBUG: executeSendToken ABORTED. Missing Minima Address:",
-        {
-          hasPublicKey: !!contact?.publickey,
-          hasMinimaAddress: !!contact?.extradata?.minimaaddress,
-        },
-      );
-      alert(
-        "Cannot send funds: This contact hasn't shared their Wallet Address yet. They need to come online once to sync their profile.",
-      );
+    if (!contact?.publickey) return;
+    const resolvedTokenAddr = await resolveMinimaAddress(contact);
+    if (!resolvedTokenAddr) {
+      alert("Wallet address not yet available. A profile sync has been requested — please try again in a few seconds.");
       return;
     }
 
@@ -2408,12 +2659,13 @@ function ChatPage() {
     const optimisticMsg: ParsedMessage = {
       text: "",
       fromMe: true,
-      sender_seq: tokenSeq, // Include sequence in UI immediately
+      sender_seq: tokenSeq,
       charm: null,
       amount: Number(amount),
       timestamp: tempTimestamp,
       status: "pending",
       tokenAmount: { amount, tokenName },
+      isToken: true,
     };
     setMessages((prev) => [...prev, optimisticMsg]);
     console.log(
@@ -2446,8 +2698,8 @@ function ChatPage() {
     });
 
     // FIX: Ensure address is valid for Minima (remove @host if present)
-    let destAddress = contact.extradata.minimaaddress;
-    if (destAddress && destAddress.includes("@")) {
+    let destAddress = resolvedTokenAddr;
+    if (destAddress.includes("@")) {
       destAddress = destAddress.split("@")[0];
     }
 
@@ -2464,11 +2716,14 @@ function ChatPage() {
       );
 
       // Check if token send is pending
+      // Minima signals pending via: response.pending=true, response.status=false with pending:true,
+      // or by returning a pendinguid without a txpowid (queued for authorization)
       const isTokenPending =
         tokenResponse &&
         (tokenResponse.pending ||
           (tokenResponse.error &&
-            tokenResponse.error.toString().toLowerCase().includes("pending")));
+            tokenResponse.error.toString().toLowerCase().includes("pending")) ||
+          (!tokenResponse.txpowid && tokenResponse.pendinguid)); // has pendinguid but no confirmed txpowid
 
       // Extract txpowid and pendinguid
       const txpowid = tokenResponse?.txpowid;
@@ -2564,11 +2819,18 @@ function ChatPage() {
     } catch (err: any) {
       console.error("Failed to send token:", err);
 
-      // FIX: Notify user of failure
-      alert(`Sent failed: ${err.message || "Unknown error"}`);
+      // Mark the optimistic message as failed in DB and UI
+      MDS.sql(
+        `UPDATE CHAT_MESSAGES SET state='failed' WHERE date=${tempTimestamp} AND UPPER(publickey)=UPPER('${contact.publickey}')`,
+        () => {},
+      );
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.timestamp === tempTimestamp ? { ...m, status: "failed" as const } : m,
+        ),
+      );
 
-      // Reload to ensure consistent state
-      loadMessagesFromDB();
+      alert(`Send failed: ${err.message || "Unknown error"}`);
     }
   };
 
@@ -2586,7 +2848,7 @@ function ChatPage() {
       "📍 [TRACE 1] handleTransfer entered. Data:",
       JSON.stringify(data),
     );
-    console.log("📍 [TRACE 1] WriteMode:", writeMode);
+
     console.log(
       "📍 [TRACE 1] FULL CONTACT OBJECT:",
       JSON.stringify(contact, null, 2),
@@ -2632,7 +2894,7 @@ function ChatPage() {
       }
     };
 
-    // Check for Read Mode (Parent Managed)
+    // Check for Read Mode — show warning before proceeding
     if (!writeMode) {
       console.log("DEBUG: Read Mode detected. Showing warning.");
       setPendingAction(() => action);
@@ -2732,638 +2994,226 @@ function ChatPage() {
     }
   };
 
+  const isActionRestricted =
+    blockReason !== "none" ||
+    isBlocked ||
+    blockedByThem ||
+    (contactRequest !== null && !contact?.allow_non_contact_chats) ||
+    (isPendingOutgoing && !contact?.allow_non_contact_chats);
+
   /* ----------------------------------------------------------------------------
       RENDER
   ---------------------------------------------------------------------------- */
   return (
-    <div className="flex-1 w-full flex flex-col bg-[#E5DDD5] dark:bg-gray-900 min-h-0">
-      {/* HEADER - Fixed at top */}
-      <div className="bg-primary-600 dark:bg-gray-800 text-white p-4 pt-[calc(1rem+env(safe-area-inset-top))] px-4 flex items-center gap-3 flex-shrink-0 shadow-sm z-30 transition-colors border-b border-primary-700 dark:border-gray-700">
-        {/* Back button */}
-        <button
-          onClick={() => navigate({ to: "/" })}
-          className="p-2 hover:bg-white/10 rounded-full transition-colors"
-          title="Back"
-        >
-          <svg
-            className="w-6 h-6"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M10 19l-7-7m0 0l7-7m-7 7h18"
-            />
-          </svg>
-        </button>
-
-        <div
-          className={`flex items-center gap-3 flex-1 min-w-0 transition-opacity ${
-            appStatus !== "checking" && appStatus !== "not_found"
-              ? "cursor-pointer hover:opacity-90"
-              : ""
-          }`}
-          onClick={() => {
-            if (appStatus !== "checking" && appStatus !== "not_found") {
-              navigate({
-                to: `/contact-info/${address}`,
-                search: { returnTo: `/chat/${address}` },
-              });
-            }
-          }}
-        >
-          <img
-            src={getAvatar(contact)}
-            alt="Avatar"
-            className="w-12 h-12 rounded-full object-cover bg-gray-200 dark:bg-gray-700"
-          />
-          <div className="flex flex-col leading-tight flex-1 min-w-0">
-            <strong className="text-[16px] truncate font-semibold flex items-center gap-1.5">
-              {contact?.extradata?.name || "Unknown"}
-              {isFavorite && (
-                <Star
-                  size={14}
-                  fill="#fbbf24"
-                  stroke="#f59e0b"
-                  className="flex-shrink-0"
-                />
-              )}
-            </strong>
-            <div className="flex items-center gap-1.5 min-w-0">
-              {appStatus === "installed" ? (
-                <span className="text-xs text-green-200 flex items-center gap-1 font-medium">
-                  <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
-                  Online
-                </span>
-              ) : appStatus === "checking" ? (
-                <span className="text-xs opacity-80 cursor-default truncate">
-                  Checking status...
-                </span>
-              ) : appStatus === "not_found" ? (
-                <div className="flex items-center gap-1">
-                  <span className="text-xs text-red-200 cursor-default">
-                    Dapp not detected
-                  </span>
-                  <span className="text-xs text-gray-400">•</span>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setShowInviteDialog(true);
-                    }}
-                    className="text-xs text-white font-medium hover:underline transition-colors"
-                  >
-                    Send Invite
-                  </button>
-                </div>
-              ) : appStatus === "offline" ? (
-                <span className="text-xs opacity-80 truncate block cursor-default">
-                  {lastSeen
-                    ? `Last seen ${formatRelativeTime(lastSeen)}`
-                    : "Offline"}
-                </span>
-              ) : (
-                <span className="text-xs opacity-80 truncate block">
-                  online
-                </span>
-              )}
-
-              {isSyncing && (
-                <>
-                  <span className="text-gray-400 opacity-60">·</span>
-                  <span className="flex items-center gap-1 text-sky-200 animate-pulse whitespace-nowrap text-[11px] font-medium leading-none">
-                    <svg
-                      className="w-3 h-3 animate-spin"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                    >
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                      ></circle>
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                      ></path>
-                    </svg>
-                    Syncing...
-                  </span>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Header Actions */}
-        <div className="flex gap-4 relative">
+    <div className="flex-1 w-full flex flex-col bg-[#f8fafc] dark:bg-gray-950 min-h-0 relative overflow-hidden">
+      {/* ELITE STICKY HEADER */}
+      <div className="sticky top-0 z-[70] w-full pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pt-[env(safe-area-inset-top)] backdrop-blur-xl bg-white/70 dark:bg-gray-900/60 border-b border-white/20 dark:border-white/5 shadow-2xl shadow-black/5 transition-all duration-500">
+        <div className="max-w-screen-xl mx-auto px-6 h-28 flex items-center gap-6">
+          {/* Elite Back Navigation */}
           <button
-            className="opacity-80 hover:opacity-100"
-            onClick={() => setShowMenu(!showMenu)}
+            onClick={() => navigate({ to: "/" })}
+            className="group relative w-14 h-14 flex items-center justify-center bg-gray-100 dark:bg-white/5 rounded-2xl hover:bg-primary-500 hover:text-white transition-all duration-500 active:scale-95 shadow-inner"
           >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"
-              />
-            </svg>
+            <div className="absolute inset-0 bg-primary-500 rounded-2xl opacity-0 group-hover:opacity-100 blur-xl transition-opacity duration-500" />
+            <ArrowLeft size={24} strokeWidth={3} className="relative z-10" />
           </button>
 
-          {/* Dropdown Menu */}
-          {showMenu && (
-            <div className="absolute top-10 right-0 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 min-w-[200px] z-50 animate-in slide-in-from-top-2 fade-in duration-200">
-              <button
-                className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 rounded-t-lg transition-colors text-left"
-                onClick={() => {
-                  setShowMenu(false);
-                  setShowChatInfo(true);
-                }}
-              >
-                <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
-                  <Info size={16} />
-                </div>
-                <span className="font-medium">Chat Info</span>
-              </button>
-              <button
-                className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
-                onClick={() => {
-                  setShowMenu(false);
-                  navigate({
-                    to: `/contact-info/${address}`,
-                    search: { returnTo: `/chat/${address}` },
-                  });
-                }}
-              >
-                <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
-                  <Users size={16} />
-                </div>
-                <span className="font-medium">Profile</span>
-              </button>
-              <button
-                className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
-                onClick={() => {
-                  setShowMenu(false);
-                  navigate({
-                    to: `/contact-info/${address}`,
-                    search: { returnTo: `/chat/${address}`, tab: "settings" },
-                  });
-                }}
-              >
-                <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
-                  <Settings size={16} />
-                </div>
-                <span className="font-medium">Actions</span>
-              </button>
-              <button
-                className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
-                onClick={() => {
-                  setShowMenu(false);
-                  handleToggleFavorite();
-                }}
-              >
-                <div className="w-8 h-8 rounded-full bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center text-yellow-600 dark:text-yellow-400">
-                  <Star size={16} fill={isFavorite ? "currentColor" : "none"} />
-                </div>
-                <span className="font-medium">
-                  {isFavorite ? "Unfavorite Chat" : "Favorite Chat"}
-                </span>
-              </button>
-              <button
-                className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-200 transition-colors text-left border-t border-gray-100 dark:border-gray-700"
-                onClick={() => {
-                  setShowMenu(false);
-                  handleToggleArchive();
-                }}
-              >
-                <div className="w-8 h-8 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center text-orange-600 dark:text-orange-400">
-                  <Archive size={16} />
-                </div>
-                <span className="font-medium">
-                  {isArchived ? "Unarchive Chat" : "Archive Chat"}
-                </span>
-              </button>
-              <button
-                className="flex items-center gap-3 w-full p-3 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 rounded-b-lg transition-colors text-left border-t border-gray-100 dark:border-gray-700"
-                onClick={() => {
-                  setShowMenu(false);
-                  setShowDeleteConfirm(true);
-                }}
-              >
-                <div className="w-8 h-8 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center text-red-600 dark:text-red-400">
-                  <Trash2 size={16} />
-                </div>
-                <span className="font-medium">Delete Chat</span>
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-      {/* Delete Confirmation Dialog */}
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 md:bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-sm w-full p-6 animate-in zoom-in-95 fade-in duration-200 border border-gray-700 md:border-gray-200 dark:border-gray-700">
-            <h3 className="text-lg font-bold text-white md:text-gray-900 dark:text-white mb-2">
-              Delete Chat?
-            </h3>
-            <p className="text-gray-300 md:text-gray-600 dark:text-gray-300 mb-6">
-              This will permanently delete all messages in this conversation.
-              This action cannot be undone.
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowDeleteConfirm(false)}
-                className="flex-1 px-4 py-2 border border-gray-600 md:border-gray-300 text-gray-300 md:text-gray-700 rounded-lg hover:bg-gray-700 md:hover:bg-gray-50 transition-colors font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  setShowDeleteConfirm(false);
-                  handleDeleteChat();
-                }}
-                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {/* Invite Dialog */}
-      <InviteDialog
-        isOpen={showInviteDialog}
-        onClose={() => setShowInviteDialog(false)}
-        onSend={handleSendInvite}
-        isSending={inviteSending}
-        contactName={contact?.extradata?.name || "this contact"}
-      />
-      {/* Chat Info Dialog */}
-      {/* Chat Info Dialog */}
-      {showChatInfo && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 md:bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full p-6 animate-in zoom-in-95 fade-in duration-200 border border-gray-700 md:border-gray-200 dark:border-gray-700">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-white md:text-gray-900 dark:text-white">
-                Chat Statistics
-              </h3>
-              <button
-                onClick={() => setShowChatInfo(false)}
-                className="text-gray-400 md:text-gray-500 hover:text-gray-300 md:hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
-              >
-                <svg
-                  className="w-5 h-5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              {/* Total Messages */}
-              <div className="flex items-center justify-between p-3 bg-gray-700/50 md:bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-primary-500/20 rounded-full flex items-center justify-center">
-                    <svg
-                      className="w-5 h-5 text-primary-400 md:text-primary-600 dark:text-primary-400"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-                      />
-                    </svg>
-                  </div>
-                  <span className="font-medium text-gray-300 md:text-gray-700 dark:text-gray-300">
-                    Total Messages
-                  </span>
-                </div>
-                <span className="text-lg font-bold text-white md:text-gray-900 dark:text-white">
-                  {messages.length}
-                </span>
-              </div>
-
-              {/* Charms Sent/Received */}
-              <div className="flex items-center justify-between p-3 bg-gray-700/50 md:bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-purple-500/20 rounded-full flex items-center justify-center">
-                    <span className="text-xl">✨</span>
-                  </div>
-                  <span className="font-medium text-gray-300 md:text-gray-700 dark:text-gray-300">
-                    Charms
-                  </span>
-                </div>
-                <div className="text-right">
-                  <div className="text-sm text-gray-400 md:text-gray-500 dark:text-gray-400">
-                    Sent: {messages.filter((m) => m.charm && m.fromMe).length} |
-                    Received:{" "}
-                    {messages.filter((m) => m.charm && !m.fromMe).length}
-                  </div>
-                </div>
-              </div>
-
-              {/* Tokens Transferred */}
-              <div className="flex items-center justify-between p-3 bg-gray-700/50 md:bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-green-500/20 rounded-full flex items-center justify-center">
-                    <svg
-                      className="w-5 h-5 text-green-400 md:text-green-600 dark:text-green-400"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                      />
-                    </svg>
-                  </div>
-                  <span className="font-medium text-gray-300 md:text-gray-700 dark:text-gray-300">
-                    Token Transfers
-                  </span>
-                </div>
-                <div className="text-right">
-                  <div className="text-sm text-gray-400 md:text-gray-500 dark:text-gray-400">
-                    Sent:{" "}
-                    {messages.filter((m) => m.tokenAmount && m.fromMe).length} |
-                    Received:{" "}
-                    {messages.filter((m) => m.tokenAmount && !m.fromMe).length}
-                  </div>
-                </div>
-              </div>
-
-              {/* First Message Date */}
-              {messages.length > 0 && messages[0].timestamp && (
-                <div className="flex items-center justify-between p-3 bg-gray-700/50 md:bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-orange-500/20 rounded-full flex items-center justify-center">
-                      <svg
-                        className="w-5 h-5 text-orange-400 md:text-orange-600 dark:text-orange-400"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                        />
-                      </svg>
-                    </div>
-                    <span className="font-medium text-gray-300 md:text-gray-700 dark:text-gray-300">
-                      First Message
-                    </span>
-                  </div>
-                  <span className="text-sm text-gray-400 md:text-gray-600 dark:text-gray-400">
-                    {new Date(messages[0].timestamp).toLocaleDateString()}
-                  </span>
+          {/* Elite Identity Registry */}
+          <div
+            className="flex-1 flex items-center gap-5 cursor-pointer group/id"
+            onClick={() => navigate({ to: `/contact-info/${contact?.publickey || address}` })}
+          >
+            <div className="relative">
+              {contact?.extradata?.icon ? (
+                <img src={contact.extradata.icon} className="w-16 h-16 rounded-[1.5rem] object-cover border-2 border-white dark:border-gray-800 shadow-xl group-hover/id:scale-105 transition-transform duration-500" alt="" />
+              ) : (
+                <div className="w-16 h-16 rounded-[1.5rem] bg-gradient-to-br from-primary-500 to-indigo-600 flex items-center justify-center text-white text-xl font-black shadow-xl group-hover/id:scale-105 transition-transform duration-500">
+                  {(contact?.extradata?.name || address).substring(0, 1).toUpperCase()}
                 </div>
               )}
+              <div className={`absolute -bottom-1 -right-1 w-6 h-6 rounded-full border-4 border-white dark:border-gray-900 shadow-sm animate-pulse
+                ${appStatus === 'installed' ? 'bg-emerald-500' : 'bg-amber-500'}
+              `} />
             </div>
+            <div className="flex flex-col min-w-0">
+              <div className="flex items-center gap-3">
+                <span className="text-xl font-black text-gray-900 dark:text-white uppercase tracking-tight truncate">
+                  {contact?.extradata?.name || "Syncing Profile..."}
+                </span>
+                {isFavorite && <Star size={16} className="text-amber-500 fill-amber-500" />}
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-primary-500 animate-ping" />
+                <span className="text-[10px] font-black text-primary-500/80 uppercase tracking-[0.3em]">
+                  {isSyncing ? "Syncing Grid..." : appStatus === 'installed' ? "Signal Active" : appStatus === 'checking' ? "Scanning..." : appStatus === 'not_found' ? "Link Standby" : "Link Standby"}
+                </span>
+              </div>
+            </div>
+          </div>
 
+          {/* Elite Header Actions */}
+          <div className="flex gap-4 relative pr-4">
             <button
-              onClick={() => setShowChatInfo(false)}
-              className="w-full mt-6 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors font-medium"
+              onClick={() => setShowMenu(!showMenu)}
+              className={`w-14 h-14 flex items-center justify-center rounded-2xl transition-all duration-500 ${showMenu ? "bg-primary-500 text-white shadow-lg shadow-primary-500/30" : "bg-gray-100 dark:bg-white/5 text-gray-500 hover:text-primary-500 shadow-inner"}`}
             >
-              Close
+              <MoreVertical size={24} strokeWidth={3} />
             </button>
+
+            {showMenu && (
+              <div className="absolute top-20 right-0 w-[260px] backdrop-blur-2xl bg-white/95 dark:bg-gray-900/95 rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.2)] border border-white/20 dark:border-white/5 py-4 overflow-hidden z-[100] animate-in slide-in-from-top-4 fade-in duration-500">
+                <div className="px-8 py-4 mb-2 border-b border-gray-100 dark:border-white/5">
+                  <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.4em]">Grid Registry</span>
+                </div>
+
+                {[
+                  { label: "Peer Profile", icon: Info, action: () => navigate({ to: `/contact-info/${contact?.publickey || address}` }), color: "text-blue-500", bg: "bg-blue-500/10", fill: false },
+                  { label: "Security", icon: SlidersHorizontal, action: () => navigate({ to: `/contact-info/${contact?.publickey || address}`, search: { returnTo: `/chat/${address}`, tab: "settings" } }), color: "text-primary-500", bg: "bg-primary-500/10", fill: false },
+                  { label: isFavorite ? "Dismiss Star" : "Star Registry", icon: Star, action: handleToggleFavorite, color: "text-amber-500", bg: "bg-amber-500/10", fill: isFavorite },
+                  { label: isArchived ? "Restore Vault" : "Archive Vault", icon: Archive, action: handleToggleArchive, color: "text-orange-500", bg: "bg-orange-500/10", fill: isArchived },
+                ].map((item, idx) => (
+                  <button
+                    key={idx}
+                    className="w-full flex items-center justify-between px-8 py-5 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors group/item"
+                    onClick={() => { setShowMenu(false); item.action(); }}
+                  >
+                    <div className="flex items-center gap-4 text-left">
+                      <div className={`w-11 h-11 ${item.bg} ${item.color} rounded-xl flex items-center justify-center group-hover/item:scale-110 transition-transform duration-500 shadow-sm flex-shrink-0`}>
+                        <item.icon size={20} strokeWidth={3} fill={item.fill ? "currentColor" : "none"} />
+                      </div>
+                      <span className="text-[11px] font-black text-gray-700 dark:text-gray-200 uppercase tracking-widest leading-tight">{item.label}</span>
+                    </div>
+                    <ChevronRight size={16} className="text-gray-300 dark:text-gray-600 opacity-0 group-hover/item:opacity-100 transition-all -translate-x-2 group-hover:translate-x-0" />
+                  </button>
+                ))}
+
+                <div className="mt-2 pt-2 border-t border-gray-100 dark:border-white/5">
+                  <button
+                    className="w-full flex items-center gap-4 px-8 py-5 text-red-500 hover:bg-red-500/10 transition-colors group/del"
+                    onClick={() => { setShowMenu(false); setShowDeleteConfirm(true); }}
+                  >
+                    <div className="w-11 h-11 bg-red-500/10 rounded-xl flex items-center justify-center group-hover/del:bg-red-500 group-hover/del:text-white transition-all duration-500 flex-shrink-0">
+                      <Trash2 size={20} strokeWidth={3} />
+                    </div>
+                    <span className="text-[11px] font-black uppercase tracking-widest text-left leading-tight">Expunge Registry</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
-      )}
-      {/* CHAT BODY - Scrollable */}
+      </div>
+
+      {/* REGISTRY SCROLL VIEW */}
       <div
         ref={scrollContainerRef}
-        className={`flex-1 overflow-y-auto overflow-x-hidden flex flex-col p-2 sm:p-4 pb-20
-          ${
-            chatBackground === "diagonal"
-              ? "bg-gray-50 dark:bg-gray-900"
-              : chatBackground === "default"
-                ? "bg-gray-50 dark:bg-gray-900"
-                : "bg-gray-50 dark:bg-gray-900" /* Base for patterns */
-          }`}
+        className="flex-1 overflow-y-auto flex flex-col px-4 pt-6 pb-32 relative transition-colors"
       >
-        {/* Pattern Overlays - Fixed positioning ensures they cover full screen even with scroll */}
+        {/* Pattern Overlays */}
         {chatBackground === "dots" && (
-          <div
-            className="fixed inset-0 opacity-[0.05] dark:opacity-[0.1] pointer-events-none z-0"
-            style={{
-              backgroundImage: `radial-gradient(#0f172a 1.5px, transparent 1.5px)`,
-              backgroundSize: "24px 24px",
-            }}
-          />
+          <div className="fixed inset-0 pointer-events-none opacity-[0.03] dark:opacity-[0.05]" 
+               style={{ backgroundImage: "radial-gradient(circle at 2px 2px, currentColor 1px, transparent 0)", backgroundSize: "24px 24px" }} />
         )}
         {chatBackground === "grid" && (
-          <div
-            className="fixed inset-0 opacity-[0.4] dark:opacity-[0.05] pointer-events-none z-0"
-            style={{
-              backgroundImage: `linear-gradient(#cbd5e1 1px, transparent 1px), linear-gradient(to right, #cbd5e1 1px, transparent 1px)`,
-              backgroundSize: "20px 20px",
-            }}
-          />
+          <div className="fixed inset-0 pointer-events-none opacity-[0.02] dark:opacity-[0.04]" 
+               style={{ backgroundImage: "linear-gradient(currentColor 1px, transparent 1px), linear-gradient(90deg, currentColor 1px, transparent 1px)", backgroundSize: "40px 40px" }} />
         )}
         {chatBackground === "diagonal" && (
-          <div
-            className="fixed inset-0 opacity-[0.4] dark:opacity-[0.1] pointer-events-none z-0"
-            style={{
-              backgroundImage: `repeating-linear-gradient(45deg, #e2e8f0 0px, #e2e8f0 2px, transparent 2px, transparent 12px)`,
-            }}
-          />
+          <div className="fixed inset-0 pointer-events-none opacity-[0.02] dark:opacity-[0.04]" 
+               style={{ backgroundImage: "repeating-linear-gradient(45deg, currentColor, currentColor 1px, transparent 1px, transparent 10px)", backgroundSize: "14px 14px" }} />
+        )}
+        {chatBackground === "soft-gradient" && (
+          <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-br from-primary-500/[0.03] via-transparent to-primary-500/[0.08] dark:from-primary-500/[0.08] dark:via-transparent dark:to-primary-500/[0.03]" />
+            <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-primary-500/[0.06] blur-[120px] animate-pulse" />
+            <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-primary-500/[0.06] blur-[120px] animate-pulse" style={{ animationDelay: '2s' }} />
+          </div>
         )}
 
-        {/* Contact Request Banner */}
-        {/* Contact Request Banner (Checking logic updated to use relaxed SQL) */}
+        {/* Elite Forward Success Banner */}
         {showForwardSuccess && (
-          <div className="sticky top-0 z-40 mb-2 mx-2 mt-2 pointer-events-none">
-            <div className="bg-emerald-50/95 dark:bg-emerald-900/30 backdrop-blur-sm border border-emerald-200 dark:border-emerald-800 rounded-lg shadow-sm p-3 animate-in fade-in slide-in-from-top-2 duration-300">
-              <div className="flex items-center gap-3">
-                <div className="flex-shrink-0 w-8 h-8 bg-emerald-100 dark:bg-emerald-900/50 rounded-full flex items-center justify-center">
-                  <CheckCircle2
-                    size={16}
-                    className="text-emerald-600 dark:text-emerald-400"
-                  />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-emerald-900 dark:text-emerald-100 leading-none">
-                    Message Forwarded!
-                  </p>
-                  <p className="text-[11px] text-emerald-700 dark:text-emerald-400 mt-1 leading-none">
-                    Sent successfully
-                  </p>
-                </div>
+          <div className="sticky top-4 z-40 mx-4 pointer-events-none mb-6">
+            <div className="bg-emerald-500/90 dark:bg-emerald-900/60 backdrop-blur-2xl border border-white/20 dark:border-emerald-500/20 rounded-[2rem] shadow-[0_10px_40px_rgba(16,185,129,0.2)] p-6 animate-in fade-in slide-in-from-top-4 duration-500 flex items-center gap-6 pointer-events-auto">
+              <div className="w-14 h-14 bg-white/20 dark:bg-emerald-500/20 rounded-2xl flex items-center justify-center shadow-inner">
+                <CheckCircle2 size={28} className="text-white dark:text-emerald-400 animate-bounce" />
+              </div>
+              <div className="flex-1">
+                <p className="text-[11px] font-black text-white/60 dark:text-emerald-400/60 uppercase tracking-[0.3em]">Network confirmed</p>
+                <p className="text-lg font-black text-white dark:text-emerald-100 uppercase tracking-tight leading-none mt-1">Message Forwarded</p>
               </div>
             </div>
           </div>
         )}
+
+        {/* Elite Contact Request Banner - Shifted to avoid overlap */}
         {(contactRequest || blockReason === "incoming_restricted") && (
-          <div className="sticky top-0 z-20 mb-4 mx-2 mt-2">
-            <div className="bg-primary-50/95 dark:bg-gray-800/95 backdrop-blur-sm border border-primary-200 dark:border-gray-700 rounded-lg shadow-sm p-4 animate-in fade-in slide-in-from-top-2 duration-300">
-              <div className="flex items-start gap-3">
-                <div className="flex-shrink-0 w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center">
-                  <svg
-                    className="w-5 h-5 text-primary-600"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"
-                    />
-                  </svg>
+          <div className="sticky top-6 z-40 mx-4 mb-12">
+            <div className="bg-white/95 dark:bg-gray-900/95 backdrop-blur-3xl border border-white/20 dark:border-white/5 rounded-[3rem] shadow-[0_30px_70px_rgba(0,0,0,0.3)] p-8 animate-in fade-in slide-in-from-top-6 duration-700 ring-1 ring-black/5 dark:ring-white/5">
+              <div className="flex flex-col lg:flex-row gap-8 items-start">
+                <div className="w-20 h-20 bg-primary-500/10 rounded-[1.75rem] flex items-center justify-center text-primary-500 shadow-inner group-hover:scale-110 transition-transform duration-700 flex-shrink-0">
+                  <ShieldCheck size={40} strokeWidth={2.5} />
                 </div>
+                
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 dark:text-white mb-1">
+                  <div className="flex flex-wrap items-center gap-3 mb-2">
+                    <span className="text-[10px] font-black text-primary-500 uppercase tracking-[0.4em] bg-primary-500/10 px-3 py-1 rounded-full">Grid handshake</span>
+                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.4em]">{(contactRequest as any)?.type === "maxima" ? "Maxima layer" : "Chat protocol"}</span>
+                  </div>
+                  
+                  <h3 className="text-2xl font-black text-gray-900 dark:text-white uppercase tracking-tight leading-none mb-3">
+                    {contact?.extradata?.name || contactRequest?.FROM_NAME || "Peer Registry"}
+                  </h3>
+                  
+                  <p className="text-sm text-gray-500 dark:text-gray-400 font-medium leading-relaxed max-w-md">
                     {(contactRequest as any)?.type === "maxima"
-                      ? "Maxima Contact Request"
-                      : "Chat Request"}
+                      ? "A new peer is requesting Maxima contact authorization to establish a secure synchronization tunnel."
+                      : "Establishing a direct communication channel. Authorization is required to verify the grid identity."}
                   </p>
-                  <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">
-                    <strong>
-                      {contact?.extradata?.name ||
-                        contactRequest?.FROM_NAME ||
-                        "Unknown"}
-                    </strong>{" "}
-                    {(contactRequest as any)?.type === "maxima"
-                      ? "wants to add you as a contact."
-                      : "wants to contact you."}
-                  </p>
+                </div>
 
-                  {/* FORCED ACCEPT OPTION */}
-                  <div className="flex gap-2">
-                    <button
-                      onClick={async () => {
-                        // Logic for accepting Maxima Request
-                        if (
-                          (contactRequest as any)?.type === "maxima" ||
-                          (!contactRequest &&
-                            blockReason === "incoming_restricted")
-                        ) {
-                          // If contactRequest is missing but we are here, assume Maxima request found by SQL
-                          console.log(
-                            "[UI] Accepting Maxima Request (via Service)",
-                          );
-                          if (contact && contact.publickey) {
-                            try {
-                              // OPTIMISTIC UPDATE: Clear the request immediately from UI (BEFORE DB operations!)
-                              setContactRequest(null);
-                              setBlockReason("none");
-
-                              // PERSISTENCE FIX: Force local DB update immediately to prevent banner reappearing
-                              // This is crucial for offline mode or slow network
-                              try {
-                                const validPk = contact.publickey.replace(
-                                  /'/g,
-                                  "''",
-                                );
-                                const now = Date.now();
-
-                                await minimaService.runSQL(
-                                  `UPDATE MAXIMA_CONTACT_REQUESTS SET status='accepted', updated_at=${now} WHERE UPPER(from_publickey)=UPPER('${validPk}') AND status='pending'`,
-                                );
-
-                                // Insert system message optimistically
-                                const systemMsgSql = `
-                                    INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp)
-                                    VALUES('', UPPER('${validPk}'), 'System', 'system', 'Maxima contact accepted', '', 'sent', 0, ${now}, NULL, ${now})
-                                `;
-                                await minimaService.runSQL(systemMsgSql);
-
-                                console.log(
-                                  "[Chat] ✅ Forced local Maxima request update to 'accepted' & added message",
-                                );
-
-                                // Background network call (SKIP message insert, NO AWAIT)
-                                minimaService
-                                  .acceptMaximaContactRequest(
-                                    contact.publickey,
-                                    contact.currentaddress || "",
-                                    { skipMessageInsert: true },
-                                  )
-                                  .then(() => {
-                                    console.log(
-                                      "[Chat] ✅ Maxima request accepted on network",
-                                    );
-                                    loadMessagesFromDB();
-                                  })
-                                  .catch((e) =>
-                                    console.error(
-                                      "Error accepting Maxima request on network:",
-                                      e,
-                                    ),
-                                  );
-
-                                // Refresh pending state and reload messages
-                                checkPending();
-                                loadMessagesFromDB();
-                              } catch (localErr) {
-                                console.warn(
-                                  "[Chat] ⚠️ Failed to force local update:",
-                                  localErr,
-                                );
-                                alert("Failed to accept locally");
-                              }
-                            } catch (e) {
-                              console.error(
-                                "Error accepting Maxima request:",
-                                e,
-                              );
-                              alert("Failed to accept Maxima request");
-                            }
-                          }
-                        } else {
-                          handleAcceptRequest();
+                <div className="flex flex-col gap-3 justify-center w-full lg:w-auto lg:min-w-[280px]">
+                  <button
+                    onClick={async () => {
+                      if ((contactRequest as any)?.type === "maxima" || (!contactRequest && blockReason === "incoming_restricted")) {
+                        if (contact?.publickey) {
+                          try {
+                            setContactRequest(null);
+                            setBlockReason("none");
+                            const validPk = contact.publickey.replace(/'/g, "''");
+                            const now = Date.now();
+                            await minimaService.runSQL(`UPDATE MAXIMA_CONTACT_REQUESTS SET status='accepted', updated_at=${now} WHERE UPPER(from_publickey)=UPPER('${validPk}') AND status='pending'`);
+                            await minimaService.runSQL(`INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp) VALUES('', UPPER('${validPk}'), 'System', 'system', 'Maxima contact accepted', '', 'sent', 0, ${now}, NULL, ${now})`);
+                            minimaService.acceptMaximaContactRequest(contact.publickey, contact.currentaddress || "", { skipMessageInsert: true })
+                                         .then(() => { if (typeof loadMessagesFromDB !== 'undefined') loadMessagesFromDB(); })
+                                         .catch(() => {});
+                            if (typeof checkPending !== 'undefined') checkPending();
+                            if (typeof loadMessagesFromDB !== 'undefined') loadMessagesFromDB();
+                          } catch (e) { console.error(e); }
                         }
-                      }}
-                      disabled={processingRequest}
-                      className="flex-1 px-3 py-2 bg-white dark:bg-gray-700 border border-primary-200 dark:border-gray-600 text-primary-600 dark:text-primary-400 text-sm font-medium rounded-lg hover:bg-primary-50 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {processingRequest ? "Processing..." : "Accept"}
-                    </button>
+                      } else { if (typeof handleAcceptRequest !== 'undefined') handleAcceptRequest(); }
+                    }}
+                    disabled={processingRequest}
+                    className="w-full py-5 px-6 bg-primary-500 hover:bg-primary-600 text-white rounded-[1.5rem] font-black text-[10px] sm:text-xs uppercase tracking-[0.1em] sm:tracking-[0.15em] shadow-xl shadow-primary-500/30 transition-all active:scale-95 disabled:opacity-50"
+                  >
+                    {processingRequest 
+                      ? "Authorizing..." 
+                      : (contactRequest as any)?.type === "maxima" 
+                        ? "Authorize Maxima Connection" 
+                        : "Accept Chat Handshake"}
+                  </button>
+                  <div className="flex gap-3">
                     <button
                       onClick={async () => {
                         if ((contactRequest as any)?.type === "maxima") {
-                          console.log(
-                            "[UI] Declining Maxima Request (Optimistic)",
-                          );
+                          console.log("[UI] Declining Maxima Request (Optimistic)");
                           if (contact && contact.publickey) {
                             // OPTIMISTIC UPDATE
                             setContactRequest(null);
 
                             try {
-                              // Force local DB update immediately
-                              const validPk = contact.publickey.replace(
-                                /'/g,
-                                "''",
-                              );
+                              // Force local DB update immediately — this prevents CHAT_LIST_UPDATE
+                              // from finding the row still 'pending' and re-showing the banner
+                              const validPk = contact.publickey.replace(/'/g, "''");
                               const now = Date.now();
 
                               await minimaService.runSQL(
@@ -3377,9 +3227,7 @@ function ChatPage() {
                               `;
                               await minimaService.runSQL(systemMsgSql);
 
-                              console.log(
-                                "[Chat] ✅ Forced local Maxima request update to 'declined'",
-                              );
+                              console.log("[Chat] ✅ Forced local Maxima request update to 'declined'");
 
                               // Background network call (SKIP message insert)
                               minimaService
@@ -3389,35 +3237,26 @@ function ChatPage() {
                                   { skipMessageInsert: true },
                                 )
                                 .then(() => {
-                                  console.log(
-                                    "[Chat] ✅ Maxima request declined on network",
-                                  );
+                                  console.log("[Chat] ✅ Maxima request declined on network");
                                   loadMessagesFromDB();
                                 })
                                 .catch((e) =>
-                                  console.error(
-                                    "Error declining Maxima request on network:",
-                                    e,
-                                  ),
+                                  console.error("Error declining Maxima request on network:", e),
                                 );
 
                               checkPending();
-                              // loadMessagesFromDB(); // Done in background success
                             } catch (e) {
-                              console.error(
-                                "Error updating local Maxima request:",
-                                e,
-                              );
+                              console.error("Error updating local Maxima request:", e);
                             }
                           }
                         } else {
-                          handleDeclineRequest();
+                          if (typeof handleDeclineRequest !== 'undefined') handleDeclineRequest();
                         }
                       }}
                       disabled={processingRequest}
-                      className="flex-1 px-3 py-2 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 text-sm font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="flex-1 py-5 px-6 bg-gray-100 dark:bg-white/5 hover:bg-rose-500/10 hover:text-rose-500 text-gray-500 dark:text-gray-400 rounded-[1.5rem] font-black text-[10px] sm:text-xs uppercase tracking-[0.1em] sm:tracking-[0.15em] transition-all active:scale-95 disabled:opacity-50"
                     >
-                      Decline
+                      Decline Request
                     </button>
                   </div>
                 </div>
@@ -3428,24 +3267,20 @@ function ChatPage() {
 
         {/* Pending Outgoing Request Banner */}
         {isPendingOutgoing && !contactRequest && (
-          <div className="sticky top-0 z-20 mb-4 mx-2 mt-2">
-            <div className="bg-primary-50/95 dark:bg-gray-800/95 backdrop-blur-sm border border-primary-200 dark:border-gray-700 rounded-lg shadow-sm p-4">
-              <div className="flex items-start gap-3">
-                <div className="flex-shrink-0 w-10 h-10 bg-primary-100 dark:bg-primary-900/20 rounded-full flex items-center justify-center">
-                  <span className="text-xl">📨</span>
+          <div className="sticky top-6 z-40 mx-4 mb-4">
+             <div className="bg-primary-500/90 dark:bg-primary-600/40 backdrop-blur-3xl border border-primary-500/20 rounded-[2rem] p-6 flex items-center gap-6 shadow-2xl shadow-primary-500/20">
+                <div className="w-12 h-12 bg-white dark:bg-white/10 text-primary-500 rounded-xl flex items-center justify-center shadow-lg">
+                   <Zap size={24} className="animate-pulse" />
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 dark:text-white mb-1">
-                    Chat Request Sent
-                  </p>
-                  <p className="text-sm text-gray-600 dark:text-gray-300">
-                    You have sent a request to{" "}
-                    <strong>{contact?.extradata?.name || "this user"}</strong>.
-                    Waiting for them to accept before you can chat.
-                  </p>
+                <div>
+                   <p className="text-[10px] font-black text-white/60 dark:text-primary-400 uppercase tracking-widest leading-none mb-1">
+                     Handshake pending
+                   </p>
+                   <p className="text-sm font-black text-white uppercase tracking-tight leading-none">
+                     Waiting for authorization
+                   </p>
                 </div>
-              </div>
-            </div>
+             </div>
           </div>
         )}
 
@@ -3453,45 +3288,38 @@ function ChatPage() {
         {messages.filter(
           (m) => m.status === "pending" && (m.isCharm || m.isToken),
         ).length > 0 && (
-          <div className="sticky top-0 z-20 mb-4 mx-2 mt-2">
+          <div className="sticky top-2 z-20 mb-4 mx-2 mt-2">
             {messages
               .filter((m) => m.status === "pending" && (m.isCharm || m.isToken))
               .map((msg) => (
                 <div
                   key={msg.timestamp}
-                  className="bg-primary-50/95 backdrop-blur-sm border border-primary-200 rounded-lg shadow-sm p-4 mb-2 animate-in fade-in slide-in-from-top-2 duration-300"
+                  className="bg-white/60 dark:bg-gray-950/40 backdrop-blur-3xl border border-white/20 dark:border-white/5 rounded-[2rem] p-5 mb-3 animate-in fade-in slide-in-from-top-4 duration-1000 shadow-xl overflow-hidden relative group"
                 >
-                  <div className="flex items-start gap-3">
-                    <div className="flex-shrink-0 w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center">
-                      <svg
-                        className="w-5 h-5 text-primary-600 animate-spin"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                        />
-                      </svg>
+                  <div className="absolute inset-0 bg-gradient-to-tr from-primary-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none" />
+                  <div className="flex items-center gap-5 relative z-10">
+                    <div className="flex-shrink-0 w-14 h-14 bg-primary-500/10 rounded-[1.25rem] flex items-center justify-center text-primary-500 shadow-inner group-hover:scale-110 transition-transform duration-700">
+                      <Activity size={28} strokeWidth={2.5} className="animate-pulse" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-900 leading-tight">
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="w-1.5 h-1.5 rounded-full bg-primary-500 animate-pulse" />
+                        <span className="text-[9px] font-black text-primary-500 uppercase tracking-[0.4em]">Grid Transmission</span>
+                      </div>
+                      <p className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-tight leading-none mb-1">
                         Sending{" "}
                         {msg.tokenAmount ? (
-                          <span className="font-semibold">
+                          <span className="text-primary-500">
                             {msg.tokenAmount.amount} {msg.tokenAmount.tokenName}
                           </span>
                         ) : (
-                          <span className="font-semibold">
+                          <span className="text-primary-500">
                             {msg.amount} MINIMA
                           </span>
                         )}
                       </p>
-                      <p className="text-xs text-primary-600 font-medium mt-0.5">
-                        Waiting for confirmation...
+                      <p className="text-[10px] font-bold text-gray-400 dark:text-gray-500 tracking-wide">
+                        Awaiting blockchain confirmation...
                       </p>
                     </div>
                   </div>
@@ -3500,399 +3328,289 @@ function ChatPage() {
           </div>
         )}
 
+        {/* Empty State Registry Security */}
         {messages.length === 0 && (
-          <div className="flex-1 flex items-center justify-center z-0">
-            <div className="bg-[#FFF5C4] dark:bg-yellow-900/30 text-gray-800 dark:text-yellow-200 text-[12.5px] p-3 rounded-lg shadow-sm text-center max-w-xs leading-relaxed select-none border border-yellow-200 dark:border-yellow-800">
-              <span className="text-yellow-600 mr-1">🔒</span>
-              Messages are end-to-end encrypted. No one outside of this chat,
-              not even MetaChain, can read or listen to them.
-            </div>
+          <div className="flex-1 flex items-center justify-center py-20">
+             <div className="bg-white dark:bg-gray-900/50 backdrop-blur-xl rounded-[2.5rem] border border-gray-100 dark:border-white/5 p-10 max-w-sm text-center shadow-2xl relative overflow-hidden group">
+                <div className="absolute inset-0 bg-gradient-to-b from-primary-500/[0.02] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
+                <div className="w-24 h-24 bg-primary-500/10 rounded-[2rem] flex items-center justify-center text-primary-500 mb-8 mx-auto shadow-inner group-hover:scale-110 transition-transform duration-700">
+                  <ShieldCheck size={48} strokeWidth={2.5} />
+                </div>
+                <h3 className="text-2xl font-black text-gray-900 dark:text-white uppercase tracking-tight mb-4 leading-none">Security Grid Active</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 font-medium leading-relaxed">Signal history is end-to-end encrypted on the Minima Layer. Absolute privacy is maintained within this peer vault.</p>
+             </div>
           </div>
         )}
 
-        {messages
-          .filter((m) => m.status !== "pending" && m.status !== "zombie")
-          .map((msg, i, arr) => {
-            const currentDate = new Date(msg.timestamp || 0).toDateString();
-            const prevDate =
-              i > 0 ? new Date(arr[i - 1].timestamp || 0).toDateString() : null;
-            const showDate = currentDate !== prevDate;
-            const isFirstInGroup =
-              i === 0 ||
-              arr[i - 1].fromMe !== msg.fromMe ||
-              arr[i - 1].isSystem ||
-              showDate;
-            const isLastInGroup =
-              i === arr.length - 1 ||
-              arr[i + 1].fromMe !== msg.fromMe ||
-              arr[i + 1].isSystem ||
-              (i < arr.length - 1 &&
-                new Date(arr[i + 1].timestamp || 0).toDateString() !==
-                  currentDate);
+        {/* Message Registry Map Loop */}
+        {messages.filter(m => m.status !== 'zombie' && !(m.status === 'pending' && (m.isCharm || m.isToken))).map((msg, i, arr) => {
+          const currentDate = new Date(msg.timestamp || 0).toDateString();
+          const prevDate = i > 0 ? new Date(arr[i-1].timestamp || 0).toDateString() : null;
+          const showDate = currentDate !== prevDate;
+          const isFirstInGroup = i === 0 || arr[i-1].fromMe !== msg.fromMe || arr[i-1].isSystem || showDate;
+          const isLastInGroup = i === arr.length - 1 || arr[i+1].fromMe !== msg.fromMe || arr[i+1].isSystem || (i < arr.length - 1 && new Date(arr[i+1].timestamp || 0).toDateString() !== currentDate);
 
-            return (
-              <div
-                key={msg.timestamp}
-                className="flex flex-col w-full z-0 relative"
-              >
-                {showDate && msg.timestamp && (
-                  <div className="flex justify-center my-3 sticky top-2 z-10">
-                    <span className="text-xs text-gray-600 dark:text-gray-300 font-medium bg-[#E1F3FB] dark:bg-gray-800 border border-white/50 dark:border-gray-700 px-3 py-1.5 rounded-lg shadow-sm uppercase tracking-wide backdrop-blur-sm">
-                      {new Date(msg.timestamp).toLocaleDateString("en-US", {
-                        month: "long",
-                        day: "numeric",
-                      })}
-                    </span>
-                  </div>
-                )}
-                {msg.isSystem ? (
-                  // System message (centered)
-                  <div className="flex justify-center my-4 px-6">
-                    <span
-                      className={`text-xs px-3 py-1.5 rounded-full ${
-                        msg.text?.toLowerCase().includes("accepted")
-                          ? "text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/40" // Accepted = Green
-                          : msg.text?.toLowerCase().includes("declined") ||
-                              msg.text?.toLowerCase().includes("blocked")
-                            ? "text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-900/40" // Declined or Blocked = Red
-                            : msg.text?.toLowerCase().includes("unblocked")
-                              ? "text-gray-600 dark:text-gray-300 bg-gray-200 dark:bg-gray-700" // Unblocked = Neutral/Gray
-                              : "text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800" // Default
-                      }`}
-                    >
+          return (
+            <div key={`${msg.timestamp}-${i}`} className="flex flex-col w-full relative mb-1">
+              {showDate && msg.timestamp && (
+                <div className="flex justify-center my-8 sticky top-4 z-10">
+                   <span className="text-[10px] font-black text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-900/80 backdrop-blur-md px-4 py-2 rounded-full border border-gray-100 dark:border-white/5 uppercase tracking-[0.3em] shadow-sm">
+                      {new Date(msg.timestamp).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
+                   </span>
+                </div>
+              )}
+              {msg.isSystem ? (
+                <div className="flex justify-center my-6 px-12">
+                   <span className={`text-[10px] font-black px-4 py-2 rounded-full uppercase tracking-widest ${msg.text?.toLowerCase().includes('accepted') ? 'text-emerald-500 bg-emerald-500/10' : msg.text?.toLowerCase().includes('declined') ? 'text-red-500 bg-red-500/10' : 'text-gray-400 bg-gray-100 dark:bg-white/5'}`}>
                       {msg.text}
-                    </span>
-                  </div>
-                ) : (
-                  <MessageBubble
-                    key={`${msg.timestamp}-${i}`}
-                    fromMe={msg.fromMe}
-                    text={msg.text}
-                    charm={msg.charm}
-                    amount={msg.amount}
-                    timestamp={msg.timestamp}
-                    status={msg.status}
-                    tokenAmount={msg.tokenAmount}
-                    type={msg.type}
-                    filedata={msg.filedata}
-                    senderName={
-                      msg.fromMe
-                        ? userName || "You"
-                        : contact?.extradata?.name || "Unknown User"
-                    }
-                    senderImage={
-                      msg.fromMe ? userAvatar : contact?.extradata?.icon
-                    }
-                    forwarded={msg.forwarded}
-                    currentChatId={address}
-                    showName={isFirstInGroup}
-                    showAvatar={isLastInGroup}
-                    replyTo={msg.replyTo}
-                    deleted={msg.deleted}
-                    onDelete={
-                      msg.fromMe && !msg.deleted && msg.customid
-                        ? () => handleDeleteMessage(msg.customid!)
-                        : undefined
-                    }
-                    onReply={
-                      blockReason === "none" && !isBlocked && !blockedByThem
-                        ? () => {
-                            const senderName = msg.fromMe
-                              ? userName || "You"
-                              : contact?.extradata?.name || "Unknown User";
-                            setReplyingTo({
-                              customid: msg.customid || "",
-                              text:
-                                msg.text ||
-                                (msg.type === "image" ? "Image" : ""),
-                              senderName,
-                              type: msg.type || "text",
-                            });
-                            setTimeout(() => inputRef.current?.focus(), 50);
-                          }
-                        : undefined
-                    }
-                  />
-                )}
-              </div>
-            );
-          })}
+                   </span>
+                </div>
+              ) : (
+                <MessageBubble
+                  fromMe={msg.fromMe}
+                  text={msg.text}
+                  charm={msg.charm}
+                  amount={msg.amount}
+                  timestamp={msg.timestamp}
+                  status={msg.status}
+                  tokenAmount={msg.tokenAmount}
+                  type={msg.type}
+                  filedata={msg.filedata}
+                  senderName={msg.fromMe ? userName || 'You' : contact?.extradata?.name || 'Peer'}
+                  senderImage={msg.fromMe ? userAvatar : contact?.extradata?.icon}
+                  forwarded={msg.forwarded}
+                  currentChatId={address}
+                  showName={isFirstInGroup}
+                  showAvatar={isLastInGroup}
+                  replyTo={msg.replyTo}
+                  deleted={msg.deleted}
+                  onDelete={msg.fromMe && !msg.deleted && msg.customid ? () => handleDeleteMessage(msg.customid!) : undefined}
+                  onReply={blockReason === 'none' && !isBlocked && !blockedByThem ? () => {
+                     setReplyingTo({ customid: msg.customid || '', text: msg.text || (msg.type === 'image' ? 'Image' : ''), senderName: msg.fromMe ? userName || 'You' : contact?.extradata?.name || 'Peer', type: msg.type || 'text' });
+                     setTimeout(() => inputRef.current?.focus(), 50);
+                  } : undefined}
+                />
+              )}
+            </div>
+          );
+        })}
 
-        <div ref={messagesEndRef} />
+        <div ref={messagesEndRef} className="h-4" />
       </div>
-      {/* REPLY BANNER */}
+
+      {/* ELITE REPLY BANNER */}
       {replyingTo && (
-        <div className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-700/60 border-t border-gray-200 dark:border-gray-600 flex items-center gap-2">
-          <div className="flex-1 min-w-0 pl-2 border-l-2 border-primary-400">
-            <p className="text-[10px] font-semibold text-primary-600 dark:text-primary-400 truncate">
-              {replyingTo.senderName}
-            </p>
-            <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate">
-              {replyingTo.type === "image" ? "📷 Image" : replyingTo.text}
-            </p>
+        <div className="absolute bottom-32 left-8 right-8 z-30 bg-white/80 dark:bg-gray-900/80 backdrop-blur-2xl rounded-3xl border border-white/20 dark:border-white/5 p-5 animate-in fade-in slide-in-from-bottom-4 duration-500 shadow-2xl">
+          <div className="flex items-center gap-4">
+            <div className="w-1 h-10 bg-primary-500 rounded-full" />
+            <div className="flex-1 min-w-0">
+              <p className="text-[9px] font-black text-primary-500 uppercase tracking-[0.3em]">Replying to {replyingTo.senderName}</p>
+              <p className="text-[13px] font-black text-gray-700 dark:text-gray-200 truncate mt-1 tracking-tight">{replyingTo.text}</p>
+            </div>
+            <button onClick={() => setReplyingTo(null)} className="w-10 h-10 flex items-center justify-center bg-gray-100 dark:bg-white/5 rounded-xl text-gray-400 hover:text-red-500 transition-colors">
+              <X size={18} strokeWidth={3} />
+            </button>
           </div>
-          <button
-            onClick={() => setReplyingTo(null)}
-            className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 flex-shrink-0"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
         </div>
       )}
-      {/* INPUT BAR - Fixed at bottom */}
-      <div className="w-full max-w-full px-1.5 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] bg-white dark:bg-gray-800 flex gap-0.5 items-center flex-shrink-0 z-10 relative border-t border-gray-200 dark:border-gray-700 transition-colors box-border">
-        <button
-          className={`p-2 rounded-full transition-colors ${
-            !contact?.extradata?.minimaaddress
-              ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
-              : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-          }`}
-          onClick={(e) => {
-            e.stopPropagation();
-            if (!contact?.extradata?.minimaaddress) {
-              alert(
-                "Cannot send funds: This contact hasn't shared their Wallet Address yet. They need to come online once to sync their profile.",
-              );
-              return;
-            }
 
-            // Small timeout to prevent UI flicker/bar effect
-            setTimeout(() => {
-              if (inputRef.current) inputRef.current.blur(); // Dismiss keyboard
-              setShowTransferSelector(true);
-            }, 50);
-          }}
-          title={
-            !contact?.extradata?.minimaaddress
-              ? "Wallet unavailable - Contact needs to come online to share their address"
-              : "Send Value"
-          }
-          disabled={!contact?.extradata?.minimaaddress}
-        >
-          <Wallet className="w-6 h-6" />
-        </button>
+      {/* ELITE INPUT HUB */}
+      <footer className="sticky bottom-0 z-[60] px-4 pb-4 md:px-8 md:pb-8 pb-[max(1rem,env(safe-area-inset-bottom))] bg-transparent pointer-events-none">
+        <div className="max-w-screen-xl mx-auto pointer-events-auto">
+          <div className="backdrop-blur-3xl bg-white/80 dark:bg-gray-900/80 rounded-[3rem] p-3 shadow-[0_20px_50px_rgba(0,0,0,0.2)] border border-white/20 dark:border-white/5 flex items-end gap-3 ring-1 ring-black/5 dark:ring-white/5">
+            <div className="flex-1 flex items-center gap-1 min-w-0 bg-gray-100/50 dark:bg-white/5 rounded-[2.5rem] border border-white/10 dark:border-white/5 px-2 focus-within:ring-2 focus-within:ring-primary-500/30 transition-all duration-500">
+              <button
+                className={`w-11 h-11 shrink-0 flex items-center justify-center rounded-2xl transition-all duration-500 ${showEmojiPicker ? "bg-primary-500 text-white shadow-lg shadow-primary-500/30" : "text-gray-400 hover:bg-white dark:hover:bg-white/10"}`}
+                onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+              >
+                <Radio size={22} className={showEmojiPicker ? "animate-pulse" : ""} />
+              </button>
 
-        {/* Hidden File Input for Image Attachments */}
-        <input
-          type="file"
-          ref={fileInputRef}
-          accept="image/*"
-          className="hidden"
-          onChange={handleImageSelect}
-        />
-
-        <button
-          className={`p-2 mr-1 rounded-full transition-colors ${
-            blockReason !== "none" || isBlocked || blockedByThem
-              ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
-              : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-          }`}
-          onClick={(e) => {
-            e.stopPropagation();
-            if (blockReason !== "none" || isBlocked || blockedByThem) return;
-
-            // Small timeout to prevent UI flicker/bar effect
-            setTimeout(() => {
-              if (inputRef.current) inputRef.current.blur(); // Dismiss keyboard
-              fileInputRef.current?.click();
-            }, 50);
-          }}
-          title={
-            blockReason !== "none" || isBlocked || blockedByThem
-              ? "Chat unavailable - Cannot send images right now"
-              : "Attach Image"
-          }
-          disabled={blockReason !== "none" || isBlocked || blockedByThem}
-        >
-          <ImageIcon className="w-5 h-5" />
-        </button>
-
-        <div className="flex-1 min-w-0 bg-white dark:bg-gray-700 rounded-2xl flex items-center border border-gray-200 dark:border-gray-600 focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-transparent shadow-sm px-3 py-2 transition-all cursor-text relative">
-          {/* EMOJI PICKER CONTAINER */}
-          <div
-            ref={emojiPickerRef}
-            className={`absolute bottom-full mb-2 left-0 z-50 transition-all duration-200 shadow-2xl rounded-xl border border-gray-100 dark:border-gray-700 ${!showEmojiPicker ? "opacity-0 scale-95 pointer-events-none invisible" : "opacity-100 scale-100 visible"}`}
-          >
-            <Suspense
-              fallback={
-                <div className="h-[350px] w-[300px] bg-white dark:bg-gray-800 animate-pulse rounded-xl" />
-              }
-            >
-              <EmojiPicker
-                onEmojiClick={onEmojiClick}
-                theme={mode === "dark" ? ("dark" as any) : ("light" as any)}
-                width={320}
-                height={400}
-                searchDisabled={true}
-                skinTonesDisabled
-                previewConfig={{ showPreview: false }}
+              <textarea
+                ref={inputRef as any}
+                rows={1}
+                value={input}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    if (typeof handleSendMessage !== 'undefined') handleSendMessage();
+                  }
+                }}
+                onChange={(e) => {
+                  setInput(e.target.value);
+                  e.target.style.height = "auto";
+                  e.target.style.height = `${Math.min(e.target.scrollHeight, 150)}px`;
+                }}
+                placeholder={
+                  isBlocked || blockedByThem 
+                    ? "Protocol Restricted" 
+                    : (contactRequest || isPendingOutgoing || blockReason !== "none") && !contact?.allow_non_contact_chats
+                    ? "Handshake Required"
+                    : "Message..."
+                }
+                disabled={isActionRestricted}
+                autoCapitalize="sentences"
+                className="flex-1 min-w-0 bg-transparent py-4 px-2 text-[15px] text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-600 focus:outline-none resize-none max-h-32 self-center normal-case"
               />
-            </Suspense>
+
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  className={`w-11 h-11 flex items-center justify-center rounded-2xl transition-all duration-500 ${isActionRestricted ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed' : 'text-gray-400 hover:bg-white dark:hover:bg-white/10'}`}
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isActionRestricted}
+                >
+                  <Paperclip size={22} />
+                </button>
+                <button
+                  className={`w-11 h-11 flex items-center justify-center rounded-2xl transition-all duration-500 ${!contact || isActionRestricted ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed' : 'text-gray-400 hover:bg-white dark:hover:bg-white/10'}`}
+                  onClick={() => setShowTransferSelector(true)}
+                  disabled={!contact || isActionRestricted}
+                  title="Send Value"
+                >
+                  <Wallet size={22} />
+                </button>
+              </div>
+            </div>
+
+            <button
+              onClick={() => { if (typeof handleSendMessage !== 'undefined') handleSendMessage(); }}
+              disabled={!input.trim() || isSendingRef.current || isActionRestricted}
+              className={`w-[68px] h-[68px] flex items-center justify-center rounded-[2.25rem] transition-all duration-700 shadow-2xl relative group overflow-hidden ${input.trim() && !isActionRestricted ? "bg-primary-500 text-white scale-100 rotate-0 shadow-primary-500/30" : "bg-gray-100 dark:bg-white/5 text-gray-300 scale-90 -rotate-12 opacity-50 cursor-not-allowed"}`}
+            >
+              <div className="absolute inset-0 bg-gradient-to-tr from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
+              <Zap size={28} strokeWidth={2.5} className="relative z-10 group-active:scale-90 transition-transform duration-500" />
+            </button>
           </div>
-
-          <button
-            className={`p-1 mr-1 rounded-full transition-colors ${showEmojiPicker ? "text-primary-500" : "text-gray-400 hover:text-gray-600"}`}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (!showEmojiPicker) {
-                Keyboard.hide().catch(() => {});
-              }
-              setShowEmojiPicker(!showEmojiPicker);
-            }}
-            title="Emoji"
-          >
-            <svg
-              className="w-6 h-6"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
-          </button>
-
-          <input
-            ref={inputRef}
-            onFocus={() => setShowEmojiPicker(false)}
-            onKeyUp={(e) => {
-              cursorPositionRef.current = e.currentTarget.selectionStart;
-            }}
-            onClick={(e) => {
-              cursorPositionRef.current = e.currentTarget.selectionStart;
-            }}
-            onSelect={(e) => {
-              cursorPositionRef.current = e.currentTarget.selectionStart;
-            }}
-            className={`flex-1 bg-transparent outline-none text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 text-[15px] max-h-32 py-1 disabled:opacity-100 disabled:cursor-not-allowed`}
-            type="text"
-            value={input}
-            disabled={isBlocked || blockedByThem || blockReason !== "none"}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey && !isSendingRef.current) {
-                e.preventDefault();
-                handleSendMessage();
-              }
-            }}
-            placeholder={
-              isBlocked || blockedByThem
-                ? "This user is blocked"
-                : blockReason !== "none"
-                  ? "Waiting for approval..."
-                  : "Type a message..."
-            }
-          />
         </div>
+      </footer>
 
-        <button
-          className={`ml-1 p-2 rounded-full transition-all duration-200 shadow-sm
-            ${
-              input.trim() &&
-              blockReason === "none" &&
-              !isBlocked &&
-              !blockedByThem
-                ? "bg-primary-600 text-white hover:bg-primary-700 transform hover:scale-105"
-                : "bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-default"
-            }`}
-          onClick={handleSendMessage}
-          disabled={
-            !input.trim() ||
-            blockReason !== "none" ||
-            isBlocked ||
-            blockedByThem
-          }
-        >
-          <svg
-            className="w-5 h-5 translate-x-0.5"
-            viewBox="0 0 24 24"
-            fill="currentColor"
-          >
-            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path>
-          </svg>
-        </button>
+      {/* Modals & Dialogs */}
+      {showTransferSelector && (
+        <TransferSelector onSend={handleTransfer} onCancel={() => setShowTransferSelector(false)} />
+      )}
 
-        {showTransferSelector && (
-          <TransferSelector
-            onSend={handleTransfer}
-            onCancel={() => setShowTransferSelector(false)}
-          />
-        )}
-
-        {/* Read Mode Warning Dialog */}
-        {showReadModeWarning && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4 backdrop-blur-sm">
-            <div className="bg-white dark:bg-gray-900 rounded-2xl max-w-sm w-full p-6 shadow-xl animate-in fade-in zoom-in duration-200 border border-gray-100 dark:border-gray-800">
-              <div className="flex flex-col items-center text-center gap-4">
-                <div className="w-12 h-12 bg-yellow-100 dark:bg-yellow-900/30 rounded-full flex items-center justify-center text-yellow-600 dark:text-yellow-500">
-                  <svg
-                    className="w-6 h-6"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-                    />
-                  </svg>
+      {/* Read Mode Warning Dialog */}
+      {showReadModeWarning && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[110] p-6 animate-in fade-in duration-500">
+          <div className="bg-white/90 dark:bg-gray-950/80 backdrop-blur-3xl border border-white/20 dark:border-white/5 rounded-[3rem] shadow-[0_40px_100px_rgba(0,0,0,0.3)] w-full max-w-sm p-3 overflow-hidden animate-in zoom-in-95 duration-500">
+            {/* Elite Modal Header */}
+            <div className="p-8 pb-4 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 bg-orange-500/10 rounded-[1.25rem] flex items-center justify-center text-orange-500 shadow-inner">
+                  <ShieldAlert size={28} strokeWidth={2.5} />
                 </div>
-                <h3 className="text-lg font-bold text-gray-900 dark:text-white">
-                  Read Mode Active
-                </h3>
-                <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed">
-                  The application is in <strong>Read Mode</strong>. This
-                  transaction will appear in <strong>Pending Commands</strong>{" "}
-                  in Minima.
-                  <br />
-                  <br />
-                  You will need to approve it there to complete the transfer.
+                <div className="flex flex-col">
+                  <span className="text-[9px] font-black text-orange-500 uppercase tracking-[0.4em] mb-1">Grid Protocol</span>
+                  <h3 className="text-xl font-black text-gray-900 dark:text-white uppercase tracking-tight leading-none">Read Mode</h3>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowReadModeWarning(false);
+                  setPendingAction(null);
+                }}
+                className="w-12 h-12 flex items-center justify-center bg-gray-100 dark:bg-white/5 text-gray-400 hover:text-red-500 rounded-[1.25rem] transition-all duration-300 active:scale-90"
+              >
+                <X size={20} strokeWidth={3} />
+              </button>
+            </div>
+
+            <div className="p-8 pt-4">
+              <div className="mb-8 space-y-4">
+                <div className="flex items-center gap-3 mb-2 px-2">
+                  <div className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
+                  <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em]">Validation Required</span>
+                </div>
+                <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed font-medium">
+                  The application is currently in <span className="text-orange-500 font-black uppercase">Read Mode</span>. 
                 </p>
-                <div className="flex gap-3 w-full mt-2">
-                  <button
-                    onClick={() => {
-                      setShowReadModeWarning(false);
+                <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed italic border-l-2 border-orange-500/30 pl-4 py-2 bg-gray-50 dark:bg-white/2 rounded-r-xl">
+                  This transaction will be queued in "Pending Commands". You will need to manually authorize it within Minima.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={async () => {
+                    setShowReadModeWarning(false);
+                    if (pendingAction) {
+                      await pendingAction();
                       setPendingAction(null);
-                    }}
-                    className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-xl font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowReadModeWarning(false);
-                      if (pendingAction) pendingAction();
-                      setPendingAction(null);
-                    }}
-                    className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-xl font-medium hover:bg-primary-700 transition-colors shadow-lg shadow-primary-500/30"
-                  >
-                    Proceed
-                  </button>
-                </div>
+                    }
+                  }}
+                  className="w-full py-5 px-6 bg-primary-500 text-white rounded-[1.75rem] font-black text-[10px] sm:text-xs uppercase tracking-[0.1em] sm:tracking-[0.15em] transition-all duration-500 shadow-2xl shadow-primary-500/30 relative overflow-hidden active:scale-95 hover:scale-[1.02]"
+                >
+                  <div className="absolute inset-0 bg-gradient-to-tr from-white/20 to-transparent opacity-0 hover:opacity-100 transition-opacity duration-700" />
+                  <div className="flex items-center justify-center gap-3 relative z-10">
+                    <Zap size={18} strokeWidth={3} />
+                    <span>Proceed Transmission</span>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setShowReadModeWarning(false);
+                    setPendingAction(null);
+                  }}
+                  className="w-full py-4 bg-transparent text-gray-400 hover:text-gray-900 dark:hover:text-white rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all active:scale-95"
+                >
+                  Abort Transaction
+                </button>
               </div>
             </div>
           </div>
-        )}
+        </div>
+      )}
+      
+      {showInviteDialog && (
+        <InviteDialog
+          isOpen={showInviteDialog}
+          onClose={() => setShowInviteDialog(false)}
+          onSend={handleSendInvite}
+          isSending={inviteSending}
+          contactName={contact?.extradata?.name || "this contact"}
+        />
+      )}
+
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[110] p-8 animate-in fade-in duration-300">
+          <div className="bg-white dark:bg-gray-900 rounded-[3rem] max-w-sm w-full p-10 shadow-2xl border border-white/10">
+            <div className="w-20 h-20 bg-red-500/10 rounded-[2rem] flex items-center justify-center text-red-500 mb-8 mx-auto">
+              <Trash2 size={40} strokeWidth={2.5} />
+            </div>
+            <h3 className="text-2xl font-black text-gray-900 dark:text-white uppercase tracking-tight text-center mb-4">Expunge Ledger?</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 text-center leading-relaxed mb-10 font-medium">This will permanently wipe all signal history with this peer from your local grid. This operation is irreversible.</p>
+            <div className="flex flex-col gap-4">
+              <button onClick={handleDeleteChat} className="w-full py-5 px-6 bg-red-500 hover:bg-red-600 text-white rounded-2xl font-black text-[10px] sm:text-xs uppercase tracking-[0.1em] sm:tracking-[0.15em] transition-all shadow-xl shadow-red-500/20">Confirm Expunge</button>
+              <button onClick={() => setShowDeleteConfirm(false)} className="w-full py-5 bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-gray-400 rounded-2xl font-black text-xs uppercase tracking-[0.3em] hover:bg-gray-200 transition-all">Abort</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Hidden inputs & picker containers */}
+      <input type="file" ref={fileInputRef} accept="image/*" className="hidden" onChange={handleImageSelect} />
+      
+      {/* EMOJI PICKER - Render outside fixed footer to avoid clipping */}
+      <div
+        ref={emojiPickerRef}
+        className={`fixed bottom-24 left-8 z-[120] transition-all duration-300 ${!showEmojiPicker ? "opacity-0 scale-95 pointer-events-none translate-y-4" : "opacity-100 scale-100 translate-y-0"}`}
+      >
+        <div className="shadow-2xl rounded-[2.5rem] overflow-hidden border border-white/20">
+          <Suspense fallback={<div className="h-[400px] w-[320px] bg-white/10 backdrop-blur-3xl animate-pulse" />}>
+            <EmojiPicker
+              onEmojiClick={onEmojiClick}
+              theme={mode === "dark" ? "dark" : "light" as any}
+              width={320}
+              height={400}
+              skinTonesDisabled
+              searchDisabled
+              previewConfig={{ showPreview: false }}
+            />
+          </Suspense>
+        </div>
       </div>
     </div>
   );
 }
+

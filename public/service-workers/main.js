@@ -13,7 +13,7 @@
 // ============================================================================
 
 // Configuration
-var SW_DEBUG = true; // Set to true to see verbose payload and latency logs
+var SW_DEBUG = false; // Set to true to see verbose payload and latency logs
 
 
 // Flag to ensure startup cleanup runs once after DB is ready (triggered by first NEWBLOCK)
@@ -118,6 +118,7 @@ MDS.init(function (msg) {
       sendGroupAddressBeacon(); // Keep group member addresses fresh in DISCOVERED_PEERS
       checkPendingTransactions(); // Check for zombie transactions
       checkSentTransactions(); // Check for confirmations (sent -> confirmed)
+      checkIncomingTransactions(); // Check for incoming token confirmations (received -> confirmed)
     }
   }
 
@@ -466,25 +467,17 @@ MDS.init(function (msg) {
 
         // ================== BEACONS & DISCOVERY ==================
         if (maxjson.type === "register" || maxjson.type === "BEACON") {
-          MDS.log("📡 [P2P] Beacon: " + maxjson.alias);
           handleBeacon(maxjson, "MAXIMA");
           return;
         }
 
         // ================== GOSSIP ==================
         if (maxjson.type === "get_peers") {
-          MDS.log(
-            "📨 [MAXIMA-GOSSIP] get_peers request from " +
-              pubkey.substring(0, 10),
-          );
           handleGetPeers(pubkey, maxjson);
           return;
         }
 
         if (maxjson.type === "peers_response") {
-          MDS.log(
-            "📨 [MAXIMA-GOSSIP] peers_response from " + pubkey.substring(0, 10),
-          );
           handlePeersResponse(pubkey, maxjson);
           return;
         }
@@ -642,13 +635,11 @@ MDS.init(function (msg) {
             if (MY_MAXIMA_PK && beacon.pubkey === MY_MAXIMA_PK) {
               return; // Ignore self
             }
-            MDS.log("📡 [P2P] Beacon: " + beacon.alias);
             handleBeacon(beacon, "P2P");
           } else if (
             beacon.app === "metachain" &&
             beacon.type === "peers_response"
           ) {
-            MDS.log("📨 [P2P-GOSSIP] peers_response broadcast received");
             handlePeersResponse(null, beacon);
           }
         } catch (e) {
