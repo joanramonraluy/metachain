@@ -8,6 +8,7 @@ import {
   lazy,
   Suspense,
 } from "react";
+import { offlineQueueService } from "../services/offline-queue.service";
 import { useNavigate, createLazyFileRoute } from "@tanstack/react-router";
 import { appContext } from "../AppContext";
 import {
@@ -55,6 +56,7 @@ interface ParsedMessage {
   customid?: string;
   sender_seq?: number;
   deleted?: boolean;
+  status?: "pending" | "failed";
 }
 
 function ChannelPage() {
@@ -93,6 +95,8 @@ function ChannelPage() {
   const isInitialLoad = useRef(true);
   const cursorPositionRef = useRef<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isLoadingMessages = useRef(false);
+  const pendingReload = useRef(false);
 
   const defaultAvatar =
     "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23cbd5e1'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E";
@@ -121,41 +125,69 @@ function ChannelPage() {
   // Load channel info & messages
   // -------------------------------------------------------------------------
   const loadMessages = useCallback(async () => {
-    const msgs = await channelService.getChannelMessages(channelId);
-    const parsed: ParsedMessage[] = msgs.map((m: any) => ({
-      id: m.ID || m.id,
-      text: m.MESSAGE || m.message || "",
-      fromMe:
-        (m.SENDER_PUBLICKEY || m.sender_publickey || "").toLowerCase() ===
-        (myPublicKey || "").toLowerCase(),
-      timestamp: Number(m.DATE || m.date || 0),
-      senderPublicKey: m.SENDER_PUBLICKEY || m.sender_publickey,
-      senderUsername: m.SENDER_USERNAME || m.sender_username,
-      type: m.TYPE || m.type || "text",
-      forwarded: m.FORWARDED == 1 || m.forwarded == 1,
-      filedata: m.FILEDATA || m.filedata,
-      customid: m.CUSTOMID || m.customid,
-      sender_seq:
-        m.SENDER_SEQ != null
-          ? Number(m.SENDER_SEQ)
-          : m.sender_seq != null
-            ? Number(m.sender_seq)
-            : undefined,
-      deleted: m.DELETED === 1 || m.DELETED === "1",
-      replyTo:
-        m.REPLY_TO_TEXT ||
-        m.reply_to_text ||
-        m.REPLY_TO_SENDER ||
-        m.reply_to_sender
-          ? {
-              customid: m.REPLY_TO_CUSTOMID || m.reply_to_customid || "",
-              text: m.REPLY_TO_TEXT || m.reply_to_text || "",
-              senderName: m.REPLY_TO_SENDER || m.reply_to_sender || "",
-              type: m.REPLY_TO_TYPE || m.reply_to_type || "text",
-            }
-          : null,
-    }));
-    setMessages(parsed);
+    if (isLoadingMessages.current) {
+      pendingReload.current = true;
+      return;
+    }
+    isLoadingMessages.current = true;
+
+    try {
+      const msgs = await channelService.getChannelMessages(channelId);
+      const parsed: ParsedMessage[] = msgs.map((m: any) => ({
+        id: m.ID || m.id,
+        text: m.MESSAGE || m.message || "",
+        fromMe:
+          (m.SENDER_PUBLICKEY || m.sender_publickey || "").toLowerCase() ===
+          (myPublicKey || "").toLowerCase(),
+        timestamp: Number(m.DATE || m.date || 0),
+        senderPublicKey: m.SENDER_PUBLICKEY || m.sender_publickey,
+        senderUsername: m.SENDER_USERNAME || m.sender_username,
+        type: m.TYPE || m.type || "text",
+        forwarded: m.FORWARDED == 1 || m.forwarded == 1,
+        filedata: m.FILEDATA || m.filedata,
+        customid: m.CUSTOMID || m.customid,
+        sender_seq:
+          m.SENDER_SEQ != null
+            ? Number(m.SENDER_SEQ)
+            : m.sender_seq != null
+              ? Number(m.sender_seq)
+              : undefined,
+        deleted: m.DELETED === 1 || m.DELETED === "1",
+        replyTo:
+          m.REPLY_TO_TEXT ||
+          m.reply_to_text ||
+          m.REPLY_TO_SENDER ||
+          m.reply_to_sender
+            ? {
+                customid: m.REPLY_TO_CUSTOMID || m.reply_to_customid || "",
+                text: m.REPLY_TO_TEXT || m.reply_to_text || "",
+                senderName: m.REPLY_TO_SENDER || m.reply_to_sender || "",
+                type: m.REPLY_TO_TYPE || m.reply_to_type || "text",
+              }
+            : null,
+      }));
+
+      // DB is authoritative. Pending optimistic messages survive ONLY if their
+      // timestamp has no match in the DB yet (i.e. the DB INSERT hasn't happened —
+      // offline/queued scenario). handleSend passes sendTimestamp to publishMessage's
+      // overrideDate, so timestamps match exactly when the INSERT succeeds.
+      setMessages((prev) => {
+        const dbTimestamps = new Set(parsed.map((m) => m.timestamp));
+        const survivingPending = prev.filter(
+          (m) => m.status === "pending" && !dbTimestamps.has(m.timestamp),
+        );
+        return [...parsed, ...survivingPending];
+      });
+    } catch (err) {
+      console.error("❌ [CHANNEL-CHAT] Message load error:", err);
+      // Do NOT call setMessages — preserve existing state on SQL error
+    } finally {
+      isLoadingMessages.current = false;
+      if (pendingReload.current) {
+        pendingReload.current = false;
+        loadMessages();
+      }
+    }
   }, [channelId, myPublicKey]);
 
   const init = useCallback(async () => {
@@ -325,13 +357,15 @@ function ChannelPage() {
   const handleSend = async () => {
     if (!input.trim() || !myPublicKey || !userName) return;
     setSending(true);
+    const sendTimestamp = Date.now();
     const optimistic: ParsedMessage = {
       text: input,
       fromMe: true,
-      timestamp: Date.now(),
+      timestamp: sendTimestamp,
       senderPublicKey: myPublicKey,
       senderUsername: userName,
       type: "text",
+      status: "pending",
     };
     setMessages((prev) => [...prev, optimistic]);
     const toSend = input;
@@ -348,10 +382,22 @@ function ChannelPage() {
         "",
         false,
         currentReplyTo ?? undefined,
+        sendTimestamp,
       );
       await loadMessages();
     } catch (err) {
       console.error("❌ [CHANNEL-CHAT] Send failed:", err);
+      void offlineQueueService.queueChannelMessageFull({
+        channelId,
+        message: toSend,
+        type: "text",
+        myPublicKey,
+        myUsername: userName,
+        filedata: "",
+        forwarded: false,
+        replyTo: currentReplyTo ?? null,
+        timestamp: sendTimestamp,
+      });
     } finally {
       setSending(false);
     }
@@ -386,15 +432,17 @@ function ChannelPage() {
     try {
       setSending(true);
       const compressedBase64 = await compressImage(file, 800, 800, 0.7);
+      const sendTimestamp = Date.now();
 
       const optimistic: ParsedMessage = {
         text: "",
         fromMe: true,
-        timestamp: Date.now(),
+        timestamp: sendTimestamp,
         senderPublicKey: myPublicKey,
         senderUsername: userName,
         type: "image",
         filedata: compressedBase64,
+        status: "pending",
       };
       setMessages((prev) => [...prev, optimistic]);
 
@@ -405,12 +453,15 @@ function ChannelPage() {
         myPublicKey,
         userName,
         compressedBase64,
+        false,
+        null,
+        sendTimestamp,
       );
+      await loadMessages();
     } catch (err) {
       console.error("❌ [CHANNEL-CHAT] Send image failed:", err);
-      alert(
-        "Error processing the image. It might be too complex or an unsupported format.",
-      );
+      // Note: image data is already in the optimistic message; no queue needed for images
+      // (queuing large base64 blobs in OFFLINE_QUEUE CLOB would be excessive)
     } finally {
       setSending(false);
     }

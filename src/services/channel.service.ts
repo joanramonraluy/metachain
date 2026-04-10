@@ -141,7 +141,11 @@ class ChannelService {
 
   private runSQL(sql: string): Promise<any> {
     return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error("SQL timeout — node unreachable"));
+      }, 6000);
       MDS.sql(sql, (res: any) => {
+        clearTimeout(timer);
         if (!res.status) reject(new Error(res.error || "SQL query failed"));
         else resolve(res);
       });
@@ -200,7 +204,7 @@ class ChannelService {
         const mxAddr = rawAddr
           .replace(/\s+/g, "")
           .replace(/[^a-zA-Z0-9@:._-]/g, "");
-        const sendCmd = `maxima action:send to:${mxAddr} application:metachain-channel data:${hexData} poll:true`;
+        const sendCmd = `maxima action:send to:${mxAddr} application:metachain-channel data:${hexData} poll:false`;
         const res = await new Promise<any>((resolve) => {
           MDS.executeRaw(sendCmd, (r: any) => resolve(r));
         });
@@ -217,7 +221,7 @@ class ChannelService {
     }
 
     // Fallback: pubkey routing
-    const sendCmd = `maxima action:send publickey:${toPublicKey} application:metachain-channel data:${hexData} poll:true`;
+    const sendCmd = `maxima action:send publickey:${toPublicKey} application:metachain-channel data:${hexData} poll:false`;
     await new Promise<void>((resolve, reject) => {
       MDS.executeRaw(sendCmd, (r: any) => {
         if (r?.status || r?.response?.delivered === true) resolve();
@@ -332,7 +336,11 @@ class ChannelService {
         };
       }
       return null;
-    } catch {
+    } catch (err: any) {
+      // Propagate SQL timeout so callers (publishMessage, etc.) see the real error
+      // and don't misreport it as "Channel not found". Return null only for genuine
+      // "row not found" cases (handled above via the empty rows check).
+      if (err?.message?.includes("SQL timeout")) throw err;
       return null;
     }
   }
@@ -547,12 +555,13 @@ class ChannelService {
       senderName: string;
       type: string;
     } | null,
+    overrideDate?: number,
   ): Promise<void> {
     const channel = await this.getChannelInfo(channelId);
     if (!channel) throw new Error("Channel not found");
     const safeChannel = channel as any;
 
-    const now = Date.now();
+    const now = overrideDate || Date.now();
 
     // 1. Get sequence number
     const seq = await getAndIncrementChannelSequenceNumber(
@@ -611,8 +620,9 @@ class ChannelService {
                 ORDER BY date ASC
             `);
       return res.rows || [];
-    } catch {
-      return [];
+    } catch (err) {
+      console.error("❌ [CHANNEL-MSG] Failed to get messages:", err);
+      throw err; // Propagate — callers must NOT treat SQL errors as "zero messages"
     }
   }
 
@@ -1025,7 +1035,7 @@ class ChannelService {
             .toUpperCase();
 
         MDS.executeRaw(
-          `maxima action:send application:metachain-channel to:${adminAddress} data:${hexData} poll:true`,
+          `maxima action:send application:metachain-channel to:${adminAddress} data:${hexData} poll:false`,
           (sendRes: any) => {
             if (sendRes.status) {
               resolve();

@@ -1,5 +1,6 @@
 import { messagingService } from "./messaging.service";
 import { groupService, GroupMaximaMessage } from "./group.service";
+import { channelService } from "./channel.service";
 import { runSQL } from "./database.service";
 
 interface ChatMessageData {
@@ -22,6 +23,21 @@ interface GroupMessageData {
   messageId?: number; // Optional, might not be needed if we rebuild payload
   targetPublicKey: string; // Member to send to
   payload: GroupMaximaMessage;
+}
+
+// Full channel message send — used when publishMessage fails entirely (e.g. SQL timeout on
+// getChannelInfo). On retry, publishMessage is re-invoked with the original timestamp via
+// overrideDate so retried messages sort at their original send time. See AGENTS.md Bug AP/AQ pattern.
+interface ChannelMessageFullData {
+  channelId: string;
+  message: string;
+  type: string;
+  myPublicKey: string;
+  myUsername: string;
+  filedata: string;
+  forwarded: boolean;
+  replyTo?: { customid: string; text: string; senderName: string; type: string; } | null;
+  timestamp: number;
 }
 
 // Full group message send — used when the entire sendGroupMessage call fails (e.g. SQL timeout
@@ -160,6 +176,22 @@ class OfflineQueueService {
     }
   }
 
+  async queueChannelMessageFull(data: ChannelMessageFullData) {
+    const json = JSON.stringify(data).replace(/'/g, "''");
+    const sql = `
+            INSERT INTO OFFLINE_QUEUE (TYPE, DATA, CREATED_AT, STATE)
+            VALUES ('channel_message_full', '${json}', ${Date.now()}, 'pending')
+        `;
+    try {
+      await runSQL(sql);
+      console.log(
+        `📥 [QUEUE] Queued full channel message for retry. channelId=${data.channelId}`,
+      );
+    } catch (err) {
+      console.error("❌ [QUEUE] Failed to queue full channel message:", err);
+    }
+  }
+
   async queueGroupMessageFull(data: GroupMessageFullData) {
     const json = JSON.stringify(data).replace(/'/g, "''");
     const sql = `
@@ -270,6 +302,19 @@ class OfflineQueueService {
           fullData.customId,
           fullData.timestamp, // Preserve original timestamp so retried messages sort correctly
         );
+      } else if (type === "channel_message_full") {
+        const fullData = data as ChannelMessageFullData;
+        await channelService.publishMessage(
+          fullData.channelId,
+          fullData.message,
+          fullData.type,
+          fullData.myPublicKey,
+          fullData.myUsername,
+          fullData.filedata,
+          fullData.forwarded,
+          fullData.replyTo,
+          fullData.timestamp, // Preserve original timestamp
+        );
       }
 
       // Success!
@@ -285,6 +330,16 @@ class OfflineQueueService {
         window.dispatchEvent(
           new CustomEvent("GROUP_UPDATE", {
             detail: { type: "GROUP_SYNC_END", groupId: fullData.groupId },
+          }),
+        );
+      }
+
+      // Notify the channel chat UI to reload messages after successful retry.
+      if (type === "channel_message_full") {
+        const fullData = data as ChannelMessageFullData;
+        window.dispatchEvent(
+          new CustomEvent("CHANNEL_UPDATE", {
+            detail: { type: "CHANNEL_SYNC_END", channelId: fullData.channelId },
           }),
         );
       }
