@@ -1253,8 +1253,8 @@ function ChatPage() {
       ) {
         const safeAddr = address.replace(/'/g, "''");
         const resolveSql = `SELECT PUBLICKEY FROM DISCOVERED_PEERS WHERE ADDRESS = '${safeAddr}' OR ADDRESS LIKE '%${safeAddr}%' LIMIT 1`;
-        const res: any = await MDS.sql(resolveSql);
-        if (res.status && res.rows && res.rows.length > 0) {
+        const res: any = await withTimeout(MDS.sql(resolveSql), 6000).catch(() => null);
+        if (res && res.status && res.rows && res.rows.length > 0) {
           resolvedKey = res.rows[0].PUBLICKEY;
           console.log(
             `🔍 [CHAT] Quick-resolved identity for query: ${resolvedKey}`,

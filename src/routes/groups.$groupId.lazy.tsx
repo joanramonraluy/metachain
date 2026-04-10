@@ -26,6 +26,7 @@ import {
   Radio,
 } from "lucide-react";
 import { groupService } from "../services/group.service";
+import { offlineQueueService } from "../services/offline-queue.service";
 import MessageBubble from "../components/chat/MessageBubble";
 import { compressImage } from "../utils/image";
 import { useTheme } from "../context/ThemeContext";
@@ -65,7 +66,8 @@ interface ParsedMessage {
     | "read"
     | "failed"
     | "zombie"
-    | "confirmed";
+    | "confirmed"
+    | "received";
   tokenAmount?: { amount: string; tokenName: string }; // For token transfer messages
   senderPublicKey?: string;
   senderUsername?: string; // Added to store original username
@@ -140,6 +142,9 @@ function ChatPage() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const { userName, userAvatar, myPublicKey } = useContext(appContext);
   const isLoadingMessages = useRef(false); // Flag to prevent simultaneous loads
+  const pendingReload = useRef(false); // Queue a reload if one is skipped while active
+  const myPublicKeyRef = useRef(myPublicKey);
+  useEffect(() => { myPublicKeyRef.current = myPublicKey; }, [myPublicKey]);
   const { chatBackground, mode } = useTheme();
 
   const defaultAvatar =
@@ -268,9 +273,10 @@ function ChatPage() {
   const loadMessagesFromDB = useCallback(async () => {
     if (!address) return;
 
-    // Prevent simultaneous loads
+    // Prevent simultaneous loads; queue a follow-up so it runs after the active one finishes
     if (isLoadingMessages.current) {
-      console.log("⏭️ [GROUP-CHAT] Skipping load (active).");
+      console.log("⏭️ [GROUP-CHAT] Skipping load (active) — queuing pendingReload.");
+      pendingReload.current = true;
       return;
     }
 
@@ -289,7 +295,7 @@ function ChatPage() {
             text: displayText,
             fromMe:
               (senderPk || "").toLowerCase() ===
-              (myPublicKey || "").toLowerCase(),
+              (myPublicKeyRef.current || "").toLowerCase(),
             charm: null,
             amount: null,
             timestamp: Number(row.DATE || row.date || 0),
@@ -315,10 +321,19 @@ function ChatPage() {
           return parsed;
         });
 
-        // Merge DB messages with existing pending messages
+        // Merge DB messages with existing pending/failed messages.
+        // DB versions come first so dedup keeps them (and drops the matching optimistic copy).
+        // "failed" messages are preserved so they stay visible with an error indicator — they are
+        // only removed when a DB row with the same customId exists (successful retry) or when the
+        // user explicitly dismisses them. See AGENTS.md fragility #48 and #49.
         setMessages((prev) => {
-          const pending = prev.filter((m) => m.status === "pending");
-          return deduplicateMessages([...parsedMessages, ...pending]);
+          // Keep pending/failed (optimistic outgoing) and "received" (direct-patched incoming)
+          // until the DB version supersedes them via dedup. DB messages come first so dedup
+          // keeps the authoritative DB copy and drops the in-memory one.
+          const inMemoryOnly = prev.filter(
+            (m) => m.status === "pending" || m.status === "failed" || m.status === "received",
+          );
+          return deduplicateMessages([...parsedMessages, ...inMemoryOnly]);
         });
 
         // Extract unique sender public keys (excluding self)
@@ -339,8 +354,13 @@ function ChatPage() {
       console.error("❌ [GROUP-CHAT] Message load error:", err);
     } finally {
       isLoadingMessages.current = false;
+      if (pendingReload.current) {
+        pendingReload.current = false;
+        console.log("🔄 [GROUP-CHAT] Pending reload detected — re-running loadMessagesFromDB");
+        loadMessagesFromDB();
+      }
     }
-  }, [address, myPublicKey]);
+  }, [address]);
 
   useEffect(() => {
     if (!address) return;
@@ -370,9 +390,37 @@ function ChatPage() {
     if (!address) return;
 
     const handleNewMessage = (payload: any) => {
-      if (payload.groupId === address) {
-        loadMessagesFromDB();
+      if (payload.groupId !== address) return;
+
+      // Directly patch state from the Maxima payload so the message appears immediately
+      // even when the DB is unreachable (SQL timeout). When loadMessagesFromDB succeeds
+      // later, dedup keeps the DB version and drops this "received" copy.
+      if (payload.messageType === "group_message") {
+        const senderPk: string = payload.senderPublickey || "";
+        const incoming: ParsedMessage = {
+          text: payload.message ?? null,
+          fromMe: senderPk.toUpperCase() === (myPublicKeyRef.current || "").toUpperCase(),
+          charm: null,
+          amount: null,
+          timestamp: typeof payload.timestamp === "number" ? payload.timestamp : Date.now(),
+          status: "received" as const,
+          senderPublicKey: senderPk,
+          senderUsername: payload.senderUsername,
+          type: payload.type || "text",
+          customid: payload.customid,
+          filedata: payload.filedata,
+          forwarded: !!payload.forwarded,
+          replyTo: payload.replyTo ?? null,
+        };
+        setMessages((prev) => {
+          // Skip if we already have this customId (prevents duplicate on fast DB read)
+          if (incoming.customid && prev.some((m) => m.customid === incoming.customid)) return prev;
+          return [...prev, incoming];
+        });
       }
+
+      // Best-effort DB sync — replaces the "received" copy with the authoritative DB row
+      loadMessagesFromDB();
     };
 
     // Subscribe to new group messages
@@ -508,14 +556,15 @@ function ChatPage() {
   const handleSendMessage = async () => {
     const messageText = input.trim();
     if (!messageText || !address) return;
-    const customId = `group_${address}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const sendTimestamp = Date.now();
+    const customId = `group_${address}_${sendTimestamp}_${Math.random().toString(36).substr(2, 9)}`;
     const currentReplyTo = replyingTo;
     const newMsg: ParsedMessage = {
       text: messageText,
       fromMe: true,
       charm: null,
       amount: null,
-      timestamp: Date.now(),
+      timestamp: sendTimestamp,
       status: "pending", // Use pending to ensure it's not replaced by DB load until synced
       senderUsername: userName,
       customid: customId,
@@ -535,17 +584,28 @@ function ChatPage() {
         "",
         false,
         currentReplyTo ?? undefined,
+        customId, // pass the same customId so the DB row matches the optimistic message
       );
-      // After sending, refresh to get the actual DB record (which will match by customid)
+      // After sending, the DB row shares customId with the optimistic message.
+      // loadMessagesFromDB will dedup them (DB version wins) and the "pending" indicator clears.
       setTimeout(() => loadMessagesFromDB(), 100);
     } catch (err) {
       console.error("❌ [GROUP-CHAT] Send error:", err);
-      // Update its status to failed
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.customid === customId ? { ...m, status: "failed" as const } : m,
-        ),
-      );
+      // Keep the message as "pending" — it will be delivered once the node reconnects.
+      // Only truly unrecoverable errors should show "failed" (red). This mirrors DM behaviour
+      // and WhatsApp/Telegram UX: user doesn't need to know they're momentarily offline.
+      void offlineQueueService.queueGroupMessageFull({
+        groupId: address,
+        message: messageText,
+        type: "text",
+        myPublicKey,
+        myUsername: userName,
+        filedata: "",
+        forwarded: false,
+        replyTo: currentReplyTo,
+        customId,
+        timestamp: sendTimestamp, // Use original send time, not retry time
+      });
     }
   };
 
@@ -603,6 +663,9 @@ function ChatPage() {
         myPublicKey,
         userName,
         compressedBase64,
+        false,
+        undefined,
+        customId, // pass the same customId so the DB row matches the optimistic message
       );
 
       setTimeout(() => loadMessagesFromDB(), 100);
@@ -1072,7 +1135,7 @@ function ChatPage() {
 
         <div className="flex flex-col gap-1">
           {messages
-            .filter((m) => m.status !== "pending" && m.status !== "zombie")
+            .filter((m) => m.status !== "zombie")
             .map((msg, i, arr) => {
               const currentDate = new Date(msg.timestamp || 0).toDateString();
               const prevDate =

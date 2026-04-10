@@ -26,7 +26,7 @@ export default function GroupList() {
             // Get unread count for each group
             const groupsWithUnread = await Promise.all(
                 groupsList.map(async (group: any) => {
-                    const messages = await groupService.getGroupMessages(group.group_id);
+                    const messages = await groupService.getGroupMessages(group.group_id).catch(() => [] as any[]);
                     const unreadCount = messages.filter((m: any) => m.READ === 0 || m.read === 0).length;
 
                     // Get last message date

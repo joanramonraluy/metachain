@@ -2249,7 +2249,8 @@ function handleGroupHistoryResponse(pubkey, maxjson) {
           ", '" +
           escapeSql(msgCustomId) +
           "', " +
-          (msg.forwarded ? 1 : 0) +
+          // Always store forwarded=0 from history: the forwarded flag is a routing hint only.
+          0 +
           ", " +
           (hReplyToCustomid ? "'" + hReplyToCustomid + "'" : "NULL") +
           ", " +
@@ -2387,7 +2388,11 @@ function processGroupMessage(
       }
     } else {
       shouldPropagate = true;
-      var forwardedVal = maxjson.forwarded ? 1 : 0;
+      // Always store forwarded=0: the `forwarded` flag in the payload is a routing-only
+      // hint to prevent re-propagation storms. It must NOT be persisted to the DB because
+      // it would incorrectly render a "Forwarded" badge on messages the user received
+      // via the hub/relay path (e.g. after a member reconnects). See AGENTS.md fragility #42.
+      var forwardedVal = 0;
       var groupMsgSql =
         "INSERT INTO GROUP_MESSAGES (group_id, sender_publickey, sender_username, type, message, filedata, date, read, propagated, sender_seq, customid, forwarded, reply_to_customid, reply_to_text, reply_to_sender, reply_to_type) VALUES " +
         "('" +
@@ -2549,10 +2554,14 @@ function propagateGroupMessage(pubkey, maxjson) {
 
         var memberPubkey = members[index].PUBLICKEY;
 
-        // Skip sender, original message sender, and ourselves
+        // Skip sender, original message sender, and ourselves.
+        // Use toUpperCase() on all sides: GROUP_MEMBERS stores keys as 0X... (uppercase)
+        // while Maxima delivers pubkey/senderPublickey as 0x... (lowercase). Strict equality
+        // would miss the match, causing the original sender to receive their own message back
+        // with forwarded=true and creating unnecessary Maxima traffic. See AGENTS.md #22.
         if (
-          memberPubkey === pubkey ||
-          memberPubkey === maxjson.senderPublickey ||
+          memberPubkey.toUpperCase() === pubkey.toUpperCase() ||
+          memberPubkey.toUpperCase() === (maxjson.senderPublickey || "").toUpperCase() ||
           memberPubkey.toUpperCase() === myPubkey.toUpperCase()
         ) {
           sendToMember(index + 1);

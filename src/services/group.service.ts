@@ -162,7 +162,16 @@ class GroupService {
 
   private runSQL(sql: string): Promise<any> {
     return new Promise((resolve, reject) => {
+      // Guard against MDS.sql callback never firing when the node is unreachable
+      // (ERR_ADDRESS_UNREACHABLE causes JSON.parse failure inside MDS, silently dropping
+      // the callback). Without this timeout the Promise hangs forever, leaving
+      // isLoadingMessages.current=true and blocking all subsequent loadMessagesFromDB
+      // calls until the page is refreshed. See AGENTS.md fragility #47.
+      const timer = setTimeout(() => {
+        reject(new Error("SQL timeout — node unreachable"));
+      }, 6000);
       MDS.sql(sql, (res: any) => {
+        clearTimeout(timer);
         if (!res.status) {
           reject(new Error(res.error || "SQL query failed"));
         } else {
@@ -983,9 +992,11 @@ class GroupService {
       senderName: string;
       type: string;
     } | null,
+    externalCustomId?: string,
+    overrideDate?: number,
   ): Promise<void> {
     try {
-      const now = Date.now();
+      const now = overrideDate || Date.now();
 
       // Get group info and members
       const group = await this.getGroupInfo(groupId);
@@ -1012,7 +1023,10 @@ class GroupService {
       }
 
       // Save message locally - only escape SQL quotes
-      const customId = `group_${groupId}_${now}_${Math.random().toString(36).substr(2, 9)}`;
+      // Use externalCustomId when provided so the optimistic FE message and the DB row share
+      // the same customId — allowing deduplicateMessages to drop the optimistic copy once the
+      // DB version is loaded. See AGENTS.md fragility #48.
+      const customId = externalCustomId || `group_${groupId}_${now}_${Math.random().toString(36).substr(2, 9)}`;
       const escapedMsg = message.replace(/'/g, "''");
       const replyToCustomid = replyTo?.customid?.replace(/'/g, "''") ?? null;
       const replyToText = replyTo?.text?.replace(/'/g, "''") ?? null;
@@ -1128,7 +1142,7 @@ class GroupService {
       }));
     } catch (err) {
       console.error("❌ [GROUP-MSG] Failed to get messages:", err);
-      return [];
+      throw err; // Propagate — callers (e.g. loadMessagesFromDB) must NOT treat SQL errors as "zero messages"
     }
   }
 
@@ -1193,7 +1207,10 @@ class GroupService {
         const mxAddr = rawAddr
           .replace(/\s+/g, "")
           .replace(/[^a-zA-Z0-9@:._-]/g, "");
-        const sendCmd = `maxima action:send to:${mxAddr} application:metachain-group data:${hexData} poll:true`;
+        // poll:false — never block waiting for delivery. An offline peer would freeze
+        // this loop for ~77s per member (AGENTS.md fragility #13). Group sync on
+        // reconnect (requestAllGroupsHistory) fills any gaps caused by missed delivery.
+        const sendCmd = `maxima action:send to:${mxAddr} application:metachain-group data:${hexData} poll:false`;
         console.log(`🔍 [MAXIMA] Using Mx address for group send`);
         const res = await new Promise<any>((resolve) => {
           MDS.executeRaw(sendCmd, (r: any) => resolve(r));
@@ -1210,9 +1227,10 @@ class GroupService {
       console.warn(`⚠️ [MAXIMA] Mx address resolve/send failed:`, err);
     }
 
-    // Always also send via publickey: routing (redundant but ensures reachability via Maxima network)
-    // This uses poll:true so it queues if the peer is temporarily offline
-    const fallbackCmd = `maxima action:send publickey:${toPublicKey} application:metachain-group data:${hexData} poll:true`;
+    // Fallback via publickey routing — only reached if direct Mx address was not found or failed.
+    // poll:false: non-blocking. If the peer is offline, Maxima returns immediately instead of
+    // freezing the loop for 77s. Recovery is handled by requestAllGroupsHistory on reconnect.
+    const fallbackCmd = `maxima action:send publickey:${toPublicKey} application:metachain-group data:${hexData} poll:false`;
     const fallbackRes = await new Promise<any>((resolve) => {
       MDS.executeRaw(fallbackCmd, (r: any) => resolve(r));
     });

@@ -251,7 +251,7 @@ function GroupInfoPage() {
       );
 
       // Fetch messages for statistics
-      const allMsgs = await groupService.getGroupMessages(groupId);
+      const allMsgs = await groupService.getGroupMessages(groupId).catch(() => [] as any[]);
 
       // Calculate stats
       const mine = allMsgs.filter((m: any) => {

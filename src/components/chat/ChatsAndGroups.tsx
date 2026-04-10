@@ -274,7 +274,7 @@ export default function ChatsAndGroups() {
       const groupsList = await groupService.getMyGroups(myPublicKey);
       const groupsWithUnread = await Promise.all(
         groupsList.map(async (group: any) => {
-          const messages = await groupService.getGroupMessages(group.group_id);
+          const messages = await groupService.getGroupMessages(group.group_id).catch(() => [] as any[]);
           const unreadCount = messages.filter(
             (m: any) => m.READ === 0 || m.read === 0,
           ).length;
