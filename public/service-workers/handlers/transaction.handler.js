@@ -262,14 +262,19 @@ function handleDeniedTransaction(tx) {
 }
 
 /**
- * Check incoming token/charm messages in 'received' state that have a txpowid
- * and promote them to 'confirmed' once 3-block confirmation is achieved.
- * This runs on the recipient's node.
+ * Check incoming token/charm messages in 'received' state.
+ * Uses coin-based 3-block confirmation: finds the coin via 'coins relevant:true'
+ * (matching state[0]=timestamp, state[1]=204) and checks currentBlock - coin.created >= 3.
+ *
+ * Why coins instead of txpow address: Minima generates a fresh address per transaction,
+ * so 'getaddress' returns the current default address which may differ from the address
+ * the incoming coin was actually received at. 'coins relevant:true' finds all owned coins
+ * regardless of which address they arrived at, and the coin.created field gives the
+ * exact block it was mined in — no txpowid needed for the confirmation check.
  */
 function checkIncomingTransactions() {
     MDS.log("🔍 [SW-TX-INCOMING] Checking incoming unconfirmed token/charm messages...");
 
-    // Include messages with NULL txpowid — they will be resolved via timestamp search
     MDS.sql("SELECT * FROM CHAT_MESSAGES WHERE state IN ('received','read') AND username!='Me' AND (type='token' OR type='charm')", function (res) {
         if (!res.status || res.rows.length === 0) {
             MDS.log("✅ [SW-TX-INCOMING] No incoming unconfirmed token messages");
@@ -278,47 +283,196 @@ function checkIncomingTransactions() {
 
         MDS.log("📋 [SW-TX-INCOMING] Found " + res.rows.length + " incoming unconfirmed message(s)");
 
-        for (var i = 0; i < res.rows.length; i++) {
-            (function (msg) {
-                var txpowid = msg.TXPOWID || msg.txpowid;
-                var msgId = msg.ID || msg.id;
-                var msgDate = msg.DATE || msg.date;
+        // Get current block once for all messages
+        MDS.cmd("status", function(statusRes) {
+            if (!statusRes.status || !statusRes.response) {
+                MDS.log("⚠️ [SW-TX-INCOMING] Could not get current block");
+                return;
+            }
+            var currentBlock = parseInt(statusRes.response.chain && statusRes.response.chain.block);
+            if (!currentBlock) return;
 
-                var confirmAndUpdate = function (resolvedTxpowid) {
-                    check3BlockConfirmation(resolvedTxpowid, function (err, status) {
-                        if (err || status !== 'confirmed') return;
+            // Get all owned coins — finds coins at any address on this node
+            MDS.cmd("coins relevant:true", function(coinsRes) {
+                var coins = (coinsRes.status && Array.isArray(coinsRes.response)) ? coinsRes.response : [];
 
-                        MDS.log("✅ [SW-TX-INCOMING] 3-Block confirmed incoming tx: " + resolvedTxpowid + " (msg ID " + msgId + ")");
-                        MDS.sql("UPDATE CHAT_MESSAGES SET state='confirmed', txpowid='" + resolvedTxpowid + "' WHERE id=" + msgId, function (updateRes) {
-                            if (updateRes.status) {
-                                MDS.log("✅ [SW-TX-INCOMING] Message ID " + msgId + " marked as confirmed");
-                                MDS.comms.solo(JSON.stringify({
-                                    type: "TOKEN_INCOMING_CONFIRMED",
-                                    msgId: msgId,
-                                    txpowid: resolvedTxpowid
-                                }));
+                for (var i = 0; i < res.rows.length; i++) {
+                    (function(msg) {
+                        var msgId    = msg.ID || msg.id;
+                        var searchTs = String(msg.ORIGINAL_TIMESTAMP || msg.DATE || msg.date || '');
+
+                        // Find matching coin by timestamp + MetaChain marker
+                        var matchedCoin = null;
+                        for (var c = 0; c < coins.length; c++) {
+                            var coin = coins[c];
+                            if (coin.state &&
+                                coin.state['1'] && String(coin.state['1'].data) === '204' &&
+                                coin.state['0'] && String(coin.state['0'].data) === searchTs) {
+                                matchedCoin = coin;
+                                break;
                             }
-                        });
-                    });
-                };
+                        }
 
-                if (txpowid && txpowid !== 'null') {
-                    // Fast path: txpowid already stored
-                    confirmAndUpdate(txpowid);
-                } else if (msgDate) {
-                    // Slow path: find real txpowid by timestamp
-                    MDS.log("🔍 [SW-TX-INCOMING] No txpowid for msg " + msgId + ", searching by timestamp " + msgDate);
-                    findInBlockchainOrMempool(msgDate, function (err, foundTxpowid) {
-                        if (err || !foundTxpowid) {
-                            MDS.log("⚠️ [SW-TX-INCOMING] Could not find txpowid for msg " + msgId);
+                        if (!matchedCoin) {
+                            MDS.log("⏳ [SW-TX-INCOMING] No coin found yet for msg " + msgId + " (ts=" + searchTs + ") — not mined yet.");
                             return;
                         }
-                        MDS.log("✅ [SW-TX-INCOMING] Found txpowid via timestamp: " + foundTxpowid);
-                        confirmAndUpdate(foundTxpowid);
-                    });
+
+                        var coinBlock = parseInt(matchedCoin.created);
+                        var confirmations = currentBlock - coinBlock;
+                        MDS.log("🔍 [SW-TX-INCOMING] Msg " + msgId + ": coin at block " + coinBlock + ", current " + currentBlock + ", confirmations=" + confirmations);
+
+                        if (confirmations >= 3) {
+                            MDS.log("✅ [SW-TX-INCOMING] 3-Block confirmed incoming msg " + msgId);
+                            MDS.sql("UPDATE CHAT_MESSAGES SET state='confirmed' WHERE id=" + msgId, function(updateRes) {
+                                if (updateRes.status) {
+                                    MDS.comms.solo(JSON.stringify({
+                                        type: "TOKEN_INCOMING_CONFIRMED",
+                                        msgId: msgId
+                                    }));
+                                }
+                            });
+                        } else {
+                            MDS.log("⏳ [SW-TX-INCOMING] Msg " + msgId + " only " + confirmations + "/3 confirmations.");
+                        }
+                    })(res.rows[i]);
                 }
-            })(res.rows[i]);
-        }
+            });
+        });
     });
+}
+
+/**
+ * Promote unverified messages directly from a NEWCOIN event.
+ * When a coin arrives with MetaChain state vars (state['1']='204'),
+ * match its state['0'] (timestamp) against unverified messages' original_timestamp
+ * and promote them to 'received' without needing a txpow scan.
+ *
+ * @param {object} coinData - The coin object from msg.data.coin (NEWCOIN event)
+ */
+function promoteUnverifiedByCoin(coinData) {
+    if (!coinData || !coinData.state) return;
+
+    // Check if this is a MetaChain coin: state['1'].data === '204'
+    var s1 = coinData.state['1'];
+    if (!s1 || String(s1.data) !== '204') return;
+
+    var s0 = coinData.state['0'];
+    if (!s0 || !s0.data) return;
+
+    var coinTimestamp = String(s0.data);
+    MDS.log("🪙 [NEWCOIN-PROMOTE] MetaChain coin detected, ts=" + coinTimestamp);
+
+    // Look for unverified messages matching this timestamp
+    MDS.sql(
+        "SELECT * FROM CHAT_MESSAGES WHERE state='unverified' AND username!='Me' " +
+        "AND (type='token' OR type='charm') " +
+        "AND (original_timestamp=" + coinTimestamp + " OR date=" + coinTimestamp + ")",
+        function(res) {
+            if (!res.status || !res.rows || res.rows.length === 0) {
+                MDS.log("🪙 [NEWCOIN-PROMOTE] No matching unverified messages for ts=" + coinTimestamp);
+                return;
+            }
+
+            MDS.log("🪙 [NEWCOIN-PROMOTE] Found " + res.rows.length + " matching unverified message(s) — promoting to 'received'.");
+            var promoted = 0;
+            for (var i = 0; i < res.rows.length; i++) {
+                (function(msg) {
+                    var msgId = msg.ID || msg.id;
+                    MDS.sql(
+                        "UPDATE CHAT_MESSAGES SET state='received' WHERE id=" + msgId + " AND state='unverified'",
+                        function(upRes) {
+                            if (upRes.status) {
+                                promoted++;
+                                MDS.log("✅ [NEWCOIN-PROMOTE] Message " + msgId + " promoted to 'received'.");
+                                MDS.comms.solo("CHAT_LIST_UPDATE");
+                            }
+                        }
+                    );
+                })(res.rows[i]);
+            }
+        }
+    );
+}
+
+/**
+ * Verify incoming token/charm messages that are in 'unverified' state.
+ * - If the blockchain transaction is found (via txpow scan or coins fallback) → promote to 'received'
+ *   (existing checkIncomingTransactions will then handle age-based confirmation).
+ * - If not verified after 30 minutes → delete the message (phantom tx, never happened).
+ * - If not verified but recent → keep as 'unverified' and retry next cycle.
+ */
+function checkUnverifiedIncomingMessages() {
+    MDS.log("🔍 [SW-TX-VERIFY] Checking unverified incoming token/charm messages...");
+
+    var TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+    var now = Date.now();
+
+    MDS.sql(
+        "SELECT * FROM CHAT_MESSAGES WHERE state='unverified' AND username!='Me' AND (type='token' OR type='charm')",
+        function(res) {
+            if (!res.status || !res.rows || res.rows.length === 0) {
+                MDS.log("✅ [SW-TX-VERIFY] No unverified token/charm messages.");
+                return;
+            }
+
+            MDS.log("📋 [SW-TX-VERIFY] Found " + res.rows.length + " unverified message(s)");
+
+            for (var i = 0; i < res.rows.length; i++) {
+                (function(msg) {
+                    var msgId      = msg.ID   || msg.id;
+                    var txpowid    = msg.TXPOWID || msg.txpowid || null;
+                    var senderKey  = msg.PUBLICKEY || msg.publickey || '';
+                    // Use original_timestamp (= sender stateId) for blockchain lookup;
+                    // fall back to date (local receipt time) if not set.
+                    var msgTs      = msg.ORIGINAL_TIMESTAMP || msg.DATE || msg.date || 0;
+                    var age        = now - parseInt(msgTs || 0);
+
+                    var promoteMsg = function() {
+                        MDS.log("✅ [SW-TX-VERIFY] Message " + msgId + " verified — promoting to 'received'.");
+                        MDS.sql(
+                            "UPDATE CHAT_MESSAGES SET state='received' WHERE id=" + msgId,
+                            function(upRes) {
+                                if (upRes.status) {
+                                    MDS.comms.solo("CHAT_LIST_UPDATE");
+                                }
+                            }
+                        );
+                    };
+
+                    verifyIncomingTransaction(msgTs, senderKey, txpowid, function(err, verified) {
+                        if (verified) {
+                            promoteMsg();
+                        } else {
+                            // Fallback: scan coins for MetaChain state vars matching timestamp
+                            // (coins command is reliable even when txpow address: is not)
+                            var tsStr = String(msgTs);
+                            MDS.cmd("coins", function(coinsRes) {
+                                if (coinsRes.status && Array.isArray(coinsRes.response)) {
+                                    for (var c = 0; c < coinsRes.response.length; c++) {
+                                        var coin = coinsRes.response[c];
+                                        if (coin.state &&
+                                            coin.state['1'] && String(coin.state['1'].data) === '204' &&
+                                            coin.state['0'] && String(coin.state['0'].data) === tsStr) {
+                                            MDS.log("✅ [SW-TX-VERIFY] Message " + msgId + " verified via coins fallback.");
+                                            promoteMsg();
+                                            return;
+                                        }
+                                    }
+                                }
+                                // Neither txpow nor coins matched
+                                if (age > TIMEOUT_MS) {
+                                    MDS.log("🗑️ [SW-TX-VERIFY] Message " + msgId + " unverified after 30 min — deleting phantom.");
+                                    MDS.sql("DELETE FROM CHAT_MESSAGES WHERE id=" + msgId, function() {});
+                                } else {
+                                    MDS.log("⏳ [SW-TX-VERIFY] Message " + msgId + " not yet verifiable (age=" + Math.round(age / 1000) + "s). Will retry.");
+                                }
+                            });
+                        }
+                    });
+                })(res.rows[i]);
+            }
+        }
+    );
 }
 

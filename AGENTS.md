@@ -1,6 +1,6 @@
 # AGENTS.md - MetaChain Engineering Guide
 
-Last reviewed against codebase: 2026-04-10 (branch `v0.9` · group forwarded flag + propagation case fix + poll:false + runSQL timeout + customId alignment + failed msg visibility + pendingReload group + DM MDS.sql timeout + group offline queue full retry + getGroupMessages throw-on-error + pending render filter + direct state patch for incoming + overrideDate for retried messages + myPublicKeyRef stale closure fix + channel offline queue full retry + channel runSQL timeout + poll:false + getChannelMessages throw + getChannelInfo propagate timeout + optimistic dedup by timestamp)
+Last reviewed against codebase: 2026-04-12 (branch `v0.9` · fixed Remove Maxima Contact full lifecycle: DB cleanup, network notify, maxcontacts removal by id, UI sync)
 Scope: `/home/joanramon/Minima/metachain`
 
 ## 0) Mandatory Update Mandate (Required)
@@ -634,6 +634,9 @@ Expected: permission gate behavior changes accordingly and beacon updates propag
 | AM | Sent group message appears doubled in sender's own chat | `handleSendMessage` generated a `customId` at `Date.now()` for the optimistic message. `sendGroupMessage` internally generated a second, independent `customId` for the DB INSERT using its own `Date.now()` call (a few milliseconds later). `deduplicateMessages` uses `customid` as the primary dedup key — since the two IDs were different, BOTH the DB version and the pending optimistic version survived every `loadMessagesFromDB` call. The optimistic message (`status: "pending"`) never resolved — it stayed in state permanently, showing the message twice. Fix: added `externalCustomId?: string` parameter to `sendGroupMessage`; the caller (`handleSendMessage`) passes its own `customId` so both the optimistic message and the DB row use the same ID. After the next `loadMessagesFromDB`, the DB version is encountered first in dedup → the pending copy is dropped. See fragility #48. |
 | AN | Sent group message disappears from UI when send fails (node offline) | When the Minima node is unreachable, `sendGroupMessage` → `getGroupInfo` → `runSQL` throws `SQL timeout — node unreachable`. The tsx catch block set the message to `status: "failed"`. `loadMessagesFromDB` filtered `m.status === "pending"` only — "failed" messages were excluded from the preserved list and dropped from state on the next DB load (since the INSERT never happened either). The user's typed message silently vanished. Fix: changed filter to `m.status === "pending" || m.status === "failed"`. Failed messages now remain in state with the error indicator. When the node recovers and the user retries, the DB INSERT succeeds with the same `customId` (fragility #48) → dedup drops the failed copy cleanly. See fragility #49. |
 | AO | Group message sent while offline permanently lost after navigation | When `sendGroupMessage` fails entirely (e.g. `getGroupInfo` → `runSQL` timeout), the message was never inserted into DB and no `OFFLINE_QUEUE` entry was created. The optimistic message stayed as `"failed"` in React state (fixed by Bug AN), but navigating away destroyed the state — the message was irrecoverably lost. Fix: `handleSendMessage` catch block now calls `offlineQueueService.queueGroupMessageFull(...)` with the full send parameters (groupId, message, myPublicKey, myUsername, customId, replyTo). `offline-queue.service.ts` handles type `group_message_full` by re-calling `sendGroupMessage` with the same `customId`; on success, dispatches `GROUP_UPDATE / GROUP_SYNC_END` so the group chat reloads and dedup replaces the in-memory "failed" entry with the DB version. See fragility #50. |
+| AW | Channel empty state flashes briefly on load even when messages exist | `channels.$channelId.lazy.tsx` rendered `{messages.length === 0 && <EmptyGrid>}` immediately on mount, before the first `loadMessages` call completed. The component starts with `messages = []`, so the empty state appeared for ~500ms while DB was loading. Fix: added `isInitialized` state (default `false`), set to `true` in `loadMessages` `finally` block. Empty state condition changed to `isInitialized && messages.length === 0` — hidden until the first load completes regardless of result (success or SQL error). |
+| AX | Channel message flashes appear/disappear/reappear on send | The React `key` for message divs was `msg.id \|\| \`${msg.timestamp}-${msg.senderPublicKey}-${i}\``. The optimistic message has `id: undefined` → falls back to the timestamp string. The DB version has `id: 5` → key becomes `"5"`. React sees a different key and unmounts+remounts the DOM node, re-triggering the `animate-in zoom-in-95` entry animation. Fix: changed key to `\`${msg.timestamp}-${(msg.senderPublicKey \|\| "").toLowerCase()}\`` for all messages. `toLowerCase()` is critical because the optimistic has `0x...` (from `myPublicKey`) but the DB returns `0X...` (from `UPPER(sender_publickey)` in the INSERT). Both now produce the same key → React reuses the DOM node → no animation re-trigger. |
+| AY | Channel input textarea forces uppercase text display | The `<textarea>` had `uppercase tracking-widest` in its Tailwind className. CSS `text-transform: uppercase` applies visually but the underlying `value` remains in the original case — however it makes the input visually confusing (user types lowercase, sees uppercase). Removed both classes from the textarea. The placeholder "ENCRYPTED SIGNAL..." retains its stylized look but the user's typed text now displays normally. |
 | AS | Channel `runSQL` / `sendMaximaMessage` blocking issues (same as AL/AK for groups) | `channel.service.ts` had the same two bugs as the group service: (1) `runSQL` wrapped `MDS.sql` in a bare `Promise` with no timeout — during a network outage the callback was never called, leaving `loadMessages` mutex stuck forever. (2) `sendMaximaMessage` used `poll:true` on both the Mx-address and pubkey-fallback sends, blocking the FE for ~77s per offline subscriber. Fix: added 6000ms `setTimeout` to `channel.service.ts` `runSQL`; changed both sends to `poll:false`. See fragility #47 and #45 (same rules apply to all services that wrap `MDS.sql`). |
 | AT | Channel messages wiped on SQL timeout / `getChannelMessages` returned `[]` on error | `getChannelMessages()` in `channel.service.ts` caught all errors and returned `[]`. `loadMessages` in `channels.$channelId.lazy.tsx` called `setMessages(parsed)` with the empty array → all messages disappeared from the UI during a network outage. Same root cause as bug AP for groups. Fix: `getChannelMessages()` catch now does `throw err`; callers that don't need full error handling use `.catch(() => [])` locally. `loadMessages` catch path never calls `setMessages` — existing state is preserved on SQL error. See fragility #51. |
 | AU | Channel message appears doubled immediately after send (online) | `handleSend` added an optimistic `{status:"pending"}` message to state, then called `publishMessage` (which saves to DB) and `loadMessages`. `loadMessages` returned `[...parsed, ...survivingPending]` — but the survivingPending filter only excluded pending messages whose timestamp matched a DB row. Because `publishMessage` originally used `Date.now()` internally (a few ms after `sendTimestamp`), the timestamps did NOT match → the optimistic copy survived alongside the DB version → double message. Fix: (1) `publishMessage` accepts `overrideDate?` and uses it for the DB INSERT timestamp. (2) `handleSend` passes `sendTimestamp` as `overrideDate`. (3) `loadMessages` filters `survivingPending` by checking `!dbTimestamps.has(m.timestamp)` — exact timestamp match discards the optimistic once DB confirms it. See fragility #54. |
@@ -642,6 +645,7 @@ Expected: permission gate behavior changes accordingly and beacon updates propag
 | AP | All group messages wiped from UI on SQL timeout during offline | `getGroupMessages()` in `group.service.ts` caught every SQL error and returned `[]`. `loadMessagesFromDB` in `groups.$groupId.lazy.tsx` treated this `[]` as authoritative — it set `parsedMessages = []` and computed `inMemoryOnly` from state, but called `setMessages(deduplicateMessages([...parsedMessages, ...inMemoryOnly]))` where `parsedMessages` was empty. Since pending/failed/received messages DO appear in `inMemoryOnly`, those survived; but the critical path was: `inMemoryOnly` only preserved messages with `status === "pending" || "failed" || "received"`. Any message already loaded from a PREVIOUS successful DB read had `status: undefined` (normal message from DB) — those were NOT in `inMemoryOnly`. The net result: every DB-confirmed message disappeared on the first SQL timeout, leaving only the last few optimistic ones. Fix: changed `getGroupMessages()` catch from `return []` to `throw err`. Callers that don't need a full error (e.g. `ChatsAndGroups.tsx`, `GroupList.tsx`, `group-info`) now use `.catch(() => [])` locally. `loadMessagesFromDB` propagates the throw to its own catch, which logs but does NOT call `setMessages` — preserving the full existing state. See fragility #51. |
 | AQ | User1's sent messages not visible in group chat while offline | `groups.$groupId.lazy.tsx` rendered messages with `.filter((m) => m.status !== "pending" && m.status !== "zombie")`. This explicitly excluded every optimistic message with `status: "pending"`. When user1 sent a message offline, it was added to state as `{ status: "pending" }` and immediately hidden by the render filter — the user saw nothing. DM chat (`$address.tsx`) never had this filter for "pending" because DM uses `status: "sent"` (never filtered). Fix: removed `"pending"` from the render filter so it reads `.filter((m) => m.status !== "zombie")` only. Pending messages now display immediately, matching WhatsApp/Telegram behaviour. See fragility #52. |
 | AR | All messages jump to left side after node reconnects and syncs | After node reconnect, `loadMessagesFromDB` reloaded and re-mapped all DB rows. The `fromMe` check inside the `useCallback` was `(senderPk).toLowerCase() === (myPublicKey).toLowerCase()`, where `myPublicKey` was captured from the closure at `useCallback([address, myPublicKey])` creation time. When `myPublicKey` loaded asynchronously (after profile fetch), the initial callback was created with `myPublicKey = ""`. The `useEffect([address])` that wired `handleNewMessage` and set the reload listener did NOT re-run when `myPublicKey` later became available (because `myPublicKey` was not in its dep array). All subsequent `loadMessagesFromDB` calls used the stale closure with `myPublicKey = ""` → `fromMe` was always `false` for all messages → everything rendered on the left. The bug was triggered after sync (a `loadMessagesFromDB` call) because initial render used optimistic messages (with `fromMe` computed at send time), which masked the stale closure. Fix: added `myPublicKeyRef = useRef(myPublicKey)` + `useEffect(() => { myPublicKeyRef.current = myPublicKey; }, [myPublicKey])` to keep the ref current. Changed `fromMe` inside `loadMessagesFromDB` to use `myPublicKeyRef.current`. Removed `myPublicKey` from `useCallback` deps (`[address]` only). See fragility #53. |
+| AS | Cancelled request unread badge persists | When a contact/Maxima request was cancelled by the sender, the recipient's SW deleted the record but inserted a "System" message. Because it was inserted with `state='received'`, it kept the global unread badge at `COUNT > 0`, and because it was newer than `last_opened`, the chat list bubble also lingered. Fix: SW handlers now use `UPDATE CHAT_MESSAGES SET state='read', read=1` for all old system messages, insert the new system message as `state='read'`, and `MERGE INTO CHAT_STATUS` to update `last_opened = now`. This clears both bubbles instantly. |
 
 ## 18) Reply-to-Message Feature
 
@@ -1037,12 +1041,18 @@ pending → sent → delivered → confirmed
 
 **Recipient side** (`CHAT_MESSAGES.state`):
 ```
-received → confirmed
+unverified → received → confirmed
 ```
-- `received`: Maxima message arrived; initial state set by `chat.handler.js` in SW
-- `confirmed`: SW `checkIncomingTransactions()` finds the real txpowid on-chain with 3+ block confirmations
+- `unverified`: Maxima message arrived with type `token`/`charm`; saved by `chat.handler.js` with `state='unverified'`. **Hidden from UI** (`loadMessagesFromDB` has `AND state != 'unverified'`).
+- `received`: promoted by SW after blockchain verification confirms the coin actually landed. Three verification paths (tried in order):
+  1. **NEWCOIN fast path** (`promoteUnverifiedByCoin` in `transaction.handler.js`): when NEWCOIN fires, the coin's state vars (`state['0']=timestamp`, `state['1']='204'`) are matched against `original_timestamp` of unverified messages. Fastest and most reliable.
+  2. **txpow scan** (`verifyIncomingTransaction` in `tx-checker.js`): scans `txpow address:<myAddr> max:50` for matching state vars. May fail if txpow is not yet indexed.
+  3. **coins fallback** (in `checkUnverifiedIncomingMessages`): scans all unspent coins via `coins` command for MetaChain state vars matching the timestamp.
+- `confirmed`: SW `checkIncomingTransactions()` promotes after message age exceeds ~150s (3 Minima blocks).
 
 Token/charm messages **never reach `read` state** — `handleReadReceipt` skips `type='token'` and `type='charm'`.
+
+**Known fragility**: the `txpow address:` scan may not find recently arrived transactions. Always prefer the NEWCOIN coin-data path or the `coins` command fallback. The `state[3]` (sender key) check was removed from verification because key format mismatches between DB (UPPER) and blockchain caused false negatives; timestamp + MetaChain marker (`state[1]='204'`) is sufficient for uniqueness.
 
 ### 25.3 TRANSACTIONS Table Schema
 ```sql
@@ -1097,12 +1107,22 @@ The coin-discovery service (`coin-discovery.js`) performs this search and update
 4. If rejected: updates both to `failed`.
 
 ### 25.7 Recipient Confirmation — SW `checkIncomingTransactions()`
-Runs in `transaction.handler.js` at every GOSSIP_INTERVAL (~30s) on NEWBLOCK:
+Runs in `transaction.handler.js` on every `NEWBALANCE` event and at every `GOSSIP_INTERVAL`.
+
+**Why coin-based and not txpow-based:**
+Minima generates a fresh address per transaction. `MDS.cmd("getaddress")` returns the node's current default address, which is typically different from the address the incoming coin actually arrived at. Therefore `txpow address:<defaultAddr>` will not find incoming transactions that went to a different (older) address. The `coins relevant:true` command returns all unspent coins owned by the node regardless of which address they arrived at, and the `coin.created` field gives the exact block the coin was mined in — no txpowid needed.
+
+**Flow:**
 1. Queries `CHAT_MESSAGES WHERE state IN ('received','read') AND type IN ('token','charm') AND username != 'Me'`
-2. For each message **with stored txpowid**: calls `check3BlockConfirmation(txpowid)`.
-3. For each message **without txpowid** (or pre-PoW id that fails): calls `findInBlockchainOrMempool(msgDate)` to find the real txpowid by timestamp, then checks confirmation.
-4. On 3+ confirmations: updates DB state to `'confirmed'` (also updating `txpowid` if resolved from timestamp), then fires `MDS.comms.solo({ type: "TOKEN_INCOMING_CONFIRMED", msgId, txpowid })`.
-5. Frontend receives `MDSCOMMS` event → `TOKEN_INCOMING_CONFIRMED` handler → reloads chat.
+2. Calls `MDS.cmd("status")` to get current block once.
+3. Calls `MDS.cmd("coins relevant:true")` to get all owned unspent coins.
+4. For each message: matches a coin by `state['0'].data === original_timestamp` AND `state['1'].data === '204'`.
+5. Computes `confirmations = currentBlock - coin.created`. If `>= 3`: updates DB to `state='confirmed'`, fires `MDS.comms.solo({ type: "TOKEN_INCOMING_CONFIRMED", msgId })`.
+6. Frontend receives `MDSCOMMS` event → `TOKEN_INCOMING_CONFIRMED` handler → reloads chat.
+
+**Timing:** Synchronized with the sender sidebar — both depend on 3 Minima blocks (~50s each). The receiver message confirms at essentially the same moment the sender's balance stops blinking.
+
+**Do NOT use `txpow address:` for incoming confirmation.** It will fail silently when the coin arrived at a non-default address, causing messages to stay stuck in `received` forever.
 
 ### 25.8 UI Status Badge (MessageBubble)
 `MessageBubble.tsx` shows status badges in the token/charm card header:
@@ -1117,6 +1137,9 @@ Both sides use the same emerald-green `CONFIRMED` badge once the blockchain conf
 - The `amount` field in `CHAT_MESSAGES` is INT; in `TRANSACTIONS` it is VARCHAR(64) to support decimal precision.
 - In frontend React code (`$address.tsx`), always use `MDS.cmd(...)` directly — **never** `(window as any).MDS.cmd(...)`. The `MDS` object is imported at module scope; `window.MDS` may be undefined and causes a TypeError crash.
 - `markChatAsOpened` SQL must exclude `state != 'received'` to avoid bypassing the confirmation flow for incoming tokens. See `messaging.service.ts`.
+- **`unverified` state**: Incoming token/charm messages are initially saved by `chat.handler.js` as `state='unverified'` and are filtered out from `loadMessagesFromDB` (excluded via `AND state != 'unverified'`). They are promoted to `'received'` via two paths: (1) fast path — `promoteUnverifiedByCoin(coinData)` triggered by `NEWCOIN` event matches `coin.state['0'].data === original_timestamp`; (2) slow path — `checkUnverifiedIncomingMessages()` scans `txpow address:` then falls back to `coins` scan. Once `'received'`, `checkIncomingTransactions()` handles the 3-block confirmation.
+- **`NEWBALANCE` in SW**: `msg.data` is always `{}` (empty). Do not attempt to read balance from it — use `MDS.cmd("balance")` explicitly if needed. Currently NEWBALANCE simply triggers `checkIncomingTransactions()` on every balance change.
+- **Race condition fix** (`$address.tsx`): The `UPDATE state='confirmed'` callback must call `loadMessagesFromDB()` inside the callback, not after it. Not doing so causes the UI to reload before the DB write completes.
 
 ## 26) Offline Queue
 
@@ -1224,3 +1247,59 @@ The Group Info page (`group-info.$groupId.lazy.tsx`) was restored using "Repair 
 - **Structural Integrity**: Maintains a multi-layered glassmorphism system. Use extreme caution when using `multi_replace` to avoid breaking `div` nesting.
 - **Administrative Dialogs**: Follow a standardized "Elite" model: `fixed inset-0`, `bg-black/40`, `backdrop-blur-sm`, with large `rounded-[3.5rem]` containers and high-contrast `uppercase` actions.
 - **Registry & Ledgers**: Always use the grid-based Elite card system for member lists, banned ledgers, and join queues to ensure layout consistency across administrative tabs.
+
+---
+
+## 29) Maxima Contact Removal — Known Gotchas (Critical)
+
+### 29.1 `maxcontacts action:remove publickey:` Does Not Work (Case-Sensitivity Bug)
+
+Minima's internal Java implementation of `maxcontacts action:remove` does a **case-sensitive** `String.equals()` comparison when searching by `publickey`. MetaChain stores publickeys starting with uppercase `0X...`, but Minima's internal maxcontacts list stores them lowercase `0x...`. This mismatch causes the remove to silently fail (returns `status: false`).
+
+**NEVER use `publickey` to remove a maxcontact from the frontend.** Always use the numeric `id`:
+
+```typescript
+// WRONG — fails silently due to case-sensitivity
+await MDS.cmd.maxcontacts({ action: 'remove', publickey: toPublicKey } as any);
+
+// CORRECT — find id first, then remove by id
+const listRes: any = await MDS.cmd.maxcontacts();
+const contacts: any[] = listRes?.response?.contacts || [];
+const toRemove = contacts.find((c: any) =>
+    c.publickey?.toUpperCase() === toPublicKey.toUpperCase()
+);
+if (toRemove?.id !== undefined) {
+    await MDS.cmd.maxcontacts({ action: 'remove', id: toRemove.id } as any);
+}
+```
+
+This pattern is implemented in `removeMaximaContact` in `src/services/contact-requests.service.ts`.
+
+### 29.2 `isMaximaContact` Source of Truth: DB, Not Live `maxcontacts` List
+
+The contact-info page (`contact-info.$address.lazy.tsx`) determines `isMaximaContact` state. Two traps to avoid:
+
+1. **Never set `setIsMaximaContact(true)` without also being able to set `false`**: The old code only set `true` inside an `if` block with no `else`, meaning once set, it could never revert during `checkStatus` re-runs.
+
+2. **Never cross-check `isMaximaContact` against the live `MDS.cmd.maxcontacts()` list immediately after deletion**: The `maxcontacts action:remove` is processed asynchronously by Minima. If you await `fetchContact()` right after deletion, `MDS.cmd.maxcontacts()` will still return the contact (Minima hasn't processed the remove yet), causing `setIsMaximaContact(true)` to override the deletion.
+
+**Rule**: Use `MAXIMA_CONTACT_REQUESTS` DB table as the **sole source of truth** for `isMaximaContact` in the UI. The DB deletion is synchronous (SQL); the Minima `maxcontacts` list is eventually consistent.
+
+```typescript
+// In checkStatus and fetchContact — always set both true AND false:
+const dbRes = await runSQL(`SELECT * FROM MAXIMA_CONTACT_REQUESTS WHERE ... AND status='accepted' LIMIT 1`);
+setIsMaximaContact(dbRes?.rows?.length > 0); // always set, never guard with if-only
+```
+
+### 29.3 `removeMaximaContact` Full Protocol Sequence
+
+The full correct sequence for removing a Maxima contact (implemented in `contact-requests.service.ts`):
+
+1. **Delete from `MAXIMA_CONTACT_REQUESTS`** (and `CONTACT_REQUESTS`) for both directions.
+2. **Remove from Minima's internal maxcontacts** using id-based removal (see 29.1).
+3. **Resolve peer address** from `DISCOVERED_PEERS` and **send `maxima_contact_removed` message** via Maxima so the peer also cleans up their state.
+4. **Insert local system message** `'Contact removed'` with `state='read'` directly (no unread badge).
+5. **Update `CHAT_STATUS.last_opened`** so unread count resets.
+6. **Call `chatService.notifyChatListUpdate()`** to trigger UI refresh.
+
+The SW handler `handleMaximaContactRemoved` in `contact.handler.js` mirrors steps 1, 4, and 5 on the recipient side.

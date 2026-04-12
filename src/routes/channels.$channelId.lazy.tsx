@@ -24,6 +24,7 @@ import {
   ChevronRight,
   MoreVertical,
   ArrowLeft,
+  X,
 } from "lucide-react";
 import { channelService } from "../services/channel.service";
 import { compressImage } from "../utils/image";
@@ -69,6 +70,8 @@ function ChannelPage() {
   const [channelAvatar, setChannelAvatar] = useState("");
   const [subscriberCount, setSubscriberCount] = useState(0);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
+  const [showReadOnlyBanner, setShowReadOnlyBanner] = useState(true);
   const [messages, setMessages] = useState<ParsedMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -182,6 +185,7 @@ function ChannelPage() {
       console.error("❌ [CHANNEL-CHAT] Message load error:", err);
       // Do NOT call setMessages — preserve existing state on SQL error
     } finally {
+      setIsInitialized(true);
       isLoadingMessages.current = false;
       if (pendingReload.current) {
         pendingReload.current = false;
@@ -666,7 +670,7 @@ function ChannelPage() {
       </div>
 
       {/* ELITE BROADCAST POLICY BANNER */}
-      {!isAdmin && (
+      {!isAdmin && showReadOnlyBanner && (
         <div className="mx-6 mt-6 animate-in slide-in-from-top-4 duration-700">
           <div className="backdrop-blur-2xl bg-sky-500/10 border border-sky-400/20 rounded-[2rem] p-6 flex items-center gap-5 shadow-xl shadow-sky-500/5">
             <div className="w-12 h-12 bg-sky-500/20 rounded-2xl flex items-center justify-center text-sky-500 shadow-inner">
@@ -676,6 +680,12 @@ function ChannelPage() {
               <p className="text-[10px] font-black text-sky-600 dark:text-sky-400 uppercase tracking-[0.3em] mb-1">Grid Policy: Read-Only</p>
               <p className="text-sm font-black text-gray-900 dark:text-sky-100 uppercase tracking-tight">Only Grid Admins can broadcast to this registry.</p>
             </div>
+            <button
+              onClick={() => setShowReadOnlyBanner(false)}
+              className="w-8 h-8 flex items-center justify-center rounded-xl text-sky-400 hover:bg-sky-500/20 transition-colors flex-shrink-0"
+            >
+              <X size={16} strokeWidth={2.5} />
+            </button>
           </div>
         </div>
       )}
@@ -765,7 +775,7 @@ function ChannelPage() {
           )}
         </div>
 
-        {messages.length === 0 && (
+        {isInitialized && messages.length === 0 && (
           <div className="flex-1 flex items-center justify-center relative z-10">
             <div className="max-w-xs w-full text-center p-10 backdrop-blur-2xl bg-white/40 dark:bg-gray-900/40 border border-white/20 dark:border-white/5 rounded-[3rem] shadow-2xl animate-in zoom-in-95 duration-700">
               <div className="w-20 h-20 bg-primary-500/10 rounded-[2rem] flex items-center justify-center text-primary-500 mx-auto mb-8 shadow-inner">
@@ -788,7 +798,7 @@ function ChannelPage() {
             const showDate = currentDate !== prevDate;
 
             return (
-              <div key={msg.id || `${msg.timestamp}-${msg.senderPublicKey}-${i}`} className="flex flex-col">
+              <div key={`${msg.timestamp}-${(msg.senderPublicKey || "").toLowerCase()}`} className="flex flex-col">
                 {showDate && msg.timestamp > 0 && (
                   <div className="flex justify-center my-8">
                     <div className="px-5 py-2 backdrop-blur-2xl bg-gray-100/50 dark:bg-white/5 border border-white/20 dark:border-white/5 rounded-2xl shadow-sm overflow-hidden relative">
@@ -904,7 +914,7 @@ function ChannelPage() {
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
                   placeholder="ENCRYPTED SIGNAL..."
-                  className="flex-1 bg-transparent border-none focus:outline-none focus:ring-0 text-sm font-bold text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-600 px-4 py-2 resize-none max-h-48 uppercase tracking-widest leading-relaxed"
+                  className="flex-1 bg-transparent border-none focus:outline-none focus:ring-0 text-sm font-bold text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-600 px-4 py-2 resize-none max-h-48 leading-relaxed"
                   rows={1}
                   style={{ minHeight: "24px" }}
                 />

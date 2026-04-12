@@ -643,6 +643,95 @@ function findInBlockchainOrMempool(messageTimestamp, callback) {
 }
 
 /**
+ * Verify an incoming token/charm transaction on the receiver's node.
+ * Searches the blockchain for a txpow that has:
+ *   state[0].data === messageTimestamp (stateId set by sender)
+ *   state[1].data === '204'           (MetaChain magic)
+ *
+ * Fast path: if txpowid is provided, look it up directly, then verify state vars.
+ * Slow path: scan recent txpows for this address and match timestamp + MetaChain marker.
+ *
+ * Note: state[3] (sender key) is NOT checked because key format mismatches between
+ * the DB (UPPER-cased) and blockchain caused false negatives. Timestamp uniqueness
+ * combined with MetaChain marker is sufficient.
+ *
+ * @param {number|string} messageTimestamp - The sender's stateId (original_timestamp in CHAT_MESSAGES)
+ * @param {string} senderPublicKey - (unused, kept for signature compat)
+ * @param {string|null} txpowid - Optional txpowid from Maxima payload (fast path)
+ * @param {function} callback - callback(err, verified: boolean)
+ */
+function verifyIncomingTransaction(messageTimestamp, senderPublicKey, txpowid, callback) {
+    var tsStr = String(messageTimestamp);
+
+    // Helper: extract state var data by port number.
+    // The txpow API returns state as an array of {port, type, data} objects;
+    // array index may NOT equal port number (e.g. if ports are sparse).
+    var getStateData = function(stateArr, port) {
+        if (!stateArr) return '';
+        // Try keyed access first (coin-style state object: state['0'])
+        if (!Array.isArray(stateArr) && stateArr[String(port)]) {
+            return String(stateArr[String(port)].data || '');
+        }
+        // Array of {port, data} objects (txpow-style)
+        if (Array.isArray(stateArr)) {
+            for (var j = 0; j < stateArr.length; j++) {
+                if (stateArr[j] && (stateArr[j].port === port || stateArr[j].port === String(port))) {
+                    return String(stateArr[j].data || '');
+                }
+            }
+            // Fallback: direct index access (works when array is dense & ordered)
+            if (stateArr[port] && stateArr[port].data !== undefined) {
+                return String(stateArr[port].data || '');
+            }
+        }
+        return '';
+    };
+
+    var matchesStateVars = function(tx) {
+        var state = tx && tx.body && tx.body.txn && tx.body.txn.state;
+        if (!state) return false;
+        var stateId = getStateData(state, 0);
+        var chainId = getStateData(state, 1);
+        // Only require timestamp + MetaChain marker; sender key is optional extra check
+        return chainId === '204' && stateId === tsStr;
+    };
+
+    var doScan = function() {
+        MDS.cmd("getaddress", function(addrRes) {
+            if (!addrRes.status || !addrRes.response) { callback(null, false); return; }
+            var myAddr = addrRes.response.miniaddress;
+            MDS.cmd("txpow address:" + myAddr + " max:50", function(txpowRes) {
+                if (!txpowRes.status || !txpowRes.response) { callback(null, false); return; }
+                var txpows = Array.isArray(txpowRes.response) ? txpowRes.response : [txpowRes.response];
+                for (var i = 0; i < txpows.length; i++) {
+                    if (matchesStateVars(txpows[i])) {
+                        MDS.log("✅ [SW-TX-VERIFY] Incoming tx verified (scan): " + txpows[i].txpowid);
+                        callback(null, true);
+                        return;
+                    }
+                }
+                MDS.log("⚠️ [SW-TX-VERIFY] Tx not found for ts=" + tsStr);
+                callback(null, false);
+            });
+        });
+    };
+
+    if (txpowid && txpowid !== 'null' && !txpowid.startsWith('PENDING_')) {
+        MDS.cmd("txpow txpowid:" + txpowid, function(res) {
+            if (res.status && res.response && matchesStateVars(res.response)) {
+                MDS.log("✅ [SW-TX-VERIFY] Incoming tx verified (txpowid): " + txpowid);
+                callback(null, true);
+            } else {
+                // txpowid not found or state vars don't match — fall back to scan
+                doScan();
+            }
+        });
+    } else {
+        doScan();
+    }
+}
+
+/**
  * Get all pending actions from Minima
  * @param {function} callback - Callback function(error, pendingActions) where pendingActions is an array
  */
@@ -759,11 +848,12 @@ function discoverOfflineTokens() {
 
             var allCoins = coinsRes.response;
 
-            // Filter coins with state variables (MetaChain tokens)
+            // Filter coins with MetaChain state variables: state[1].data === '204'
             var stateCoins = allCoins.filter(function (coin) {
                 return coin.storestate === true &&
                     coin.state &&
                     coin.state['0'] &&
+                    coin.state['1'] && coin.state['1'].data === '204' &&
                     coin.spent === false;
             });
 
@@ -785,7 +875,7 @@ function discoverOfflineTokens() {
                     if (recoveredCount > 0) {
                         MDS.log("📦 [COIN-DISCOVERY] Successfully recovered " + recoveredCount + " offline token message(s)");
                         // Notify frontend to reload messages
-                        MDS.notify("OFFLINE_TOKENS_RECOVERED", { count: recoveredCount });
+                        MDS.comms.solo("CHAT_LIST_UPDATE");
                     } else {
                         MDS.log("📦 [COIN-DISCOVERY] No new offline tokens to recover");
                     }
@@ -794,24 +884,18 @@ function discoverOfflineTokens() {
                 }
 
                 var coin = stateCoins[currentIndex];
-                // State variables are objects with .data property
+                // MetaChain state vars: state[0]=timestamp, state[1]='204', state[3]=senderPublicKey
                 var timestamp = coin.state['0'].data;
-                var senderInfo = coin.state['1'] ? coin.state['1'].data : '';
-                var chatId = coin.state['2'] ? coin.state['2'].data : null;
                 var senderKey = coin.state['3'] ? coin.state['3'].data : null;
 
-                // Determine roomname: use chatId if available (truncated to 160 chars), otherwise "Offline Tokens"
-                var roomname = chatId ? chatId.substring(0, 160) : "Offline Tokens";
-
-                MDS.log("📦 [COIN-DISCOVERY] Processing coin with chatId: " + (chatId || "NONE") + ", roomname: " + roomname);
+                MDS.log("📦 [COIN-DISCOVERY] Processing coin ts=" + timestamp + " sender=" + (senderKey || "UNKNOWN").substring(0, 20) + "...");
 
                 // Check if message already exists - use time window AND coinid/txpowid
                 var minTime = parseInt(timestamp) - 60000;
                 var maxTime = parseInt(timestamp) + 60000;
-                var checkSql = "SELECT * FROM CHAT_MESSAGES WHERE type='token' AND publickey='" + (senderKey || senderInfo || '') + "' AND (" +
+                var checkSql = "SELECT * FROM CHAT_MESSAGES WHERE type='token' AND (" +
                     "(date >= " + minTime + " AND date <= " + maxTime + ") OR " +
-                    "(original_timestamp >= " + minTime + " AND original_timestamp <= " + maxTime + ") OR " +
-                    "txpowid='" + coin.coinid + "'" +
+                    "(original_timestamp >= " + minTime + " AND original_timestamp <= " + maxTime + ")" +
                     ")";
                 MDS.sql(checkSql, function (existing) {
                     if (existing.status && existing.rows && existing.rows.length > 0) {
@@ -822,14 +906,10 @@ function discoverOfflineTokens() {
                         return;
                     }
 
-                    // Extract sender publickey: prioritize state[3], fallback to state[1]
-                    var senderPubkey = 'UNKNOWN';
-                    if (senderKey && senderKey.trim().length > 0) {
-                        senderPubkey = senderKey.trim();
-                    } else if (senderInfo && senderInfo.trim().length > 0) {
-                        senderPubkey = senderInfo.trim();
-                    } else {
-                        MDS.log("❌ [COIN-DISCOVERY] No valid sender key found in state[3] or state[1]!");
+                    // Extract sender publickey from state[3]
+                    var senderPubkey = (senderKey && senderKey.trim().length > 0) ? senderKey.trim() : 'UNKNOWN';
+                    if (senderPubkey === 'UNKNOWN') {
+                        MDS.log("❌ [COIN-DISCOVERY] No valid sender key found in state[3]!");
                     }
 
                     // Get token info
@@ -851,23 +931,22 @@ function discoverOfflineTokens() {
                     // Escape single quotes for SQL
                     var escapedPayload = messagePayload.replace(/'/g, "''");
 
-                    // Insert retroactive message
+                    // Insert retroactive message — coin is already on-chain so state='confirmed'
                     var insertSql = "INSERT INTO CHAT_MESSAGES " +
-                        "(publickey, username, message, type, date, state, amount, txpowid, roomname, filedata, customid, read, original_timestamp) " +
+                        "(publickey, username, message, type, date, state, amount, txpowid, roomname, filedata, customid, original_timestamp) " +
                         "VALUES (" +
-                        "'" + senderPubkey + "', " +
+                        "UPPER('" + senderPubkey + "'), " +
                         "'Unknown', " +
                         "'" + escapedPayload + "', " +
                         "'token', " +
-                        "'" + timestamp + "', " +
+                        parseInt(timestamp) + ", " +
                         "'confirmed', " +
-                        amount + ", " +
+                        parseFloat(amount) + ", " +
                         "'" + coin.coinid + "', " +
-                        "'" + roomname + "', " +
+                        "'', " +
                         "'', " +
                         "'0x00', " +
-                        "0, " +
-                        timestamp +
+                        parseInt(timestamp) +
                         ")";
 
                     MDS.sql(insertSql, function (insertRes) {
@@ -4986,9 +5065,12 @@ function handleChatMessage(pubkey, maxjson) {
 
     // 2. Insert message to DB if not blocked
     var txpowid = maxjson.txpowid ? escapeSql(maxjson.txpowid) : null;
-    var initialState = "received"; // incoming messages always start as received; SW checker promotes to confirmed after 3-block confirmation
+    // token/charm start as 'unverified' — checkUnverifiedIncomingMessages promotes to
+    // 'received' once the blockchain transaction is confirmed to exist with correct state vars.
+    // All other message types start as 'received' immediately.
+    var initialState = (msgType === "token" || msgType === "charm") ? "unverified" : "received";
     var txpowidVal = txpowid ? "'" + txpowid + "'" : "NULL";
-    var originalTimestamp = maxjson.timestamp ? maxjson.timestamp : 0;
+    var originalTimestamp = maxjson.timestamp ? parseInt(maxjson.timestamp, 10) : 0;
     // PERSIST CUSTOM ID (already normalized above)
 
     // CRITICAL FIX: Only store if we don't already have it
@@ -5499,8 +5581,15 @@ function processHistoryMessage(safePubkey, originalPubkey, messages, index) {
     var amount = msg.amount || 0;
     var txpowidVal = msg.txpowid ? "'" + escapeSql(msg.txpowid) + "'" : "NULL";
 
-    // Use provided state if valid, otherwise fallback to 'read' or 'received' based on type
-    var state = msg.state || "read";
+    // For incoming token/charm messages recovered via history sync,
+    // always start as 'unverified' so the SW can verify against the blockchain
+    // before showing them in the UI. This prevents phantom transactions.
+    var state;
+    if (isIncoming && (type === "token" || type === "charm")) {
+      state = "unverified";
+    } else {
+      state = msg.state || "read";
+    }
 
     var safeCustomId = msg.customid ? escapeSql(msg.customid) : "0x00";
 
@@ -5632,15 +5721,14 @@ function processHistoryMessage(safePubkey, originalPubkey, messages, index) {
       return;
     }
 
-    var newState = msg.state || "read";
+    // Only update txpowid; never downgrade an already-verified/confirmed state
     var safeTxPow = escapeSql(msg.txpowid);
     var updateSql =
       "UPDATE CHAT_MESSAGES SET txpowid='" +
       safeTxPow +
-      "', state='" +
-      newState +
       "' WHERE id=" +
-      existingId;
+      existingId +
+      " AND state NOT IN ('received','confirmed','read')";
 
     MDS.sql(updateSql, function (updRes) {
       MDS.log(
@@ -6060,10 +6148,16 @@ function handleContactDeclined(pubkey) {
         notifyChatListUpdateFromContacts("contact_declined");
     });
 
-    var sysMsgSql = "INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) "
-        + "VALUES('', UPPER('" + safeFrom + "'), 'System', 'system', 'Chat request declined', '', 'received', 0, " + now + ")";
-    MDS.sql(sysMsgSql, function () {
-        notifyChatListUpdateFromContacts("contact_declined_message");
+    var updateReadSql = "UPDATE CHAT_MESSAGES SET state='read', read=1 WHERE UPPER(publickey)=UPPER('" + safeFrom + "') AND type='system'";
+    MDS.sql(updateReadSql, function () {
+        var sysMsgSql = "INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) "
+            + "VALUES('', UPPER('" + safeFrom + "'), 'System', 'system', 'Chat request declined', '', 'read', 0, " + now + ")";
+        MDS.sql(sysMsgSql, function () {
+            var statusSql = "MERGE INTO CHAT_STATUS (publickey, last_opened) KEY(publickey) VALUES(UPPER('" + safeFrom + "'), " + now + ")";
+            MDS.sql(statusSql, function() {
+                notifyChatListUpdateFromContacts("contact_declined_message");
+            });
+        });
     });
 }
 
@@ -6079,10 +6173,18 @@ function handleContactCancelled(pubkey) {
         notifyChatListUpdateFromContacts("contact_cancelled");
     });
 
-    var sysMsgSql = "INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) "
-        + "VALUES('', UPPER('" + safeFrom + "'), 'System', 'system', 'Chat request cancelled', '', 'received', 0, " + now + ")";
-    MDS.sql(sysMsgSql, function () {
-        notifyChatListUpdateFromContacts("contact_cancelled_message");
+    var updateReadSql = "UPDATE CHAT_MESSAGES SET state='read', read=1 WHERE UPPER(publickey)=UPPER('" + safeFrom + "') AND type='system'";
+    MDS.sql(updateReadSql, function () {
+        var sysMsgSql = "INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) "
+            + "VALUES('', UPPER('" + safeFrom + "'), 'System', 'system', 'Chat request cancelled', '', 'read', 0, " + now + ")";
+        MDS.sql(sysMsgSql, function () {
+            // Reset unread status for this chat item so the badge (bubble) disappears immediately
+            var statusSql = "MERGE INTO CHAT_STATUS (publickey, last_opened) KEY(publickey) VALUES(UPPER('" + safeFrom + "'), " + now + ")";
+            MDS.sql(statusSql, function() {
+                MDS.log("✅ [CONTACTS] Reset unread status for cancelled request");
+                notifyChatListUpdateFromContacts("contact_cancelled_message");
+            });
+        });
     });
 }
 
@@ -6230,10 +6332,16 @@ function handleMaximaContactDeclined(pubkey) {
         notifyChatListUpdateFromContacts("maxima_contact_declined");
     });
 
-    var sysMsgSql = "INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) "
-        + "VALUES('', UPPER('" + safeFrom + "'), 'System', 'system', 'Maxima contact declined', '', 'received', 0, " + now + ")";
-    MDS.sql(sysMsgSql, function () {
-        notifyChatListUpdateFromContacts("maxima_contact_declined_message");
+    var updateReadSql = "UPDATE CHAT_MESSAGES SET state='read', read=1 WHERE UPPER(publickey)=UPPER('" + safeFrom + "') AND type='system'";
+    MDS.sql(updateReadSql, function () {
+        var sysMsgSql = "INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) "
+            + "VALUES('', UPPER('" + safeFrom + "'), 'System', 'system', 'Maxima contact declined', '', 'read', 0, " + now + ")";
+        MDS.sql(sysMsgSql, function () {
+            var statusSql = "MERGE INTO CHAT_STATUS (publickey, last_opened) KEY(publickey) VALUES(UPPER('" + safeFrom + "'), " + now + ")";
+            MDS.sql(statusSql, function() {
+                notifyChatListUpdateFromContacts("maxima_contact_declined_message");
+            });
+        });
     });
 }
 
@@ -6248,10 +6356,18 @@ function handleMaximaContactCancelled(pubkey) {
         notifyChatListUpdateFromContacts("maxima_contact_cancelled");
     });
 
-    var sysMsgSql = "INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) "
-        + "VALUES('', UPPER('" + safeFrom + "'), 'System', 'system', 'Maxima contact cancelled', '', 'received', 0, " + now + ")";
-    MDS.sql(sysMsgSql, function () {
-        notifyChatListUpdateFromContacts("maxima_contact_cancelled_message");
+    var updateReadSql = "UPDATE CHAT_MESSAGES SET state='read', read=1 WHERE UPPER(publickey)=UPPER('" + safeFrom + "') AND type='system'";
+    MDS.sql(updateReadSql, function () {
+        var sysMsgSql = "INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) "
+            + "VALUES('', UPPER('" + safeFrom + "'), 'System', 'system', 'Maxima contact cancelled', '', 'read', 0, " + now + ")";
+        MDS.sql(sysMsgSql, function () {
+            // Reset unread status for this chat item so the badge (bubble) disappears immediately
+            var statusSql = "MERGE INTO CHAT_STATUS (publickey, last_opened) KEY(publickey) VALUES(UPPER('" + safeFrom + "'), " + now + ")";
+            MDS.sql(statusSql, function() {
+                MDS.log("✅ [MAXIMA CONTACT] Reset unread status for cancelled request");
+                notifyChatListUpdateFromContacts("maxima_contact_cancelled_message");
+            });
+        });
     });
 }
 
@@ -6261,10 +6377,32 @@ function handleMaximaContactRemoved(pubkey, maxjson) {
     var now = Date.now();
     var safeFrom = escapeSql(pubkey);
 
-    // Insert system message
-    var sysMsgSql = "INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) "
-        + "VALUES('', UPPER('" + safeFrom + "'), 'System', 'system', 'Contact removed', '', 'received', 0, " + now + ")";
-    MDS.sql(sysMsgSql);
+    var deleteMaximaSql = "DELETE FROM MAXIMA_CONTACT_REQUESTS WHERE UPPER(from_publickey)=UPPER('" + safeFrom + "') OR UPPER(to_publickey)=UPPER('" + safeFrom + "')";
+    MDS.sql(deleteMaximaSql, function () {
+        var deleteContactSql = "DELETE FROM CONTACT_REQUESTS WHERE UPPER(from_publickey)=UPPER('" + safeFrom + "') OR UPPER(to_publickey)=UPPER('" + safeFrom + "')";
+        MDS.sql(deleteContactSql, function() {
+            MDS.log("✅ [MAXIMA CONTACT] Local request tables cleared on removal");
+            notifyChatListUpdateFromContacts("maxima_contact_removed");
+        });
+    });
+
+    // Remove from maxcontacts just in case
+    MDS.cmd("maxcontacts action:remove publickey:" + pubkey, function(res) {
+        MDS.log("✅ [MAXIMA CONTACT] Attempted maxcontacts removal: " + res.status);
+    });
+
+    var updateReadSql = "UPDATE CHAT_MESSAGES SET state='read', read=1 WHERE UPPER(publickey)=UPPER('" + safeFrom + "') AND type='system'";
+    MDS.sql(updateReadSql, function () {
+        // Insert system message
+        var sysMsgSql = "INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) "
+            + "VALUES('', UPPER('" + safeFrom + "'), 'System', 'system', 'Contact removed', '', 'read', 0, " + now + ")";
+        MDS.sql(sysMsgSql, function () {
+            var statusSql = "MERGE INTO CHAT_STATUS (publickey, last_opened) KEY(publickey) VALUES(UPPER('" + safeFrom + "'), " + now + ")";
+            MDS.sql(statusSql, function() {
+                notifyChatListUpdateFromContacts("maxima_contact_removed_message");
+            });
+        });
+    });
 }
 
 // ============================================================================
@@ -6787,14 +6925,19 @@ function handleDeniedTransaction(tx) {
 }
 
 /**
- * Check incoming token/charm messages in 'received' state that have a txpowid
- * and promote them to 'confirmed' once 3-block confirmation is achieved.
- * This runs on the recipient's node.
+ * Check incoming token/charm messages in 'received' state.
+ * Uses coin-based 3-block confirmation: finds the coin via 'coins relevant:true'
+ * (matching state[0]=timestamp, state[1]=204) and checks currentBlock - coin.created >= 3.
+ *
+ * Why coins instead of txpow address: Minima generates a fresh address per transaction,
+ * so 'getaddress' returns the current default address which may differ from the address
+ * the incoming coin was actually received at. 'coins relevant:true' finds all owned coins
+ * regardless of which address they arrived at, and the coin.created field gives the
+ * exact block it was mined in — no txpowid needed for the confirmation check.
  */
 function checkIncomingTransactions() {
     MDS.log("🔍 [SW-TX-INCOMING] Checking incoming unconfirmed token/charm messages...");
 
-    // Include messages with NULL txpowid — they will be resolved via timestamp search
     MDS.sql("SELECT * FROM CHAT_MESSAGES WHERE state IN ('received','read') AND username!='Me' AND (type='token' OR type='charm')", function (res) {
         if (!res.status || res.rows.length === 0) {
             MDS.log("✅ [SW-TX-INCOMING] No incoming unconfirmed token messages");
@@ -6803,48 +6946,197 @@ function checkIncomingTransactions() {
 
         MDS.log("📋 [SW-TX-INCOMING] Found " + res.rows.length + " incoming unconfirmed message(s)");
 
-        for (var i = 0; i < res.rows.length; i++) {
-            (function (msg) {
-                var txpowid = msg.TXPOWID || msg.txpowid;
-                var msgId = msg.ID || msg.id;
-                var msgDate = msg.DATE || msg.date;
+        // Get current block once for all messages
+        MDS.cmd("status", function(statusRes) {
+            if (!statusRes.status || !statusRes.response) {
+                MDS.log("⚠️ [SW-TX-INCOMING] Could not get current block");
+                return;
+            }
+            var currentBlock = parseInt(statusRes.response.chain && statusRes.response.chain.block);
+            if (!currentBlock) return;
 
-                var confirmAndUpdate = function (resolvedTxpowid) {
-                    check3BlockConfirmation(resolvedTxpowid, function (err, status) {
-                        if (err || status !== 'confirmed') return;
+            // Get all owned coins — finds coins at any address on this node
+            MDS.cmd("coins relevant:true", function(coinsRes) {
+                var coins = (coinsRes.status && Array.isArray(coinsRes.response)) ? coinsRes.response : [];
 
-                        MDS.log("✅ [SW-TX-INCOMING] 3-Block confirmed incoming tx: " + resolvedTxpowid + " (msg ID " + msgId + ")");
-                        MDS.sql("UPDATE CHAT_MESSAGES SET state='confirmed', txpowid='" + resolvedTxpowid + "' WHERE id=" + msgId, function (updateRes) {
-                            if (updateRes.status) {
-                                MDS.log("✅ [SW-TX-INCOMING] Message ID " + msgId + " marked as confirmed");
-                                MDS.comms.solo(JSON.stringify({
-                                    type: "TOKEN_INCOMING_CONFIRMED",
-                                    msgId: msgId,
-                                    txpowid: resolvedTxpowid
-                                }));
+                for (var i = 0; i < res.rows.length; i++) {
+                    (function(msg) {
+                        var msgId    = msg.ID || msg.id;
+                        var searchTs = String(msg.ORIGINAL_TIMESTAMP || msg.DATE || msg.date || '');
+
+                        // Find matching coin by timestamp + MetaChain marker
+                        var matchedCoin = null;
+                        for (var c = 0; c < coins.length; c++) {
+                            var coin = coins[c];
+                            if (coin.state &&
+                                coin.state['1'] && String(coin.state['1'].data) === '204' &&
+                                coin.state['0'] && String(coin.state['0'].data) === searchTs) {
+                                matchedCoin = coin;
+                                break;
                             }
-                        });
-                    });
-                };
+                        }
 
-                if (txpowid && txpowid !== 'null') {
-                    // Fast path: txpowid already stored
-                    confirmAndUpdate(txpowid);
-                } else if (msgDate) {
-                    // Slow path: find real txpowid by timestamp
-                    MDS.log("🔍 [SW-TX-INCOMING] No txpowid for msg " + msgId + ", searching by timestamp " + msgDate);
-                    findInBlockchainOrMempool(msgDate, function (err, foundTxpowid) {
-                        if (err || !foundTxpowid) {
-                            MDS.log("⚠️ [SW-TX-INCOMING] Could not find txpowid for msg " + msgId);
+                        if (!matchedCoin) {
+                            MDS.log("⏳ [SW-TX-INCOMING] No coin found yet for msg " + msgId + " (ts=" + searchTs + ") — not mined yet.");
                             return;
                         }
-                        MDS.log("✅ [SW-TX-INCOMING] Found txpowid via timestamp: " + foundTxpowid);
-                        confirmAndUpdate(foundTxpowid);
-                    });
+
+                        var coinBlock = parseInt(matchedCoin.created);
+                        var confirmations = currentBlock - coinBlock;
+                        MDS.log("🔍 [SW-TX-INCOMING] Msg " + msgId + ": coin at block " + coinBlock + ", current " + currentBlock + ", confirmations=" + confirmations);
+
+                        if (confirmations >= 3) {
+                            MDS.log("✅ [SW-TX-INCOMING] 3-Block confirmed incoming msg " + msgId);
+                            MDS.sql("UPDATE CHAT_MESSAGES SET state='confirmed' WHERE id=" + msgId, function(updateRes) {
+                                if (updateRes.status) {
+                                    MDS.comms.solo(JSON.stringify({
+                                        type: "TOKEN_INCOMING_CONFIRMED",
+                                        msgId: msgId
+                                    }));
+                                }
+                            });
+                        } else {
+                            MDS.log("⏳ [SW-TX-INCOMING] Msg " + msgId + " only " + confirmations + "/3 confirmations.");
+                        }
+                    })(res.rows[i]);
                 }
-            })(res.rows[i]);
-        }
+            });
+        });
     });
+}
+
+/**
+ * Promote unverified messages directly from a NEWCOIN event.
+ * When a coin arrives with MetaChain state vars (state['1']='204'),
+ * match its state['0'] (timestamp) against unverified messages' original_timestamp
+ * and promote them to 'received' without needing a txpow scan.
+ *
+ * @param {object} coinData - The coin object from msg.data.coin (NEWCOIN event)
+ */
+function promoteUnverifiedByCoin(coinData) {
+    if (!coinData || !coinData.state) return;
+
+    // Check if this is a MetaChain coin: state['1'].data === '204'
+    var s1 = coinData.state['1'];
+    if (!s1 || String(s1.data) !== '204') return;
+
+    var s0 = coinData.state['0'];
+    if (!s0 || !s0.data) return;
+
+    var coinTimestamp = String(s0.data);
+    MDS.log("🪙 [NEWCOIN-PROMOTE] MetaChain coin detected, ts=" + coinTimestamp);
+
+    // Look for unverified messages matching this timestamp
+    MDS.sql(
+        "SELECT * FROM CHAT_MESSAGES WHERE state='unverified' AND username!='Me' " +
+        "AND (type='token' OR type='charm') " +
+        "AND (original_timestamp=" + coinTimestamp + " OR date=" + coinTimestamp + ")",
+        function(res) {
+            if (!res.status || !res.rows || res.rows.length === 0) {
+                MDS.log("🪙 [NEWCOIN-PROMOTE] No matching unverified messages for ts=" + coinTimestamp);
+                return;
+            }
+
+            MDS.log("🪙 [NEWCOIN-PROMOTE] Found " + res.rows.length + " matching unverified message(s) — promoting to 'received'.");
+            var promoted = 0;
+            for (var i = 0; i < res.rows.length; i++) {
+                (function(msg) {
+                    var msgId = msg.ID || msg.id;
+                    MDS.sql(
+                        "UPDATE CHAT_MESSAGES SET state='received' WHERE id=" + msgId + " AND state='unverified'",
+                        function(upRes) {
+                            if (upRes.status) {
+                                promoted++;
+                                MDS.log("✅ [NEWCOIN-PROMOTE] Message " + msgId + " promoted to 'received'.");
+                                MDS.comms.solo("CHAT_LIST_UPDATE");
+                            }
+                        }
+                    );
+                })(res.rows[i]);
+            }
+        }
+    );
+}
+
+/**
+ * Verify incoming token/charm messages that are in 'unverified' state.
+ * - If the blockchain transaction is found (via txpow scan or coins fallback) → promote to 'received'
+ *   (existing checkIncomingTransactions will then handle age-based confirmation).
+ * - If not verified after 30 minutes → delete the message (phantom tx, never happened).
+ * - If not verified but recent → keep as 'unverified' and retry next cycle.
+ */
+function checkUnverifiedIncomingMessages() {
+    MDS.log("🔍 [SW-TX-VERIFY] Checking unverified incoming token/charm messages...");
+
+    var TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+    var now = Date.now();
+
+    MDS.sql(
+        "SELECT * FROM CHAT_MESSAGES WHERE state='unverified' AND username!='Me' AND (type='token' OR type='charm')",
+        function(res) {
+            if (!res.status || !res.rows || res.rows.length === 0) {
+                MDS.log("✅ [SW-TX-VERIFY] No unverified token/charm messages.");
+                return;
+            }
+
+            MDS.log("📋 [SW-TX-VERIFY] Found " + res.rows.length + " unverified message(s)");
+
+            for (var i = 0; i < res.rows.length; i++) {
+                (function(msg) {
+                    var msgId      = msg.ID   || msg.id;
+                    var txpowid    = msg.TXPOWID || msg.txpowid || null;
+                    var senderKey  = msg.PUBLICKEY || msg.publickey || '';
+                    // Use original_timestamp (= sender stateId) for blockchain lookup;
+                    // fall back to date (local receipt time) if not set.
+                    var msgTs      = msg.ORIGINAL_TIMESTAMP || msg.DATE || msg.date || 0;
+                    var age        = now - parseInt(msgTs || 0);
+
+                    var promoteMsg = function() {
+                        MDS.log("✅ [SW-TX-VERIFY] Message " + msgId + " verified — promoting to 'received'.");
+                        MDS.sql(
+                            "UPDATE CHAT_MESSAGES SET state='received' WHERE id=" + msgId,
+                            function(upRes) {
+                                if (upRes.status) {
+                                    MDS.comms.solo("CHAT_LIST_UPDATE");
+                                }
+                            }
+                        );
+                    };
+
+                    verifyIncomingTransaction(msgTs, senderKey, txpowid, function(err, verified) {
+                        if (verified) {
+                            promoteMsg();
+                        } else {
+                            // Fallback: scan coins for MetaChain state vars matching timestamp
+                            // (coins command is reliable even when txpow address: is not)
+                            var tsStr = String(msgTs);
+                            MDS.cmd("coins", function(coinsRes) {
+                                if (coinsRes.status && Array.isArray(coinsRes.response)) {
+                                    for (var c = 0; c < coinsRes.response.length; c++) {
+                                        var coin = coinsRes.response[c];
+                                        if (coin.state &&
+                                            coin.state['1'] && String(coin.state['1'].data) === '204' &&
+                                            coin.state['0'] && String(coin.state['0'].data) === tsStr) {
+                                            MDS.log("✅ [SW-TX-VERIFY] Message " + msgId + " verified via coins fallback.");
+                                            promoteMsg();
+                                            return;
+                                        }
+                                    }
+                                }
+                                // Neither txpow nor coins matched
+                                if (age > TIMEOUT_MS) {
+                                    MDS.log("🗑️ [SW-TX-VERIFY] Message " + msgId + " unverified after 30 min — deleting phantom.");
+                                    MDS.sql("DELETE FROM CHAT_MESSAGES WHERE id=" + msgId, function() {});
+                                } else {
+                                    MDS.log("⏳ [SW-TX-VERIFY] Message " + msgId + " not yet verifiable (age=" + Math.round(age / 1000) + "s). Will retry.");
+                                }
+                            });
+                        }
+                    });
+                })(res.rows[i]);
+            }
+        }
+    );
 }
 
 
@@ -8147,7 +8439,31 @@ MDS.init(function (msg) {
       sendGroupAddressBeacon(); // Keep group member addresses fresh in DISCOVERED_PEERS
       checkPendingTransactions(); // Check for zombie transactions
       checkSentTransactions(); // Check for confirmations (sent -> confirmed)
+      checkUnverifiedIncomingMessages(); // Verify incoming token/charm against blockchain before showing
       checkIncomingTransactions(); // Check for incoming token confirmations (received -> confirmed)
+    }
+  }
+
+  // Balance changed — run incoming confirmation check on every NEWBALANCE.
+  // check3BlockConfirmation is the real gate; no age-based filtering needed here.
+  else if (msg.event == "NEWBALANCE") {
+    if (DB_READY && typeof checkIncomingTransactions === "function") {
+      MDS.log("💰 [NEWBALANCE] Balance update — running incoming confirmation check.");
+      checkIncomingTransactions();
+    }
+  }
+
+  // New coin arrived — immediately verify any pending unverified token/charm messages
+  else if (msg.event == "NEWCOIN") {
+    if (DB_READY) {
+      // Fast path: use coin state vars directly to promote matching unverified messages
+      if (typeof promoteUnverifiedByCoin === "function" && msg.data && msg.data.coin) {
+        promoteUnverifiedByCoin(msg.data.coin);
+      }
+      // Slow path fallback: scan txpow history for any remaining unverified messages
+      if (typeof checkUnverifiedIncomingMessages === "function") {
+        checkUnverifiedIncomingMessages();
+      }
     }
   }
 

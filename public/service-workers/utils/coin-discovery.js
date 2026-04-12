@@ -36,11 +36,12 @@ function discoverOfflineTokens() {
 
             var allCoins = coinsRes.response;
 
-            // Filter coins with state variables (MetaChain tokens)
+            // Filter coins with MetaChain state variables: state[1].data === '204'
             var stateCoins = allCoins.filter(function (coin) {
                 return coin.storestate === true &&
                     coin.state &&
                     coin.state['0'] &&
+                    coin.state['1'] && coin.state['1'].data === '204' &&
                     coin.spent === false;
             });
 
@@ -62,7 +63,7 @@ function discoverOfflineTokens() {
                     if (recoveredCount > 0) {
                         MDS.log("📦 [COIN-DISCOVERY] Successfully recovered " + recoveredCount + " offline token message(s)");
                         // Notify frontend to reload messages
-                        MDS.notify("OFFLINE_TOKENS_RECOVERED", { count: recoveredCount });
+                        MDS.comms.solo("CHAT_LIST_UPDATE");
                     } else {
                         MDS.log("📦 [COIN-DISCOVERY] No new offline tokens to recover");
                     }
@@ -71,24 +72,18 @@ function discoverOfflineTokens() {
                 }
 
                 var coin = stateCoins[currentIndex];
-                // State variables are objects with .data property
+                // MetaChain state vars: state[0]=timestamp, state[1]='204', state[3]=senderPublicKey
                 var timestamp = coin.state['0'].data;
-                var senderInfo = coin.state['1'] ? coin.state['1'].data : '';
-                var chatId = coin.state['2'] ? coin.state['2'].data : null;
                 var senderKey = coin.state['3'] ? coin.state['3'].data : null;
 
-                // Determine roomname: use chatId if available (truncated to 160 chars), otherwise "Offline Tokens"
-                var roomname = chatId ? chatId.substring(0, 160) : "Offline Tokens";
-
-                MDS.log("📦 [COIN-DISCOVERY] Processing coin with chatId: " + (chatId || "NONE") + ", roomname: " + roomname);
+                MDS.log("📦 [COIN-DISCOVERY] Processing coin ts=" + timestamp + " sender=" + (senderKey || "UNKNOWN").substring(0, 20) + "...");
 
                 // Check if message already exists - use time window AND coinid/txpowid
                 var minTime = parseInt(timestamp) - 60000;
                 var maxTime = parseInt(timestamp) + 60000;
-                var checkSql = "SELECT * FROM CHAT_MESSAGES WHERE type='token' AND publickey='" + (senderKey || senderInfo || '') + "' AND (" +
+                var checkSql = "SELECT * FROM CHAT_MESSAGES WHERE type='token' AND (" +
                     "(date >= " + minTime + " AND date <= " + maxTime + ") OR " +
-                    "(original_timestamp >= " + minTime + " AND original_timestamp <= " + maxTime + ") OR " +
-                    "txpowid='" + coin.coinid + "'" +
+                    "(original_timestamp >= " + minTime + " AND original_timestamp <= " + maxTime + ")" +
                     ")";
                 MDS.sql(checkSql, function (existing) {
                     if (existing.status && existing.rows && existing.rows.length > 0) {
@@ -99,14 +94,10 @@ function discoverOfflineTokens() {
                         return;
                     }
 
-                    // Extract sender publickey: prioritize state[3], fallback to state[1]
-                    var senderPubkey = 'UNKNOWN';
-                    if (senderKey && senderKey.trim().length > 0) {
-                        senderPubkey = senderKey.trim();
-                    } else if (senderInfo && senderInfo.trim().length > 0) {
-                        senderPubkey = senderInfo.trim();
-                    } else {
-                        MDS.log("❌ [COIN-DISCOVERY] No valid sender key found in state[3] or state[1]!");
+                    // Extract sender publickey from state[3]
+                    var senderPubkey = (senderKey && senderKey.trim().length > 0) ? senderKey.trim() : 'UNKNOWN';
+                    if (senderPubkey === 'UNKNOWN') {
+                        MDS.log("❌ [COIN-DISCOVERY] No valid sender key found in state[3]!");
                     }
 
                     // Get token info
@@ -128,23 +119,22 @@ function discoverOfflineTokens() {
                     // Escape single quotes for SQL
                     var escapedPayload = messagePayload.replace(/'/g, "''");
 
-                    // Insert retroactive message
+                    // Insert retroactive message — coin is already on-chain so state='confirmed'
                     var insertSql = "INSERT INTO CHAT_MESSAGES " +
-                        "(publickey, username, message, type, date, state, amount, txpowid, roomname, filedata, customid, read, original_timestamp) " +
+                        "(publickey, username, message, type, date, state, amount, txpowid, roomname, filedata, customid, original_timestamp) " +
                         "VALUES (" +
-                        "'" + senderPubkey + "', " +
+                        "UPPER('" + senderPubkey + "'), " +
                         "'Unknown', " +
                         "'" + escapedPayload + "', " +
                         "'token', " +
-                        "'" + timestamp + "', " +
+                        parseInt(timestamp) + ", " +
                         "'confirmed', " +
-                        amount + ", " +
+                        parseFloat(amount) + ", " +
                         "'" + coin.coinid + "', " +
-                        "'" + roomname + "', " +
+                        "'', " +
                         "'', " +
                         "'0x00', " +
-                        "0, " +
-                        timestamp +
+                        parseInt(timestamp) +
                         ")";
 
                     MDS.sql(insertSql, function (insertRes) {

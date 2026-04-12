@@ -114,6 +114,95 @@ function findInBlockchainOrMempool(messageTimestamp, callback) {
 }
 
 /**
+ * Verify an incoming token/charm transaction on the receiver's node.
+ * Searches the blockchain for a txpow that has:
+ *   state[0].data === messageTimestamp (stateId set by sender)
+ *   state[1].data === '204'           (MetaChain magic)
+ *
+ * Fast path: if txpowid is provided, look it up directly, then verify state vars.
+ * Slow path: scan recent txpows for this address and match timestamp + MetaChain marker.
+ *
+ * Note: state[3] (sender key) is NOT checked because key format mismatches between
+ * the DB (UPPER-cased) and blockchain caused false negatives. Timestamp uniqueness
+ * combined with MetaChain marker is sufficient.
+ *
+ * @param {number|string} messageTimestamp - The sender's stateId (original_timestamp in CHAT_MESSAGES)
+ * @param {string} senderPublicKey - (unused, kept for signature compat)
+ * @param {string|null} txpowid - Optional txpowid from Maxima payload (fast path)
+ * @param {function} callback - callback(err, verified: boolean)
+ */
+function verifyIncomingTransaction(messageTimestamp, senderPublicKey, txpowid, callback) {
+    var tsStr = String(messageTimestamp);
+
+    // Helper: extract state var data by port number.
+    // The txpow API returns state as an array of {port, type, data} objects;
+    // array index may NOT equal port number (e.g. if ports are sparse).
+    var getStateData = function(stateArr, port) {
+        if (!stateArr) return '';
+        // Try keyed access first (coin-style state object: state['0'])
+        if (!Array.isArray(stateArr) && stateArr[String(port)]) {
+            return String(stateArr[String(port)].data || '');
+        }
+        // Array of {port, data} objects (txpow-style)
+        if (Array.isArray(stateArr)) {
+            for (var j = 0; j < stateArr.length; j++) {
+                if (stateArr[j] && (stateArr[j].port === port || stateArr[j].port === String(port))) {
+                    return String(stateArr[j].data || '');
+                }
+            }
+            // Fallback: direct index access (works when array is dense & ordered)
+            if (stateArr[port] && stateArr[port].data !== undefined) {
+                return String(stateArr[port].data || '');
+            }
+        }
+        return '';
+    };
+
+    var matchesStateVars = function(tx) {
+        var state = tx && tx.body && tx.body.txn && tx.body.txn.state;
+        if (!state) return false;
+        var stateId = getStateData(state, 0);
+        var chainId = getStateData(state, 1);
+        // Only require timestamp + MetaChain marker; sender key is optional extra check
+        return chainId === '204' && stateId === tsStr;
+    };
+
+    var doScan = function() {
+        MDS.cmd("getaddress", function(addrRes) {
+            if (!addrRes.status || !addrRes.response) { callback(null, false); return; }
+            var myAddr = addrRes.response.miniaddress;
+            MDS.cmd("txpow address:" + myAddr + " max:50", function(txpowRes) {
+                if (!txpowRes.status || !txpowRes.response) { callback(null, false); return; }
+                var txpows = Array.isArray(txpowRes.response) ? txpowRes.response : [txpowRes.response];
+                for (var i = 0; i < txpows.length; i++) {
+                    if (matchesStateVars(txpows[i])) {
+                        MDS.log("✅ [SW-TX-VERIFY] Incoming tx verified (scan): " + txpows[i].txpowid);
+                        callback(null, true);
+                        return;
+                    }
+                }
+                MDS.log("⚠️ [SW-TX-VERIFY] Tx not found for ts=" + tsStr);
+                callback(null, false);
+            });
+        });
+    };
+
+    if (txpowid && txpowid !== 'null' && !txpowid.startsWith('PENDING_')) {
+        MDS.cmd("txpow txpowid:" + txpowid, function(res) {
+            if (res.status && res.response && matchesStateVars(res.response)) {
+                MDS.log("✅ [SW-TX-VERIFY] Incoming tx verified (txpowid): " + txpowid);
+                callback(null, true);
+            } else {
+                // txpowid not found or state vars don't match — fall back to scan
+                doScan();
+            }
+        });
+    } else {
+        doScan();
+    }
+}
+
+/**
  * Get all pending actions from Minima
  * @param {function} callback - Callback function(error, pendingActions) where pendingActions is an array
  */

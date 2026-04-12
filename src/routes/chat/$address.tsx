@@ -411,7 +411,7 @@ function ChatPage() {
     });
   }, []);
 
-  const { loaded, writeMode, userName, userAvatar, myPublicKey } =
+  const { loaded, writeMode, userName, userAvatar, myPublicKey, synced } =
     useContext(appContext);
   const isLoadingMessages = useRef(false); // Flag to prevent simultaneous loads
   const pendingReload = useRef(false); // Flag to queue a reload if one is requested while loading
@@ -1411,36 +1411,7 @@ function ChatPage() {
               const originalTs =
                 msg.originalTimestamp || msg.timestamp;
 
-              const checkConfirmation = (
-                txpowid: string | null,
-                resolve: (v: boolean) => void,
-              ) => {
-                MDS.executeRaw("status", (statusRes: any) => {
-                  const currentBlock =
-                    statusRes?.response?.chain?.block;
-                  if (!currentBlock) {
-                    resolve(false);
-                    return;
-                  }
-                  if (txpowid) {
-                    MDS.executeRaw(
-                      `txpow txpowid:${txpowid}`,
-                      (txRes: any) => {
-                        const txBlock = txRes?.response?.header?.block;
-                        if (txBlock !== undefined && txBlock !== null) {
-                          resolve(
-                            parseInt(currentBlock) - parseInt(txBlock) >= 3,
-                          );
-                        } else {
-                          resolve(false);
-                        }
-                      },
-                    );
-                  } else {
-                    resolve(false);
-                  }
-                });
-              };
+
 
               const isConfirmed = await new Promise<boolean>((resolve) => {
                 if (!originalTs) {
@@ -1470,108 +1441,18 @@ function ChatPage() {
                         );
                         return;
                       }
-                      // Stored txpowid didn't work — search by timestamp (real blockchain id)
+                      // Stored txpowid didn't work — cannot find incoming tx via address scan
+                      // (txpow address: only returns outgoing txs). SW handles confirmation.
                       console.log(
-                        `🔍 [CHAT] txpow lookup failed for stored id, searching by timestamp ${originalTs}...`,
+                        `🔍 [CHAT] txpow lookup failed for stored id (ts=${originalTs}) — deferring to SW.`,
                       );
-                      MDS.executeRaw(
-                        "getaddress",
-                        (addrRes: any) => {
-                          const myAddr =
-                            addrRes?.response?.miniaddress;
-                          if (!myAddr) {
-                            resolve(false);
-                            return;
-                          }
-                          MDS.executeRaw(
-                            `txpow address:${myAddr} max:50`,
-                            (histRes: any) => {
-                              const txpows = Array.isArray(
-                                histRes?.response,
-                              )
-                                ? histRes.response
-                                : histRes?.response
-                                  ? [histRes.response]
-                                  : [];
-                              const tsStr = String(originalTs);
-                              let realTxpowid: string | null = null;
-                              for (const tp of txpows) {
-                                const state =
-                                  tp?.body?.txn?.state;
-                                if (
-                                  Array.isArray(state) &&
-                                  state.length >= 2 &&
-                                  state[1]?.data === "204" &&
-                                  state[0]?.data === tsStr
-                                ) {
-                                  realTxpowid = tp.txpowid;
-                                  break;
-                                }
-                              }
-                              if (realTxpowid) {
-                                console.log(
-                                  `✅ [CHAT] Found real txpowid: ${realTxpowid}`,
-                                );
-                                // Update DB with correct txpowid
-                                MDS.sql(
-                                  `UPDATE CHAT_MESSAGES SET txpowid='${realTxpowid}' WHERE id=${msg.id}`,
-                                  () => {},
-                                );
-                                checkConfirmation(realTxpowid, resolve);
-                              } else {
-                                resolve(false);
-                              }
-                            },
-                          );
-                        },
-                      );
+                      resolve(false);
                     },
                   );
                 } else {
-                  // No stored txpowid at all — search directly by timestamp
-                  MDS.executeRaw(
-                    "getaddress",
-                    (addrRes: any) => {
-                      const myAddr = addrRes?.response?.miniaddress;
-                      if (!myAddr) {
-                        resolve(false);
-                        return;
-                      }
-                      MDS.executeRaw(
-                        `txpow address:${myAddr} max:50`,
-                        (histRes: any) => {
-                          const txpows = Array.isArray(histRes?.response)
-                            ? histRes.response
-                            : histRes?.response
-                              ? [histRes.response]
-                              : [];
-                          const tsStr = String(originalTs);
-                          let realTxpowid: string | null = null;
-                          for (const tp of txpows) {
-                            const state = tp?.body?.txn?.state;
-                            if (
-                              Array.isArray(state) &&
-                              state.length >= 2 &&
-                              state[1]?.data === "204" &&
-                              state[0]?.data === tsStr
-                            ) {
-                              realTxpowid = tp.txpowid;
-                              break;
-                            }
-                          }
-                          if (realTxpowid) {
-                            MDS.sql(
-                              `UPDATE CHAT_MESSAGES SET txpowid='${realTxpowid}' WHERE id=${msg.id}`,
-                              () => {},
-                            );
-                            checkConfirmation(realTxpowid, resolve);
-                          } else {
-                            resolve(false);
-                          }
-                        },
-                      );
-                    },
-                  );
+                  // No stored txpowid — cannot confirm incoming tx from frontend.
+                  // SW handles confirmation via NEWBALANCE → unconfirmed=0.
+                  resolve(false);
                 }
               });
 
@@ -1582,7 +1463,7 @@ function ChatPage() {
                 );
                 MDS.sql(
                   `UPDATE CHAT_MESSAGES SET state='confirmed' WHERE id=${msg.id}`,
-                  () => {},
+                  () => { loadMessagesFromDB(); },
                 );
               }
             }
@@ -1975,6 +1856,14 @@ function ChatPage() {
             msg.publickey === address);
 
         if (isTarget) {
+          // Skip unverified token/charm — the SW will verify the blockchain tx and
+          // re-notify via TOKEN_INCOMING_CONFIRMED once confirmed. Showing it now
+          // would display raw JSON and bypass the verification gate.
+          if (msg.state === "unverified") {
+            console.log("⏳ [CHAT] Skipping unverified token/charm — waiting for SW verification.");
+            return;
+          }
+
           console.log("🚀 [CHAT] Receiving message via EVENT payload:", msg);
 
           // Parse and append to state immediately
@@ -1984,7 +1873,7 @@ function ChatPage() {
             fromMe: msg.username === "Me",
             charm: msg.type === "charm" ? { id: msg.message } : null,
             amount: msg.amount || null,
-            timestamp: msg.date,
+            timestamp: Number(msg.date) || Date.now(),
             status: msg.state,
             type: msg.type,
             filedata: msg.filedata,
@@ -2080,7 +1969,7 @@ function ChatPage() {
     // Subscribe to new messages
     minimaService.onNewMessage(handleNewMessage);
 
-    // Reload messages when a pending transaction is accepted/denied
+    // Reload messages when a pending transaction is accepted/denied.
     const handleBalanceUpdate = () => {
       console.log(
         "💰 [CHAT] Balance update — reloading messages for pending tx state change",
@@ -2561,6 +2450,10 @@ function ChatPage() {
     );
 
     if (!contact?.publickey) return;
+    if (!synced) {
+      alert("Cannot send tokens while the node is offline. Please wait until you are reconnected.");
+      return;
+    }
     const resolvedCharmAddr = await resolveMinimaAddress(contact);
     if (!resolvedCharmAddr) {
       alert("Wallet address not yet available. A profile sync has been requested — please try again in a few seconds.");
@@ -2636,6 +2529,10 @@ function ChatPage() {
     );
 
     if (!contact?.publickey) return;
+    if (!synced) {
+      alert("Cannot send tokens while the node is offline. Please wait until you are reconnected.");
+      return;
+    }
     const resolvedTokenAddr = await resolveMinimaAddress(contact);
     if (!resolvedTokenAddr) {
       alert("Wallet address not yet available. A profile sync has been requested — please try again in a few seconds.");
@@ -2647,29 +2544,28 @@ function ChatPage() {
     const senderName = userName || "Me";
     const tokenData = JSON.stringify({ amount, tokenName });
 
-    // FIX: Get correct sequence number for this token message (it consumes a slot in the timeline)
-    // ATOMIC: Get and increment in one operation to prevent race conditions
-    const tokenSeq = await getAndIncrementSequenceNumber(contact.publickey);
+    // Do NOT assign sender_seq here — seq will be assigned at approval time (MDS_PENDING)
+    // so that the token sorts at its correct chronological position (when approved, not when submitted)
 
-    console.log(
-      `🔢 [ChatPage] Assigning Sequence ${tokenSeq} to Token Message`,
-    );
+    // Generate a stable customid so the optimistic message deduplicates correctly with the DB version
+    const pendingCustomId = crypto.randomUUID();
 
     // Optimistic UI update - Show pending immediately
     const optimisticMsg: ParsedMessage = {
       text: "",
       fromMe: true,
-      sender_seq: tokenSeq,
+      sender_seq: 0,
       charm: null,
       amount: Number(amount),
       timestamp: tempTimestamp,
       status: "pending",
       tokenAmount: { amount, tokenName },
       isToken: true,
+      customid: pendingCustomId,
     };
     setMessages((prev) => [...prev, optimisticMsg]);
     console.log(
-      `⏳ [ChatPage] Added optimistic pending token message (Seq: ${tokenSeq})`,
+      `⏳ [ChatPage] Added optimistic pending token message (customid: ${pendingCustomId})`,
     );
 
     // CRITICAL: Save optimistic message to database so UPDATE statements can find it later
@@ -2677,16 +2573,15 @@ function ChatPage() {
     // IMPORTANT: Keep valid JSON (double quotes) but escape single quotes for SQL
     const escapedTokenData = tokenData.replace(/'/g, "''");
 
-    // Note: Include all required columns (roomname, type, filedata) matching chat.service.ts pattern
-    const insertSql = `INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq) VALUES ('', UPPER('${contact.publickey}'), 'Me', 'token', '${escapedTokenData}', '', 'pending', ${amount}, ${tempTimestamp}, ${tokenSeq})`;
+    // Note: Include customid so deduplicateMessages can identify it via customId key (not just timeKey)
+    const insertSql = `INSERT INTO CHAT_MESSAGES (roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, customid) VALUES ('', UPPER('${contact.publickey}'), 'Me', 'token', '${escapedTokenData}', '', 'pending', ${amount}, ${tempTimestamp}, 0, '${pendingCustomId}')`;
 
     await new Promise<void>((resolve) => {
       MDS.sql(insertSql, async (res: any) => {
         if (res.status) {
           console.log(
-            `💾 [ChatPage] Saved optimistic message to DB: ${tempTimestamp} (Seq: ${tokenSeq})`,
+            `💾 [ChatPage] Saved optimistic message to DB: ${tempTimestamp} (seq=0, will be assigned on approval)`,
           );
-          // NOTE: No need to increment here - getAndIncrementSequenceNumber already did it atomically
         } else {
           console.error(
             "❌ [ChatPage] Failed to save optimistic message to DB:",
@@ -2736,7 +2631,7 @@ function ChatPage() {
           "token",
           contact.publickey,
           tempTimestamp,
-          { tokenId, amount, tokenName, username: senderName, seq: tokenSeq },
+          { tokenId, amount, tokenName, username: senderName },
           pendinguid,
         );
         console.log(
@@ -2769,9 +2664,9 @@ function ChatPage() {
       );
       const recipientName = contact?.extradata?.name || "Unknown";
 
-      // FIX: Use overrideSeq to send the EXACT sequence number we reserved (tokenSeq)
-      // FIX: Set saveToDb=false because we ALREADY inserted the optimistic message (Seq 12)
-      // This prevents duplicates (Seq 12 + Seq 13) while ensuring the peer gets the correct sequence!
+      // Assign seq now — transaction confirmed, this is the correct chronological position
+      const tokenSeq = await getAndIncrementSequenceNumber(contact.publickey);
+
       const msgResponse = await minimaService.sendMessage(
         contact.publickey,
         senderName,
@@ -2782,18 +2677,16 @@ function ChatPage() {
         tempTimestamp,
         recipientName,
         "metachain",
-        false, // Don't save second copy
+        false, // Don't save second copy (already inserted optimistically with seq=0)
         txpowid,
-        tokenSeq, // Force sequence 12
+        tokenSeq,
       );
 
-      // Now we must manually update the optimistic message with the TXPOWID and 'sent' state
-      if (txpowid) {
-        const updateSql = `UPDATE CHAT_MESSAGES SET state='sent', txpowid='${txpowid}' WHERE sender_seq=${tokenSeq} AND UPPER(publickey)=UPPER('${contact.publickey}')`;
-        await new Promise<void>((resolve) =>
-          MDS.sql(updateSql, () => resolve()),
-        );
-      }
+      // Update the optimistic message with final state, txpowid and seq
+      const updateSql = `UPDATE CHAT_MESSAGES SET state='sent', txpowid='${txpowid || ""}', sender_seq=${tokenSeq} WHERE date=${tempTimestamp} AND UPPER(publickey)=UPPER('${contact.publickey}')`;
+      await new Promise<void>((resolve) =>
+        MDS.sql(updateSql, () => resolve()),
+      );
 
       // Check if message send is pending (shouldn't happen if token wasn't pending, but just in case)
       const isMsgPending =

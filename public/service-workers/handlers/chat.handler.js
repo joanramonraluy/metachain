@@ -119,9 +119,12 @@ function handleChatMessage(pubkey, maxjson) {
 
     // 2. Insert message to DB if not blocked
     var txpowid = maxjson.txpowid ? escapeSql(maxjson.txpowid) : null;
-    var initialState = "received"; // incoming messages always start as received; SW checker promotes to confirmed after 3-block confirmation
+    // token/charm start as 'unverified' — checkUnverifiedIncomingMessages promotes to
+    // 'received' once the blockchain transaction is confirmed to exist with correct state vars.
+    // All other message types start as 'received' immediately.
+    var initialState = (msgType === "token" || msgType === "charm") ? "unverified" : "received";
     var txpowidVal = txpowid ? "'" + txpowid + "'" : "NULL";
-    var originalTimestamp = maxjson.timestamp ? maxjson.timestamp : 0;
+    var originalTimestamp = maxjson.timestamp ? parseInt(maxjson.timestamp, 10) : 0;
     // PERSIST CUSTOM ID (already normalized above)
 
     // CRITICAL FIX: Only store if we don't already have it
@@ -632,8 +635,15 @@ function processHistoryMessage(safePubkey, originalPubkey, messages, index) {
     var amount = msg.amount || 0;
     var txpowidVal = msg.txpowid ? "'" + escapeSql(msg.txpowid) + "'" : "NULL";
 
-    // Use provided state if valid, otherwise fallback to 'read' or 'received' based on type
-    var state = msg.state || "read";
+    // For incoming token/charm messages recovered via history sync,
+    // always start as 'unverified' so the SW can verify against the blockchain
+    // before showing them in the UI. This prevents phantom transactions.
+    var state;
+    if (isIncoming && (type === "token" || type === "charm")) {
+      state = "unverified";
+    } else {
+      state = msg.state || "read";
+    }
 
     var safeCustomId = msg.customid ? escapeSql(msg.customid) : "0x00";
 
@@ -765,15 +775,14 @@ function processHistoryMessage(safePubkey, originalPubkey, messages, index) {
       return;
     }
 
-    var newState = msg.state || "read";
+    // Only update txpowid; never downgrade an already-verified/confirmed state
     var safeTxPow = escapeSql(msg.txpowid);
     var updateSql =
       "UPDATE CHAT_MESSAGES SET txpowid='" +
       safeTxPow +
-      "', state='" +
-      newState +
       "' WHERE id=" +
-      existingId;
+      existingId +
+      " AND state NOT IN ('received','confirmed','read')";
 
     MDS.sql(updateSql, function (updRes) {
       MDS.log(

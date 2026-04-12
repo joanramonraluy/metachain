@@ -118,7 +118,31 @@ MDS.init(function (msg) {
       sendGroupAddressBeacon(); // Keep group member addresses fresh in DISCOVERED_PEERS
       checkPendingTransactions(); // Check for zombie transactions
       checkSentTransactions(); // Check for confirmations (sent -> confirmed)
+      checkUnverifiedIncomingMessages(); // Verify incoming token/charm against blockchain before showing
       checkIncomingTransactions(); // Check for incoming token confirmations (received -> confirmed)
+    }
+  }
+
+  // Balance changed — run incoming confirmation check on every NEWBALANCE.
+  // check3BlockConfirmation is the real gate; no age-based filtering needed here.
+  else if (msg.event == "NEWBALANCE") {
+    if (DB_READY && typeof checkIncomingTransactions === "function") {
+      MDS.log("💰 [NEWBALANCE] Balance update — running incoming confirmation check.");
+      checkIncomingTransactions();
+    }
+  }
+
+  // New coin arrived — immediately verify any pending unverified token/charm messages
+  else if (msg.event == "NEWCOIN") {
+    if (DB_READY) {
+      // Fast path: use coin state vars directly to promote matching unverified messages
+      if (typeof promoteUnverifiedByCoin === "function" && msg.data && msg.data.coin) {
+        promoteUnverifiedByCoin(msg.data.coin);
+      }
+      // Slow path fallback: scan txpow history for any remaining unverified messages
+      if (typeof checkUnverifiedIncomingMessages === "function") {
+        checkUnverifiedIncomingMessages();
+      }
     }
   }
 

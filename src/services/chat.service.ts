@@ -566,6 +566,7 @@ class ChatService {
       const sql = `
                 SELECT * FROM CHAT_MESSAGES
                 WHERE (${conditions.join(" OR ")})
+                AND state != 'unverified'
                 ORDER BY COALESCE(original_timestamp, date) ASC, CASE WHEN sender_seq > 0 THEN sender_seq ELSE 999999 END ASC, id ASC
             `;
 

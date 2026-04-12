@@ -277,6 +277,25 @@ class OfflineQueueService {
     try {
       if (type === "chat_message") {
         const msgData = data as ChatMessageData;
+
+        // For token/charm messages, verify that a real blockchain transaction exists
+        // before retrying the Maxima send. Without this check, a phantom message
+        // inserted when the node was offline (sendToken returned null before the null-guard
+        // fix) would be sent to the recipient without any real tokens ever being transferred.
+        if (msgData.type === "token" || msgData.type === "charm") {
+          const safeKey = (msgData.publickey || "").replace(/'/g, "''");
+          const txCheck = await runSQL(
+            `SELECT id FROM TRANSACTIONS WHERE UPPER(publickey)=UPPER('${safeKey}') AND message_timestamp=${msgData.timestamp} AND status IN ('sent','confirmed') LIMIT 1`
+          );
+          if (!txCheck.rows || txCheck.rows.length === 0) {
+            console.warn(
+              `⚠️ [QUEUE] Discarding ${msgData.type} retry — no confirmed transaction found for timestamp=${msgData.timestamp}. Deleting phantom queue entry.`
+            );
+            await this.deleteItem(id);
+            return;
+          }
+        }
+
         // Retry sending via messaging service
         // Use a special flag or method to avoid recursive queueing if it fails again is handled by "catch" below
         // actually messagingService.sendMessage will try to queue AGAIN if it fails.

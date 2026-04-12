@@ -143,6 +143,13 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
     ? 'confirmed'
     : status;
 
+  // Detect single-emoji messages (like Telegram/WhatsApp big emoji)
+  const isSingleEmoji = (() => {
+    if (!text || text.trim() !== text) return false;
+    const emojiRegex = /^(\p{Emoji_Presentation}|\p{Emoji}\uFE0F)(\u200D(\p{Emoji_Presentation}|\p{Emoji}\uFE0F))*$/u;
+    return emojiRegex.test(text.trim());
+  })();
+
   let bubbleColor = "";
   let textColor = "text-gray-900 dark:text-gray-100";
 
@@ -271,7 +278,7 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
               }
               setShowActions(!showActions);
             }}
-            className={`relative px-4 py-2.5 ${borderRadius} ${bubbleColor} ${textColor} min-w-[80px] transition-all duration-200 ${!isTokenTransfer ? 'cursor-pointer hover:shadow-lg active:scale-[0.98]' : ''} ${showActions ? 'ring-2 ring-primary-400 ring-opacity-50' : ''}`}
+            className={`relative ${isSingleEmoji ? 'px-1 py-1' : `px-4 py-2.5 ${bubbleColor} min-w-[80px]`} ${isSingleEmoji ? '' : borderRadius} ${textColor} transition-all duration-200 ${!isTokenTransfer ? 'cursor-pointer hover:shadow-lg active:scale-[0.98]' : ''} ${showActions ? 'ring-2 ring-primary-400 ring-opacity-50' : ''}`}
           >
             {/* Forwarded Indicator */}
             {forwarded && (
@@ -452,7 +459,7 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
 
             {/* Text Content */}
             {text && (!isTokenTransfer || (isTokenTransfer && !text.includes(tokenAmount!.amount))) && (
-              <p className={`text-sm leading-relaxed whitespace-pre-wrap break-words ${isCharm || isImage ? 'mt-2' : ''}`}>
+              <p className={`${isSingleEmoji ? 'text-5xl leading-none' : `text-sm leading-relaxed whitespace-pre-wrap break-words ${isCharm || isImage ? 'mt-2' : ''}`}`}>
                 {text.split(/((?:https?:\/\/|www\.)[^\s]+)/g).map((part, i) => {
                   if ((part.startsWith('http') || part.startsWith('www.')) && /^(?:https?:\/\/|www\.)[^\s]+$/.test(part)) {
                     let url = part.startsWith('http') ? part : 'https://' + part;

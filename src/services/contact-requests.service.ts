@@ -6,6 +6,8 @@
 import { MDS } from "@minima-global/mds";
 import { runSQL, utf8ToHex, escapeSql } from "./database.service";
 import { clearContactStatusCache } from "./messaging.service"; // Added clearContactStatusCache import
+import { chatService } from "./chat.service";
+
 
 const VERBOSE_CONTACT_REQUEST_LOGS = false;
 const contactReqLog = (...args: any[]) => {
@@ -904,6 +906,99 @@ export async function saveMaximaContactRequest(fromPublicKey: string, fromName: 
    EXPORT SERVICE SINGLETON
 ---------------------------------------------------------------------------- */
 
+export async function removeMaximaContact(toPublicKey: string): Promise<void> {
+    try {
+        console.log(`📤 [Maxima Contact] Removing contact ${toPublicKey}`);
+
+        const myPublicKey = await getMyPublicKey();
+        const safeMyPk = escapeSql(myPublicKey);
+        const safeToPk = escapeSql(toPublicKey);
+
+        // Delete locally
+        const deleteSql = `DELETE FROM MAXIMA_CONTACT_REQUESTS WHERE (UPPER(from_publickey)=UPPER('${safeMyPk}') AND UPPER(to_publickey)=UPPER('${safeToPk}')) OR (UPPER(from_publickey)=UPPER('${safeToPk}') AND UPPER(to_publickey)=UPPER('${safeMyPk}'))`;
+        await runSQL(deleteSql);
+
+        const deleteChatSql = `DELETE FROM CONTACT_REQUESTS WHERE (UPPER(from_publickey)=UPPER('${safeMyPk}') AND UPPER(to_publickey)=UPPER('${safeToPk}')) OR (UPPER(from_publickey)=UPPER('${safeToPk}') AND UPPER(to_publickey)=UPPER('${safeMyPk}'))`;
+        await runSQL(deleteChatSql);
+
+        try {
+            // Must remove by id (Minima's publickey comparison is case-sensitive, so find id first)
+            const listRes: any = await MDS.cmd.maxcontacts();
+            const contacts: any[] = listRes?.response?.contacts || [];
+            const toRemove = contacts.find((c: any) => 
+                c.publickey?.toUpperCase() === toPublicKey.toUpperCase()
+            );
+            if (toRemove?.id !== undefined) {
+                const removeRes: any = await MDS.cmd.maxcontacts({ action: 'remove', id: toRemove.id } as any);
+                console.log("maxcontacts remove by id:", toRemove.id, removeRes?.status);
+            } else {
+                console.warn("[Maxima Contact] Contact not found in maxcontacts list (may already be removed)");
+            }
+        } catch (e) {
+            console.log("Ignore maxcontacts error", e);
+        }
+
+        let safeToAddress = '';
+        if (toPublicKey.startsWith('Mx') || toPublicKey.startsWith('MX')) {
+            safeToAddress = safeToPk;
+        } else {
+            const addr = await resolveMaximaAddress(toPublicKey);
+            if (addr) safeToAddress = escapeSql(addr);
+        }
+
+        // Send removal message
+        const payload = {
+            type: "maxima_contact_removed",
+            timestamp: Date.now()
+        };
+        const jsonStr = JSON.stringify(payload);
+        const hexData = "0x" + utf8ToHex(jsonStr).toUpperCase();
+
+        const sendParams: any = {
+            action: "send",
+            application: "metachain",
+            data: hexData,
+            poll: false
+        };
+
+        if (toPublicKey.startsWith("Mx") || toPublicKey.startsWith("MX")) {
+            sendParams.to = toPublicKey.trim();
+        } else if (safeToAddress && (safeToAddress.startsWith("Mx") || safeToAddress.startsWith("MX"))) {
+            sendParams.to = safeToAddress.trim();
+        } else {
+            sendParams.publickey = toPublicKey.trim();
+        }
+
+        try {
+            await MDS.cmd.maxima({ params: sendParams });
+            console.log("✅ [Maxima Contact] Removal sent");
+
+            // Insert visual system message locally
+            const now = Date.now();
+            const sqlLocal = `INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date, sender_seq, original_timestamp) 
+                              VALUES('', UPPER('${safeToPk}'), 'System', 'system', 'Contact removed', '', 'read', 0, ${now}, NULL, ${now})`;
+            await runSQL(sqlLocal);
+
+            // Also reset unread just like cancel
+            const updateReadSql = `UPDATE CHAT_MESSAGES SET state='read', read=1 WHERE UPPER(publickey)=UPPER('${safeToPk}') AND type='system'`;
+            await runSQL(updateReadSql);
+
+            const statusSql = `MERGE INTO CHAT_STATUS (publickey, last_opened) KEY(publickey) VALUES(UPPER('${safeToPk}'), ${now})`;
+            await runSQL(statusSql);
+
+            // Notify UI
+            chatService.notifyChatListUpdate();
+
+        } catch (sendErr) {
+            console.warn("⚠️ [Maxima Contact] Failed to send removal:", sendErr);
+        }
+
+    } catch (err) {
+        console.error("❌ [Maxima Contact] Error removing contact:", err);
+        throw err;
+    }
+}
+
 export const contactRequestsService = {
     // Chat permission
     getChatPermission,
@@ -925,5 +1020,6 @@ export const contactRequestsService = {
     declineMaximaContactRequest,
     cancelMaximaContactRequest,
     getMaximaContactRequests,
-    saveMaximaContactRequest
+    saveMaximaContactRequest,
+    removeMaximaContact
 };

@@ -12,6 +12,7 @@ import { personalContactsService } from "../services/personal-contacts.service";
 import { appContext } from "../AppContext";
 import { resolveHexFromAddress } from "../services/messaging.service";
 import { safeUrl } from "../utils/sanitization";
+import { contactRequestsService } from "../services/contact-requests.service";
 
 export const Route = createLazyFileRoute("/contact-info/$address")({
     component: ContactInfoPage,
@@ -115,9 +116,16 @@ function ContactInfoPage() {
             const addrUpper = address.toUpperCase();
             const c = list.find(x => x.publickey?.toUpperCase() === addrUpper || x.currentaddress?.toUpperCase() === addrUpper || x.extradata?.minimaaddress?.toUpperCase() === addrUpper);
 
+            // Use DB as source of truth for Maxima contact status
+            const myInfo = await MDS.cmd.maxima({ params: { action: 'info' } });
+            const myPk = (myInfo.response as any).publickey;
+            const resolvedPk = c?.publickey || address;
+            const dbMaximaRes = await MDS.sql(`SELECT * FROM MAXIMA_CONTACT_REQUESTS WHERE ((UPPER(from_publickey)=UPPER('${myPk}') AND UPPER(to_publickey)=UPPER('${resolvedPk}')) OR (UPPER(from_publickey)=UPPER('${resolvedPk}') AND UPPER(to_publickey)=UPPER('${myPk}'))) AND status='accepted' LIMIT 1`);
+            const isDbMaximaContact = dbMaximaRes?.rows?.length > 0;
+
             if (c) {
                 setContact(c);
-                setIsMaximaContact(true);
+                setIsMaximaContact(isDbMaximaContact);
                 const pkSql = `SELECT bio, last_seen FROM DISCOVERED_PEERS WHERE UPPER(publickey)=UPPER('${c.publickey}')`;
                 const bioRes = await MDS.sql(pkSql);
                 if (bioRes.status && bioRes.rows?.length > 0) {
@@ -146,11 +154,7 @@ function ContactInfoPage() {
                         setUserAllowsNonContactChats(peer.ALLOW_NON_CONTACT_CHATS === 1 || peer.ALLOW_NON_CONTACT_CHATS === "1" || peer.ALLOW_NON_CONTACT_CHATS === true);
                     }
                     setContact({ publickey: peer.PUBLICKEY, currentaddress: peer.ADDRESS, extradata: { name: peer.ALIAS || "Unknown", description: peer.BIO || "", icon: avatar }, lastseen: peer.LAST_SEEN ? Number(peer.LAST_SEEN) : undefined });
-                    // Check if this peer is actually a Maxima contact (even if not found in maxcontacts list above)
-                    const maximaContactCheck = await MDS.cmd.maxcontacts();
-                    const maximaList: Contact[] = (maximaContactCheck as any)?.response?.contacts || [];
-                    const isAlreadyMaxima = maximaList.some(x => x.publickey === peer.PUBLICKEY);
-                    setIsMaximaContact(isAlreadyMaxima);
+                    setIsMaximaContact(isDbMaximaContact);
                     if (country || languages.length > 0 || avatar) {
                         setExtendedProfile({ name: peer.ALIAS || "Unknown", bio: peer.BIO || "", avatar, country, languages, allowNonContactChats: true, privacy_l2: 'visible', privacy_l3: 'visible' });
                     }
@@ -203,7 +207,7 @@ function ContactInfoPage() {
 
             const maxAcceptedSql = `SELECT * FROM MAXIMA_CONTACT_REQUESTS WHERE ((UPPER(from_publickey)=UPPER('${myPk}') AND UPPER(to_publickey)=UPPER('${contact.publickey}')) OR (UPPER(from_publickey)=UPPER('${contact.publickey}') AND UPPER(to_publickey)=UPPER('${myPk}'))) AND status='accepted' LIMIT 1`;
             const maxAcceptedRes = await minimaService.runSQL(maxAcceptedSql);
-            if (maxAcceptedRes?.rows?.length > 0) setIsMaximaContact(true);
+            setIsMaximaContact(maxAcceptedRes?.rows?.length > 0);
 
             const maxIncomingSql = `SELECT * FROM MAXIMA_CONTACT_REQUESTS WHERE UPPER(from_publickey)=UPPER('${contact.publickey}') AND UPPER(to_publickey)=UPPER('${myPk}') AND status='pending'`;
             const maxIncomingRes = await minimaService.runSQL(maxIncomingSql);
@@ -578,7 +582,16 @@ function ContactInfoPage() {
                              </p>
                         </div>
                         <div className="flex flex-col gap-3">
-                            <button onClick={async () => { setRemovingContact(true); await minimaService.runSQL(`DELETE FROM MAXIMA_CONTACT_REQUESTS WHERE (UPPER(from_publickey)=UPPER('${contact.publickey}') OR UPPER(to_publickey)=UPPER('${contact.publickey}'))`); setShowConfirmDelete(false); setRemovingContact(false); setIsMaximaContact(false); }} className="w-full py-5 bg-rose-500 text-white rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-xl shadow-rose-500/30 active:scale-95 transition-all">Confirm Removal</button>
+                            <button onClick={async () => { 
+                                setRemovingContact(true); 
+                                await contactRequestsService.removeMaximaContact(contact.publickey); 
+                                setShowConfirmDelete(false); 
+                                setRemovingContact(false); 
+                                setIsMaximaContact(false);
+                                // Re-run full status check to sync UI
+                                await fetchContact();
+                                checkStatus();
+                            }} className="w-full py-5 bg-rose-500 text-white rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-xl shadow-rose-500/30 active:scale-95 transition-all">Confirm Removal</button>
                             <button onClick={() => setShowConfirmDelete(false)} className="w-full py-5 bg-gray-100 dark:bg-white/10 text-gray-900 dark:text-white rounded-[1.5rem] font-black text-xs uppercase tracking-widest active:scale-95 transition-all">Keep Identity</button>
                         </div>
                     </div>

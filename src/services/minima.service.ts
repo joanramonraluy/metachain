@@ -1474,6 +1474,8 @@ VALUES('', UPPER('${safeFrom}'), 'System', 'system', 'Maxima contact declined', 
 
         const messageTimestamp = stateId || Date.now();
 
+        // Do NOT assign sender_seq here — the seq will be assigned at approval time (MDS_PENDING)
+        // so that the charm sorts at its correct chronological position (when approved, not when submitted)
         // Save message locally with 'pending' state, but don't send via Maxima
         await this.insertMessage({
           roomname: recipientName, // Use recipient name for roomname
@@ -1485,6 +1487,7 @@ VALUES('', UPPER('${safeFrom}'), 'System', 'system', 'Maxima contact declined', 
           state: "pending",
           amount,
           date: messageTimestamp,
+          sender_seq: 0,
         });
 
         // Store transaction in TRANSACTIONS table if we have a txpowid OR pendinguid
@@ -1587,6 +1590,11 @@ VALUES('', UPPER('${safeFrom}'), 'System', 'system', 'Maxima contact declined', 
         `💸[WALLET] Raw response: `,
         JSON.stringify(response, null, 2),
       );
+
+      // Guard: if the node returned nothing (offline / MDS not responding), treat as failure
+      if (!response) {
+        throw new Error("No response from Minima node — node may be offline");
+      }
 
       // Extract txpowid from response (try multiple locations)
       let txpowid = null;

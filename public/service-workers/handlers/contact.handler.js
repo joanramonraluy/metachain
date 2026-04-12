@@ -80,10 +80,16 @@ function handleContactDeclined(pubkey) {
         notifyChatListUpdateFromContacts("contact_declined");
     });
 
-    var sysMsgSql = "INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) "
-        + "VALUES('', UPPER('" + safeFrom + "'), 'System', 'system', 'Chat request declined', '', 'received', 0, " + now + ")";
-    MDS.sql(sysMsgSql, function () {
-        notifyChatListUpdateFromContacts("contact_declined_message");
+    var updateReadSql = "UPDATE CHAT_MESSAGES SET state='read', read=1 WHERE UPPER(publickey)=UPPER('" + safeFrom + "') AND type='system'";
+    MDS.sql(updateReadSql, function () {
+        var sysMsgSql = "INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) "
+            + "VALUES('', UPPER('" + safeFrom + "'), 'System', 'system', 'Chat request declined', '', 'read', 0, " + now + ")";
+        MDS.sql(sysMsgSql, function () {
+            var statusSql = "MERGE INTO CHAT_STATUS (publickey, last_opened) KEY(publickey) VALUES(UPPER('" + safeFrom + "'), " + now + ")";
+            MDS.sql(statusSql, function() {
+                notifyChatListUpdateFromContacts("contact_declined_message");
+            });
+        });
     });
 }
 
@@ -99,10 +105,18 @@ function handleContactCancelled(pubkey) {
         notifyChatListUpdateFromContacts("contact_cancelled");
     });
 
-    var sysMsgSql = "INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) "
-        + "VALUES('', UPPER('" + safeFrom + "'), 'System', 'system', 'Chat request cancelled', '', 'received', 0, " + now + ")";
-    MDS.sql(sysMsgSql, function () {
-        notifyChatListUpdateFromContacts("contact_cancelled_message");
+    var updateReadSql = "UPDATE CHAT_MESSAGES SET state='read', read=1 WHERE UPPER(publickey)=UPPER('" + safeFrom + "') AND type='system'";
+    MDS.sql(updateReadSql, function () {
+        var sysMsgSql = "INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) "
+            + "VALUES('', UPPER('" + safeFrom + "'), 'System', 'system', 'Chat request cancelled', '', 'read', 0, " + now + ")";
+        MDS.sql(sysMsgSql, function () {
+            // Reset unread status for this chat item so the badge (bubble) disappears immediately
+            var statusSql = "MERGE INTO CHAT_STATUS (publickey, last_opened) KEY(publickey) VALUES(UPPER('" + safeFrom + "'), " + now + ")";
+            MDS.sql(statusSql, function() {
+                MDS.log("✅ [CONTACTS] Reset unread status for cancelled request");
+                notifyChatListUpdateFromContacts("contact_cancelled_message");
+            });
+        });
     });
 }
 
@@ -250,10 +264,16 @@ function handleMaximaContactDeclined(pubkey) {
         notifyChatListUpdateFromContacts("maxima_contact_declined");
     });
 
-    var sysMsgSql = "INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) "
-        + "VALUES('', UPPER('" + safeFrom + "'), 'System', 'system', 'Maxima contact declined', '', 'received', 0, " + now + ")";
-    MDS.sql(sysMsgSql, function () {
-        notifyChatListUpdateFromContacts("maxima_contact_declined_message");
+    var updateReadSql = "UPDATE CHAT_MESSAGES SET state='read', read=1 WHERE UPPER(publickey)=UPPER('" + safeFrom + "') AND type='system'";
+    MDS.sql(updateReadSql, function () {
+        var sysMsgSql = "INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) "
+            + "VALUES('', UPPER('" + safeFrom + "'), 'System', 'system', 'Maxima contact declined', '', 'read', 0, " + now + ")";
+        MDS.sql(sysMsgSql, function () {
+            var statusSql = "MERGE INTO CHAT_STATUS (publickey, last_opened) KEY(publickey) VALUES(UPPER('" + safeFrom + "'), " + now + ")";
+            MDS.sql(statusSql, function() {
+                notifyChatListUpdateFromContacts("maxima_contact_declined_message");
+            });
+        });
     });
 }
 
@@ -268,10 +288,18 @@ function handleMaximaContactCancelled(pubkey) {
         notifyChatListUpdateFromContacts("maxima_contact_cancelled");
     });
 
-    var sysMsgSql = "INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) "
-        + "VALUES('', UPPER('" + safeFrom + "'), 'System', 'system', 'Maxima contact cancelled', '', 'received', 0, " + now + ")";
-    MDS.sql(sysMsgSql, function () {
-        notifyChatListUpdateFromContacts("maxima_contact_cancelled_message");
+    var updateReadSql = "UPDATE CHAT_MESSAGES SET state='read', read=1 WHERE UPPER(publickey)=UPPER('" + safeFrom + "') AND type='system'";
+    MDS.sql(updateReadSql, function () {
+        var sysMsgSql = "INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) "
+            + "VALUES('', UPPER('" + safeFrom + "'), 'System', 'system', 'Maxima contact cancelled', '', 'read', 0, " + now + ")";
+        MDS.sql(sysMsgSql, function () {
+            // Reset unread status for this chat item so the badge (bubble) disappears immediately
+            var statusSql = "MERGE INTO CHAT_STATUS (publickey, last_opened) KEY(publickey) VALUES(UPPER('" + safeFrom + "'), " + now + ")";
+            MDS.sql(statusSql, function() {
+                MDS.log("✅ [MAXIMA CONTACT] Reset unread status for cancelled request");
+                notifyChatListUpdateFromContacts("maxima_contact_cancelled_message");
+            });
+        });
     });
 }
 
@@ -281,10 +309,32 @@ function handleMaximaContactRemoved(pubkey, maxjson) {
     var now = Date.now();
     var safeFrom = escapeSql(pubkey);
 
-    // Insert system message
-    var sysMsgSql = "INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) "
-        + "VALUES('', UPPER('" + safeFrom + "'), 'System', 'system', 'Contact removed', '', 'received', 0, " + now + ")";
-    MDS.sql(sysMsgSql);
+    var deleteMaximaSql = "DELETE FROM MAXIMA_CONTACT_REQUESTS WHERE UPPER(from_publickey)=UPPER('" + safeFrom + "') OR UPPER(to_publickey)=UPPER('" + safeFrom + "')";
+    MDS.sql(deleteMaximaSql, function () {
+        var deleteContactSql = "DELETE FROM CONTACT_REQUESTS WHERE UPPER(from_publickey)=UPPER('" + safeFrom + "') OR UPPER(to_publickey)=UPPER('" + safeFrom + "')";
+        MDS.sql(deleteContactSql, function() {
+            MDS.log("✅ [MAXIMA CONTACT] Local request tables cleared on removal");
+            notifyChatListUpdateFromContacts("maxima_contact_removed");
+        });
+    });
+
+    // Remove from maxcontacts just in case
+    MDS.cmd("maxcontacts action:remove publickey:" + pubkey, function(res) {
+        MDS.log("✅ [MAXIMA CONTACT] Attempted maxcontacts removal: " + res.status);
+    });
+
+    var updateReadSql = "UPDATE CHAT_MESSAGES SET state='read', read=1 WHERE UPPER(publickey)=UPPER('" + safeFrom + "') AND type='system'";
+    MDS.sql(updateReadSql, function () {
+        // Insert system message
+        var sysMsgSql = "INSERT INTO CHAT_MESSAGES(roomname, publickey, username, type, message, filedata, state, amount, date) "
+            + "VALUES('', UPPER('" + safeFrom + "'), 'System', 'system', 'Contact removed', '', 'read', 0, " + now + ")";
+        MDS.sql(sysMsgSql, function () {
+            var statusSql = "MERGE INTO CHAT_STATUS (publickey, last_opened) KEY(publickey) VALUES(UPPER('" + safeFrom + "'), " + now + ")";
+            MDS.sql(statusSql, function() {
+                notifyChatListUpdateFromContacts("maxima_contact_removed_message");
+            });
+        });
+    });
 }
 
 // ============================================================================
