@@ -443,7 +443,15 @@ export const getDiscoveredListings = async (): Promise<DiscoveredListing[]> => {
     });
   });
 
-  return results;
+  // Deduplicate by listing id — the same channel/group can arrive from
+  // multiple peers or from duplicate DISCOVERED_LISTINGS rows (case mismatch)
+  const seen = new Set<string>();
+  return results.filter((item) => {
+    const key = item.type + ":" + item.id;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 };
 
 // Update local profile (for beacon generation)

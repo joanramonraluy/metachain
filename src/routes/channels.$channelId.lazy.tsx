@@ -101,6 +101,21 @@ function ChannelPage() {
   const isLoadingMessages = useRef(false);
   const pendingReload = useRef(false);
 
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setShowMenu(false);
+      }
+    };
+    if (showMenu) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [showMenu]);
+
   const defaultAvatar =
     "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23cbd5e1'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E";
 
@@ -234,6 +249,12 @@ function ChannelPage() {
         return;
 
       const payload = e.detail;
+
+      // We were removed from this channel — navigate home
+      if (payload.type === "CHANNEL_REMOVED") {
+        navigate({ to: "/" });
+        return;
+      }
 
       // Handle message deletion
       if (payload.type === "CHANNEL_MESSAGE_DELETED") {
@@ -544,7 +565,13 @@ function ChannelPage() {
   return (
     <div className="flex-1 w-full flex flex-col bg-[#f8fafc] dark:bg-gray-950 min-h-0">
       {/* ELITE STICKY HEADER */}
-      <div className="sticky top-0 z-[70] w-full pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pt-[env(safe-area-inset-top)] backdrop-blur-xl bg-white/70 dark:bg-gray-900/60 border-b border-white/20 dark:border-white/5 shadow-2xl shadow-black/5 transition-all duration-500">
+      <div className="sticky top-0 z-[70] w-full pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pt-[env(safe-area-inset-top)] backdrop-blur-xl bg-white/70 dark:bg-gray-900/60 border-b border-primary-500/20 dark:border-primary-500/20 shadow-2xl shadow-black/5 transition-all duration-500">
+        {/* Top/Bottom Accent Lines */}
+        <div className="absolute top-0 left-0 w-full h-[4px] bg-gradient-to-r from-transparent via-primary-500/80 to-transparent z-[80]" />
+        <div className="absolute bottom-0 left-0 w-full h-[1.5px] bg-gradient-to-r from-transparent via-primary-500/50 to-transparent z-[80]" />
+        
+        {/* Subtle Background Tint */}
+        <div className="absolute inset-0 bg-gradient-to-b from-primary-500/20 to-transparent pointer-events-none" />
         <div className="max-w-screen-xl mx-auto px-6 h-28 flex items-center gap-6">
           {/* Elite Back Navigation */}
           <button
@@ -632,8 +659,8 @@ function ChannelPage() {
                 </div>
 
                 {[
-                  { label: "Channel Info", icon: Info, action: () => navigate({ to: "/channel-info/$channelId", params: { channelId } }), color: "text-blue-500", bg: "bg-blue-500/10" },
-                  { label: "Actions", icon: Settings, action: () => navigate({ to: "/channel-info/$channelId", params: { channelId }, search: { returnTo: `/channels/${channelId}`, tab: "settings" } }), color: "text-primary-500", bg: "bg-primary-500/10" },
+                  { label: "Registry Info", icon: Info, action: () => navigate({ to: "/channel-info/$channelId", params: { channelId } }), color: "text-blue-500", bg: "bg-blue-500/10" },
+                  { label: "Registry Settings", icon: Settings, action: () => navigate({ to: "/channel-info/$channelId", params: { channelId }, search: { returnTo: `/channels/${channelId}`, tab: "settings" } }), color: "text-primary-500", bg: "bg-primary-500/10" },
                   { label: isFavorite ? "Dismiss Star" : "Star Registry", icon: Star, action: handleToggleFavorite, color: "text-amber-500", bg: "bg-amber-500/10", fill: isFavorite },
                   { label: isArchived ? "Restore Vault" : "Archive Vault", icon: Archive, action: handleToggleArchive, color: "text-orange-500", bg: "bg-orange-500/10" },
                 ].map((item, idx) => (
@@ -882,7 +909,7 @@ function ChannelPage() {
               {/* Glassmorphic Backing */}
               <div className="absolute inset-0 bg-white/40 dark:bg-gray-900/40 backdrop-blur-3xl rounded-[2.5rem] border border-white/20 dark:border-white/5 shadow-2xl transition-all duration-500 group-focus-within:border-primary-500/50 group-focus-within:bg-white/60 dark:group-focus-within:bg-gray-900/60" />
 
-              <div className="relative flex items-center px-4 py-3 min-h-[72px]">
+              <div className="relative flex items-center px-4 py-2 min-h-[64px]">
                 {/* Emoji Trigger */}
                 <div ref={emojiPickerRef} className="relative">
                   <div className={`absolute bottom-full mb-6 left-0 z-50 transition-all duration-500 ${!showEmojiPicker ? "opacity-0 scale-95 pointer-events-none translate-y-4" : "opacity-100 scale-100 translate-y-0"}`}>
@@ -932,7 +959,7 @@ function ChannelPage() {
             <button
               onClick={handleSend}
               disabled={!input.trim() || sending}
-              className={`w-[72px] h-[72px] flex items-center justify-center rounded-[2rem] transition-all duration-500 shadow-2xl active:scale-90 flex-shrink-0 ${!input.trim() || sending ? "bg-gray-100 dark:bg-white/5 text-gray-300 dark:text-gray-600" : "bg-primary-500 text-white shadow-primary-500/30 hover:scale-105"}`}
+              className={`w-[64px] h-[64px] flex items-center justify-center rounded-[2rem] transition-all duration-500 shadow-2xl active:scale-90 flex-shrink-0 ${!input.trim() || sending ? "bg-gray-100 dark:bg-white/5 text-gray-300 dark:text-gray-600" : "bg-primary-500 text-white shadow-primary-500/30 hover:scale-105"}`}
             >
               <Zap size={28} strokeWidth={3} fill={input.trim() ? "currentColor" : "none"} />
             </button>

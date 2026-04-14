@@ -35,6 +35,7 @@ export const appContext = createContext<{
   updateUserProfile: (name: string, avatar: string) => void;
   refreshWriteMode: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  myAddress: string;
   showDebugPanel: boolean;
   setShowDebugPanel: (show: boolean) => void;
   sessionExpired: boolean;
@@ -47,6 +48,7 @@ export const appContext = createContext<{
   userAvatar: defaultAvatar,
   writeMode: false,
   myPublicKey: "",
+  myAddress: "",
   balance: [],
   updateUserProfile: () => {},
   refreshWriteMode: async () => {},
@@ -66,6 +68,7 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
   const [userAvatar, setUserAvatar] = useState(defaultAvatar);
   const [writeMode, setWriteMode] = useState(false);
   const [myPublicKey, setMyPublicKey] = useState("");
+  const [myAddress, setMyAddress] = useState("");
   const [showDebugPanel, setShowDebugPanel] = useState(false);
   const [balance, setBalance] = useState<TokenBalance[]>([]);
   const syncedRef = useRef(synced);
@@ -112,6 +115,7 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
 
         setUserName(name);
         setMyPublicKey(pubkey);
+        setMyAddress(info.address || info.contact || "");
         // Check if it's a valid data URL, and not a URL ending in /0x00 (no photo)
         if (icon.startsWith("data:image") && !icon.includes("/0x00")) {
           setUserAvatar(icon);
@@ -546,6 +550,7 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
     userAvatar,
     writeMode,
     myPublicKey,
+    myAddress,
     balance,
     updateUserProfile,
     refreshWriteMode,

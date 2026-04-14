@@ -9,8 +9,8 @@ interface GroupTabsProps {
 
 export function GroupTabs({ activeTab, onTabChange }: GroupTabsProps) {
     const tabs = [
-        { id: 'profile' as GroupTab, label: 'Profile', icon: User, color: 'primary' },
-        { id: 'settings' as GroupTab, label: 'Settings', icon: Settings, color: 'sky' },
+        { id: 'profile' as GroupTab, label: 'Registry Info', icon: User, color: 'primary' },
+        { id: 'settings' as GroupTab, label: 'Registry Settings', icon: Settings, color: 'sky' },
     ];
 
     return (

@@ -9,8 +9,8 @@ interface ChannelTabsProps {
 
 export function ChannelTabs({ activeTab, onTabChange }: ChannelTabsProps) {
     const tabs = [
-        { id: 'profile' as ChannelTab, label: 'Profile', icon: User, color: 'primary' },
-        { id: 'settings' as ChannelTab, label: 'Actions', icon: SlidersHorizontal, color: 'sky' },
+        { id: 'profile' as ChannelTab, label: 'Registry Info', icon: User, color: 'primary' },
+        { id: 'settings' as ChannelTab, label: 'Registry Settings', icon: SlidersHorizontal, color: 'sky' },
     ];
 
     return (

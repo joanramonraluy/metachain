@@ -57,8 +57,13 @@ function buildJoinLink(listingType, joinPayload) {
 
 function buildPublicListings(myPubkey, myAddress, callback) {
   var listings = [];
+  // JOIN with DISCOVERED_PEERS to resolve the real admin/creator address.
+  // If the local node IS the admin, myAddress is used (always current).
+  // If the local node is a subscriber, the admin's address comes from DISCOVERED_PEERS.
   var groupSql =
-    "SELECT group_id, name, description, created_date FROM GROUPS WHERE (is_public=TRUE OR is_public='1' OR is_public='true') AND (archived IS NULL OR archived=FALSE OR archived='0' OR archived='false')";
+    "SELECT g.group_id, g.name, g.description, g.created_date, g.creator_publickey, dp.address AS admin_address " +
+    "FROM GROUPS g LEFT JOIN DISCOVERED_PEERS dp ON UPPER(g.creator_publickey)=UPPER(dp.publickey) " +
+    "WHERE COALESCE(g.is_public, FALSE)=TRUE AND COALESCE(g.archived, FALSE)=FALSE";
   MDS.sql(groupSql, function (groupRes) {
     if (groupRes.status && groupRes.rows) {
       for (var i = 0; i < groupRes.rows.length; i++) {
@@ -68,11 +73,15 @@ function buildPublicListings(myPubkey, myAddress, callback) {
         var description = row.DESCRIPTION || row.description || "";
         var createdDate = row.CREATED_DATE || row.created_date || 0;
         if (!groupId || !name) continue;
+        var gAdminPk = row.CREATOR_PUBLICKEY || row.creator_publickey || myPubkey;
+        var gAdminAddr = (gAdminPk.toUpperCase() === myPubkey.toUpperCase())
+          ? myAddress
+          : (row.ADMIN_ADDRESS || row.admin_address || "");
         var joinPayload = {
           id: groupId,
           name: name,
-          admin_publickey: myPubkey,
-          admin_address: myAddress,
+          admin_publickey: gAdminPk,
+          admin_address: gAdminAddr,
         };
         listings.push({
           type: "group",
@@ -87,7 +96,9 @@ function buildPublicListings(myPubkey, myAddress, callback) {
     }
 
     var channelSql =
-      "SELECT channel_id, name, description, created_date FROM CHANNELS WHERE (is_public=TRUE OR is_public='1' OR is_public='true') AND (archived IS NULL OR archived=FALSE OR archived='0' OR archived='false')";
+      "SELECT c.channel_id, c.name, c.description, c.created_date, c.admin_publickey, dp.address AS admin_address " +
+      "FROM CHANNELS c LEFT JOIN DISCOVERED_PEERS dp ON UPPER(c.admin_publickey)=UPPER(dp.publickey) " +
+      "WHERE COALESCE(c.is_public, FALSE)=TRUE AND COALESCE(c.archived, FALSE)=FALSE";
     MDS.sql(channelSql, function (channelRes) {
       if (channelRes.status && channelRes.rows) {
         for (var j = 0; j < channelRes.rows.length; j++) {
@@ -97,11 +108,15 @@ function buildPublicListings(myPubkey, myAddress, callback) {
           var cDescription = rowC.DESCRIPTION || rowC.description || "";
           var cCreatedDate = rowC.CREATED_DATE || rowC.created_date || 0;
           if (!channelId || !cName) continue;
+          var cAdminPk = rowC.ADMIN_PUBLICKEY || rowC.admin_publickey || myPubkey;
+          var cAdminAddr = (cAdminPk.toUpperCase() === myPubkey.toUpperCase())
+            ? myAddress
+            : (rowC.ADMIN_ADDRESS || rowC.admin_address || "");
           var joinPayloadC = {
             id: channelId,
             name: cName,
-            admin_publickey: myPubkey,
-            admin_address: myAddress,
+            admin_publickey: cAdminPk,
+            admin_address: cAdminAddr,
           };
           listings.push({
             type: "channel",
@@ -153,7 +168,7 @@ function saveBeaconListings(beacon, now) {
   var incomingTimestamp = beacon.timestamp || 0;
   if (incomingTimestamp <= 0) return;
 
-  var pk = beacon.pubkey;
+  var pk = beacon.pubkey.toUpperCase();
   var safePk = escapeSql(pk);
   var cleanedListings = normalizeListings(beacon.listings);
   var listingsJson = escapeSql(JSON.stringify(cleanedListings));

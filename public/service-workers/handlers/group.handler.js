@@ -1536,6 +1536,7 @@ function handleGroupRoleUpdate(pubkey, maxjson) {
       pubkey.substring(0, 10),
   );
   var safeGroupId = escapeSql(maxjson.groupId || "");
+  var safeSenderPubkey = escapeSql(pubkey || "");
   var safeTargetPubkey = escapeSql(maxjson.targetPubkey || "");
   var safeNewRole = escapeSql(maxjson.newRole || "member"); // 'admin' or 'member'
 
@@ -1543,33 +1544,60 @@ function handleGroupRoleUpdate(pubkey, maxjson) {
   var checkSenderSql =
     "SELECT role FROM GROUP_MEMBERS WHERE group_id='" +
     safeGroupId +
-    "' AND publickey='" +
-    pubkey +
-    "'";
+    "' AND UPPER(publickey)=UPPER('" +
+    safeSenderPubkey +
+    "')";
 
   MDS.sql(checkSenderSql, function (resSender) {
-    if (!resSender.status || !resSender.rows || resSender.rows.length === 0) {
-      MDS.log("❌ [GROUP-ROLE] Unauthorized role update. Sender not in group.");
-      return;
-    }
+    var senderRole =
+      resSender &&
+      resSender.status &&
+      resSender.rows &&
+      resSender.rows.length > 0
+        ? resSender.rows[0].ROLE || resSender.rows[0].role
+        : null;
+    var senderIsMemberAdmin =
+      senderRole === "creator" || senderRole === "admin";
 
-    var senderRole = resSender.rows[0].ROLE || resSender.rows[0].role;
-    if (senderRole !== "creator" && senderRole !== "admin") {
-      MDS.log(
-        "❌ [GROUP-ROLE] Unauthorized role update. Sender role is: " +
-          senderRole,
-      );
-      return;
-    }
-
-    // 2. We can't change the creator's role explicitly (or demote them)
-    var checkTargetSql =
-      "SELECT role FROM GROUP_MEMBERS WHERE group_id='" +
+    var checkCreatorSql =
+      "SELECT creator_publickey FROM GROUPS WHERE group_id='" +
       safeGroupId +
-      "' AND publickey='" +
-      safeTargetPubkey +
-      "'";
-    MDS.sql(checkTargetSql, function (resTarget) {
+      "' LIMIT 1";
+    MDS.sql(checkCreatorSql, function (creatorRes) {
+      var creatorPk =
+        creatorRes &&
+        creatorRes.status &&
+        creatorRes.rows &&
+        creatorRes.rows.length > 0
+          ? creatorRes.rows[0].CREATOR_PUBLICKEY ||
+            creatorRes.rows[0].creator_publickey
+          : "";
+      var senderIsGroupCreator =
+        !!creatorPk &&
+        creatorPk.toUpperCase() === safeSenderPubkey.toUpperCase();
+
+      if (!senderIsMemberAdmin && !senderIsGroupCreator) {
+        if (!senderRole) {
+          MDS.log(
+            "❌ [GROUP-ROLE] Unauthorized role update. Sender not in group and not creator."
+          );
+        } else {
+          MDS.log(
+            "❌ [GROUP-ROLE] Unauthorized role update. Sender role is: " +
+              senderRole
+          );
+        }
+        return;
+      }
+
+      // 2. We can't change the creator's role explicitly (or demote them)
+      var checkTargetSql =
+        "SELECT role FROM GROUP_MEMBERS WHERE group_id='" +
+        safeGroupId +
+        "' AND UPPER(publickey)=UPPER('" +
+        safeTargetPubkey +
+        "')";
+      MDS.sql(checkTargetSql, function (resTarget) {
       if (!resTarget.status || !resTarget.rows || resTarget.rows.length === 0) {
         MDS.log("⚠️ [GROUP-ROLE] Target user not found in group.");
         return;
@@ -1587,16 +1615,16 @@ function handleGroupRoleUpdate(pubkey, maxjson) {
         safeNewRole +
         "' WHERE group_id='" +
         safeGroupId +
-        "' AND publickey='" +
+        "' AND UPPER(publickey)=UPPER('" +
         safeTargetPubkey +
-        "'";
+        "')";
       MDS.sql(updateSql, function (updateRes) {
         if (updateRes.status) {
           MDS.log(
             "✅ [DB] Role for " +
               safeTargetPubkey.substring(0, 10) +
               " updated to " +
-              safeNewRole,
+              safeNewRole
           );
 
           // Notify the frontend via MDS.comms.solo
@@ -1642,7 +1670,7 @@ function handleGroupRoleUpdate(pubkey, maxjson) {
               };
               MDS.log(
                 "📤 [GROUP-ROLE] Sending settings snapshot to promoted admin " +
-                  safeTargetPubkey.substring(0, 10),
+                  safeTargetPubkey.substring(0, 10)
               );
               sendMaximaGroupMsg(safeTargetPubkey, snapshot);
             });
@@ -1650,6 +1678,7 @@ function handleGroupRoleUpdate(pubkey, maxjson) {
         } else {
           MDS.log("❌ [DB] Failed to update role: " + updateRes.error);
         }
+      });
       });
     });
   });
@@ -1752,17 +1781,89 @@ function executeJoinRequestAuth(
           "📝 [GROUP-JOIN] Validating admin role for " +
             localPk.substring(0, 10) +
             " in " +
-            safeGroupId,
+            safeGroupId
         );
         var myRole = resSender.rows[0].ROLE || resSender.rows[0].role;
         MDS.log("📝 [GROUP-JOIN] My role in " + safeGroupId + " is " + myRole);
         if (myRole !== "creator" && myRole !== "admin") {
+          // Fast reconciliation path:
+          // If this is a propagated join request sent by the creator, local role can be stale.
+          // Promote local membership to admin and re-run this handler once.
+          if (maxjson.messageType === "group_join_request_propagated") {
+            var creatorSql =
+              "SELECT creator_publickey FROM GROUPS WHERE group_id='" +
+              safeGroupId +
+              "' LIMIT 1";
+            MDS.sql(creatorSql, function (creatorRes) {
+              var creatorPk =
+                creatorRes &&
+                creatorRes.status &&
+                creatorRes.rows &&
+                creatorRes.rows.length > 0
+                  ? creatorRes.rows[0].CREATOR_PUBLICKEY ||
+                    creatorRes.rows[0].creator_publickey
+                  : "";
+              if (
+                creatorPk &&
+                creatorPk.toUpperCase() === escapeSql(pubkey).toUpperCase()
+              ) {
+                MDS.log(
+                  "♻️ [GROUP-JOIN] Detected stale local role. Reconciling local role to admin from creator propagation."
+                );
+                var safeLocalPk = escapeSql(localPk);
+                var promoteSql =
+                  "UPDATE GROUP_MEMBERS SET role='admin' WHERE group_id='" +
+                  safeGroupId +
+                  "' AND UPPER(publickey)=UPPER('" +
+                  safeLocalPk +
+                  "')";
+                MDS.sql(promoteSql, function (promRes) {
+                  if (promRes.status && promRes.count === 0) {
+                    var insertSql =
+                      "INSERT INTO GROUP_MEMBERS (group_id, publickey, username, joined_date, role) VALUES ('" +
+                      safeGroupId +
+                      "', UPPER('" +
+                      safeLocalPk +
+                      "'), 'Unknown', " +
+                      Date.now() +
+                      ", 'admin')";
+                    MDS.sql(insertSql, function () {
+                      executeJoinRequestAuth(
+                        pubkey,
+                        maxjson,
+                        safeGroupId,
+                        safeTimestamp,
+                        localPk
+                      );
+                    });
+                    return;
+                  }
+                  executeJoinRequestAuth(
+                    pubkey,
+                    maxjson,
+                    safeGroupId,
+                    safeTimestamp,
+                    localPk
+                  );
+                });
+                return;
+              }
+              MDS.log(
+                "⚠️ [GROUP-JOIN] Ignored. We are not an admin/creator of group " +
+                  safeGroupId +
+                  " (Role: " +
+                  myRole +
+                  ")"
+              );
+            });
+            return;
+          }
           MDS.log(
             "⚠️ [GROUP-JOIN] Ignored. We are not an admin/creator of group " +
               safeGroupId +
               " (Role: " +
               myRole +
-              ")",
+              ")"
           );
           return;
         }
@@ -1802,12 +1903,12 @@ function executeJoinRequestAuth(
                 " | Type: " +
                 typeof (row.AUTO_APPROVE !== undefined
                   ? row.AUTO_APPROVE
-                  : row.auto_approve),
+                  : row.auto_approve)
             );
           }
           MDS.log(
             "📝 [GROUP-JOIN] final autoApproveEnabled evaluated to: " +
-              autoApproveEnabled,
+              autoApproveEnabled
           );
 
           // =========================================================

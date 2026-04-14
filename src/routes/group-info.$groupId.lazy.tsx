@@ -26,6 +26,7 @@ import {
 import { groupService } from "../services/group.service";
 import { chatService } from "../services/chat.service";
 import { appContext } from "../AppContext";
+import { shortenAddress } from "../utils/hex";
 import { MDS } from "@minima-global/mds";
 import { GroupTabs, GroupTab } from "../components/group/GroupTabs";
 import {
@@ -46,10 +47,7 @@ interface GroupMember {
   role?: "creator" | "admin" | "member";
 }
 
-const shortenKey = (key: string) => {
-  if (!key) return "";
-  return `${key.substring(0, 8)}...${key.substring(key.length - 8)}`;
-};
+
 
 function GroupInfoPage() {
   const { groupId } = Route.useParams();
@@ -1014,7 +1012,7 @@ function GroupInfoPage() {
                           </span>
                         </div>
                         <p className="text-[9px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest font-mono truncate">
-                          {shortenKey(member.publickey)}
+                          {shortenAddress(member.publickey)}
                         </p>
                       </div>
 
@@ -1066,6 +1064,7 @@ function GroupInfoPage() {
             </div>
 
             {/* ACTION LEDGER: BANNED & REQUESTS */}
+            {(isCreator || myRole === "admin") && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* BANNED MEMBERS */}
               <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[3rem] p-10 border border-red-500/20 dark:border-red-500/10 shadow-xl shadow-red-500/5">
@@ -1094,7 +1093,7 @@ function GroupInfoPage() {
                       <div key={banned.publickey} className="flex items-center p-4 bg-gray-50/50 dark:bg-white/5 rounded-[2rem] border border-white/5">
                         <div className="flex-1 min-w-0">
                           <p className="text-xs font-black text-gray-900 dark:text-white uppercase tracking-tight truncate mb-0.5">
-                            {banned.username || shortenKey(banned.publickey)}
+                            {banned.username || shortenAddress(banned.publickey)}
                           </p>
                           <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest">
                             Blacklisted {new Date(banned.banned_at).toLocaleDateString()}
@@ -1136,25 +1135,27 @@ function GroupInfoPage() {
                     </div>
                   ) : (
                     joinRequests.map((req) => (
-                      <div key={req.id} className="flex items-center p-4 bg-gray-50/50 dark:bg-white/5 rounded-[2rem] border border-white/5">
-                        <div className="flex-1 min-w-0">
+                      <div key={req.id} className="flex items-center p-4 bg-gray-50/50 dark:bg-white/5 rounded-[2rem] border border-white/5 group/row">
+                        <div className="flex-1 min-w-0 pr-4">
                           <p className="text-xs font-black text-gray-900 dark:text-white uppercase tracking-tight truncate mb-0.5">
-                            {req.username || shortenKey(req.publickey)}
+                            {req.username || shortenAddress(req.publickey)}
                           </p>
                           <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest font-mono">
-                            {shortenKey(req.publickey)}
+                            {shortenAddress(req.publickey)}
                           </p>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-shrink-0">
                           <button
                             onClick={() => handleResolveJoinRequest(req, "approved")}
-                            className="w-10 h-10 bg-green-500 text-white rounded-xl flex items-center justify-center hover:bg-green-600 transition-all shadow-lg shadow-green-500/20"
+                            className="w-10 h-10 bg-emerald-500/10 text-emerald-500 rounded-2xl flex items-center justify-center hover:bg-emerald-500 hover:text-white transition-all shadow-lg shadow-emerald-500/20"
+                            title="Accept Request"
                           >
                             <Check size={18} strokeWidth={3} />
                           </button>
                           <button
                             onClick={() => handleResolveJoinRequest(req, "denied")}
-                            className="w-10 h-10 bg-red-500 text-white rounded-xl flex items-center justify-center hover:bg-red-600 transition-all shadow-lg shadow-red-500/20"
+                            className="w-10 h-10 bg-rose-500/10 text-rose-500 rounded-2xl flex items-center justify-center hover:bg-rose-500 hover:text-white transition-all shadow-lg shadow-rose-500/20"
+                            title="Decline Request"
                           >
                             <X size={18} strokeWidth={3} />
                           </button>
@@ -1165,6 +1166,7 @@ function GroupInfoPage() {
                 </div>
               </div>
             </div>
+            )}
 
             {/* ACCESS PROTOCOLS: INVITE & PERMISSIONS */}
             {(isCreator || myRole === "admin") && (
@@ -1391,7 +1393,7 @@ function GroupInfoPage() {
                             <span className="text-[8px] font-black text-primary-500 uppercase tracking-widest">{contact.type}</span>
                             <span className="w-1 h-1 bg-gray-300 dark:bg-gray-700 rounded-full" />
                             <p className="text-[8px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest font-mono truncate">
-                              {shortenKey(contact.publickey)}
+                              {shortenAddress(contact.publickey)}
                             </p>
                           </div>
                         </div>

@@ -99,6 +99,7 @@ export interface ChannelMaximaMessage {
   // channel_info_updated
   newName?: string;
   newDescription?: string;
+  isPublic?: boolean;
 
   // channel_join_request
   requesterName?: string;
@@ -455,6 +456,7 @@ class ChannelService {
     }
 
     // Build invite payload
+    const rawPublic = safeChannel.IS_PUBLIC ?? safeChannel.is_public;
     const payload: ChannelMaximaMessage = {
       messageType: "channel_invite",
       channelId,
@@ -468,12 +470,14 @@ class ChannelService {
       avatar: safeChannel.AVATAR || safeChannel.avatar || "",
       inviteePublickey: subscriberPublicKey,
       inviteeUsername: subscriberUsername,
+      isPublic: rawPublic === true || rawPublic === 1 || String(rawPublic) === "1",
       timestamp: now,
     };
 
     await this.sendMaximaMessage(subscriberPublicKey, payload);
 
-    // Notify other subscribers
+    // Notify existing subscribers about the new one,
+    // and send all existing subscribers to the new invitee so they see the full list.
     const subs = await this.getChannelSubscribers(channelId);
     const addedPayload: ChannelMaximaMessage = {
       messageType: "channel_subscriber_added",
@@ -487,12 +491,26 @@ class ChannelService {
     };
     for (const sub of subs) {
       const pk = (sub as any).PUBLICKEY || sub.publickey;
-      if (
-        pk &&
-        pk.toUpperCase() !== myPublicKey.toUpperCase() &&
-        pk.toUpperCase() !== subscriberPublicKey.toUpperCase()
-      ) {
+      const name = (sub as any).USERNAME || (sub as any).username || "Unknown";
+      if (!pk) continue;
+      const isAdmin = pk.toUpperCase() === myPublicKey.toUpperCase();
+      const isNewSub = pk.toUpperCase() === subscriberPublicKey.toUpperCase();
+
+      if (!isAdmin && !isNewSub) {
+        // Tell this existing subscriber about the new person
         await this.sendMaximaMessage(pk, addedPayload).catch(() => {});
+        // Tell the new subscriber about this existing person
+        const existingSubPayload: ChannelMaximaMessage = {
+          messageType: "channel_subscriber_added",
+          channelId,
+          channelName: safeChannel.NAME || safeChannel.name,
+          adminPublickey: myPublicKey,
+          adminUsername: myUsername,
+          subscriberPublickey: pk,
+          subscriberUsername: name,
+          timestamp: now,
+        };
+        await this.sendMaximaMessage(subscriberPublicKey, existingSubPayload).catch(() => {});
       }
     }
 
@@ -508,6 +526,13 @@ class ChannelService {
     const channel = await this.getChannelInfo(channelId);
     if (!channel) throw new Error("Channel not found");
     const safeChannel = channel as any;
+
+    // Guard: the creator cannot be removed by anyone
+    const subCheck = await this.runSQL(
+      `SELECT role FROM CHANNEL_SUBSCRIBERS WHERE UPPER(channel_id)=UPPER('${channelId}') AND UPPER(publickey)=UPPER('${subscriberPublicKey.replace(/'/g, "''")}')`,
+    );
+    const subRole = ((subCheck?.rows?.[0] as any)?.ROLE || (subCheck?.rows?.[0] as any)?.role || "").toLowerCase();
+    if (subRole === "creator") throw new Error("Cannot remove the channel creator");
 
     await this.runSQL(
       `DELETE FROM CHANNEL_SUBSCRIBERS WHERE UPPER(channel_id)=UPPER('${channelId}') AND UPPER(publickey)=UPPER('${subscriberPublicKey.replace(/'/g, "''")}')`,
@@ -931,11 +956,33 @@ class ChannelService {
   async updateChannelPublic(
     channelId: string,
     isPublic: boolean,
+    myPublicKey: string,
   ): Promise<void> {
     try {
       await this.runSQL(
         `UPDATE CHANNELS SET is_public = ${isPublic ? 1 : 0} WHERE UPPER(channel_id) = UPPER('${channelId}')`,
       );
+      console.log(
+        `✅ [CHANNEL] Updated channel ${channelId} is_public to ${isPublic}.`,
+      );
+
+      // Broadcast change to all subscribers so their local DB stays in sync
+      const payload: ChannelMaximaMessage = {
+        messageType: "channel_info_updated",
+        channelId,
+        channelName: "",
+        adminPublickey: myPublicKey,
+        adminUsername: "",
+        isPublic,
+        timestamp: Date.now(),
+      };
+      const subs = await this.getChannelSubscribers(channelId);
+      for (const sub of subs) {
+        const pk = (sub as any).PUBLICKEY || sub.publickey;
+        if (!pk || pk.toUpperCase() === myPublicKey.toUpperCase()) continue;
+        await this.sendMaximaMessage(pk, payload).catch(() => {});
+      }
+
       this.notifyChannelUpdate(channelId, { is_public: isPublic });
     } catch (err) {
       console.error("❌ [CHANNEL] Failed to update public listing:", err);

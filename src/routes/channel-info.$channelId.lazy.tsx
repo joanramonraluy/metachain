@@ -4,6 +4,7 @@ import { useNavigate, createLazyFileRoute } from "@tanstack/react-router";
 import { appContext } from "../AppContext";
 import { channelService, ChannelSubscriber } from "../services/channel.service";
 import { chatService } from "../services/chat.service";
+import { shortenAddress } from "../utils/hex";
 import {
   ArrowLeft,
   UserPlus,
@@ -42,10 +43,7 @@ interface Person {
   extradata?: { name?: string; icon?: string };
 }
 
-const shortenKey = (key: string) => {
-  if (!key) return "";
-  return `${key.substring(0, 8)}...${key.substring(key.length - 8)}`;
-};
+
 
 function ChannelInfoPage() {
   const { channelId } = Route.useParams();
@@ -202,7 +200,12 @@ function ChannelInfoPage() {
   useEffect(() => {
     loadData();
 
-    const handleUpdate = () => {
+    const handleUpdate = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.type === "CHANNEL_REMOVED") {
+        navigate({ to: "/" });
+        return;
+      }
       console.log("📢 [CHANNEL-INFO] refreshing data...");
       loadData();
     };
@@ -348,7 +351,7 @@ function ChannelInfoPage() {
           return;
         }
       }
-      await channelService.updateChannelPublic(channelId, newValue);
+      await channelService.updateChannelPublic(channelId, newValue, myPublicKey || "");
       setIsPublic(newValue);
       setPublicError("");
     } catch (err) {
@@ -743,33 +746,37 @@ function ChannelInfoPage() {
 
                           <div className="ml-5 flex-1 min-w-0 text-left">
                             <p className="text-sm font-black text-gray-900 dark:text-gray-100 uppercase tracking-tight truncate mb-0.5 flex items-center gap-2">
-                              {isMe ? "You (Owner)" : name}
+                              {isMe ? "You" : name}
                               {pk && creatorPublicKey && pk.toLowerCase() === creatorPublicKey.toLowerCase() ? (
                                 <span className="text-[8px] font-black bg-amber-500/10 text-amber-500 px-2 py-0.5 rounded-md uppercase tracking-wider">Founder</span>
                               ) : role === "admin" ? (
-                                <span className="text-[8px] font-black bg-blue-500/10 text-blue-500 px-2 py-0.5 rounded-md uppercase tracking-wider">Staff</span>
+                                <span className="text-[8px] font-black bg-blue-500/10 text-blue-500 px-2 py-0.5 rounded-md uppercase tracking-wider">Administrator</span>
                               ) : null}
                             </p>
                             <p className="text-[8px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest font-mono truncate">
-                              {shortenKey(pk)}
+                              {shortenAddress(pk)}
                             </p>
                           </div>
 
-                          {isAdmin && !isMe && (
+                          {isAdmin && !isMe && !(pk && creatorPublicKey && pk.toLowerCase() === creatorPublicKey.toLowerCase()) && (
                             <div className="flex items-center gap-2 ml-4">
                               {role === "subscriber" ? (
                                 <button
                                   onClick={() => handleUpdateRole(pk, "admin")}
-                                  className="w-10 h-10 bg-sky-500/10 text-sky-500 rounded-xl flex items-center justify-center hover:bg-sky-500 hover:text-white transition-all shadow-lg shadow-sky-500/20"
+                                  className="h-10 px-4 bg-sky-500/10 text-sky-500 rounded-xl flex items-center justify-center gap-2 hover:bg-sky-500 hover:text-white transition-all shadow-lg shadow-sky-500/20 group/promote"
+                                  title="Promote to Administrator"
                                 >
                                   <ShieldCheck size={18} strokeWidth={3} />
+                                  <span className="text-[10px] font-black uppercase tracking-widest hidden md:inline">Promote</span>
                                 </button>
                               ) : (
                                 <button
                                   onClick={() => handleUpdateRole(pk, "subscriber")}
-                                  className="w-10 h-10 bg-amber-500/10 text-amber-500 rounded-xl flex items-center justify-center hover:bg-amber-500 hover:text-white transition-all shadow-lg shadow-amber-500/20"
+                                  className="h-10 px-4 bg-amber-500/10 text-amber-500 rounded-xl flex items-center justify-center gap-2 hover:bg-amber-500 hover:text-white transition-all shadow-lg shadow-amber-500/20 group/demote"
+                                  title="Demote to Subscriber"
                                 >
                                   <ShieldAlert size={18} strokeWidth={3} />
+                                  <span className="text-[10px] font-black uppercase tracking-widest hidden md:inline">Demote</span>
                                 </button>
                               )}
                               <button
@@ -998,13 +1005,13 @@ function ChannelInfoPage() {
 
                       <div className="ml-5 flex-1 min-w-0 text-left">
                         <p className="text-sm font-black text-gray-900 dark:text-gray-100 uppercase tracking-tight truncate mb-0.5">
-                          {person.extradata?.name || person.currentaddress || shortenKey(person.publickey)}
+                          {person.extradata?.name || person.currentaddress || shortenAddress(person.publickey)}
                         </p>
                         <div className="flex items-center gap-2">
                           <span className="text-[8px] font-black text-primary-500 uppercase tracking-widest">{person.type}</span>
                           <span className="w-1 h-1 bg-gray-300 dark:bg-gray-700 rounded-full" />
                           <p className="text-[8px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest font-mono truncate">
-                            {shortenKey(person.publickey)}
+                            {shortenAddress(person.publickey)}
                           </p>
                         </div>
                       </div>

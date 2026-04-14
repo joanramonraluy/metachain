@@ -130,7 +130,7 @@ export default function ChatsAndGroups() {
         });
         return map;
       }
-    } catch (e) {}
+    } catch (e) { }
     return new Map();
   });
 
@@ -193,7 +193,7 @@ export default function ChatsAndGroups() {
     if (e.nativeEvent) {
       e.nativeEvent.stopImmediatePropagation();
     }
-    
+
     setTimeout(() => {
       navigate({ to: `/group-info/${groupId}` });
     }, 10);
@@ -205,7 +205,7 @@ export default function ChatsAndGroups() {
     if (e.nativeEvent) {
       e.nativeEvent.stopImmediatePropagation();
     }
-    
+
     setTimeout(() => {
       navigate({ to: `/channel-info/${channelId}` });
     }, 10);
@@ -321,7 +321,7 @@ export default function ChatsAndGroups() {
       if (cached) {
         try {
           setGroups(JSON.parse(cached));
-        } catch (e) {}
+        } catch (e) { }
       }
     }
   };
@@ -366,7 +366,7 @@ export default function ChatsAndGroups() {
       if (cached) {
         try {
           setChannels(JSON.parse(cached));
-        } catch (e) {}
+        } catch (e) { }
       }
     }
   };
@@ -601,52 +601,52 @@ export default function ChatsAndGroups() {
   const allTimelineItems =
     activeTab === "all" || activeTab === "archived" || activeTab === "favorites"
       ? [
-          ...displayedChats.map((chat) => ({
-            kind: "chat" as const,
-            sortDate: Math.max(
-              Number(chat.lastReceivedDate || 0),
-              Number(chat.lastMessageDate || 0),
-            ),
-            chat,
-          })),
-          ...displayedGroups.map((group) => ({
-            kind: "group" as const,
-            sortDate: Number(group.lastMessageDate || group.created_date || 0),
-            group,
-          })),
-          ...displayedChannels.map((channel) => ({
-            kind: "channel" as const,
-            sortDate: Number(
-              channel.lastMessageDate || channel.created_date || 0,
-            ),
-            channel,
-          })),
-        ].sort((a, b) => {
-          const aItem =
-            a.kind === "group"
-              ? a.group
-              : a.kind === "channel"
-                ? a.channel
-                : a.chat;
-          const bItem =
-            b.kind === "group"
-              ? b.group
-              : b.kind === "channel"
-                ? b.channel
-                : b.chat;
+        ...displayedChats.map((chat) => ({
+          kind: "chat" as const,
+          sortDate: Math.max(
+            Number(chat.lastReceivedDate || 0),
+            Number(chat.lastMessageDate || 0),
+          ),
+          chat,
+        })),
+        ...displayedGroups.map((group) => ({
+          kind: "group" as const,
+          sortDate: Number(group.lastMessageDate || group.created_date || 0),
+          group,
+        })),
+        ...displayedChannels.map((channel) => ({
+          kind: "channel" as const,
+          sortDate: Number(
+            channel.lastMessageDate || channel.created_date || 0,
+          ),
+          channel,
+        })),
+      ].sort((a, b) => {
+        const aItem =
+          a.kind === "group"
+            ? a.group
+            : a.kind === "channel"
+              ? a.channel
+              : a.chat;
+        const bItem =
+          b.kind === "group"
+            ? b.group
+            : b.kind === "channel"
+              ? b.channel
+              : b.chat;
 
-          if (activeTab === "archived") {
-            return (
-              Number(bItem.archived_date || 0) -
-              Number(aItem.archived_date || 0)
-            );
-          }
+        if (activeTab === "archived") {
+          return (
+            Number(bItem.archived_date || 0) -
+            Number(aItem.archived_date || 0)
+          );
+        }
 
-          if (aItem.favorite && !bItem.favorite) return -1;
-          if (!aItem.favorite && bItem.favorite) return 1;
+        if (aItem.favorite && !bItem.favorite) return -1;
+        if (!aItem.favorite && bItem.favorite) return 1;
 
-          return b.sortDate - a.sortDate;
-        })
+        return b.sortDate - a.sortDate;
+      })
       : [];
 
   const defaultAvatar =
@@ -797,7 +797,7 @@ export default function ChatsAndGroups() {
               channels: { icon: Radio, label: "Channels", count: channelsCount, color: "sky" },
               archived: { icon: Archive, label: "Archived", count: archivedCount, color: "rose" },
             }[tab];
-            
+
             const Icon = config.icon;
             const colors = {
               indigo: "text-indigo-500 bg-indigo-500 shadow-indigo-500/50",
@@ -818,9 +818,8 @@ export default function ChatsAndGroups() {
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`relative px-3 py-4 sm:py-5 flex items-center gap-2 transition-all duration-300 group flex-shrink-0 ${
-                  isActive ? colorClass : "text-gray-400 hover:text-gray-900 dark:hover:text-white"
-                }`}
+                className={`relative px-3 py-4 sm:py-5 flex items-center gap-2 transition-all duration-300 group flex-shrink-0 ${isActive ? colorClass : "text-gray-400 hover:text-gray-900 dark:hover:text-white"
+                  }`}
               >
                 <div className={`transition-all duration-500 ${isActive ? "scale-110" : "group-hover:scale-110"}`}>
                   <Icon size={16} strokeWidth={isActive ? 3 : 2.5} />
@@ -841,8 +840,8 @@ export default function ChatsAndGroups() {
       </div>
       <div className="flex-1 overflow-y-auto p-4 scrollbar-hide no-scrollbar pb-24">
         {displayedChats.length === 0 &&
-        displayedGroups.length === 0 &&
-        displayedChannels.length === 0 ? (
+          displayedGroups.length === 0 &&
+          displayedChannels.length === 0 ? (
           <EmptyState
             icon={
               activeTab === "groups"
@@ -893,35 +892,35 @@ export default function ChatsAndGroups() {
             action={
               activeTab === "groups"
                 ? {
-                    label: "Create Group",
-                    onClick: () => navigate({ to: "/create-group" }),
-                  }
+                  label: "Create Group",
+                  onClick: () => navigate({ to: "/create-group" }),
+                }
                 : activeTab === "requests"
                   ? {
-                      label: "Go to Community",
-                      onClick: () => navigate({ to: "/discovery" }),
-                    }
+                    label: "Go to Community",
+                    onClick: () => navigate({ to: "/discovery" }),
+                  }
                   : activeTab === "individuals"
                     ? {
-                        label: "Find Contacts",
-                        onClick: () => navigate({ to: "/contacts" }),
-                      }
+                      label: "Find Contacts",
+                      onClick: () => navigate({ to: "/contacts" }),
+                    }
                     : activeTab === "archived" || activeTab === "favorites"
                       ? {
-                          label: "Start Messaging",
-                          onClick: () => navigate({ to: "/contacts" }),
-                        }
+                        label: "Start Messaging",
+                        onClick: () => navigate({ to: "/contacts" }),
+                      }
                       : {
-                          label: "Start Messaging",
-                          onClick: () => setFabMenuOpen(true),
-                        }
+                        label: "Start Messaging",
+                        onClick: () => setFabMenuOpen(true),
+                      }
             }
             secondaryAction={
               activeTab !== "requests" && activeTab !== "groups"
                 ? {
-                    label: "Browse Community",
-                    onClick: () => navigate({ to: "/discovery" }),
-                  }
+                  label: "Browse Community",
+                  onClick: () => navigate({ to: "/discovery" }),
+                }
                 : undefined
             }
             className="h-full"
@@ -930,453 +929,66 @@ export default function ChatsAndGroups() {
           <div className="space-y-3">
             {activeTab === "all"
               ? allTimelineItems.map((item) => {
-                  if (item.kind === "group") {
-                    const group = item.group;
-                    return (
-                      <div
-                        key={`group-${group.group_id}`}
-                        onClick={() => {
-                          navigate({
-                            to: "/groups/$groupId",
-                            params: { groupId: group.group_id },
-                          });
-                        }}
-                        className={`block rounded-[2.5rem] p-6 cursor-pointer transition-all duration-300 relative z-10 group overflow-hidden ${
-                          (group.unreadCount || 0) > 0
-                            ? "bg-primary-500/15 dark:bg-primary-500/20 shadow-xl shadow-primary-500/10 border border-primary-500/30"
-                            : "bg-white/70 dark:bg-gray-900/40 backdrop-blur-md border border-white/20 dark:border-white/5 shadow-lg shadow-black/5"
-                        } hover:scale-[1.02] active:scale-95 hover:shadow-2xl hover:z-20`}
-                      >
-                        <div className="flex items-center gap-5">
-                          <div className="relative flex-shrink-0">
-                            {group.avatar ? (
-                              <img
-                                src={group.avatar}
-                                alt={group.name}
-                                className="w-16 h-16 rounded-[1.5rem] object-cover bg-gray-200 dark:bg-gray-700 shadow-2xl pointer-events-none"
-                                onError={(e: any) => {
-                                  e.target.src = defaultAvatar;
-                                }}
-                              />
-                            ) : (
-                              <div className="w-16 h-16 rounded-[1.5rem] bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white font-black text-2xl shadow-2xl">
-                                {((group.name as string) || "?")
-                                  .charAt(0)
-                                  .toUpperCase()}
-                              </div>
-                            )}
-                            {(group.unreadCount || 0) > 0 && (
-                              <div className="absolute -top-2 -right-2 bg-primary-500 text-white text-[10px] font-black rounded-full w-7 h-7 flex items-center justify-center shadow-lg shadow-primary-500/40 ring-2 ring-white dark:ring-gray-900 animate-in zoom-in duration-300">
-                                {group.unreadCount}
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-baseline justify-between gap-2 mb-1.5">
-                              <h3 className="font-black text-gray-900 dark:text-white truncate text-base flex items-center gap-2 leading-tight uppercase tracking-tight">
-                                {group.name}
-                                {group.favorite && (
-                                  <Star
-                                    size={14}
-                                    fill="var(--color-primary-500)"
-                                    className="text-primary-500 flex-shrink-0"
-                                  />
-                                )}
-                                {group.my_role === "creator" ? (
-                                  <span className="text-[9px] bg-primary-500/10 text-primary-600 dark:text-primary-400 px-1.5 py-0.5 rounded-full font-black uppercase tracking-wider">
-                                    creator
-                                  </span>
-                                ) : group.my_role === "admin" ? (
-                                  <span className="text-[9px] bg-primary-500/10 text-primary-600 dark:text-primary-400 px-1.5 py-0.5 rounded-full font-black uppercase tracking-wider">
-                                    admin
-                                  </span>
-                                ) : null}
-                              </h3>
-                              <span className="text-[10px] text-gray-400 dark:text-gray-500 flex-shrink-0 font-black uppercase tracking-widest bg-black/5 dark:bg-white/5 px-2 py-1 rounded-lg">
-                                {formatTime(
-                                  group.lastMessageDate || group.created_date,
-                                )}
-                              </span>
-                            </div>
-                            <p className="text-[13px] text-gray-500 dark:text-gray-400 truncate font-bold">
-                              {group.lastMessageUser && (
-                                <span className="text-primary-600 dark:text-primary-400 font-black mr-2">
-                                  {group.lastMessageUser}:
-                                </span>
-                              )}
-                              {group.lastMessageType === "charm"
-                                ? "✨ Charm sent"
-                                : group.lastMessageType === "token"
-                                  ? "💰 Token sent"
-                                  : group.lastMessageType === "image"
-                                    ? "🖼️ Image"
-                                    : group.lastMessageType === "file"
-                                      ? "📁 File"
-                                      : group.lastMessage ||
-                                        group.description ||
-                                        "No messages yet"}
-                            </p>
-                          </div>
-
-                          <div className="flex items-center gap-1.5 ml-2 transition-all">
-                            <button
-                              onClick={(e) => {
-                                handleToggleFavorite(group.group_id, e);
-                              }}
-                              className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
-                                group.favorite
-                                  ? "bg-amber-500/20 text-amber-500"
-                                  : "bg-black/5 dark:bg-white/5 text-gray-400 hover:bg-amber-500/10 hover:text-amber-500"
-                              }`}
-                              title={group.favorite ? "Unfavorite" : "Favorite"}
-                            >
-                              <Star
-                                size={14}
-                                strokeWidth={3}
-                                fill={group.favorite ? "currentColor" : "none"}
-                              />
-                            </button>
-
-                            <button
-                              onClick={(e) => {
-                                group.archived
-                                  ? handleUnarchive(group.group_id, e)
-                                  : handleArchive(group.group_id, e);
-                              }}
-                              className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
-                                group.archived
-                                  ? "bg-orange-500/20 text-orange-500"
-                                  : "bg-black/5 dark:bg-white/5 text-gray-400 hover:bg-orange-500/10 hover:text-orange-500"
-                              }`}
-                              title={group.archived ? "Unarchive" : "Archive"}
-                            >
-                              <Archive size={14} strokeWidth={3} />
-                            </button>
-
-                            <button
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                navigate({
-                                  to: "/group-info/$groupId",
-                                  params: { groupId: group.group_id },
-                                });
-                              }}
-                              className="w-8 h-8 rounded-lg bg-black/5 dark:bg-white/5 text-primary-500 dark:text-primary-400 hover:bg-primary-500 hover:text-white flex items-center justify-center transition-all"
-                              title="Group Info"
-                            >
-                              <Info size={14} strokeWidth={3} />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  }
-
-                  if (item.kind === "channel") {
-                    const channel = item.channel;
-                    return (
-                      <div
-                        key={`channel-${channel.channel_id}`}
-                        onClick={() => {
-                          navigate({
-                            to: "/channels/$channelId",
-                            params: { channelId: channel.channel_id },
-                          });
-                        }}
-                        className={`block rounded-[2.5rem] p-6 cursor-pointer transition-all duration-300 relative z-10 group overflow-hidden ${
-                          (channel.unreadCount || 0) > 0
-                            ? "bg-sky-500/15 dark:bg-sky-500/20 shadow-xl shadow-sky-500/10 border border-sky-500/30"
-                            : "bg-white/70 dark:bg-gray-900/40 backdrop-blur-md border border-white/20 dark:border-white/5 shadow-lg shadow-black/5"
-                        } hover:scale-[1.02] active:scale-95 hover:shadow-2xl hover:z-20`}
-                      >
-                        <div className="flex items-center gap-5">
-                          <div className="relative flex-shrink-0">
-                            {channel.avatar ? (
-                              <img
-                                src={channel.avatar}
-                                alt={channel.name}
-                                className="w-16 h-16 rounded-[1.5rem] object-cover bg-gray-200 dark:bg-gray-700 shadow-2xl pointer-events-none"
-                                onError={(e: any) => {
-                                  e.target.src = defaultAvatar;
-                                }}
-                              />
-                            ) : (
-                              <div className="w-16 h-16 rounded-[1.5rem] bg-gradient-to-br from-sky-400 to-sky-600 flex items-center justify-center text-white shadow-2xl transition-transform duration-500 group-hover:scale-110">
-                                <Radio size={28} strokeWidth={2.5} />
-                              </div>
-                            )}
-                            {(channel.unreadCount || 0) > 0 && (
-                              <div className="absolute -top-2 -right-2 bg-sky-500 text-white text-[10px] font-black rounded-full w-7 h-7 flex items-center justify-center shadow-lg shadow-sky-500/40 ring-2 ring-white dark:ring-gray-900 animate-in zoom-in duration-300">
-                                {channel.unreadCount}
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-baseline justify-between gap-2 mb-1.5">
-                              <h3 className="font-black text-gray-900 dark:text-white truncate text-base flex items-center gap-2 leading-tight uppercase tracking-tight">
-                                {channel.name}
-                                {channel.favorite && (
-                                  <Star
-                                    size={14}
-                                    fill="var(--color-primary-500)"
-                                    className="text-primary-500 flex-shrink-0"
-                                  />
-                                )}
-                                {(
-                                  channel.admin_publickey || ""
-                                ).toUpperCase() ===
-                                (myPublicKey || "").toUpperCase() ? (
-                                  <span className="text-[9px] bg-primary-500/10 text-primary-600 dark:text-primary-400 px-1.5 py-0.5 rounded-full font-black uppercase tracking-wider">
-                                    creator
-                                  </span>
-                                ) : channel.isAdmin ? (
-                                  <span className="text-[9px] bg-sky-500/10 text-sky-600 dark:text-sky-400 px-1.5 py-0.5 rounded-full font-black uppercase tracking-wider">
-                                    admin
-                                  </span>
-                                ) : null}
-                              </h3>
-                              <span className="text-[10px] text-gray-400 dark:text-gray-500 flex-shrink-0 font-black uppercase tracking-widest bg-black/5 dark:bg-white/5 px-2 py-1 rounded-lg">
-                                {formatTime(
-                                  channel.lastMessageDate ||
-                                    channel.created_date,
-                                )}
-                              </span>
-                            </div>
-                            <p className="text-[13px] text-gray-500 dark:text-gray-400 truncate font-bold">
-                              {channel.lastMessage ||
-                                channel.description ||
-                                "No messages yet"}
-                            </p>
-                          </div>
-
-                          <div className="flex items-center gap-1.5 ml-2 transition-all">
-                            <button
-                              onClick={(e) => {
-                                handleToggleFavorite(channel.channel_id, e);
-                              }}
-                              className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
-                                channel.favorite
-                                  ? "bg-amber-500/20 text-amber-500"
-                                  : "bg-black/5 dark:bg-white/5 text-gray-400 hover:bg-amber-500/10 hover:text-amber-500"
-                              }`}
-                              title={channel.favorite ? "Unfavorite" : "Favorite"}
-                            >
-                              <Star
-                                size={14}
-                                strokeWidth={3}
-                                fill={channel.favorite ? "currentColor" : "none"}
-                              />
-                            </button>
-
-                            <button
-                              onClick={(e) => {
-                                channel.archived
-                                  ? handleUnarchive(channel.channel_id, e)
-                                  : handleArchive(channel.channel_id, e);
-                              }}
-                              className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
-                                channel.archived
-                                  ? "bg-orange-500/20 text-orange-500"
-                                  : "bg-black/5 dark:bg-white/5 text-gray-400 hover:bg-orange-500/10 hover:text-orange-500"
-                              }`}
-                              title={channel.archived ? "Unarchive" : "Archive"}
-                            >
-                              <Archive size={14} strokeWidth={3} />
-                            </button>
-
-                            <button
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                navigate({
-                                  to: "/channel-info/$channelId",
-                                  params: { channelId: channel.channel_id },
-                                });
-                              }}
-                              className="w-8 h-8 rounded-lg bg-black/5 dark:bg-white/5 text-primary-500 dark:text-primary-400 hover:bg-primary-500 hover:text-white flex items-center justify-center transition-all"
-                              title="Channel Info"
-                            >
-                              <Info size={14} strokeWidth={3} />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  }
-
-                  const chat = item.chat;
+                if (item.kind === "group") {
+                  const group = item.group;
                   return (
                     <div
-                      key={chat.publickey}
-                      onClick={(e) => {
-                        if (e.defaultPrevented) return;
+                      key={`group-${group.group_id}`}
+                      onClick={() => {
                         navigate({
-                          to: "/chat/$address",
-                          params: { address: chat.publickey },
+                          to: "/groups/$groupId",
+                          params: { groupId: group.group_id },
                         });
                       }}
-                      style={{ WebkitTouchCallout: "none" } as any}
-                      className={`block rounded-[2.5rem] p-6 cursor-pointer transition-all duration-300 relative z-10 group overflow-hidden ${
-                        (chat.unreadCount || 0) > 0
+                      className={`block rounded-[2.5rem] p-6 cursor-pointer transition-all duration-300 relative z-10 group overflow-hidden ${(group.unreadCount || 0) > 0
                           ? "bg-primary-500/15 dark:bg-primary-500/20 shadow-xl shadow-primary-500/10 border border-primary-500/30"
                           : "bg-white/70 dark:bg-gray-900/40 backdrop-blur-md border border-white/20 dark:border-white/5 shadow-lg shadow-black/5"
-                      } hover:scale-[1.02] active:scale-95 hover:shadow-2xl hover:z-20`}
+                        } hover:scale-[1.02] active:scale-95 hover:shadow-2xl hover:z-20`}
                     >
                       <div className="flex items-center gap-5">
                         <div className="relative flex-shrink-0">
-                          {chat.publickey === myPublicKey ? (
-                            <div className="w-16 h-16 rounded-[1.5rem] bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center shadow-2xl">
-                              <Inbox
-                                size={28}
-                                className="text-primary-600 dark:text-primary-400"
-                              />
-                            </div>
-                          ) : (
+                          {group.avatar ? (
                             <img
-                              src={getAvatar(chat)}
-                              alt={getName(chat)}
+                              src={group.avatar}
+                              alt={group.name}
                               className="w-16 h-16 rounded-[1.5rem] object-cover bg-gray-200 dark:bg-gray-700 shadow-2xl pointer-events-none"
                               onError={(e: any) => {
                                 e.target.src = defaultAvatar;
                               }}
                             />
-                          )}
-                          {chat.archived && (
-                            <div className="absolute -top-1 -right-1 bg-gray-500 rounded-full p-1 shadow-md">
-                              <Archive size={10} className="text-white" />
+                          ) : (
+                            <div className="w-16 h-16 rounded-[1.5rem] bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white font-black text-2xl shadow-2xl">
+                              {((group.name as string) || "?")
+                                .charAt(0)
+                                .toUpperCase()}
                             </div>
                           )}
-                          {(chat.unreadCount || 0) > 0 && (
+                          {(group.unreadCount || 0) > 0 && (
                             <div className="absolute -top-2 -right-2 bg-primary-500 text-white text-[10px] font-black rounded-full w-7 h-7 flex items-center justify-center shadow-lg shadow-primary-500/40 ring-2 ring-white dark:ring-gray-900 animate-in zoom-in duration-300">
-                              {chat.unreadCount}
+                              {group.unreadCount}
                             </div>
                           )}
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-baseline justify-between gap-2 mb-1.5">
-                            <h3 className="font-black text-gray-900 dark:text-white truncate flex items-center gap-2 text-base leading-tight uppercase tracking-tight">
-                              {getName(chat)}
-                              {chat.favorite && (
-                                <Star
-                                  size={16}
-                                  fill="var(--color-primary-500)"
-                                  className="text-primary-500 flex-shrink-0"
-                                />
-                              )}
-                            </h3>
-                            <span className="text-[10px] text-gray-400 dark:text-gray-500 flex-shrink-0 font-black uppercase tracking-widest bg-black/5 dark:bg-white/5 px-2 py-1 rounded-lg">
-                              {formatTime(chat.lastMessageDate)}
-                            </span>
-                          </div>
-                          <p className="text-[13px] text-gray-500 dark:text-gray-400 truncate font-bold">
-                            {chat.username === "Me" && (
-                              <span className="text-primary-600 dark:text-primary-400 font-black mr-2">
-                                You:
-                              </span>
-                            )}
-                            {chat.lastMessageType === "charm"
-                              ? "✨ Charm sent"
-                              : chat.lastMessageType === "token"
-                                ? "💰 Token sent"
-                                : chat.lastMessage || ""}
-                          </p>
-                        </div>
-
-                        <div className="flex items-center gap-1 ml-2 transition-all relative z-50">
-                          <button
-                            onClick={(e) => {
-                              handleToggleFavorite(chat.publickey, e);
-                            }}
-                            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
-                              chat.favorite
-                                ? "bg-amber-500/20 text-amber-500"
-                                : "bg-black/5 dark:bg-white/5 text-gray-400 hover:bg-amber-500/10 hover:text-amber-500"
-                            }`}
-                            title={chat.favorite ? "Unfavorite" : "Favorite"}
-                          >
-                            <Star
-                              size={14}
-                              strokeWidth={3}
-                              fill={chat.favorite ? "currentColor" : "none"}
-                            />
-                          </button>
-
-                          <button
-                            onClick={(e) => {
-                              chat.archived
-                                ? handleUnarchive(chat.publickey, e)
-                                : handleArchive(chat.publickey, e);
-                            }}
-                            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
-                              chat.archived
-                                ? "bg-orange-500/20 text-orange-500"
-                                : "bg-black/5 dark:bg-white/5 text-gray-400 hover:bg-orange-500/10 hover:text-orange-500"
-                            }`}
-                            title={chat.archived ? "Unarchive" : "Archive"}
-                          >
-                            <Archive size={14} strokeWidth={3} />
-                          </button>
-
-                          <button
-                            onClick={(e) => handleShowProfile(chat.publickey, e)}
-                            className="w-8 h-8 rounded-lg bg-black/5 dark:bg-white/5 text-primary-500 dark:text-primary-400 hover:bg-primary-500 hover:text-white flex items-center justify-center transition-all"
-                            title="Contact Info"
-                          >
-                            <Info size={14} strokeWidth={3} />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
-              : displayedGroups.map((group) => (
-               <Link
-                    key={group.group_id}
-                    to="/groups/$groupId"
-                    params={{ groupId: group.group_id }}
-                    className={`block rounded-[2.5rem] p-6 cursor-pointer transition-all duration-500 relative z-10 group overflow-hidden mb-4 ${
-                      (group.unreadCount || 0) > 0
-                        ? "bg-primary-500/15 dark:bg-primary-500/20 shadow-xl shadow-primary-500/10 border border-primary-500/30"
-                        : "bg-white/70 dark:bg-gray-900/40 backdrop-blur-md border border-white/20 dark:border-white/5 shadow-lg shadow-black/5"
-                    } hover:scale-[1.02] active:scale-95 hover:shadow-2xl hover:z-20`}
-                  >
-                    <div className="flex items-center gap-5">
-                      <div className="relative flex-shrink-0">
-                        {group.avatar ? (
-                          <img
-                            src={group.avatar}
-                            alt={group.name}
-                            className="w-16 h-16 rounded-[1.5rem] object-cover bg-gray-200 dark:bg-gray-700 shadow-2xl pointer-events-none transition-transform duration-500 group-hover:scale-110"
-                            onError={(e: any) => {
-                              e.target.src = defaultAvatar;
-                            }}
-                          />
-                        ) : (
-                          <div className="w-16 h-16 rounded-[1.5rem] bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white font-black text-2xl shadow-2xl group-hover:scale-110 transition-transform duration-500">
-                            {((group.name as string) || "?")
-                              .charAt(0)
-                              .toUpperCase()}
-                          </div>
-                        )}
-                        {(group.unreadCount || 0) > 0 && (
-                          <div className="absolute -top-2 -right-2 bg-primary-500 text-white text-[10px] font-black rounded-full w-7 h-7 flex items-center justify-center shadow-2xl shadow-primary-500/50 ring-2 ring-white dark:ring-gray-900 animate-in zoom-in duration-500">
-                            {group.unreadCount}
-                          </div>
-                        )}
-                      </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-baseline justify-between gap-2 mb-1.5">
                             <h3 className="font-black text-gray-900 dark:text-white truncate text-base flex items-center gap-2 leading-tight uppercase tracking-tight">
                               {group.name}
                               {group.favorite && (
                                 <Star
-                                  size={16}
+                                  size={14}
                                   fill="var(--color-primary-500)"
                                   className="text-primary-500 flex-shrink-0"
-                                  strokeWidth={3}
                                 />
                               )}
+                              {group.my_role === "creator" ? (
+                                <span className="text-[9px] bg-primary-500/10 text-primary-600 dark:text-primary-400 px-1.5 py-0.5 rounded-full font-black uppercase tracking-wider">
+                                  creator
+                                </span>
+                              ) : group.my_role === "admin" ? (
+                                <span className="text-[9px] bg-primary-500/10 text-primary-600 dark:text-primary-400 px-1.5 py-0.5 rounded-full font-black uppercase tracking-wider">
+                                  admin
+                                </span>
+                              ) : null}
                             </h3>
                             <span className="text-[10px] text-gray-400 dark:text-gray-500 flex-shrink-0 font-black uppercase tracking-widest bg-black/5 dark:bg-white/5 px-2 py-1 rounded-lg">
                               {formatTime(
@@ -1384,55 +996,440 @@ export default function ChatsAndGroups() {
                               )}
                             </span>
                           </div>
-                        <p className="text-[13px] text-gray-500 dark:text-gray-400 truncate font-bold">
-                          {group.lastMessageUser && (
-                            <span className="text-primary-600 dark:text-primary-400 font-black mr-2">
-                              {group.lastMessageUser}:
-                            </span>
-                          )}
-                          {group.lastMessageType === "charm"
-                            ? "✨ Charm sent"
-                            : group.lastMessageType === "token"
-                              ? "💰 Token sent"
-                              : group.lastMessageType === "image"
-                                ? "🖼️ Image"
-                                : group.lastMessageType === "file"
-                                  ? "📁 File"
-                                  : group.lastMessage ||
+                          <p className="text-[13px] text-gray-500 dark:text-gray-400 truncate font-bold">
+                            {group.lastMessageUser && (
+                              <span className="text-primary-600 dark:text-primary-400 font-black mr-2">
+                                {group.lastMessageUser}:
+                              </span>
+                            )}
+                            {group.lastMessageType === "charm"
+                              ? "✨ Charm sent"
+                              : group.lastMessageType === "token"
+                                ? "💰 Token sent"
+                                : group.lastMessageType === "image"
+                                  ? "🖼️ Image"
+                                  : group.lastMessageType === "file"
+                                    ? "📁 File"
+                                    : group.lastMessage ||
                                     group.description ||
                                     "No messages yet"}
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 ml-2 transition-all">
+                          <button
+                            onClick={(e) => {
+                              handleToggleFavorite(group.group_id, e);
+                            }}
+                            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${group.favorite
+                                ? "bg-amber-500/20 text-amber-500"
+                                : "bg-black/5 dark:bg-white/5 text-gray-400 hover:bg-amber-500/10 hover:text-amber-500"
+                              }`}
+                            title={group.favorite ? "Unfavorite" : "Favorite"}
+                          >
+                            <Star
+                              size={14}
+                              strokeWidth={3}
+                              fill={group.favorite ? "currentColor" : "none"}
+                            />
+                          </button>
+
+                          <button
+                            onClick={(e) => {
+                              group.archived
+                                ? handleUnarchive(group.group_id, e)
+                                : handleArchive(group.group_id, e);
+                            }}
+                            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${group.archived
+                                ? "bg-orange-500/20 text-orange-500"
+                                : "bg-black/5 dark:bg-white/5 text-gray-400 hover:bg-orange-500/10 hover:text-orange-500"
+                              }`}
+                            title={group.archived ? "Unarchive" : "Archive"}
+                          >
+                            <Archive size={14} strokeWidth={3} />
+                          </button>
+
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              navigate({
+                                to: "/group-info/$groupId",
+                                params: { groupId: group.group_id },
+                              });
+                            }}
+                            className="w-8 h-8 rounded-lg bg-black/5 dark:bg-white/5 text-primary-500 dark:text-primary-400 hover:bg-primary-500 hover:text-white flex items-center justify-center transition-all"
+                            title="Group Info"
+                          >
+                            <Info size={14} strokeWidth={3} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                if (item.kind === "channel") {
+                  const channel = item.channel;
+                  return (
+                    <div
+                      key={`channel-${channel.channel_id}`}
+                      onClick={() => {
+                        navigate({
+                          to: "/channels/$channelId",
+                          params: { channelId: channel.channel_id },
+                        });
+                      }}
+                      className={`block rounded-[2.5rem] p-6 cursor-pointer transition-all duration-300 relative z-10 group overflow-hidden ${(channel.unreadCount || 0) > 0
+                          ? "bg-sky-500/15 dark:bg-sky-500/20 shadow-xl shadow-sky-500/10 border border-sky-500/30"
+                          : "bg-white/70 dark:bg-gray-900/40 backdrop-blur-md border border-white/20 dark:border-white/5 shadow-lg shadow-black/5"
+                        } hover:scale-[1.02] active:scale-95 hover:shadow-2xl hover:z-20`}
+                    >
+                      <div className="flex items-center gap-5">
+                        <div className="relative flex-shrink-0">
+                          {channel.avatar ? (
+                            <img
+                              src={channel.avatar}
+                              alt={channel.name}
+                              className="w-16 h-16 rounded-[1.5rem] object-cover bg-gray-200 dark:bg-gray-700 shadow-2xl pointer-events-none"
+                              onError={(e: any) => {
+                                e.target.src = defaultAvatar;
+                              }}
+                            />
+                          ) : (
+                            <div className="w-16 h-16 rounded-[1.5rem] bg-gradient-to-br from-sky-400 to-sky-600 flex items-center justify-center text-white shadow-2xl transition-transform duration-500 group-hover:scale-110">
+                              <Radio size={28} strokeWidth={2.5} />
+                            </div>
+                          )}
+                          {(channel.unreadCount || 0) > 0 && (
+                            <div className="absolute -top-2 -right-2 bg-sky-500 text-white text-[10px] font-black rounded-full w-7 h-7 flex items-center justify-center shadow-lg shadow-sky-500/40 ring-2 ring-white dark:ring-gray-900 animate-in zoom-in duration-300">
+                              {channel.unreadCount}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-baseline justify-between gap-2 mb-1.5">
+                            <h3 className="font-black text-gray-900 dark:text-white truncate text-base flex items-center gap-2 leading-tight uppercase tracking-tight">
+                              {channel.name}
+                              {channel.favorite && (
+                                <Star
+                                  size={14}
+                                  fill="var(--color-primary-500)"
+                                  className="text-primary-500 flex-shrink-0"
+                                />
+                              )}
+                              {(
+                                channel.admin_publickey || ""
+                              ).toUpperCase() ===
+                                (myPublicKey || "").toUpperCase() ? (
+                                <span className="text-[9px] bg-primary-500/10 text-primary-600 dark:text-primary-400 px-1.5 py-0.5 rounded-full font-black uppercase tracking-wider">
+                                  creator
+                                </span>
+                              ) : channel.isAdmin ? (
+                                <span className="text-[9px] bg-primary-500/10 text-primary-600 dark:text-primary-400 px-1.5 py-0.5 rounded-full font-black uppercase tracking-wider">
+                                  admin
+                                </span>
+                              ) : null}
+                            </h3>
+                            <span className="text-[10px] text-gray-400 dark:text-gray-500 flex-shrink-0 font-black uppercase tracking-widest bg-black/5 dark:bg-white/5 px-2 py-1 rounded-lg">
+                              {formatTime(
+                                channel.lastMessageDate ||
+                                channel.created_date,
+                              )}
+                            </span>
+                          </div>
+                          <p className="text-[13px] text-gray-500 dark:text-gray-400 truncate font-bold">
+                            {channel.lastMessage ||
+                              channel.description ||
+                              "No messages yet"}
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 ml-2 transition-all">
+                          <button
+                            onClick={(e) => {
+                              handleToggleFavorite(channel.channel_id, e);
+                            }}
+                            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${channel.favorite
+                                ? "bg-amber-500/20 text-amber-500"
+                                : "bg-black/5 dark:bg-white/5 text-gray-400 hover:bg-amber-500/10 hover:text-amber-500"
+                              }`}
+                            title={channel.favorite ? "Unfavorite" : "Favorite"}
+                          >
+                            <Star
+                              size={14}
+                              strokeWidth={3}
+                              fill={channel.favorite ? "currentColor" : "none"}
+                            />
+                          </button>
+
+                          <button
+                            onClick={(e) => {
+                              channel.archived
+                                ? handleUnarchive(channel.channel_id, e)
+                                : handleArchive(channel.channel_id, e);
+                            }}
+                            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${channel.archived
+                                ? "bg-orange-500/20 text-orange-500"
+                                : "bg-black/5 dark:bg-white/5 text-gray-400 hover:bg-orange-500/10 hover:text-orange-500"
+                              }`}
+                            title={channel.archived ? "Unarchive" : "Archive"}
+                          >
+                            <Archive size={14} strokeWidth={3} />
+                          </button>
+
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              navigate({
+                                to: "/channel-info/$channelId",
+                                params: { channelId: channel.channel_id },
+                              });
+                            }}
+                            className="w-8 h-8 rounded-lg bg-black/5 dark:bg-white/5 text-primary-500 dark:text-primary-400 hover:bg-primary-500 hover:text-white flex items-center justify-center transition-all"
+                            title="Channel Info"
+                          >
+                            <Info size={14} strokeWidth={3} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                const chat = item.chat;
+                return (
+                  <div
+                    key={chat.publickey}
+                    onClick={(e) => {
+                      if (e.defaultPrevented) return;
+                      navigate({
+                        to: "/chat/$address",
+                        params: { address: chat.publickey },
+                      });
+                    }}
+                    style={{ WebkitTouchCallout: "none" } as any}
+                    className={`block rounded-[2.5rem] p-6 cursor-pointer transition-all duration-300 relative z-10 group overflow-hidden ${(chat.unreadCount || 0) > 0
+                        ? "bg-primary-500/15 dark:bg-primary-500/20 shadow-xl shadow-primary-500/10 border border-primary-500/30"
+                        : "bg-white/70 dark:bg-gray-900/40 backdrop-blur-md border border-white/20 dark:border-white/5 shadow-lg shadow-black/5"
+                      } hover:scale-[1.02] active:scale-95 hover:shadow-2xl hover:z-20`}
+                  >
+                    <div className="flex items-center gap-5">
+                      <div className="relative flex-shrink-0">
+                        {chat.publickey === myPublicKey ? (
+                          <div className="w-16 h-16 rounded-[1.5rem] bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center shadow-2xl">
+                            <Inbox
+                              size={28}
+                              className="text-primary-600 dark:text-primary-400"
+                            />
+                          </div>
+                        ) : (
+                          <img
+                            src={getAvatar(chat)}
+                            alt={getName(chat)}
+                            className="w-16 h-16 rounded-[1.5rem] object-cover bg-gray-200 dark:bg-gray-700 shadow-2xl pointer-events-none"
+                            onError={(e: any) => {
+                              e.target.src = defaultAvatar;
+                            }}
+                          />
+                        )}
+                        {chat.archived && (
+                          <div className="absolute -top-1 -right-1 bg-gray-500 rounded-full p-1 shadow-md">
+                            <Archive size={10} className="text-white" />
+                          </div>
+                        )}
+                        {(chat.unreadCount || 0) > 0 && (
+                          <div className="absolute -top-2 -right-2 bg-primary-500 text-white text-[10px] font-black rounded-full w-7 h-7 flex items-center justify-center shadow-lg shadow-primary-500/40 ring-2 ring-white dark:ring-gray-900 animate-in zoom-in duration-300">
+                            {chat.unreadCount}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-baseline justify-between gap-2 mb-1.5">
+                          <h3 className="font-black text-gray-900 dark:text-white truncate flex items-center gap-2 text-base leading-tight uppercase tracking-tight">
+                            {getName(chat)}
+                            {chat.favorite && (
+                              <Star
+                                size={16}
+                                fill="var(--color-primary-500)"
+                                className="text-primary-500 flex-shrink-0"
+                              />
+                            )}
+                          </h3>
+                          <span className="text-[10px] text-gray-400 dark:text-gray-500 flex-shrink-0 font-black uppercase tracking-widest bg-black/5 dark:bg-white/5 px-2 py-1 rounded-lg">
+                            {formatTime(chat.lastMessageDate)}
+                          </span>
+                        </div>
+                        <p className="text-[13px] text-gray-500 dark:text-gray-400 truncate font-bold">
+                          {chat.username === "Me" && (
+                            <span className="text-primary-600 dark:text-primary-400 font-black mr-2">
+                              You:
+                            </span>
+                          )}
+                          {chat.lastMessageType === "charm"
+                            ? "✨ Charm sent"
+                            : chat.lastMessageType === "token"
+                              ? "💰 Token sent"
+                              : chat.lastMessage || ""}
                         </p>
                       </div>
 
-                      <div className="flex items-center gap-1.5 ml-2 transition-all relative z-50">
+                      <div className="flex items-center gap-1 ml-2 transition-all relative z-50">
                         <button
                           onClick={(e) => {
-                            handleToggleFavorite(group.group_id, e);
+                            handleToggleFavorite(chat.publickey, e);
                           }}
-                          className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
-                            group.favorite
+                          className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${chat.favorite
                               ? "bg-amber-500/20 text-amber-500"
                               : "bg-black/5 dark:bg-white/5 text-gray-400 hover:bg-amber-500/10 hover:text-amber-500"
-                          }`}
+                            }`}
+                          title={chat.favorite ? "Unfavorite" : "Favorite"}
                         >
                           <Star
                             size={14}
                             strokeWidth={3}
-                            fill={group.favorite ? "currentColor" : "none"}
+                            fill={chat.favorite ? "currentColor" : "none"}
                           />
                         </button>
 
                         <button
-                          onClick={(e) => handleShowGroupInfo(group.group_id, e)}
+                          onClick={(e) => {
+                            chat.archived
+                              ? handleUnarchive(chat.publickey, e)
+                              : handleArchive(chat.publickey, e);
+                          }}
+                          className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${chat.archived
+                              ? "bg-orange-500/20 text-orange-500"
+                              : "bg-black/5 dark:bg-white/5 text-gray-400 hover:bg-orange-500/10 hover:text-orange-500"
+                            }`}
+                          title={chat.archived ? "Unarchive" : "Archive"}
+                        >
+                          <Archive size={14} strokeWidth={3} />
+                        </button>
+
+                        <button
+                          onClick={(e) => handleShowProfile(chat.publickey, e)}
                           className="w-8 h-8 rounded-lg bg-black/5 dark:bg-white/5 text-primary-500 dark:text-primary-400 hover:bg-primary-500 hover:text-white flex items-center justify-center transition-all"
-                          title="Group Info"
+                          title="Contact Info"
                         >
                           <Info size={14} strokeWidth={3} />
                         </button>
                       </div>
                     </div>
-                  </Link>
-                ))}
+                  </div>
+                );
+              })
+              : displayedGroups.map((group) => (
+                <Link
+                  key={group.group_id}
+                  to="/groups/$groupId"
+                  params={{ groupId: group.group_id }}
+                  className={`block rounded-[2.5rem] p-6 cursor-pointer transition-all duration-500 relative z-10 group overflow-hidden mb-4 ${(group.unreadCount || 0) > 0
+                      ? "bg-primary-500/15 dark:bg-primary-500/20 shadow-xl shadow-primary-500/10 border border-primary-500/30"
+                      : "bg-white/70 dark:bg-gray-900/40 backdrop-blur-md border border-white/20 dark:border-white/5 shadow-lg shadow-black/5"
+                    } hover:scale-[1.02] active:scale-95 hover:shadow-2xl hover:z-20`}
+                >
+                  <div className="flex items-center gap-5">
+                    <div className="relative flex-shrink-0">
+                      {group.avatar ? (
+                        <img
+                          src={group.avatar}
+                          alt={group.name}
+                          className="w-16 h-16 rounded-[1.5rem] object-cover bg-gray-200 dark:bg-gray-700 shadow-2xl pointer-events-none transition-transform duration-500 group-hover:scale-110"
+                          onError={(e: any) => {
+                            e.target.src = defaultAvatar;
+                          }}
+                        />
+                      ) : (
+                        <div className="w-16 h-16 rounded-[1.5rem] bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white font-black text-2xl shadow-2xl group-hover:scale-110 transition-transform duration-500">
+                          {((group.name as string) || "?")
+                            .charAt(0)
+                            .toUpperCase()}
+                        </div>
+                      )}
+                      {(group.unreadCount || 0) > 0 && (
+                        <div className="absolute -top-2 -right-2 bg-primary-500 text-white text-[10px] font-black rounded-full w-7 h-7 flex items-center justify-center shadow-2xl shadow-primary-500/50 ring-2 ring-white dark:ring-gray-900 animate-in zoom-in duration-500">
+                          {group.unreadCount}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-baseline justify-between gap-2 mb-1.5">
+                        <h3 className="font-black text-gray-900 dark:text-white truncate text-base flex items-center gap-2 leading-tight uppercase tracking-tight">
+                          {group.name}
+                          {group.favorite && (
+                            <Star
+                              size={16}
+                              fill="var(--color-primary-500)"
+                              className="text-primary-500 flex-shrink-0"
+                              strokeWidth={3}
+                            />
+                          )}
+                          {group.my_role === "creator" ? (
+                            <span className="text-[9px] bg-primary-500/10 text-primary-600 dark:text-primary-400 px-1.5 py-0.5 rounded-full font-black uppercase tracking-wider">
+                              creator
+                            </span>
+                          ) : group.my_role === "admin" ? (
+                            <span className="text-[9px] bg-primary-500/10 text-primary-600 dark:text-primary-400 px-1.5 py-0.5 rounded-full font-black uppercase tracking-wider">
+                              admin
+                            </span>
+                          ) : null}
+                        </h3>
+                        <span className="text-[10px] text-gray-400 dark:text-gray-500 flex-shrink-0 font-black uppercase tracking-widest bg-black/5 dark:bg-white/5 px-2 py-1 rounded-lg">
+                          {formatTime(
+                            group.lastMessageDate || group.created_date,
+                          )}
+                        </span>
+                      </div>
+                      <p className="text-[13px] text-gray-500 dark:text-gray-400 truncate font-bold">
+                        {group.lastMessageUser && (
+                          <span className="text-primary-600 dark:text-primary-400 font-black mr-2">
+                            {group.lastMessageUser}:
+                          </span>
+                        )}
+                        {group.lastMessageType === "charm"
+                          ? "✨ Charm sent"
+                          : group.lastMessageType === "token"
+                            ? "💰 Token sent"
+                            : group.lastMessageType === "image"
+                              ? "🖼️ Image"
+                              : group.lastMessageType === "file"
+                                ? "📁 File"
+                                : group.lastMessage ||
+                                group.description ||
+                                "No messages yet"}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 ml-2 transition-all relative z-50">
+                      <button
+                        onClick={(e) => {
+                          handleToggleFavorite(group.group_id, e);
+                        }}
+                        className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${group.favorite
+                            ? "bg-amber-500/20 text-amber-500"
+                            : "bg-black/5 dark:bg-white/5 text-gray-400 hover:bg-amber-500/10 hover:text-amber-500"
+                          }`}
+                      >
+                        <Star
+                          size={14}
+                          strokeWidth={3}
+                          fill={group.favorite ? "currentColor" : "none"}
+                        />
+                      </button>
+
+                      <button
+                        onClick={(e) => handleShowGroupInfo(group.group_id, e)}
+                        className="w-8 h-8 rounded-lg bg-black/5 dark:bg-white/5 text-primary-500 dark:text-primary-400 hover:bg-primary-500 hover:text-white flex items-center justify-center transition-all"
+                        title="Group Info"
+                      >
+                        <Info size={14} strokeWidth={3} />
+                      </button>
+                    </div>
+                  </div>
+                </Link>
+              ))}
 
             {activeTab !== "all" &&
               displayedChannels.map((channel) => (
@@ -1440,11 +1437,10 @@ export default function ChatsAndGroups() {
                   key={channel.channel_id}
                   to="/channels/$channelId"
                   params={{ channelId: channel.channel_id }}
-                  className={`block rounded-[2.5rem] p-6 cursor-pointer transition-all duration-500 relative z-10 group overflow-hidden mb-4 ${
-                    (channel.unreadCount || 0) > 0
+                  className={`block rounded-[2.5rem] p-6 cursor-pointer transition-all duration-500 relative z-10 group overflow-hidden mb-4 ${(channel.unreadCount || 0) > 0
                       ? "bg-sky-500/15 dark:bg-sky-500/20 shadow-xl shadow-sky-500/10 border border-sky-500/30"
                       : "bg-white/70 dark:bg-gray-900/40 backdrop-blur-md border border-white/20 dark:border-white/5 shadow-lg shadow-black/5"
-                  } hover:scale-[1.02] active:scale-95 hover:shadow-2xl hover:z-20`}
+                    } hover:scale-[1.02] active:scale-95 hover:shadow-2xl hover:z-20`}
                 >
                   <div className="flex items-center gap-5">
                     <div className="relative flex-shrink-0">
@@ -1470,12 +1466,12 @@ export default function ChatsAndGroups() {
                             />
                           )}
                           {(channel.admin_publickey || "").toUpperCase() ===
-                          (myPublicKey || "").toUpperCase() ? (
+                            (myPublicKey || "").toUpperCase() ? (
                             <span className="text-[9px] bg-primary-500/10 text-primary-600 dark:text-primary-400 px-1.5 py-0.5 rounded-full font-black uppercase tracking-wider">
                               creator
                             </span>
                           ) : channel.isAdmin ? (
-                            <span className="text-[9px] bg-sky-500/10 text-sky-600 dark:text-sky-400 px-1.5 py-0.5 rounded-full font-black uppercase tracking-wider">
+                            <span className="text-[9px] bg-primary-500/10 text-primary-600 dark:text-primary-400 px-1.5 py-0.5 rounded-full font-black uppercase tracking-wider">
                               admin
                             </span>
                           ) : null}
@@ -1498,11 +1494,10 @@ export default function ChatsAndGroups() {
                         onClick={(e) => {
                           handleToggleFavorite(channel.channel_id, e);
                         }}
-                        className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
-                          channel.favorite
+                        className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${channel.favorite
                             ? "bg-amber-500/20 text-amber-500"
                             : "bg-black/5 dark:bg-white/5 text-gray-400 hover:bg-amber-500/10 hover:text-amber-500"
-                        }`}
+                          }`}
                       >
                         <Star
                           size={14}
@@ -1535,11 +1530,10 @@ export default function ChatsAndGroups() {
                     });
                   }}
                   style={{ WebkitTouchCallout: "none" } as any}
-                  className={`block rounded-[2.5rem] p-6 cursor-pointer transition-all duration-500 relative z-10 group overflow-hidden mb-4 ${
-                    (chat.unreadCount || 0) > 0
+                  className={`block rounded-[2.5rem] p-6 cursor-pointer transition-all duration-500 relative z-10 group overflow-hidden mb-4 ${(chat.unreadCount || 0) > 0
                       ? "bg-primary-500/15 dark:bg-primary-500/20 shadow-xl shadow-primary-500/10 border border-primary-500/30"
                       : "bg-white/70 dark:bg-gray-900/40 backdrop-blur-md border border-white/20 dark:border-white/5 shadow-lg shadow-black/5"
-                  } hover:scale-[1.02] active:scale-95 hover:shadow-2xl hover:z-20`}
+                    } hover:scale-[1.02] active:scale-95 hover:shadow-2xl hover:z-20`}
                 >
                   <div className="flex items-center gap-5">
                     <div className="relative flex-shrink-0">
@@ -1607,11 +1601,10 @@ export default function ChatsAndGroups() {
                         onClick={(e) => {
                           handleToggleFavorite(chat.publickey, e);
                         }}
-                        className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
-                          chat.favorite
+                        className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${chat.favorite
                             ? "bg-amber-500/20 text-amber-500"
                             : "bg-black/5 dark:bg-white/5 text-gray-400 hover:bg-amber-500/10 hover:text-amber-500"
-                        }`}
+                          }`}
                         title={chat.favorite ? "Unfavorite" : "Favorite"}
                       >
                         <Star
@@ -1627,11 +1620,10 @@ export default function ChatsAndGroups() {
                             ? handleUnarchive(chat.publickey, e)
                             : handleArchive(chat.publickey, e);
                         }}
-                        className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
-                          chat.archived
+                        className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${chat.archived
                             ? "bg-orange-500/20 text-orange-500"
                             : "bg-black/5 dark:bg-white/5 text-gray-400 hover:bg-orange-500/10 hover:text-orange-500"
-                        }`}
+                          }`}
                         title={chat.archived ? "Unarchive" : "Archive"}
                       >
                         <Archive size={14} strokeWidth={3} />
@@ -1654,7 +1646,7 @@ export default function ChatsAndGroups() {
 
       {/* FAB Menu Actions */}
       {fabMenuOpen && (activeTab === "all" || activeTab === "favorites") && (
-        <div className="fixed bottom-24 right-6 flex flex-col items-end gap-4 z-50 animate-in slide-in-from-bottom-5 fade-in duration-300">
+        <div className="fixed bottom-52 md:bottom-30 right-6 flex flex-col items-end gap-3 z-50 animate-in slide-in-from-bottom-5 fade-in duration-300">
           <button
             onClick={() => {
               setFabMenuOpen(false);
@@ -1715,11 +1707,10 @@ export default function ChatsAndGroups() {
               setFabMenuOpen(!fabMenuOpen);
             else navigate({ to: "/contacts" });
           }}
-          className={`w-16 h-16 rounded-2xl shadow-2xl flex items-center justify-center transition-all duration-300 hover:scale-110 active:scale-90 group relative overflow-hidden ${
-            fabMenuOpen
+          className={`w-16 h-16 rounded-2xl shadow-2xl flex items-center justify-center transition-all duration-300 hover:scale-110 active:scale-90 group relative overflow-hidden ${fabMenuOpen
               ? "bg-gray-900 text-white"
               : "bg-gradient-to-br from-primary-400 to-primary-600 text-white shadow-primary-500/30"
-          }`}
+            }`}
         >
           {/* Inner Glow Effect */}
           {!fabMenuOpen && (

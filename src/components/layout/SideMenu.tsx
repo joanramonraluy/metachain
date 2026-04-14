@@ -123,7 +123,7 @@ export default function SideMenu({ isOpen, setIsOpen }: SideMenuProps) {
 
       <div
         ref={menuRef}
-        className={`fixed top-0 left-0 h-full bg-gray-950/90 text-white flex flex-col shadow-[20px_0_50px_rgba(0,0,0,0.5)] z-50 transition-all duration-700 ease-out pt-[env(safe-area-inset-top)] border-r border-white/5 backdrop-blur-2xl
+        className={`fixed top-0 left-0 h-full bg-white/95 dark:bg-gray-950/90 text-gray-950 dark:text-white flex flex-col shadow-[20px_0_50px_rgba(0,0,0,0.1)] dark:shadow-[20px_0_50px_rgba(0,0,0,0.5)] z-50 transition-all duration-700 ease-out pt-[env(safe-area-inset-top)] border-r border-gray-100 dark:border-white/5 backdrop-blur-2xl
           ${isOpen ? "translate-x-0 opacity-100" : "-translate-x-full opacity-0"}
           md:relative md:translate-x-0 md:opacity-100 md:w-80 w-[85vw] max-w-sm`}
       >
@@ -148,7 +148,7 @@ export default function SideMenu({ isOpen, setIsOpen }: SideMenuProps) {
               />
             </Link>
             <button
-              className="md:hidden p-3 text-gray-400 hover:text-white transition-all hover:bg-white/10 rounded-[1.25rem] active:scale-90"
+              className="md:hidden p-3 text-gray-400 hover:text-gray-900 dark:hover:text-white transition-all hover:bg-gray-100 dark:hover:bg-white/10 rounded-[1.25rem] active:scale-90"
               onClick={() => setIsOpen(false)}
             >
               <X size={26} strokeWidth={3} />
@@ -157,20 +157,20 @@ export default function SideMenu({ isOpen, setIsOpen }: SideMenuProps) {
 
           <div className="space-y-1.5">
             <h1
-              className="text-2xl font-black tracking-tighter truncate pr-4 text-white hover:text-primary-400 transition-colors cursor-default uppercase"
+              className="text-2xl font-black tracking-tighter truncate pr-4 text-gray-900 dark:text-white hover:text-primary-500 transition-colors cursor-default uppercase"
               title={userName}
             >
               {userName}
             </h1>
             {minimaBalance && (
-              <div className="flex items-center gap-2.5 group/balance py-2 px-4 bg-white/10 rounded-2xl border border-white/10 w-fit hover:bg-white/15 transition-all">
+              <div className="flex items-center gap-2.5 group/balance py-2 px-4 bg-gray-100/50 dark:bg-white/10 rounded-2xl border border-gray-200/50 dark:border-white/10 w-fit hover:bg-gray-200/50 dark:hover:bg-white/15 transition-all">
                 <span className="w-2.5 h-2.5 bg-primary-500 rounded-full animate-pulse shadow-glow shadow-primary-500/50"></span>
                 <BalanceAmount
                   amount={parseFloat(minimaBalance.sendable).toFixed(2)}
                   unconfirmed={minimaBalance.unconfirmed}
                   forceActive={optimisticBlink || hasPendingTx}
                   hidden={isBalanceHidden}
-                  className="font-black text-white text-[15px]"
+                  className="font-black text-gray-900 dark:text-white text-[15px]"
                 />
                 <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1 opacity-60">Minima</span>
                 <button
@@ -180,7 +180,7 @@ export default function SideMenu({ isOpen, setIsOpen }: SideMenuProps) {
                     setIsBalanceHidden(newState);
                     localStorage.setItem("metachain_hide_balance", newState.toString());
                   }}
-                  className="ml-2 p-1.5 hover:bg-white/10 rounded-lg text-gray-500 hover:text-white transition-all active:scale-90"
+                  className="ml-2 p-1.5 hover:bg-black/5 dark:hover:bg-white/10 rounded-lg text-gray-400 dark:text-gray-500 hover:text-gray-900 dark:hover:text-white transition-all active:scale-90"
                   title={isBalanceHidden ? "Show Balance" : "Hide Balance"}
                 >
                   {isBalanceHidden ? <Eye size={14} strokeWidth={3} /> : <EyeOff size={14} strokeWidth={3} />}
@@ -191,7 +191,7 @@ export default function SideMenu({ isOpen, setIsOpen }: SideMenuProps) {
         </div>
 
         {/* Separator */}
-        <div className="mx-6 h-px bg-gradient-to-r from-transparent via-gray-800 to-transparent"></div>
+        <div className="mx-6 h-px bg-gradient-to-r from-transparent via-gray-200 dark:via-gray-800 to-transparent"></div>
 
         {/* Navigation Menu Items */}
         <nav className="flex-1 px-3 py-6 space-y-1 overflow-y-auto scrollbar-hide">
@@ -206,13 +206,13 @@ export default function SideMenu({ isOpen, setIsOpen }: SideMenuProps) {
         </nav>
 
         {/* Premium Footer */}
-        <div className="p-8 border-t border-white/5">
-          <div className="flex items-center justify-between p-5 bg-white/5 rounded-3xl border border-white/5 group hover:border-white/10 transition-all cursor-default">
+        <div className="p-8 border-t border-gray-100 dark:border-white/5">
+          <div className="flex items-center justify-between p-5 bg-gray-50 dark:bg-white/5 rounded-3xl border border-gray-100 dark:border-white/5 group hover:border-gray-200 dark:hover:border-white/10 transition-all cursor-default">
              <div className="flex flex-col">
-               <span className="text-[10px] font-black text-gray-600 uppercase tracking-[0.3em] mb-1">Application</span>
-               <span className="text-xs font-black text-gray-400 uppercase tracking-tight">MetaChain v0.9</span>
+               <span className="text-[10px] font-black text-gray-400 dark:text-gray-600 uppercase tracking-[0.3em] mb-1">Application</span>
+               <span className="text-xs font-black text-gray-500 dark:text-gray-400 uppercase tracking-tight">MetaChain v0.9</span>
              </div>
-             <div className="w-10 h-10 rounded-[1.25rem] bg-white/5 flex items-center justify-center text-gray-500 group-hover:bg-primary-500 group-hover:text-white transition-all shadow-lg group-hover:shadow-primary-500/20">
+             <div className="w-10 h-10 rounded-[1.25rem] bg-gray-100 dark:bg-white/5 flex items-center justify-center text-gray-400 dark:text-gray-500 group-hover:bg-primary-500 group-hover:text-white transition-all shadow-lg group-hover:shadow-primary-500/20">
                 <Zap size={18} strokeWidth={2.5} />
              </div>
           </div>
@@ -253,8 +253,8 @@ function MenuItem({
       onClick={onClick}
       className={`relative flex items-center justify-between group px-5 py-4 rounded-3xl transition-all duration-500 ${
         active
-          ? "bg-white/10 text-white shadow-2xl ring-1 ring-white/10"
-          : "text-gray-500 hover:bg-white/5 hover:text-white"
+          ? "bg-primary-500/10 dark:bg-white/10 text-primary-600 dark:text-white shadow-2xl ring-1 ring-primary-500/20 dark:ring-white/10"
+          : "text-gray-500 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-white"
       }`}
     >
       <div className="flex items-center gap-5 relative z-10">
@@ -274,10 +274,10 @@ function MenuItem({
 
       {active ? (
         <div className="relative z-10">
-           <ChevronRight size={18} strokeWidth={3} className="text-white opacity-40" />
+           <ChevronRight size={18} strokeWidth={3} className="text-primary-500 dark:text-white opacity-40 dark:opacity-40" />
         </div>
       ) : (
-        <ChevronRight size={18} strokeWidth={3} className="text-white opacity-0 group-hover:opacity-20 group-hover:translate-x-0 transition-all duration-500 -translate-x-2" />
+        <ChevronRight size={18} strokeWidth={3} className="text-gray-400 dark:text-white opacity-0 group-hover:opacity-20 group-hover:translate-x-0 transition-all duration-500 -translate-x-2" />
       )}
 
       {active && (

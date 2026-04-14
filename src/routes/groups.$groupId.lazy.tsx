@@ -20,7 +20,7 @@ import {
   CheckCircle2,
   MoreVertical,
   ChevronRight,
-  ShieldCheck,
+  Settings,
   History,
   Zap,
   Radio,
@@ -809,7 +809,13 @@ function ChatPage() {
   return (
     <div className="flex-1 w-full flex flex-col bg-[#f8fafc] dark:bg-gray-950 min-h-0">
       {/* ELITE STICKY HEADER */}
-      <div className="sticky top-0 z-[70] w-full pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pt-[env(safe-area-inset-top)] backdrop-blur-xl bg-white/70 dark:bg-gray-900/60 border-b border-white/20 dark:border-white/5 shadow-2xl shadow-black/5 transition-all duration-500">
+      <div className="sticky top-0 z-[70] w-full pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pt-[env(safe-area-inset-top)] backdrop-blur-xl bg-white/70 dark:bg-gray-900/60 border-b border-primary-500/20 dark:border-primary-500/20 shadow-2xl shadow-black/5 transition-all duration-500">
+        {/* Top/Bottom Accent Lines */}
+        <div className="absolute top-0 left-0 w-full h-[4px] bg-gradient-to-r from-transparent via-primary-500/80 to-transparent z-[80]" />
+        <div className="absolute bottom-0 left-0 w-full h-[1.5px] bg-gradient-to-r from-transparent via-primary-500/50 to-transparent z-[80]" />
+        
+        {/* Subtle Background Tint */}
+        <div className="absolute inset-0 bg-gradient-to-b from-primary-500/20 to-transparent pointer-events-none" />
         <div className="max-w-screen-xl mx-auto px-6 h-28 flex items-center gap-6">
           {/* Elite Back Navigation */}
           <button
@@ -897,8 +903,8 @@ function ChatPage() {
                 </div>
 
                 {[
-                  { label: "Group Profile", icon: Info, action: () => navigate({ to: `/group-info/${address}` }), color: "text-blue-500", bg: "bg-blue-500/10" },
-                  { label: "Manage Roles", icon: ShieldCheck, action: () => navigate({ to: `/group-info/${address}`, search: { returnTo: `/groups/${address}`, tab: "settings" } }), color: "text-primary-500", bg: "bg-primary-500/10" },
+                  { label: "Registry Info", icon: Info, action: () => navigate({ to: `/group-info/${address}` }), color: "text-blue-500", bg: "bg-blue-500/10" },
+                  { label: "Registry Settings", icon: Settings, action: () => navigate({ to: `/group-info/${address}`, search: { returnTo: `/groups/${address}`, tab: "settings" } }), color: "text-primary-500", bg: "bg-primary-500/10" },
                   { label: isFavorite ? "Dismiss Star" : "Star Registry", icon: Star, action: handleToggleFavorite, color: "text-amber-500", bg: "bg-amber-500/10", fill: isFavorite },
                   { label: isArchived ? "Restore Vault" : "Archive Vault", icon: Archive, action: handleToggleArchive, color: "text-orange-500", bg: "bg-orange-500/10" },
                 ].map((item, idx) => (
@@ -1288,7 +1294,7 @@ function ChatPage() {
             {/* Glassmorphic Backing */}
             <div className="absolute inset-0 bg-white/40 dark:bg-gray-900/40 backdrop-blur-3xl rounded-[2.5rem] border border-white/20 dark:border-white/5 shadow-2xl transition-all duration-500 group-focus-within:border-primary-500/50 group-focus-within:bg-white/60 dark:group-focus-within:bg-gray-900/60" />
 
-            <div className="relative flex items-center px-4 py-3 min-h-[72px]">
+            <div className="relative flex items-center px-4 py-2 min-h-[64px]">
               {/* Emoji Trigger */}
               <div ref={emojiPickerRef} className="relative">
                 <div className={`absolute bottom-full mb-6 left-0 z-50 transition-all duration-500 ${!showEmojiPicker ? "opacity-0 scale-95 pointer-events-none translate-y-4" : "opacity-100 scale-100 translate-y-0"}`}>
@@ -1321,7 +1327,7 @@ function ChatPage() {
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }}
                 onFocus={() => setShowEmojiPicker(false)}
                 placeholder="ENCRYPTED TRANSMISSION..."
-                className="flex-1 bg-transparent border-none focus:outline-none focus:ring-0 text-sm font-bold text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-600 px-4 py-2 resize-none max-h-48 uppercase tracking-widest leading-relaxed"
+                className="flex-1 bg-transparent border-none focus:outline-none focus:ring-0 text-sm font-bold text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-600 px-4 py-2 resize-none max-h-48 leading-relaxed"
                 rows={1}
                 style={{ minHeight: "24px" }}
               />
@@ -1339,7 +1345,7 @@ function ChatPage() {
           <button
             onClick={handleSendMessage}
             disabled={!input.trim()}
-            className={`w-[72px] h-[72px] flex items-center justify-center rounded-[2rem] transition-all duration-500 shadow-2xl active:scale-90 flex-shrink-0 ${!input.trim() ? "bg-gray-100 dark:bg-white/5 text-gray-300 dark:text-gray-600" : "bg-primary-500 text-white shadow-primary-500/30 hover:scale-105"}`}
+            className={`w-[64px] h-[64px] flex items-center justify-center rounded-[2rem] transition-all duration-500 shadow-2xl active:scale-90 flex-shrink-0 ${!input.trim() ? "bg-gray-100 dark:bg-white/5 text-gray-300 dark:text-gray-600" : "bg-primary-500 text-white shadow-primary-500/30 hover:scale-105"}`}
           >
             <Zap size={28} strokeWidth={3} fill={input.trim() ? "currentColor" : "none"} />
           </button>

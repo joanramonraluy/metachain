@@ -62,19 +62,31 @@ function handleChannelInvite(pubkey, maxjson) {
       "SELECT channel_id FROM CHANNELS WHERE channel_id = '" + channelId + "'",
       function (res) {
         if (res.rows && res.rows.length > 0) {
-          MDS.log(
-            "ℹ️ [CHANNEL] Channel " + channelId + " already exists. Firing CHANNEL_UPDATE.",
+          // Channel already in DB — but check if we are still a subscriber.
+          // If not (e.g. removed and re-invited), re-insert ourselves.
+          channelRunSQL(
+            "SELECT publickey FROM CHANNEL_SUBSCRIBERS WHERE UPPER(channel_id)=UPPER('" + channelId + "') AND UPPER(publickey)=UPPER('" + (myPublickey || "") + "')",
+            function (subRes) {
+              if (subRes.rows && subRes.rows.length > 0) {
+                MDS.log("ℹ️ [CHANNEL] Channel " + channelId + " already exists and subscriber present. Firing CHANNEL_UPDATE.");
+              } else {
+                MDS.log("ℹ️ [CHANNEL] Channel " + channelId + " exists but subscriber missing — re-adding (re-join after removal).");
+                var reJoinSql =
+                  "INSERT INTO CHANNEL_SUBSCRIBERS (channel_id, publickey, username, joined_date, role) " +
+                  "VALUES ('" + channelId + "', '" + (myPublickey || "") + "', '" + myUsername + "', " + Date.now() + ", 'subscriber')";
+                channelRunSQL(reJoinSql, function () {});
+              }
+              MDS.comms.solo(JSON.stringify({ type: "CHANNEL_UPDATE", channelId: channelId }));
+              requestChannelHistoryFromSW(channelId);
+            }
           );
-          MDS.comms.solo(
-            JSON.stringify({ type: "CHANNEL_UPDATE", channelId: channelId }),
-          );
-          requestChannelHistoryFromSW(channelId);
           return;
         }
 
         // 2. Insert Channel
+        var isPublicVal = (maxjson.isPublic === true || maxjson.isPublic === 1) ? 1 : 0;
         var insChannel =
-          "INSERT INTO CHANNELS (channel_id, name, description, admin_publickey, created_date, avatar) " +
+          "INSERT INTO CHANNELS (channel_id, name, description, admin_publickey, created_date, avatar, is_public) " +
           "VALUES ('" +
           channelId +
           "', '" +
@@ -87,7 +99,9 @@ function handleChannelInvite(pubkey, maxjson) {
           createdDate +
           ", '" +
           avatar +
-          "')";
+          "', " +
+          isPublicVal +
+          ")";
 
         channelRunSQL(insChannel, function (insRes) {
           if (insRes.status) {
@@ -512,6 +526,8 @@ function handleChannelInfoUpdate(pubkey, maxjson) {
     );
   if (maxjson.avatar !== undefined)
     updates.push("avatar='" + (maxjson.avatar || "").replace(/'/g, "''") + "'");
+  if (maxjson.isPublic !== undefined)
+    updates.push("is_public=" + (maxjson.isPublic ? 1 : 0));
 
   if (updates.length === 0) return;
 
@@ -545,7 +561,8 @@ function handleChannelRoleUpdate(pubkey, maxjson) {
     "📢 [CHANNEL] handleChannelRoleUpdate from " + pubkey.substring(0, 10),
   );
 
-  var channelId = maxjson.channelId;
+  var channelId = (maxjson.channelId || "").replace(/'/g, "''");
+  var senderPubkey = (pubkey || "").replace(/'/g, "''");
   var targetPubkey = (maxjson.targetPubkey || "").replace(/'/g, "''");
   var newRole = (maxjson.newRole || "subscriber").replace(/'/g, "''");
 
@@ -559,34 +576,54 @@ function handleChannelRoleUpdate(pubkey, maxjson) {
   var checkSenderSql =
     "SELECT role FROM CHANNEL_SUBSCRIBERS WHERE channel_id='" +
     channelId +
-    "' AND publickey='" +
-    pubkey +
-    "'";
+    "' AND UPPER(publickey)=UPPER('" +
+    senderPubkey +
+    "')";
   MDS.sql(checkSenderSql, function (resSender) {
-    if (!resSender.status || !resSender.rows || resSender.rows.length === 0)
-      return;
+    var senderRole =
+      resSender &&
+      resSender.status &&
+      resSender.rows &&
+      resSender.rows.length > 0
+        ? String(resSender.rows[0].ROLE || resSender.rows[0].role || "").toLowerCase()
+        : "";
+    var senderIsOperator = senderRole === "admin" || senderRole === "creator";
 
-    var senderRole = (
-      resSender.rows[0].ROLE ||
-      resSender.rows[0].role ||
-      ""
-    ).toLowerCase();
-    if (senderRole !== "admin") return;
-
-    var updateSql =
-      "UPDATE CHANNEL_SUBSCRIBERS SET role='" +
-      newRole +
-      "' WHERE channel_id='" +
+    var checkAdminSql =
+      "SELECT admin_publickey FROM CHANNELS WHERE channel_id='" +
       channelId +
-      "' AND publickey='" +
-      targetPubkey +
-      "'";
-    channelRunSQL(updateSql, function (updateRes) {
-      if (updateRes.status) {
-        MDS.comms.solo(
-          JSON.stringify({ type: "CHANNEL_UPDATE", channelId: channelId }),
-        );
+      "' LIMIT 1";
+    MDS.sql(checkAdminSql, function (adminRes) {
+      var adminPk =
+        adminRes &&
+        adminRes.status &&
+        adminRes.rows &&
+        adminRes.rows.length > 0
+          ? (adminRes.rows[0].ADMIN_PUBLICKEY || adminRes.rows[0].admin_publickey || "")
+          : "";
+      var senderIsChannelAdmin =
+        !!adminPk && adminPk.toUpperCase() === senderPubkey.toUpperCase();
+
+      if (!senderIsOperator && !senderIsChannelAdmin) {
+        MDS.log("❌ [CHANNEL-ROLE] Unauthorized role update. Sender not operator/admin.");
+        return;
       }
+
+      var updateSql =
+        "UPDATE CHANNEL_SUBSCRIBERS SET role='" +
+        newRole +
+        "' WHERE channel_id='" +
+        channelId +
+        "' AND UPPER(publickey)=UPPER('" +
+        targetPubkey +
+        "')";
+      channelRunSQL(updateSql, function (updateRes) {
+        if (updateRes.status) {
+          MDS.comms.solo(
+            JSON.stringify({ type: "CHANNEL_UPDATE", channelId: channelId }),
+          );
+        }
+      });
     });
   });
 }
@@ -622,23 +659,51 @@ function handleChannelJoinRequest(pubkey, maxjson) {
           if (!chanRes.rows || chanRes.rows.length === 0) return;
           var chan = chanRes.rows[0];
 
-          // 2. Add subscriber
-          var insSub =
-            "INSERT INTO CHANNEL_SUBSCRIBERS (channel_id, publickey, username, joined_date, role) " +
-            "VALUES ('" +
+          // Authorize local processing: only channel admin/operator can approve join.
+          var checkLocalRoleSql =
+            "SELECT role FROM CHANNEL_SUBSCRIBERS WHERE channel_id='" +
             channelId +
-            "', '" +
-            pubkey +
-            "', '" +
-            requesterName +
-            "', " +
-            Date.now() +
-            ", 'subscriber')";
+            "' AND UPPER(publickey)=UPPER('" +
+            myPubkey.replace(/'/g, "''") +
+            "') LIMIT 1";
+          MDS.sql(checkLocalRoleSql, function (roleRes) {
+            var localRole =
+              roleRes &&
+              roleRes.status &&
+              roleRes.rows &&
+              roleRes.rows.length > 0
+                ? String(roleRes.rows[0].ROLE || roleRes.rows[0].role || "").toLowerCase()
+                : "";
+            var localIsOperator = localRole === "admin" || localRole === "creator";
+            var channelAdminPk = (chan.ADMIN_PUBLICKEY || chan.admin_publickey || "").toString();
+            var localIsChannelAdmin =
+              !!channelAdminPk &&
+              channelAdminPk.toUpperCase() === myPubkey.toUpperCase();
+            if (!localIsOperator && !localIsChannelAdmin) {
+              MDS.log("⚠️ [CHANNEL] Ignored join request. Local node is not channel admin/operator.");
+              return;
+            }
 
-          MDS.sql(insSub, function (insRes) {
-            if (!insRes.status) return;
+            // 2. Add subscriber (MERGE so re-joins don't fail on duplicate key)
+            var insSub =
+              "MERGE INTO CHANNEL_SUBSCRIBERS (channel_id, publickey, username, joined_date, role) " +
+              "KEY (channel_id, publickey) " +
+              "VALUES ('" +
+              channelId +
+              "', '" +
+              pubkey +
+              "', '" +
+              requesterName +
+              "', " +
+              Date.now() +
+              ", 'subscriber')";
+
+            MDS.sql(insSub, function (insRes) {
+              // Proceed regardless of merge result — always send invite back.
+              // Subscriber may already exist (re-join after removal) and that's fine.
 
             // 3. Send INVITE back (as "acceptance")
+            var rawIsPublic = chan.IS_PUBLIC !== undefined ? chan.IS_PUBLIC : chan.is_public;
             var invitePayload = {
               app: "metachain-channel",
               messageType: "channel_invite",
@@ -651,12 +716,39 @@ function handleChannelJoinRequest(pubkey, maxjson) {
               avatar: chan.AVATAR || chan.avatar || "",
               inviteePublickey: pubkey,
               inviteeUsername: requesterName,
+              isPublic: rawIsPublic === 1 || rawIsPublic === true,
               timestamp: Date.now(),
             };
 
             // 3. Send INVITE back (as "acceptance") via smartSend
             var hexData = "0x" + utf8ToHex(JSON.stringify(invitePayload)).toUpperCase();
             smartSend(pubkey, "metachain-channel", hexData, "CHANNEL-JOIN-ACCEPT", false, requesterAddress);
+
+            // 3b. Send all existing subscribers to the new joiner so they see the full list
+            channelRunSQL(
+              "SELECT publickey, username FROM CHANNEL_SUBSCRIBERS WHERE UPPER(channel_id)=UPPER('" + escapeSql(channelId) + "')",
+              function (subListRes) {
+                if (!subListRes.status || !subListRes.rows) return;
+                for (var si = 0; si < subListRes.rows.length; si++) {
+                  var subPk = subListRes.rows[si].PUBLICKEY || subListRes.rows[si].publickey;
+                  var subName = subListRes.rows[si].USERNAME || subListRes.rows[si].username || "Unknown";
+                  if (!subPk || subPk.toUpperCase() === pubkey.toUpperCase()) continue;
+                  var subSyncPayload = {
+                    app: "metachain-channel",
+                    messageType: "channel_subscriber_added",
+                    channelId: channelId,
+                    channelName: chan.NAME || chan.name,
+                    adminPublickey: myPubkey,
+                    adminUsername: myName,
+                    subscriberPublickey: subPk,
+                    subscriberUsername: subName,
+                    timestamp: Date.now(),
+                  };
+                  var subHex = "0x" + utf8ToHex(JSON.stringify(subSyncPayload)).toUpperCase();
+                  smartSend(pubkey, "metachain-channel", subHex, "CHANNEL-SUB-SYNC", false, requesterAddress);
+                }
+              }
+            );
 
             // 4. Send SYSTEM MESSAGE locally
             var systemMsg = requesterName + " joined the channel";
@@ -671,12 +763,13 @@ function handleChannelJoinRequest(pubkey, maxjson) {
               ", 0)";
             MDS.sql(insSys);
 
-            MDS.comms.solo(
-              JSON.stringify({
-                type: "CHANNEL_NEW_MESSAGE",
-                channelId: channelId,
-              }),
-            );
+              MDS.comms.solo(
+                JSON.stringify({
+                  type: "CHANNEL_NEW_MESSAGE",
+                  channelId: channelId,
+                }),
+              );
+            });
           });
         },
       );
@@ -698,10 +791,10 @@ function handleChannelSubscriberAdded(pubkey, maxjson) {
   MDS.log("📢 [CHANNEL] Subscriber added to " + channelId + ": " + newPubkey.substring(0, 10));
 
   var upsertSql =
-    "MERGE INTO CHANNEL_SUBSCRIBERS (channel_id, publickey, username, role) " +
+    "MERGE INTO CHANNEL_SUBSCRIBERS (channel_id, publickey, username, joined_date, role) " +
     "KEY (channel_id, publickey) " +
     "VALUES ('" + escapeSql(channelId) + "', '" + escapeSql(newPubkey) + "', '" +
-    escapeSql(newUsername) + "', 'subscriber')";
+    escapeSql(newUsername) + "', " + Date.now() + ", 'subscriber')";
   MDS.sql(upsertSql, function () {
     MDS.comms.solo(JSON.stringify({ type: "CHANNEL_UPDATE", channelId: channelId }));
   });
@@ -718,7 +811,19 @@ function handleChannelSubscriberRemoved(pubkey, maxjson) {
     "DELETE FROM CHANNEL_SUBSCRIBERS WHERE channel_id='" + escapeSql(channelId) +
     "' AND UPPER(publickey)=UPPER('" + escapeSql(removedPubkey) + "')";
   MDS.sql(delSql, function () {
-    MDS.comms.solo(JSON.stringify({ type: "CHANNEL_UPDATE", channelId: channelId }));
+    // If WE are the removed subscriber, also purge CHANNELS and CHANNEL_MESSAGES
+    // so we don't end up in a zombie state (CHANNELS exists but CHANNEL_SUBSCRIBERS doesn't)
+    if (MY_MAXIMA_PK && removedPubkey.toUpperCase() === MY_MAXIMA_PK.toUpperCase()) {
+      MDS.log("🚪 [CHANNEL] We were removed from " + channelId + " — purging local data");
+      var safeId = escapeSql(channelId);
+      MDS.sql("DELETE FROM CHANNELS WHERE channel_id='" + safeId + "'", function () {
+        MDS.sql("DELETE FROM CHANNEL_MESSAGES WHERE channel_id='" + safeId + "'", function () {
+          MDS.comms.solo(JSON.stringify({ type: "CHANNEL_REMOVED", channelId: channelId }));
+        });
+      });
+    } else {
+      MDS.comms.solo(JSON.stringify({ type: "CHANNEL_UPDATE", channelId: channelId }));
+    }
   });
 }
 

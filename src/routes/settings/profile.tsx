@@ -58,7 +58,7 @@ interface SocialLinks {
 }
 
 function RouteComponent() {
-  const { userName, userAvatar, myPublicKey, refreshProfile } = useAppContext();
+  const { userName, userAvatar, myPublicKey, myAddress, refreshProfile } = useAppContext();
   const [name, setName] = useState(userName);
   const [avatar, setAvatar] = useState(userAvatar);
   const [bio, setBio] = useState('');
@@ -66,8 +66,8 @@ function RouteComponent() {
   // UI State for Dialogs/Accordions
 
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const [expandedAddress, setExpandedAddress] = useState<'maxima' | 'minima' | null>(null);
-  const [copiedField, setCopiedField] = useState<'maxima' | 'minima' | null>(null);
+  const [expandedAddress, setExpandedAddress] = useState<'pubkey' | 'maxima' | 'minima' | null>(null);
+  const [copiedField, setCopiedField] = useState<'pubkey' | 'maxima' | 'minima' | null>(null);
   const [minimaAddress, setMinimaAddress] = useState(""); // Needed for L3 accordion
 
   // Extended Profile State - Level 2 (Semi-Private)
@@ -287,11 +287,11 @@ function RouteComponent() {
     }
   };
 
-  const toggleAddress = (type: 'maxima' | 'minima') => {
+  const toggleAddress = (type: 'pubkey' | 'maxima' | 'minima') => {
     setExpandedAddress(expandedAddress === type ? null : type);
   };
 
-  const copyToClipboard = (text: string, type: 'maxima' | 'minima') => {
+  const copyToClipboard = (text: string, type: 'pubkey' | 'maxima' | 'minima') => {
     if (!text) return;
     navigator.clipboard.writeText(text);
     setCopiedField(type);
@@ -856,11 +856,32 @@ function RouteComponent() {
                 className="w-full bg-transparent text-sm font-black text-gray-900 dark:text-white outline-none placeholder:text-gray-300 dark:placeholder:text-gray-700"
                 placeholder="+1 234 567 8900"
               />
+               {/* Addresses Accordions */}
+        <div className="space-y-4">
+           {/* Public Key */}
+           <div className={`bg-white/70 dark:bg-gray-900/40 backdrop-blur-md border border-white/20 dark:border-white/5 rounded-[2.5rem] transition-all overflow-hidden shadow-lg shadow-black/5 ${expandedAddress === 'pubkey' ? 'ring-2 ring-primary-500/20' : ''}`}>
+              <button onClick={() => toggleAddress('pubkey')} className="w-full flex items-center justify-between p-6 hover:bg-black/5 transition-colors text-left">
+                 <div className="flex items-center gap-3">
+                    <Shield size={18} className="text-primary-500" />
+                    <span className="text-xs font-black uppercase tracking-widest text-gray-700 dark:text-gray-300">Public Key</span>
+                 </div>
+                 {expandedAddress === 'pubkey' ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+              </button>
+              {expandedAddress === 'pubkey' && (
+                 <div className="px-6 pb-6 animate-in slide-in-from-top-2">
+                    <div className="bg-black/5 dark:bg-white/5 p-4 rounded-2xl border border-black/5 mb-4 group/addr">
+                       <p className="text-[10px] font-mono text-gray-500 break-all leading-relaxed group-hover/addr:text-primary-500 transition-colors">
+                          {myPublicKey || "Unresolved"}
+                       </p>
+                    </div>
+                    <button onClick={() => copyToClipboard(myPublicKey, 'pubkey')} className={`w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${copiedField === 'pubkey' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'bg-primary-500/10 text-primary-600 hover:bg-primary-500 hover:text-white shadow-lg shadow-primary-500/10'}`}>
+                       {copiedField === 'pubkey' ? <Check size={16} /> : <Copy size={16} />}
+                       {copiedField === 'pubkey' ? 'Copied' : 'Copy Public Key'}
+                    </button>
+                 </div>
+              )}
            </div>
-        </div>
 
-        {/* Addresses Accordions */}
-        <div className="space-y-2">
            {/* Maxima */}
            <div className={`bg-white/70 dark:bg-gray-900/40 backdrop-blur-md border border-white/20 dark:border-white/5 rounded-[2.5rem] transition-all overflow-hidden shadow-lg shadow-black/5 ${expandedAddress === 'maxima' ? 'ring-2 ring-indigo-500/20' : ''}`}>
               <button onClick={() => toggleAddress('maxima')} className="w-full flex items-center justify-between p-6 hover:bg-black/5 transition-colors text-left">
@@ -874,12 +895,12 @@ function RouteComponent() {
                  <div className="px-6 pb-6 animate-in slide-in-from-top-2">
                     <div className="bg-black/5 dark:bg-white/5 p-4 rounded-2xl border border-black/5 mb-4 group/addr">
                        <p className="text-[10px] font-mono text-gray-500 break-all leading-relaxed group-hover/addr:text-indigo-500 transition-colors">
-                          {myPublicKey || "Unresolved"}
+                          {myAddress || "Unresolved"}
                        </p>
                     </div>
-                    <button onClick={() => copyToClipboard(myPublicKey, 'maxima')} className={`w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${copiedField === 'maxima' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'bg-indigo-500/10 text-indigo-600 hover:bg-indigo-500 hover:text-white shadow-lg shadow-indigo-500/10'}`}>
+                    <button onClick={() => copyToClipboard(myAddress, 'maxima')} className={`w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${copiedField === 'maxima' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'bg-indigo-500/10 text-indigo-600 hover:bg-indigo-500 hover:text-white shadow-lg shadow-indigo-500/10'}`}>
                        {copiedField === 'maxima' ? <Check size={16} /> : <Copy size={16} />}
-                       {copiedField === 'maxima' ? 'Copied' : 'Copy Public Key'}
+                       {copiedField === 'maxima' ? 'Copied' : 'Copy Maxima Address'}
                     </button>
                  </div>
               )}
@@ -908,6 +929,8 @@ function RouteComponent() {
                  </div>
               )}
            </div>
+        </div>
+    </div>
          </div>
        </section>
       </div>

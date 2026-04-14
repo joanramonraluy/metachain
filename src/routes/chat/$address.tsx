@@ -285,6 +285,22 @@ function ChatPage() {
   const { chatBackground, mode } = useTheme();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setShowMenu(false);
+      }
+    };
+    if (showMenu) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [showMenu]);
 
   const PROFILE_REQUEST_THROTTLE_MS = 30000;
   const PING_THROTTLE_MS = 30000;
@@ -2900,7 +2916,13 @@ function ChatPage() {
   return (
     <div className="flex-1 w-full flex flex-col bg-[#f8fafc] dark:bg-gray-950 min-h-0 relative overflow-hidden">
       {/* ELITE STICKY HEADER */}
-      <div className="sticky top-0 z-[70] w-full pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pt-[env(safe-area-inset-top)] backdrop-blur-xl bg-white/70 dark:bg-gray-900/60 border-b border-white/20 dark:border-white/5 shadow-2xl shadow-black/5 transition-all duration-500">
+      <div className="sticky top-0 z-[70] w-full pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pt-[env(safe-area-inset-top)] backdrop-blur-xl bg-white/70 dark:bg-gray-900/60 border-b border-primary-500/20 dark:border-primary-500/20 shadow-2xl shadow-black/5 transition-all duration-500">
+        {/* Top/Bottom Accent Lines */}
+        <div className="absolute top-0 left-0 w-full h-[4px] bg-gradient-to-r from-transparent via-primary-500/80 to-transparent z-[80]" />
+        <div className="absolute bottom-0 left-0 w-full h-[1.5px] bg-gradient-to-r from-transparent via-primary-500/50 to-transparent z-[80]" />
+        
+        {/* Subtle Background Tint */}
+        <div className="absolute inset-0 bg-gradient-to-b from-primary-500/20 to-transparent pointer-events-none" />
         <div className="max-w-screen-xl mx-auto px-6 h-28 flex items-center gap-6">
           {/* Elite Back Navigation */}
           <button
@@ -2945,7 +2967,7 @@ function ChatPage() {
           </div>
 
           {/* Elite Header Actions */}
-          <div className="flex gap-4 relative pr-4">
+          <div className="flex gap-4 relative pr-4" ref={menuRef}>
             <button
               onClick={() => setShowMenu(!showMenu)}
               className={`w-14 h-14 flex items-center justify-center rounded-2xl transition-all duration-500 ${showMenu ? "bg-primary-500 text-white shadow-lg shadow-primary-500/30" : "bg-gray-100 dark:bg-white/5 text-gray-500 hover:text-primary-500 shadow-inner"}`}
@@ -2954,7 +2976,9 @@ function ChatPage() {
             </button>
 
             {showMenu && (
-              <div className="absolute top-20 right-0 w-[260px] backdrop-blur-2xl bg-white/95 dark:bg-gray-900/95 rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.2)] border border-white/20 dark:border-white/5 py-4 overflow-hidden z-[100] animate-in slide-in-from-top-4 fade-in duration-500">
+              <div 
+                className="absolute top-20 right-0 w-[260px] backdrop-blur-2xl bg-white/95 dark:bg-gray-900/95 rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.2)] border border-white/20 dark:border-white/5 py-4 overflow-hidden z-[100] animate-in slide-in-from-top-4 fade-in duration-500"
+              >
                 <div className="px-8 py-4 mb-2 border-b border-gray-100 dark:border-white/5">
                   <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.4em]">Grid Registry</span>
                 </div>
@@ -3311,7 +3335,7 @@ function ChatPage() {
       <footer className="sticky bottom-0 z-[60] px-4 pb-4 md:px-8 md:pb-8 pb-[max(1rem,env(safe-area-inset-bottom))] bg-transparent pointer-events-none">
         <div className="max-w-screen-xl mx-auto pointer-events-auto">
           <div className="backdrop-blur-3xl bg-white/80 dark:bg-gray-900/80 rounded-[3rem] p-3 shadow-[0_20px_50px_rgba(0,0,0,0.2)] border border-white/20 dark:border-white/5 flex items-end gap-3 ring-1 ring-black/5 dark:ring-white/5">
-            <div className="flex-1 flex items-center gap-1 min-w-0 bg-gray-100/50 dark:bg-white/5 rounded-[2.5rem] border border-white/10 dark:border-white/5 px-2 focus-within:ring-2 focus-within:ring-primary-500/30 transition-all duration-500">
+            <div className="flex-1 flex items-center gap-1 min-w-0 bg-gray-100/50 dark:bg-white/5 rounded-[2.5rem] border border-white/10 dark:border-white/5 px-2 focus-within:ring-2 focus-within:ring-primary-500/30 transition-all duration-500 min-h-[64px]">
               <button
                 className={`w-11 h-11 shrink-0 flex items-center justify-center rounded-2xl transition-all duration-500 ${showEmojiPicker ? "bg-primary-500 text-white shadow-lg shadow-primary-500/30" : "text-gray-400 hover:bg-white dark:hover:bg-white/10"}`}
                 onClick={() => setShowEmojiPicker(!showEmojiPicker)}
@@ -3368,7 +3392,7 @@ function ChatPage() {
             <button
               onClick={() => { if (typeof handleSendMessage !== 'undefined') handleSendMessage(); }}
               disabled={!input.trim() || isSendingRef.current || isActionRestricted}
-              className={`w-[68px] h-[68px] flex items-center justify-center rounded-[2.25rem] transition-all duration-700 shadow-2xl relative group overflow-hidden ${input.trim() && !isActionRestricted ? "bg-primary-500 text-white scale-100 rotate-0 shadow-primary-500/30" : "bg-gray-100 dark:bg-white/5 text-gray-300 scale-90 -rotate-12 opacity-50 cursor-not-allowed"}`}
+              className={`w-[64px] h-[64px] flex items-center justify-center rounded-[2rem] transition-all duration-700 shadow-2xl relative group overflow-hidden ${input.trim() && !isActionRestricted ? "bg-primary-500 text-white scale-100 rotate-0 shadow-primary-500/30" : "bg-gray-100 dark:bg-white/5 text-gray-300 scale-90 -rotate-12 opacity-50 cursor-not-allowed"}`}
             >
               <div className="absolute inset-0 bg-gradient-to-tr from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
               <Zap size={28} strokeWidth={2.5} className="relative z-10 group-active:scale-90 transition-transform duration-500" />

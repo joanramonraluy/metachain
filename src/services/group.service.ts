@@ -581,8 +581,11 @@ class GroupService {
 
   async updateGroupPublic(groupId: string, isPublic: boolean): Promise<void> {
     try {
-      const sql = `UPDATE GROUPS SET is_public = ${isPublic ? 1 : 0} WHERE group_id = '${groupId}'`;
+      const sql = `UPDATE GROUPS SET is_public = ${isPublic ? 1 : 0} WHERE UPPER(group_id) = UPPER('${groupId}')`;
       await this.runSQL(sql);
+      console.log(
+        `✅ [GROUP-MGMT] Updated group ${groupId} is_public to ${isPublic}.`,
+      );
       this.notifyGroupUpdate(groupId, { is_public: isPublic });
     } catch (err) {
       console.error("❌ [GROUP-MGMT] Failed to update public listing:", err);

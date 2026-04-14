@@ -1,6 +1,6 @@
 # AGENTS.md - MetaChain Engineering Guide
 
-Last reviewed against codebase: 2026-04-12 (branch `v0.9` · fixed Remove Maxima Contact full lifecycle: DB cleanup, network notify, maxcontacts removal by id, UI sync)
+Last reviewed against codebase: 2026-04-12 (branch `v0.9` · standardized Elite Input Hub chat sizing to 64px)
 Scope: `/home/joanramon/Minima/metachain`
 
 ## 0) Mandatory Update Mandate (Required)
@@ -8,6 +8,23 @@ Scope: `/home/joanramon/Minima/metachain`
 **ANY AGENT (AI) making modifications to this repository IS REQUIRED to update this file (`AGENTS.md`) before finishing its task.** 
 
 The goal is that any learning, architectural change, new "fragility point" or design decision is recorded here for future agents. Do not use this file only for reading; it is your shared memory.
+
+**Latest Update (2026-04-14 — Bug 8 fix)**: 
+- Fixed Community "Join" button doing nothing for channels: `buildPublicListings` in `beacon.handler.js` was using `myPubkey`/`myAddress` as `admin_publickey`/`admin_address` for all channels, regardless of whether the local node is actually the channel admin. Subscribers advertising public channels in their beacons would point join requests to themselves instead of the real admin, which was then silently ignored in `handleChannelJoinRequest` (not admin/creator → early return). Fixed by doing a LEFT JOIN with DISCOVERED_PEERS in both the group and channel SQL queries: if the local node IS the admin, `myAddress` is used (most current); if it's a subscriber, the real admin's address is taken from `DISCOVERED_PEERS`. The same fix applies to groups (`creator_publickey`).
+
+**Previous Update (2026-04-14)**: 
+- Standardized channel subscriber roles: changed "Staff" badge to "Administrator" in the `ChannelInfo` registry for better clarity.
+- Enhanced role management UI in channels by adding explicit "Promote" and "Demote" labels and tooltips to the admin action buttons.
+- Fixed security bug: admin users could remove the channel creator from Channel Subscribers. Fixed in two layers: (1) UI guard in `channel-info.$channelId.lazy.tsx` — action buttons are now hidden for the creator row; (2) service guard in `channel.service.ts` `removeSubscriber` — throws if target subscriber has `role = 'creator'`.
+- Fixed sync bug: "Global Discovery" (is_public) switch was not being synced to admin subscribers. `updateChannelPublic` now accepts `myPublicKey` and broadcasts a `channel_info_updated` Maxima message with the `isPublic` field; `handleChannelInfoUpdate` in the SW now applies the `is_public` column update when `isPublic` is present in the payload.
+- Fixed join-time sync gap: `is_public` was never included in `channel_invite` payloads. Fixed in `inviteSubscriber` (service), `handleChannelJoinRequest` acceptance (SW), and `handleChannelInvite` INSERT (SW) — new subscribers and future admins now receive the correct `is_public` value from the moment they join.
+- Fixed Community duplicate listings: the same channel appeared twice because `saveBeaconListings` stored the pubkey with mixed case (`0x` vs `0X`), creating two rows in `DISCOVERED_LISTINGS`. Fixed by normalizing to `pk.toUpperCase()` in the beacon handler. Also added a final deduplication by `type:id` in `getDiscoveredListings` as a safety net for multi-peer listings.
+- Fixed channel removal zombie state: when a user is removed from a channel, their `CHANNELS` and `CHANNEL_MESSAGES` rows are now also purged locally (SW `handleChannelSubscriberRemoved`). A new `CHANNEL_REMOVED` event is emitted so `channels.$channelId` and `channel-info.$channelId` navigate home. Fixed `handleChannelInvite` to handle re-join after removal: if channel exists in `CHANNELS` but user is not in `CHANNEL_SUBSCRIBERS`, they are re-inserted instead of early-returning.
+- Fixed subscriber list visibility: non-creator users only saw themselves + the creator. Root cause: neither the direct-invite path (`inviteSubscriber`) nor the join-request path (`handleChannelJoinRequest`) sent the existing subscriber list to the new member. Fixed by sending a `channel_subscriber_added` for each existing subscriber to the new invitee/joiner in both paths.
+- Standardized Public Key/Address display: Unified the display of public keys across `ChannelInfo`, `GroupInfo`, and `Discovery` (Community) by implementing a centralized `shortenAddress` utility (`src/utils/hex.ts`). 
+- **New UI Standard (Middle-Ellipsis)**: Based on the user preference (and parity with Community Discovery), addresses are now shortened to show only a 12-character middle segment (e.g., `...XXXX...`) instead of the standard start/end format. This was chosen because start/end sequences are often repetitive in this specific network environment.
+- Updated DM chat header menus to support "click-outside to close" functionality.
+- Fixed input field regression in group chats where uppercase styling was incorrectly applied.
 
 ## 1) Project Intent
 
@@ -1303,3 +1320,146 @@ The full correct sequence for removing a Maxima contact (implemented in `contact
 6. **Call `chatService.notifyChatListUpdate()`** to trigger UI refresh.
 
 The SW handler `handleMaximaContactRemoved` in `contact.handler.js` mirrors steps 1, 4, and 5 on the recipient side.
+
+## 30) Elite Input Hub Design Standard
+
+### 30.1 Specification
+All chat views (DMs, Groups, Channels) must share the same "Elite Input Hub" dimensions for visual parity and balance:
+- **Total Height**: Standardized to **64px** (compact standard).
+- **Input Wrapper**: Must have `min-h-[64px]` and `rounded-[2.5rem]`.
+- **Send Button (Zap)**: Must have `w-[64px] h-[64px]` and `rounded-[2rem]`.
+- **Parent Alignment**: The container holding both must use `flex items-end` to ensure they bottom-align when the input grows (multi-line).
+
+### 30.2 Consistency Rule
+Never use `68px`, `72px` or other ad-hoc sizes for the Zap button in chat views. If you modify a chat's footer, verify it matches the **64px** standard across all three view types.
+
+### 30.3 File References
+- DM Chat: `src/routes/chat/$address.tsx`
+- Group Chat: `src/routes/groups.$groupId.lazy.tsx`
+- Channel Chat: `src/routes/channels.$channelId.lazy.tsx`
+
+## 31) Global Discovery Listings — H2 Boolean Query Regression (Critical)
+
+### 31.1 Symptom
+The "Global Discovery" switch appeared to do nothing and beacons were emitted with `listings: []`.
+
+SW logs showed SQL errors:
+- `Values of types "BOOLEAN" and "CHARACTER VARYING(1)" are not comparable`
+- Failing queries were in `buildPublicListings` for both `GROUPS` and `CHANNELS`.
+
+### 31.2 Root Cause
+`public/service-workers/handlers/beacon.handler.js` (and compiled `public/service.js`) used mixed-type predicates:
+- `is_public=TRUE OR is_public='1' OR is_public='true'`
+- `archived ... OR archived='0' OR archived='false'`
+
+On current H2 behavior, comparing BOOLEAN columns to string literals causes query failure, so listing extraction fails and beacon payloads carry no public listings.
+
+### 31.3 Required Query Pattern
+For BOOLEAN columns, use boolean-safe predicates only:
+- `COALESCE(is_public, FALSE)=TRUE`
+- `COALESCE(archived, FALSE)=FALSE`
+
+Do not reintroduce string comparisons for boolean columns in SW SQL.
+
+### 31.4 Additional FE Observability
+`updateGroupPublic` / `updateChannelPublic` now log successful local state changes:
+- `✅ [GROUP-MGMT] Updated group ... is_public ...`
+- `✅ [CHANNEL] Updated channel ... is_public ...`
+
+This helps separate "switch click works" from downstream beacon/discovery propagation issues.
+
+## 32) Group Role Update Case-Sensitivity (Critical)
+
+### 32.1 Symptom
+In restricted groups, creators receive join requests, but promoted admins do not.
+SW logs on affected admin nodes show:
+- `My role in <groupId> is member`
+- `Ignored. We are not an admin/creator ...`
+
+### 32.2 Root Cause
+`handleGroupRoleUpdate` in SW used case-sensitive `publickey='...'` matching for:
+- sender authorization check
+- target lookup
+- target update
+
+Because public keys can differ as `0x...` vs `0X...` between payloads and DB rows, role propagation may fail silently on some nodes, leaving members as `member` instead of `admin`.
+
+### 32.3 Required Rule
+All role-update SQL in SW must use case-insensitive matching:
+- `UPPER(publickey)=UPPER('<pk>')`
+
+Applied to:
+- `public/service-workers/handlers/group.handler.js`
+- `public/service.js` (compiled runtime copy)
+
+### 32.4 Additional Guard: Creator Fallback Authorization
+Some nodes may temporarily miss the creator row in `GROUP_MEMBERS` (stale/incomplete member replication). In that state, valid `group_role_update` messages from the creator can be rejected with:
+- `Unauthorized role update. Sender not in group.`
+
+`handleGroupRoleUpdate` must therefore allow sender authorization when either:
+1. Sender role in `GROUP_MEMBERS` is `creator` or `admin`, OR
+2. Sender pubkey matches `GROUPS.creator_publickey` for the same `group_id` (case-insensitive).
+
+This preserves security while preventing false rejections that block admin promotion and downstream restricted-join propagation.
+
+### 32.5 Rhino Parse Safety for SW Hotfixes
+When patching SW JS manually, avoid trailing commas in function call argument lists (e.g. `MDS.log("x",)`), and verify SQL string concatenations close all parentheses/quotes (e.g. `UPPER(...)=UPPER('...')`).
+Either issue can crash SW startup with Rhino errors like `missing ) after argument list`.
+
+### 32.6 Callback-Balance Guard (Critical)
+In `handleGroupRoleUpdate`, nested `MDS.sql(..., function(){...})` blocks must keep all callback closings balanced.
+One missing `});` before `handleGroupJoinRequestEvent` causes Rhino startup crash reported near line `#3474` with:
+- `EvaluatorException: missing ) after argument list`
+
+When editing nested SW callbacks, always re-check closure count locally in both:
+- `public/service-workers/handlers/group.handler.js`
+- `public/service.js`
+
+## 33) Group Info Permission Visibility
+
+### 33.1 Settings Access Boundaries
+In `src/routes/group-info.$groupId.lazy.tsx`, the `ACTION LEDGER` block (`Restriction List` + `Inbound Terminal`) must be visible only to group operators:
+- `creator`
+- `admin`
+
+Regular members must not see these panels in the Settings tab.
+
+## 34) Fast Role Reconciliation for Restricted Join Requests
+
+### 34.1 Purpose
+Quick mitigation for stale role replication: admin nodes that still show local role `member` were ignoring `group_join_request_propagated`.
+
+### 34.2 Behavior
+In SW `executeJoinRequestAuth` path:
+- If local role is not `creator/admin` **and** message type is `group_join_request_propagated`,
+- and sender matches `GROUPS.creator_publickey`,
+- then SW reconciles local membership role to `admin` (`UPDATE`, fallback `INSERT`) and immediately re-runs join-request auth once.
+
+Files:
+- `public/service-workers/handlers/group.handler.js`
+- `public/service.js`
+
+### 34.3 Scope
+This is an operational quick fix (not a full role-version protocol). It should be treated as interim hardening to keep restricted-join moderation functional under temporary role-state drift.
+
+## 35) Channel Admin Authorization Hardening
+
+### 35.1 `channel_role_update` Validation
+SW `handleChannelRoleUpdate` must not trust case-sensitive sender matching.
+Required checks:
+- Sender role in `CHANNEL_SUBSCRIBERS` using case-insensitive pubkey (`UPPER(...)`), OR
+- Sender equals `CHANNELS.admin_publickey` (case-insensitive fallback).
+
+Updates to target subscriber role must also use case-insensitive pubkey matching.
+
+### 35.2 `channel_join_request` Guard
+SW `handleChannelJoinRequest` must authorize local processing before adding subscribers.
+Only proceed if local node is:
+- `admin` or `creator` in `CHANNEL_SUBSCRIBERS`, OR
+- equals `CHANNELS.admin_publickey`.
+
+If not authorized, request must be ignored (`CHANNEL` warning log) and no DB mutation should occur.
+
+### 35.3 Files
+- `public/service-workers/handlers/channel.handler.js`
+- `public/service.js`

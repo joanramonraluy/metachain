@@ -9,6 +9,7 @@ import {
 import { Search, RefreshCw, Filter, ChevronRight, Users as UsersIcon, User, Radio, Copy, Check, LayoutGrid, Plus, ArrowRight, ExternalLink } from "lucide-react";
 import { channelService } from "../services/channel.service";
 import { groupService } from "../services/group.service";
+import { shortenAddress } from "../utils/hex";
 
 export const Route = createLazyFileRoute("/discovery")({
   component: DiscoveryPage,
@@ -520,6 +521,9 @@ function CompactUserRow({ user, onClick }: { user: UserWithStatus, onClick: () =
              <h3 className="text-base font-black text-gray-900 dark:text-white truncate tracking-tight group-hover:text-primary-500 transition-colors uppercase">
                {user.alias || "Nomad User"}
              </h3>
+             <span className="text-[9px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest font-mono">
+                {shortenAddress(user.publickey)}
+             </span>
              {user.country && <span className="text-[9px] font-black uppercase text-primary-500 tracking-widest hidden sm:block">{user.country}</span>}
           </div>
           <p className="text-xs text-gray-500 dark:text-gray-400 font-bold truncate opacity-70">

@@ -57,3 +57,20 @@ export function utf8ToHex(s: string): string {
     for (const b of encoder.encode(s)) r += ("0" + b.toString(16)).slice(-2);
     return r;
 }
+
+/**
+ * Shorten a public key or address by showing only the middle part.
+ * The user requested this as start/end sequences often look similar in their environment.
+ */
+export function shortenAddress(addr: string): string {
+  if (!addr) return "";
+  if (addr.length < 20) return addr;
+  
+  // Extract a meaningful chunk from the middle
+  // For a ~66 char PK or ~60 char Mx address, we take 12 characters from the center
+  const mid = Math.floor(addr.length / 2);
+  const start = mid - 6;
+  const end = mid + 6;
+  
+  return `...${addr.substring(start, end)}...`;
+}

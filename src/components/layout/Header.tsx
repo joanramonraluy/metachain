@@ -17,7 +17,13 @@ export default function Header({ onToggleMenu }: HeaderProps) {
   const pageTitle = "MetaChain";
 
   return (
-    <header className="sticky top-0 w-full z-40 flex-shrink-0 transition-all duration-300 pt-[env(safe-area-inset-top)] bg-white/40 dark:bg-gray-950/40 backdrop-blur-xl border-b border-white/20 dark:border-white/5 shadow-2xl shadow-black/5">
+    <header className="sticky top-0 w-full z-40 flex-shrink-0 transition-all duration-300 pt-[env(safe-area-inset-top)] bg-white/40 dark:bg-gray-950/40 backdrop-blur-xl border-b border-primary-500/20 dark:border-primary-500/20 shadow-2xl shadow-black/5">
+      {/* Top/Bottom Accent Lines */}
+      <div className="absolute top-0 left-0 w-full h-[4px] bg-gradient-to-r from-transparent via-primary-500/80 to-transparent z-[80]" />
+      <div className="absolute bottom-0 left-0 w-full h-[1.5px] bg-gradient-to-r from-transparent via-primary-500/50 to-transparent z-[80]" />
+      
+      {/* Subtle Background Tint */}
+      <div className="absolute inset-0 bg-gradient-to-b from-primary-500/20 via-transparent to-transparent pointer-events-none" />
       <div className="max-w-[2000px] mx-auto flex justify-between items-center px-6 h-20 lg:px-12">
         
         {/* Left Section: Menu & Brand */}
