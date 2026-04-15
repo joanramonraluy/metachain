@@ -642,7 +642,7 @@ class ChannelService {
       const res = await this.runSQL(`
                 SELECT * FROM CHANNEL_MESSAGES
                 WHERE UPPER(channel_id) = UPPER('${channelId}')
-                ORDER BY date ASC
+                ORDER BY date ASC, sender_seq ASC
             `);
       return res.rows || [];
     } catch (err) {

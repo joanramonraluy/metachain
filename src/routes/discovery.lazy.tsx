@@ -6,7 +6,7 @@ import {
   DiscoveredListing,
   UserWithStatus,
 } from "../services/discovery.service";
-import { Search, RefreshCw, Filter, ChevronRight, Users as UsersIcon, User, Radio, Copy, Check, LayoutGrid, Plus, ArrowRight, ExternalLink } from "lucide-react";
+import { Search, RefreshCw, Filter, ChevronRight, Users as UsersIcon, User, Radio, Copy, Check, LayoutGrid, Plus, ArrowRight, ExternalLink, Shield } from "lucide-react";
 import { channelService } from "../services/channel.service";
 import { groupService } from "../services/group.service";
 import { shortenAddress } from "../utils/hex";
@@ -503,37 +503,89 @@ function CompactUserRow({ user, onClick }: { user: UserWithStatus, onClick: () =
   return (
     <div 
       onClick={onClick}
-      className="group relative transition-all duration-500 animate-in fade-in slide-in-from-bottom-4 rounded-[2.5rem] bg-white/70 dark:bg-gray-900/40 backdrop-blur-md border border-white/20 dark:border-white/5 shadow-lg shadow-black/5 hover:scale-[1.02] active:scale-95 hover:shadow-2xl hover:z-20 p-5 flex items-center gap-5 cursor-pointer"
+      className="group relative transition-all duration-500 animate-in fade-in slide-in-from-bottom-4 rounded-[2.5rem] bg-white/70 dark:bg-gray-900/40 backdrop-blur-md border border-white/20 dark:border-white/5 shadow-lg shadow-black/5 hover:scale-[1.01] active:scale-95 hover:shadow-2xl hover:z-20 p-5 flex items-center gap-5 cursor-pointer overflow-hidden"
     >
+       {/* Resource Count Badge (Top Right) */}
+       {user.resource_count && user.resource_count > 0 && (
+          <div className="absolute top-4 right-6 flex items-center gap-1.5 px-3 py-1 bg-primary-500/10 dark:bg-primary-500/20 rounded-full border border-primary-500/10">
+             <Radio size={10} className="text-primary-500 animate-pulse" />
+             <span className="text-[9px] font-black text-primary-600 dark:text-primary-400 uppercase tracking-widest">
+                {user.resource_count} {user.resource_count === 1 ? 'Resource' : 'Resources'}
+             </span>
+          </div>
+       )}
+
+       {/* Avatar Section */}
        <div className="relative flex-shrink-0">
-          {user.avatar && user.avatar.length > 10 ? (
-            <img src={user.avatar} className="w-12 h-12 rounded-2xl object-cover bg-gray-200 dark:bg-gray-700 shadow-inner group-hover:scale-110 transition-transform duration-500" />
-          ) : (
-            <div className={`w-12 h-12 rounded-2xl bg-primary-500/10 text-primary-600 flex items-center justify-center font-black text-lg border border-white/20 dark:border-white/10 shadow-inner group-hover:scale-110 transition-transform duration-500`}>
-              {(user.alias || "A").charAt(0).toUpperCase()}
-            </div>
-          )}
-          <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white dark:border-gray-900 ${user.is_online ? "bg-emerald-500 shadow-glow shadow-emerald-500/50 animate-pulse" : "bg-gray-300"}`}></div>
+          <div className="relative">
+             {user.avatar && user.avatar.length > 10 ? (
+               <img src={user.avatar} className="w-14 h-14 rounded-2xl object-cover bg-gray-200 dark:bg-gray-700 shadow-inner group-hover:scale-105 transition-transform duration-500" />
+             ) : (
+               <div className={`w-14 h-14 rounded-2xl bg-primary-500/10 text-primary-600 flex items-center justify-center font-black text-xl border border-white/20 dark:border-white/10 shadow-inner group-hover:scale-105 transition-transform duration-500`}>
+                 {(user.alias || "A").charAt(0).toUpperCase()}
+               </div>
+             )}
+             <div className={`absolute -bottom-1 -right-1 w-4.5 h-4.5 rounded-full border-2 border-white dark:border-gray-900 ${user.is_online ? "bg-emerald-500 shadow-glow shadow-emerald-500/50 animate-pulse" : "bg-gray-300"}`}></div>
+          </div>
        </div>
 
+       {/* Content Section */}
        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-0.5">
-             <h3 className="text-base font-black text-gray-900 dark:text-white truncate tracking-tight group-hover:text-primary-500 transition-colors uppercase">
-               {user.alias || "Nomad User"}
-             </h3>
-             <span className="text-[9px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest font-mono">
-                {shortenAddress(user.publickey)}
-             </span>
-             {user.country && <span className="text-[9px] font-black uppercase text-primary-500 tracking-widest hidden sm:block">{user.country}</span>}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 mb-1.5">
+             <div className="flex items-center gap-2">
+                <h3 className="text-base font-black text-gray-900 dark:text-white truncate tracking-tight group-hover:text-primary-500 transition-colors uppercase">
+                  {user.alias || "Nomad User"}
+                </h3>
+                {user.minimaaddress && (
+                   <div title="Minima Layer 3 Address Active" className="flex items-center justify-center w-5 h-5 rounded-lg bg-emerald-500/10 text-emerald-600 shadow-sm border border-emerald-500/10">
+                      <Shield size={10} strokeWidth={3} />
+                   </div>
+                )}
+             </div>
+
+             <div className="flex items-center gap-2">
+                <span className="text-[9px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest font-mono bg-black/5 dark:bg-white/5 px-2 py-0.5 rounded-lg">
+                   {shortenAddress(user.publickey)}
+                </span>
+                {user.country && (
+                   <span className="text-[9px] font-black uppercase text-primary-500 tracking-widest px-2 py-0.5 bg-primary-500/5 rounded-lg border border-primary-500/10">
+                      {user.country}
+                   </span>
+                )}
+             </div>
           </div>
-          <p className="text-xs text-gray-500 dark:text-gray-400 font-bold truncate opacity-70">
+
+          <p className="text-xs text-gray-500 dark:text-gray-400 font-bold truncate opacity-70 mb-2">
              {user.bio || "Decentralized MetaChain Member"}
           </p>
+
+          {/* Languages Section */}
+          {user.languages && user.languages.length > 0 && (
+             <div className="flex flex-wrap gap-1.5 max-h-12 overflow-hidden">
+                {user.languages.map((lang, idx) => (
+                   <div 
+                      key={`${lang}-${idx}`}
+                      className="text-[8px] font-black uppercase tracking-widest px-2 py-0.5 bg-black/5 dark:bg-white/10 text-gray-400 dark:text-gray-500 rounded-md border border-black/5 dark:border-white/5"
+                   >
+                      {lang}
+                   </div>
+                ))}
+             </div>
+          )}
        </div>
 
-       <div className="flex items-center text-primary-500 opacity-0 group-hover:opacity-100 transition-all translate-x-2 group-hover:translate-x-0">
+       <div className="flex items-center text-primary-500 opacity-0 group-hover:opacity-100 transition-all translate-x-2 group-hover:translate-x-0 ml-4">
           <ChevronRight size={18} strokeWidth={3} />
        </div>
+
+       {/* Sub-indicator for Source */}
+       {user.source === "P2P" && (
+          <div className="absolute top-0 right-0 w-16 h-16 pointer-events-none opacity-10">
+             <div className="absolute top-2 right-2 transform rotate-45">
+                <Radio size={48} className="text-primary-500" />
+             </div>
+          </div>
+       )}
     </div>
   );
 }

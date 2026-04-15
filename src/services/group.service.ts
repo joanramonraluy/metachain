@@ -572,6 +572,30 @@ class GroupService {
       console.log(
         `✅ [GROUP-ROLE] Broadcasted role change to ${propagatedCount} members.`,
       );
+
+      // If promoting to admin, send the authoritative settings snapshot directly
+      // from the FE (the SW never processes its own outgoing role_update messages).
+      if (newRole === "admin") {
+        const group = await this.getGroupInfo(groupId);
+        if (group) {
+          const snapshotPayload: GroupMaximaMessage = {
+            messageType: "group_update_details",
+            groupId,
+            groupName: (group as any).NAME || (group as any).name || "",
+            senderPublickey: myPublicKey,
+            senderUsername: "",
+            newName: (group as any).NAME || (group as any).name || "",
+            newDescription: (group as any).DESCRIPTION || (group as any).description || "",
+            avatar: (group as any).AVATAR || (group as any).avatar || "",
+            auto_approve: !!(group as any).auto_approve,
+            is_public: !!(group as any).is_public,
+            timestamp: Date.now(),
+          } as any;
+          await this.sendMaximaMessage(memberPubkey, snapshotPayload).catch(() => {});
+          console.log(`✅ [GROUP-ROLE] Sent settings snapshot to promoted admin ${memberPubkey.substring(0, 10)}`);
+        }
+      }
+
       this.notifyGroupUpdate();
     } catch (err) {
       console.error("❌ [GROUP-MGMT] Failed to update member role:", err);
@@ -631,6 +655,7 @@ class GroupService {
         joinReqRes.rows && joinReqRes.rows.length > 0
           ? joinReqRes.rows[0].ADDRESS || joinReqRes.rows[0].address || ""
           : "";
+      console.log(`🔍 [ADD-MEMBER-UNBAN] memberAddress from join request: "${memberAddress}" for pubkey ${publickey.substring(0, 10)}`);
 
       const members = await this.getGroupMembers(groupId);
       for (const member of members) {
@@ -847,6 +872,26 @@ class GroupService {
         }
       }
 
+      // Auto-approve any pending join request from this user so they don't
+      // need a separate manual approval after being unbanned.
+      const pendingReq = await this.runSQL(
+        `SELECT username FROM GROUP_JOIN_REQUESTS WHERE group_id='${groupId}' AND UPPER(publickey)=UPPER('${publickey}') AND status='pending' LIMIT 1`,
+      );
+      if (pendingReq.rows && pendingReq.rows.length > 0) {
+        const unbannedUsername =
+          pendingReq.rows[0].USERNAME || pendingReq.rows[0].username || "Unknown";
+        console.log(
+          `🔄 [GROUP-UNBAN] Pending join request found for ${publickey.substring(0, 10)}, auto-approving...`,
+        );
+        const isAlreadyMember = (await this.getGroupMembers(groupId)).some(
+          (m: any) => (m.PUBLICKEY || m.publickey || "").toUpperCase() === publickey.toUpperCase(),
+        );
+        if (!isAlreadyMember) {
+          await this.addMember(groupId, publickey, unbannedUsername, senderPub, senderName);
+        }
+        await this.resolveJoinRequest(groupId, publickey, "approved");
+      }
+
       this.notifyGroupUpdate();
     } catch (err) {
       console.error("❌ [GROUP-BAN] Failed to unban member:", err);
@@ -885,7 +930,16 @@ class GroupService {
                 ORDER BY b.banned_at DESC
             `;
       const res = await this.runSQL(sql);
-      return res.rows || [];
+      const rows: any[] = res.rows || [];
+      // Deduplicate by publickey — a double LEFT JOIN on DISCOVERED_PEERS + METACHAIN_USERS
+      // can produce multiple rows per ban entry if the peer appears in both tables.
+      const seen = new Set<string>();
+      return rows.filter((row) => {
+        const pk = (row.PUBLICKEY || row.publickey || "").toUpperCase();
+        if (seen.has(pk)) return false;
+        seen.add(pk);
+        return true;
+      });
     } catch (err) {
       console.error("❌ [GROUP-BAN] Failed to get bans:", err);
       return [];
@@ -1118,7 +1172,7 @@ class GroupService {
       const sql = `
                 SELECT * FROM GROUP_MESSAGES
                 WHERE UPPER(group_id) = UPPER('${groupId}')
-                ORDER BY date ASC
+                ORDER BY date ASC, sender_seq ASC
             `;
       const res = await this.runSQL(sql);
       if (!res.rows) return [];
@@ -1205,6 +1259,7 @@ class GroupService {
       const peerRes = await dbRunSQL(
         `SELECT ADDRESS FROM DISCOVERED_PEERS WHERE UPPER(PUBLICKEY)=UPPER('${safeKey}') AND ADDRESS IS NOT NULL LIMIT 1`,
       );
+      console.log(`🔍 [MAXIMA-UNBAN] DISCOVERED_PEERS lookup for ${toPublicKey.substring(0, 10)}: found=${peerRes?.rows?.length > 0}`);
       if (peerRes && peerRes.rows && peerRes.rows.length > 0) {
         const rawAddr = peerRes.rows[0].ADDRESS as string;
         const mxAddr = rawAddr
@@ -1214,7 +1269,7 @@ class GroupService {
         // this loop for ~77s per member (AGENTS.md fragility #13). Group sync on
         // reconnect (requestAllGroupsHistory) fills any gaps caused by missed delivery.
         const sendCmd = `maxima action:send to:${mxAddr} application:metachain-group data:${hexData} poll:false`;
-        console.log(`🔍 [MAXIMA] Using Mx address for group send`);
+        console.log(`🔍 [MAXIMA-UNBAN] Sending '${message.messageType}' to ${toPublicKey.substring(0, 10)} via Mx address: ${mxAddr.substring(0, 20)}`);
         const res = await new Promise<any>((resolve) => {
           MDS.executeRaw(sendCmd, (r: any) => resolve(r));
         });
@@ -1421,6 +1476,7 @@ class GroupService {
         case "group_join_request_propagated":
         case "group_join_request_resolved":
         case "group_address_beacon":
+        case "message_deleted":
           // Handled by Service Worker
           break;
         case "group_update_details": {

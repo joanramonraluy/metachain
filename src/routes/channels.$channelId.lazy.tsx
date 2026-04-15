@@ -100,6 +100,7 @@ function ChannelPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isLoadingMessages = useRef(false);
   const pendingReload = useRef(false);
+  const [isReady, setIsReady] = useState(false);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -194,12 +195,16 @@ function ChannelPage() {
         const survivingPending = prev.filter(
           (m) => m.status === "pending" && !dbTimestamps.has(m.timestamp),
         );
-        return [...parsed, ...survivingPending];
+        return [...parsed, ...survivingPending]
+          .sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
       });
     } catch (err) {
       console.error("❌ [CHANNEL-CHAT] Message load error:", err);
       // Do NOT call setMessages — preserve existing state on SQL error
     } finally {
+      if (isInitialLoad.current && (!messages || messages.length === 0)) {
+        setIsReady(true);
+      }
       setIsInitialized(true);
       isLoadingMessages.current = false;
       if (pendingReload.current) {
@@ -233,6 +238,7 @@ function ChannelPage() {
 
     init();
     isInitialLoad.current = true;
+    setIsReady(false);
 
     const interval = setInterval(loadMessages, 10000);
     return () => clearInterval(interval);
@@ -330,12 +336,11 @@ function ChannelPage() {
   useEffect(() => {
     if (isInitialLoad.current && messages.length > 0) {
       requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          if (scrollContainerRef.current) {
-            scrollContainerRef.current.scrollTop =
-              scrollContainerRef.current.scrollHeight;
-          }
-        });
+        if (scrollContainerRef.current) {
+          scrollContainerRef.current.scrollTop =
+            scrollContainerRef.current.scrollHeight;
+          setIsReady(true);
+        }
       });
       isInitialLoad.current = false;
     } else if (!isInitialLoad.current) {
@@ -697,7 +702,7 @@ function ChannelPage() {
       </div>
 
       {/* ELITE BROADCAST POLICY BANNER */}
-      {!isAdmin && showReadOnlyBanner && (
+      {isInitialized && !isAdmin && showReadOnlyBanner && (
         <div className="mx-6 mt-6 animate-in slide-in-from-top-4 duration-700">
           <div className="backdrop-blur-2xl bg-sky-500/10 border border-sky-400/20 rounded-[2rem] p-6 flex items-center gap-5 shadow-xl shadow-sky-500/5">
             <div className="w-12 h-12 bg-sky-500/20 rounded-2xl flex items-center justify-center text-sky-500 shadow-inner">
@@ -756,8 +761,7 @@ function ChannelPage() {
       {/* MESSAGES BODY */}
       <div
         ref={scrollContainerRef}
-        className={`flex-1 overflow-y-auto flex flex-col p-2 sm:p-4 relative transition-colors
-          ${chatBackground === "dots" ? "" : chatBackground === "grid" ? "" : ""}`}
+        className={`flex-1 overflow-y-auto flex flex-col p-2 sm:p-4 relative transition-opacity duration-100 bg-[#f8fafc] dark:bg-gray-950 ${isReady ? "opacity-100" : "opacity-0"}`}
       >
         {showForwardSuccess && (
           <div className="sticky top-0 z-40 animate-in fade-in slide-in-from-top-4 duration-500">
@@ -870,6 +874,15 @@ function ChannelPage() {
                       });
                       setTimeout(() => inputRef.current?.focus(), 50);
                     } : undefined}
+                    onAvatarClick={
+                      !msg.fromMe && msg.senderPublicKey
+                        ? () =>
+                            navigate({
+                              to: `/contact-info/${msg.senderPublicKey}`,
+                              search: { returnTo: `/channels/${channelId}` },
+                            })
+                        : undefined
+                    }
                     onDelete={isAdmin && msg.sender_seq != null ? () => handleDeleteChannelMessage(msg.sender_seq!) : undefined}
                   />
                 )}

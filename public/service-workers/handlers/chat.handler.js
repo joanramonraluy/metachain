@@ -353,7 +353,11 @@ function handleReadReceipt(pubkey) {
     "UPDATE CHAT_MESSAGES SET state='read' WHERE UPPER(publickey)=UPPER('" +
     safePubkey +
     "') AND username='Me' AND type='text' AND state!='pending' AND state!='failed' AND state!='read' AND state!='confirmed'";
-  MDS.sql(sql);
+  MDS.sql(sql, function (res) {
+    if (res.status && res.rowsAffected > 0) {
+      MDS.comms.solo("CHAT_LIST_UPDATE");
+    }
+  });
 }
 
 function handleDeliveryReceipt(pubkey) {
@@ -365,7 +369,11 @@ function handleDeliveryReceipt(pubkey) {
     "UPDATE CHAT_MESSAGES SET state='delivered' WHERE UPPER(publickey)=UPPER('" +
     safePubkey +
     "') AND username='Me' AND state='sent'";
-  MDS.sql(sql);
+  MDS.sql(sql, function (res) {
+    if (res.status && res.rowsAffected > 0) {
+      MDS.comms.solo("CHAT_LIST_UPDATE");
+    }
+  });
 }
 
 function handlePing(pubkey) {

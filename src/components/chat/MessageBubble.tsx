@@ -489,14 +489,31 @@ export default function MessageBubble({ fromMe, text, charm, amount, timestamp, 
 
             {/* Status Footer */}
             {fromMe && (
-              <div className={`flex items-center justify-end gap-1 mt-1 ${textColor === 'text-white' ? 'opacity-80' : 'opacity-60'}`}>
-                <span className="text-[9px]">
-                  {status === 'pending' && <span className="animate-pulse">⌛</span>}
-                  {status === 'sent' && "✓"}
-                  {status === 'delivered' && "✓✓"}
-                  {status === 'read' && <span className={`${textColor === 'text-white' ? 'text-white font-black' : 'text-primary-500 font-bold'}`}>✓✓</span>}
-                  {status === 'confirmed' && <span className={`${textColor === 'text-white' ? 'text-white font-black' : 'text-emerald-500 font-bold'}`}>✓✓</span>}
-                </span>
+              <div className="flex items-center justify-end gap-0.5 mt-1.5">
+                {status === 'pending' && (
+                  <span className={`text-[11px] leading-none animate-pulse ${textColor === 'text-white' ? 'opacity-70' : 'text-gray-400'}`}>⌛</span>
+                )}
+                {status === 'sent' && (
+                  <Check size={13} strokeWidth={2.5} className={textColor === 'text-white' ? 'text-white/60' : 'text-gray-400'} />
+                )}
+                {status === 'delivered' && (
+                  <span className="flex -space-x-[5px]">
+                    <Check size={13} strokeWidth={2.5} className={textColor === 'text-white' ? 'text-white/70' : 'text-gray-400'} />
+                    <Check size={13} strokeWidth={2.5} className={textColor === 'text-white' ? 'text-white/70' : 'text-gray-400'} />
+                  </span>
+                )}
+                {status === 'read' && (
+                  <span className="flex -space-x-[5px]">
+                    <Check size={13} strokeWidth={3} className={textColor === 'text-white' ? 'text-white' : 'text-primary-500'} />
+                    <Check size={13} strokeWidth={3} className={textColor === 'text-white' ? 'text-white' : 'text-primary-500'} />
+                  </span>
+                )}
+                {status === 'confirmed' && (
+                  <span className="flex -space-x-[5px]">
+                    <Check size={13} strokeWidth={3} className={textColor === 'text-white' ? 'text-white' : 'text-emerald-500'} />
+                    <Check size={13} strokeWidth={3} className={textColor === 'text-white' ? 'text-white' : 'text-emerald-500'} />
+                  </span>
+                )}
               </div>
             )}
           </div>

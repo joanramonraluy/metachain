@@ -249,7 +249,15 @@ function ChannelInfoPage() {
       const rawContacts = (res as any)?.response?.contacts || [];
       const contactsList: Person[] = rawContacts
         .filter((c: any) => !subKeys.has(c.publickey))
-        .map((c: any) => ({ ...c, type: "contact" as const }));
+        .map((c: any) => ({
+          publickey: c.publickey,
+          currentaddress: c.currentaddress || c.publickey,
+          type: "contact" as const,
+          extradata: {
+            name: c.extradata?.name || c.name || c.publickey,
+            icon: decodeStoredAvatar(c.extradata?.icon)
+          }
+        }));
 
       // 2. Recent chats (community / non-contacts)
       const chats = await chatService.getRecentChats();
@@ -265,7 +273,10 @@ function ChannelInfoPage() {
           publickey: chat.publickey,
           currentaddress: chat.currentaddress || chat.publickey,
           type: "community" as const,
-          extradata: { name: chat.roomname, icon: chat.avatar },
+          extradata: { 
+            name: chat.roomname, 
+            icon: decodeStoredAvatar(chat.avatar) 
+          },
         }));
 
       setPeople([...contactsList, ...communityPeople]);
@@ -558,7 +569,7 @@ function ChannelInfoPage() {
                     {isAdmin && (
                       <button
                         onClick={() => { setNewName(channelName); setIsEditingName(true); }}
-                        className="w-10 h-10 rounded-xl bg-black/5 dark:bg-white/5 flex items-center justify-center text-gray-400 hover:text-primary-500 opacity-0 group-hover/name:opacity-100 transition-all"
+                        className="w-10 h-10 rounded-xl bg-black/5 dark:bg-white/5 flex items-center justify-center text-gray-400 hover:text-primary-500 transition-all"
                       >
                         <Edit2 size={16} strokeWidth={3} />
                       </button>
@@ -588,7 +599,7 @@ function ChannelInfoPage() {
                     {isAdmin && (
                       <button
                         onClick={() => { setNewDesc(description); setIsEditingDesc(true); }}
-                        className="mt-4 px-4 py-1.5 rounded-full bg-black/5 dark:bg-white/5 text-[9px] font-black text-gray-400 hover:text-primary-500 opacity-0 group-hover/desc:opacity-100 transition-all uppercase tracking-[0.2em]"
+                        className="mt-4 px-4 py-1.5 rounded-full bg-black/5 dark:bg-white/5 text-[9px] font-black text-gray-400 hover:text-primary-500 transition-all uppercase tracking-[0.2em]"
                       >
                         Edit Manifest
                       </button>
@@ -607,7 +618,7 @@ function ChannelInfoPage() {
           {activeTab === "profile" && (
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-10 duration-700">
               {/* CHAT STATISTICS */}
-              <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[3rem] p-10 border border-white/20 dark:border-white/5 shadow-xl shadow-black/5">
+              <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[3rem] p-6 sm:p-10 border border-white/20 dark:border-white/5 shadow-xl shadow-black/5">
                 <div className="flex items-center gap-4 mb-10">
                   <div className="w-12 h-12 bg-primary-500/10 rounded-2xl flex items-center justify-center text-primary-500">
                     <MessageSquare size={22} strokeWidth={3} />
@@ -646,7 +657,7 @@ function ChannelInfoPage() {
               </div>
 
               {/* TECHNICAL DATA */}
-              <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[3rem] p-10 border border-white/20 dark:border-white/5 shadow-xl shadow-black/5">
+              <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[3rem] p-6 sm:p-10 border border-white/20 dark:border-white/5 shadow-xl shadow-black/5">
                 <div className="flex items-center gap-4 mb-10">
                   <div className="w-12 h-12 bg-primary-500/10 rounded-2xl flex items-center justify-center text-primary-500">
                     <Database size={20} strokeWidth={3} />
@@ -664,7 +675,7 @@ function ChannelInfoPage() {
                       {channelId}
                       <button
                         onClick={() => copyToClipboard(channelId || "", "channelid")}
-                        className="absolute right-6 top-1/2 -translate-y-1/2 w-12 h-12 bg-white dark:bg-gray-800 rounded-2xl flex items-center justify-center text-gray-400 hover:text-primary-500 opacity-0 group-hover/id:opacity-100 transition-all shadow-xl"
+                        className="absolute right-6 top-1/2 -translate-y-1/2 w-12 h-12 bg-white dark:bg-gray-800 rounded-2xl flex items-center justify-center text-gray-400 hover:text-primary-500 transition-all shadow-xl"
                       >
                         {copiedField === "channelid" ? <Check size={18} strokeWidth={3} className="text-green-500" /> : <Copy size={18} strokeWidth={3} />}
                       </button>
@@ -690,24 +701,24 @@ function ChannelInfoPage() {
           {activeTab === "settings" && (
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-10 duration-700">
               {/* SUBSCRIBERS REGISTRY */}
-              <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[3rem] p-10 border border-white/20 dark:border-white/5 shadow-xl shadow-black/5">
-                <div className="flex items-center justify-between mb-10">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-primary-500/10 rounded-2xl flex items-center justify-center text-primary-500">
+              <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[3rem] p-6 sm:p-10 border border-white/20 dark:border-white/5 shadow-xl shadow-black/5">
+                <div className="flex items-center justify-between gap-4 mb-10">
+                  <div className="flex items-center gap-4 flex-1 min-w-0">
+                    <div className="w-12 h-12 bg-primary-500/10 rounded-2xl flex items-center justify-center text-primary-500 flex-shrink-0">
                       <Users size={22} strokeWidth={3} />
                     </div>
-                    <div className="flex flex-col text-left">
-                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.4em] mb-0.5">Community Index</span>
-                      <h3 className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-tight">Channel Subscribers</h3>
+                    <div className="flex flex-col text-left min-w-0">
+                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.4em] mb-0.5 truncate">Community Index</span>
+                      <h3 className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-tight truncate">Channel Subscribers</h3>
                     </div>
                   </div>
                   {isAdmin && (
                     <button
                       onClick={handleOpenInvite}
-                      className="flex items-center gap-3 px-6 py-3 bg-primary-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-primary-600 transition-all shadow-lg shadow-primary-500/20 active:scale-95"
+                      className="flex items-center gap-3 px-6 py-3 bg-primary-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-primary-600 transition-all shadow-lg shadow-primary-500/20 active:scale-95 flex-shrink-0"
                     >
                       <UserPlus size={16} strokeWidth={3} />
-                      Authorize
+                      <span className="hidden sm:inline">Authorize</span>
                     </button>
                   )}
                 </div>
@@ -796,14 +807,14 @@ function ChannelInfoPage() {
 
               {/* ACCESS PROTOCOLS */}
               {isAdmin && (
-                <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[3rem] p-10 border border-white/20 dark:border-white/5 shadow-xl shadow-black/5">
+                <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[3rem] p-6 sm:p-10 border border-white/20 dark:border-white/5 shadow-xl shadow-black/5">
                   <div className="flex items-center gap-4 mb-10">
-                    <div className="w-12 h-12 bg-primary-500/10 rounded-2xl flex items-center justify-center text-primary-500">
+                    <div className="w-12 h-12 bg-primary-500/10 rounded-2xl flex items-center justify-center text-primary-500 flex-shrink-0">
                       <SlidersHorizontal size={22} strokeWidth={3} />
                     </div>
-                    <div className="flex flex-col text-left">
-                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.4em] mb-0.5">Control Panel</span>
-                      <h3 className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-tight">Access Protocols</h3>
+                    <div className="flex flex-col text-left min-w-0">
+                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.4em] mb-0.5 truncate">Control Panel</span>
+                      <h3 className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-tight truncate">Access Protocols</h3>
                     </div>
                   </div>
 
@@ -834,7 +845,7 @@ function ChannelInfoPage() {
                             {inviteLink}
                             <button
                               onClick={handleCopyLink}
-                              className="absolute right-6 top-1/2 -translate-y-1/2 w-12 h-12 bg-white dark:bg-gray-800 rounded-2xl flex items-center justify-center text-gray-400 hover:text-primary-500 opacity-0 group-hover/link:opacity-100 transition-all shadow-xl"
+                              className="absolute right-6 top-1/2 -translate-y-1/2 w-12 h-12 bg-white dark:bg-gray-800 rounded-2xl flex items-center justify-center text-gray-400 hover:text-primary-500 transition-all shadow-xl"
                             >
                               {inviteLinkCopied ? <Check size={18} strokeWidth={3} className="text-green-500" /> : <Copy size={18} strokeWidth={3} />}
                             </button>
@@ -867,7 +878,7 @@ function ChannelInfoPage() {
                     </div>
                     <div className="flex flex-col">
                       <span className="text-[10px] font-black uppercase tracking-[0.4em] opacity-60">Session Management</span>
-                      <span className="text-sm font-black uppercase tracking-tight">Expunge Registry Connection</span>
+                      <span className="text-sm font-black uppercase tracking-tight">Leave Channel</span>
                     </div>
                   </div>
                   <ChevronRight size={24} strokeWidth={3} className="opacity-0 group-hover:opacity-100 -translate-x-4 group-hover:translate-x-0 transition-all font-black" />
@@ -881,11 +892,11 @@ function ChannelInfoPage() {
       {/* ELITE EXIT CONFIRMATION */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[100] p-6 animate-in fade-in duration-300">
-          <div className="bg-white dark:bg-gray-900 rounded-[3rem] shadow-2xl p-10 border border-white/20 dark:border-white/10 max-w-sm w-full animate-in zoom-in-95 duration-300">
+          <div className="bg-white dark:bg-gray-900 rounded-[3rem] shadow-2xl p-6 sm:p-10 border border-white/20 dark:border-white/10 max-w-sm w-full animate-in zoom-in-95 duration-300">
             <div className="w-16 h-16 bg-red-500/10 rounded-2xl flex items-center justify-center text-red-500 mb-6 mx-auto">
               <Trash2 size={32} strokeWidth={3} />
             </div>
-            <h3 className="text-lg font-black text-gray-900 dark:text-white mb-2 text-center uppercase tracking-tight">Expunge Connection?</h3>
+            <h3 className="text-lg font-black text-gray-900 dark:text-white mb-2 text-center uppercase tracking-tight">Leave Channel?</h3>
             <p className="text-xs font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest text-center mb-8 leading-relaxed">Incoming data streams will be terminated. This action is recorded and permanent.</p>
             <div className="grid grid-cols-2 gap-4">
               <button
@@ -901,7 +912,7 @@ function ChannelInfoPage() {
                 }}
                 className="py-4 bg-red-500 text-white text-[10px] font-black uppercase tracking-widest rounded-2xl hover:bg-red-600 transition-all shadow-lg shadow-red-500/20"
               >
-                Expunge
+                Leave
               </button>
             </div>
           </div>
@@ -913,7 +924,7 @@ function ChannelInfoPage() {
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center z-[100] p-6 animate-in fade-in duration-300">
           <div className="bg-white dark:bg-gray-900 rounded-t-[3rem] sm:rounded-[4rem] shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col border border-white/20 dark:border-white/10 animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-500 overflow-hidden">
             {/* Modal header */}
-            <div className="p-10 pb-6 flex items-center justify-between">
+            <div className="p-6 sm:p-10 pb-6 flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 bg-primary-500/10 rounded-2xl flex items-center justify-center text-primary-500">
                   <UserPlus size={22} strokeWidth={3} />

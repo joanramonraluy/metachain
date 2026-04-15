@@ -90,9 +90,9 @@ function RouteComponent() {
     }, [isOpen, onToggle]);
 
     const options: { value: VisibilityLevel; label: string; description: string }[] = [
-      { value: 'personal', label: 'Personal', description: 'Only visible to you' },
-      { value: 'contacts', label: 'Community', description: 'Visible to your contacts' },
-      { value: 'public', label: 'Global', description: 'Visible via discovery beacons' }
+      { value: 'personal', label: 'Restricted', description: 'Only specified contacts' },
+      { value: 'contacts', label: 'Community', description: 'All your contacts' },
+      { value: 'public', label: 'Global', description: 'Publicly via discovery' }
     ];
 
     const currentOption = options.find(o => o.value === value) || options[0];
@@ -210,11 +210,17 @@ function RouteComponent() {
               <div className="w-12 h-12 rounded-[1.25rem] bg-emerald-500/10 flex items-center justify-center text-emerald-500 shadow-lg shadow-emerald-500/5">
                  <Globe size={24} strokeWidth={2.5} />
               </div>
-              <div>
-                 <h2 className="text-xl font-black text-gray-900 dark:text-white tracking-tight">Visibility Tiers</h2>
-                 <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Control the visibility of your profile information.</p>
-              </div>
-           </div>
+               <div className="flex-1">
+                  <h2 className="text-xl font-black text-gray-900 dark:text-white tracking-tight">Visibility Tiers</h2>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Control the visibility of your profile information.</p>
+               </div>
+               <div className="max-w-xs p-3 bg-amber-500/5 border border-amber-500/10 rounded-2xl flex items-start gap-3">
+                  <Info size={14} className="text-amber-500 shrink-0 mt-0.5" />
+                  <p className="text-[9px] font-medium text-amber-700/80 dark:text-amber-400/60 leading-relaxed uppercase tracking-wider">
+                     The <strong className="font-black text-amber-600 dark:text-amber-300">Restricted</strong> level shares data only with Maxima contacts you have manually authorized as "Personal Contacts".
+                  </p>
+               </div>
+            </div>
 
            {/* Tier Overview Card */}
            <div className="relative group">
@@ -263,7 +269,7 @@ function RouteComponent() {
                        </div>
                        <p className="text-[11px] font-black uppercase tracking-widest text-gray-900 dark:text-white">Sensitive Data</p>
                        <div className="flex flex-wrap gap-1">
-                          {['Email', 'Phone', 'Addresses'].map(tag => (
+                          {['Email', 'Phone'].map(tag => (
                              <span key={tag} className="px-2 py-0.5 bg-black/5 dark:bg-white/5 rounded-md text-[9px] font-black uppercase text-gray-400">{tag}</span>
                           ))}
                        </div>
@@ -302,7 +308,7 @@ function RouteComponent() {
                     </div>
                     <div>
                        <h4 className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-wider mb-0.5">Private Visibility</h4>
-                       <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 leading-none">Who can see Email, Phone and Addresses</p>
+                       <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 leading-none">Who can see Email and Phone</p>
                     </div>
                  </div>
                  <VisibilityDropdown 

@@ -2789,6 +2789,7 @@ function handleGroupInvite(pubkey, maxjson) {
       myPubkey +
       "')";
     MDS.sql(checkBanSql, function (banRes) {
+      MDS.log("🔍 [GROUP-INVITE-UNBAN] Ban check result: rows=" + (banRes.rows ? banRes.rows.length : 0) + " status=" + banRes.status + " groupId=" + safeGroupId);
       if (banRes.status && banRes.rows && banRes.rows.length > 0) {
         MDS.log(
           "🚫 [GROUP-INVITE] Ignoring invite: we are banned from group " +
@@ -2796,6 +2797,7 @@ function handleGroupInvite(pubkey, maxjson) {
         );
         return;
       }
+      MDS.log("✅ [GROUP-INVITE-UNBAN] Ban check passed, proceeding to create group " + safeGroupId);
 
       var createGroupSql =
         "INSERT INTO GROUPS (group_id, name, creator_publickey, created_date, description, avatar) VALUES " +
@@ -2815,7 +2817,7 @@ function handleGroupInvite(pubkey, maxjson) {
 
       MDS.sql(createGroupSql, function (res) {
         MDS.log(
-          "✅ [GROUP-MGMT] Group created/exists for invite: " + safeGroupId,
+          "✅ [GROUP-INVITE-UNBAN] Group INSERT status=" + res.status + " rowsAffected=" + (res.rowsAffected || 0) + " error=" + (res.error || "none") + " groupId=" + safeGroupId,
         );
 
         if (maxjson.members) {
@@ -3111,7 +3113,7 @@ function handleGroupMemberUpdate(pubkey, maxjson) {
     MDS.cmd("maxima", function (maximaRes) {
       var myPubkey = maximaRes.response.publickey;
 
-      if (myPubkey === safeMemberPublickey) {
+      if (myPubkey.toUpperCase() === safeMemberPublickey.toUpperCase()) {
         // I have been kicked/banned! Delete the group completely so I don't see it anymore.
         MDS.sql(
           "DELETE FROM GROUPS WHERE group_id='" + safeGroupId + "'",
@@ -3245,6 +3247,12 @@ function handleGroupUpdateDetails(pubkey, maxjson) {
     maxjson.auto_approve === 1 ||
     String(maxjson.auto_approve).toUpperCase() === "TRUE" ||
     String(maxjson.auto_approve) === "1";
+  var hasIsPublic = maxjson.is_public !== undefined;
+  var isPublicEnabled =
+    maxjson.is_public === true ||
+    maxjson.is_public === 1 ||
+    String(maxjson.is_public).toUpperCase() === "TRUE" ||
+    String(maxjson.is_public) === "1";
 
   // Security Check: Sender must be creator OR admin
   var checkSql =
@@ -3283,6 +3291,8 @@ function handleGroupUpdateDetails(pubkey, maxjson) {
     if (safeAvatar !== null) updates.push("avatar='" + safeAvatar + "'");
     if (hasAutoApprove)
       updates.push("auto_approve=" + (autoApproveEnabled ? "TRUE" : "FALSE"));
+    if (hasIsPublic)
+      updates.push("is_public=" + (isPublicEnabled ? "TRUE" : "FALSE"));
 
     if (updates.length === 0) return;
 
@@ -3307,6 +3317,7 @@ function handleGroupUpdateDetails(pubkey, maxjson) {
           soloMsg.description = maxjson.newDescription;
         if (maxjson.avatar !== undefined) soloMsg.avatar = maxjson.avatar;
         if (hasAutoApprove) soloMsg.auto_approve = autoApproveEnabled;
+        if (hasIsPublic) soloMsg.is_public = isPublicEnabled;
 
         var msgStr =
           typeof soloMsg === "string" ? soloMsg : JSON.stringify(soloMsg);
@@ -3426,9 +3437,13 @@ function handleGroupRoleUpdate(pubkey, maxjson) {
           MDS.comms.solo(msgStr);
 
           // If a member has just been promoted to admin, send current group settings snapshot.
-          if (safeNewRole === "admin") {
+          // Only send if WE are NOT the target — our own local settings may be stale.
+          // The promoter's FE sends the authoritative snapshot directly.
+          var weAreTheTarget = MY_MAXIMA_PK &&
+            safeTargetPubkey.toUpperCase() === MY_MAXIMA_PK.toUpperCase();
+          if (safeNewRole === "admin" && !weAreTheTarget) {
             var settingsSql =
-              "SELECT name, description, avatar, auto_approve FROM GROUPS WHERE group_id='" +
+              "SELECT name, description, avatar, auto_approve, is_public FROM GROUPS WHERE group_id='" +
               safeGroupId +
               "' LIMIT 1";
             MDS.sql(settingsSql, function (settingsRes) {
@@ -3454,6 +3469,13 @@ function handleGroupRoleUpdate(pubkey, maxjson) {
                   row.auto_approve === 1 ||
                   String(row.AUTO_APPROVE).toUpperCase() === "TRUE" ||
                   String(row.auto_approve).toUpperCase() === "TRUE",
+                is_public:
+                  row.IS_PUBLIC === true ||
+                  row.is_public === true ||
+                  row.IS_PUBLIC === 1 ||
+                  row.is_public === 1 ||
+                  String(row.IS_PUBLIC).toUpperCase() === "TRUE" ||
+                  String(row.is_public).toUpperCase() === "TRUE",
                 timestamp: Date.now(),
               };
               MDS.log(
@@ -3943,6 +3965,7 @@ function executeJoinRequestAuth(
                   "')";
                 MDS.sql(checkBanSql, function (banRes) {
                   try {
+                    MDS.log("🔍 [GROUP-JOIN-UNBAN] Ban check for requester " + requesterPubkey.substring(0, 10) + ": rows=" + (banRes.rows ? banRes.rows.length : 0) + " status=" + banRes.status);
                     if (
                       banRes.status &&
                       banRes.rows &&
@@ -3953,6 +3976,7 @@ function executeJoinRequestAuth(
                       );
                       return;
                     }
+                    MDS.log("✅ [GROUP-JOIN-UNBAN] Requester not banned, saving join request.");
 
                     // Insert/Replace in GROUP_JOIN_REQUESTS
                     var insertReqSql =
@@ -5505,7 +5529,11 @@ function handleReadReceipt(pubkey) {
     "UPDATE CHAT_MESSAGES SET state='read' WHERE UPPER(publickey)=UPPER('" +
     safePubkey +
     "') AND username='Me' AND type='text' AND state!='pending' AND state!='failed' AND state!='read' AND state!='confirmed'";
-  MDS.sql(sql);
+  MDS.sql(sql, function (res) {
+    if (res.status && res.rowsAffected > 0) {
+      MDS.comms.solo("CHAT_LIST_UPDATE");
+    }
+  });
 }
 
 function handleDeliveryReceipt(pubkey) {
@@ -5517,7 +5545,11 @@ function handleDeliveryReceipt(pubkey) {
     "UPDATE CHAT_MESSAGES SET state='delivered' WHERE UPPER(publickey)=UPPER('" +
     safePubkey +
     "') AND username='Me' AND state='sent'";
-  MDS.sql(sql);
+  MDS.sql(sql, function (res) {
+    if (res.status && res.rowsAffected > 0) {
+      MDS.comms.solo("CHAT_LIST_UPDATE");
+    }
+  });
 }
 
 function handlePing(pubkey) {

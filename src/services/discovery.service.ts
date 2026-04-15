@@ -220,6 +220,8 @@ export const getUsersWithStatus = async (): Promise<UserWithStatus[]> => {
       return str;
     };
 
+    const minimaaddress = getCI(peer, "minimaaddress") || extendedInfo.minimaaddress;
+
     const existing = userMap.get(publickey.toUpperCase());
     if (existing) {
       // Update existing user with online status and latest address
@@ -242,6 +244,7 @@ export const getUsersWithStatus = async (): Promise<UserWithStatus[]> => {
           extendedInfo.languages && Array.isArray(extendedInfo.languages)
             ? extendedInfo.languages.map((l: string) => safeDecode(l))
             : existing.languages,
+        minimaaddress: minimaaddress || existing.minimaaddress,
       });
     } else {
       // Add new ephemeral peer not in registry yet
@@ -259,9 +262,29 @@ export const getUsersWithStatus = async (): Promise<UserWithStatus[]> => {
         avatar: extendedInfo.avatar,
         country: extendedInfo.country,
         languages: extendedInfo.languages,
+        minimaaddress: minimaaddress,
       });
     }
   });
+
+  // 3. Enrich with Resource Counts from DISCOVERED_LISTINGS
+  const countsRes = await runSQL("SELECT owner_publickey, listings FROM DISCOVERED_LISTINGS");
+  if (countsRes.status && countsRes.rows) {
+     countsRes.rows.forEach((row: any) => {
+        const owner = getCI(row, "owner_publickey");
+        const listingsStr = getCI(row, "listings");
+        if (owner && listingsStr) {
+           try {
+              const listings = JSON.parse(typeof listingsStr === 'string' ? listingsStr : JSON.stringify(listingsStr));
+              const count = Array.isArray(listings) ? listings.length : 0;
+              const user = userMap.get(owner.toUpperCase());
+              if (user) {
+                 user.resource_count = count;
+              }
+           } catch (e) {}
+        }
+     });
+  }
 
   // Get own public key to exclude from list
   let myPublicKey = "";
@@ -531,6 +554,8 @@ export interface MetachainUser {
   avatar?: string;
   country?: string;
   languages?: string[];
+  minimaaddress?: string;
+  resource_count?: number;
 }
 
 export interface UserWithStatus extends MetachainUser {

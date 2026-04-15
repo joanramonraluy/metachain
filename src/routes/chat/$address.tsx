@@ -253,6 +253,7 @@ function ChatPage() {
   const searchParams = Route.useSearch(); // Get search parameters
   const [contact, setContact] = useState<Contact | null>(null);
   const [messages, setMessages] = useState<ParsedMessage[]>([]);
+  const [isReady, setIsReady] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastProfileRequestAtRef = useRef<Map<string, number>>(new Map());
@@ -1239,7 +1240,7 @@ function ChatPage() {
 
     isLoadingMessages.current = true;
     pendingReload.current = false; // Clear pending flag as we are starting now
-
+    let finalMessages: ParsedMessage[] = [];
     try {
       // 1. Try to load from cache
       const cacheKey = `cached_msgs_${targetKey}`;
@@ -1399,7 +1400,7 @@ function ChatPage() {
 
         // Phase 2: Async Status Verification for Pending/Sent Transactions
         // Match the sidebar logic: check TRANSACTIONS table for pending/sent status
-        const finalMessages = await Promise.all(
+        finalMessages = await Promise.all(
           parsedMessages.map(async (msg: any) => {
             let finalStatus = msg.parsedStatus;
 
@@ -1529,6 +1530,9 @@ function ChatPage() {
     } catch (err) {
       console.error("❌ [CHAT] Message load error:", err);
     } finally {
+      if (isInitialLoad.current && (!finalMessages || finalMessages.length === 0)) {
+        setIsReady(true);
+      }
       isLoadingMessages.current = false;
 
       // If a reload was requested while we were running, run again immediately
@@ -2031,20 +2035,21 @@ function ChatPage() {
   // Reset initial load state when address changes
   useEffect(() => {
     isInitialLoad.current = true;
+    setIsReady(false);
   }, [address]);
 
   const scrollToBottom = () => {
     if (isInitialLoad.current) {
-      // Use requestAnimationFrame to ensure DOM is updated before scrolling
-      requestAnimationFrame(() => {
+      if (messages.length > 0) {
         requestAnimationFrame(() => {
           if (scrollContainerRef.current) {
             scrollContainerRef.current.scrollTop =
               scrollContainerRef.current.scrollHeight;
+            setIsReady(true);
           }
         });
-      });
-      isInitialLoad.current = false;
+        isInitialLoad.current = false;
+      }
     } else {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
@@ -3012,7 +3017,7 @@ function ChatPage() {
                     <div className="w-11 h-11 bg-red-500/10 rounded-xl flex items-center justify-center group-hover/del:bg-red-500 group-hover/del:text-white transition-all duration-500 flex-shrink-0">
                       <Trash2 size={20} strokeWidth={3} />
                     </div>
-                    <span className="text-[11px] font-black uppercase tracking-widest text-left leading-tight">Expunge Registry</span>
+                    <span className="text-[11px] font-black uppercase tracking-widest text-left leading-tight">Delete Chat</span>
                   </button>
                 </div>
               </div>
@@ -3024,7 +3029,7 @@ function ChatPage() {
       {/* REGISTRY SCROLL VIEW */}
       <div
         ref={scrollContainerRef}
-        className="flex-1 overflow-y-auto flex flex-col px-4 pt-6 pb-32 relative transition-colors"
+        className={`flex-1 overflow-y-auto flex flex-col px-4 pt-6 pb-32 relative transition-opacity duration-100 ${isReady ? "opacity-100" : "opacity-0"}`}
       >
         {/* Pattern Overlays */}
         {chatBackground === "dots" && (
@@ -3299,6 +3304,15 @@ function ChatPage() {
                   currentChatId={address}
                   showName={isFirstInGroup}
                   showAvatar={isLastInGroup}
+                  onAvatarClick={
+                    !msg.fromMe
+                      ? () =>
+                          navigate({
+                            to: `/contact-info/${contact?.publickey || address}`,
+                            search: { returnTo: `/chat/${address}` },
+                          })
+                      : undefined
+                  }
                   replyTo={msg.replyTo}
                   deleted={msg.deleted}
                   onDelete={msg.fromMe && !msg.deleted && msg.customid ? () => handleDeleteMessage(msg.customid!) : undefined}
@@ -3495,10 +3509,10 @@ function ChatPage() {
             <div className="w-20 h-20 bg-red-500/10 rounded-[2rem] flex items-center justify-center text-red-500 mb-8 mx-auto">
               <Trash2 size={40} strokeWidth={2.5} />
             </div>
-            <h3 className="text-2xl font-black text-gray-900 dark:text-white uppercase tracking-tight text-center mb-4">Expunge Ledger?</h3>
+            <h3 className="text-2xl font-black text-gray-900 dark:text-white uppercase tracking-tight text-center mb-4">Delete Chat?</h3>
             <p className="text-sm text-gray-500 dark:text-gray-400 text-center leading-relaxed mb-10 font-medium">This will permanently wipe all signal history with this peer from your local grid. This operation is irreversible.</p>
             <div className="flex flex-col gap-4">
-              <button onClick={handleDeleteChat} className="w-full py-5 px-6 bg-red-500 hover:bg-red-600 text-white rounded-2xl font-black text-[10px] sm:text-xs uppercase tracking-[0.1em] sm:tracking-[0.15em] transition-all shadow-xl shadow-red-500/20">Confirm Expunge</button>
+              <button onClick={handleDeleteChat} className="w-full py-5 px-6 bg-red-500 hover:bg-red-600 text-white rounded-2xl font-black text-[10px] sm:text-xs uppercase tracking-[0.1em] sm:tracking-[0.15em] transition-all shadow-xl shadow-red-500/20">Confirm Delete</button>
               <button onClick={() => setShowDeleteConfirm(false)} className="w-full py-5 bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-gray-400 rounded-2xl font-black text-xs uppercase tracking-[0.3em] hover:bg-gray-200 transition-all">Abort</button>
             </div>
           </div>

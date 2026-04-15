@@ -138,6 +138,7 @@ function ChatPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
+  const [isReady, setIsReady] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const { userName, userAvatar, myPublicKey } = useContext(appContext);
@@ -333,7 +334,8 @@ function ChatPage() {
           const inMemoryOnly = prev.filter(
             (m) => m.status === "pending" || m.status === "failed" || m.status === "received",
           );
-          return deduplicateMessages([...parsedMessages, ...inMemoryOnly]);
+          return deduplicateMessages([...parsedMessages, ...inMemoryOnly])
+            .sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
         });
 
         // Extract unique sender public keys (excluding self)
@@ -353,6 +355,10 @@ function ChatPage() {
     } catch (err) {
       console.error("❌ [GROUP-CHAT] Message load error:", err);
     } finally {
+      // If messages are empty after first load, we are ready to show the empty state
+      if (isInitialLoad.current && (!messages || messages.length === 0)) {
+        setIsReady(true);
+      }
       isLoadingMessages.current = false;
       if (pendingReload.current) {
         pendingReload.current = false;
@@ -363,7 +369,7 @@ function ChatPage() {
   }, [address]);
 
   useEffect(() => {
-    if (!address) return;
+    if (!address || !myPublicKey) return;
 
     const initChat = async () => {
       // Initial load
@@ -381,7 +387,7 @@ function ChatPage() {
     }, 10000);
 
     return () => clearInterval(interval);
-  }, [address]);
+  }, [address, myPublicKey]);
 
   /* ----------------------------------------------------------------------------
       LISTEN FOR INCOMING MESSAGES
@@ -530,20 +536,21 @@ function ChatPage() {
   // Reset initial load state when address changes
   useEffect(() => {
     isInitialLoad.current = true;
+    setIsReady(false);
   }, [address]);
 
   const scrollToBottom = () => {
     if (isInitialLoad.current) {
-      // Use requestAnimationFrame to ensure DOM is updated before scrolling
-      requestAnimationFrame(() => {
+      if (messages.length > 0) {
         requestAnimationFrame(() => {
           if (scrollContainerRef.current) {
             scrollContainerRef.current.scrollTop =
               scrollContainerRef.current.scrollHeight;
+            setIsReady(true);
           }
         });
-      });
-      isInitialLoad.current = false;
+        isInitialLoad.current = false;
+      }
     } else {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
@@ -931,7 +938,7 @@ function ChatPage() {
                     <div className="w-11 h-11 bg-red-500/10 rounded-xl flex items-center justify-center group-hover/del:bg-red-500 group-hover/del:text-white transition-all duration-500">
                       <Trash2 size={20} strokeWidth={3} />
                     </div>
-                    <span className="text-[11px] font-black uppercase tracking-widest">Expunge Registry</span>
+                    <span className="text-[11px] font-black uppercase tracking-widest">Leave Group</span>
                   </button>
                 </div>
               </div>
@@ -1043,7 +1050,7 @@ function ChatPage() {
               <Trash2 size={40} strokeWidth={2.5} />
             </div>
             <h3 className="text-2xl font-black text-gray-900 dark:text-white mb-4 uppercase tracking-tighter">
-              Expunge Registry?
+              Leave Group?
             </h3>
             <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-10 leading-relaxed uppercase tracking-widest">
               CAUTION: This will disconnect your node from this encrypted grid. All session history will be inaccessible.
@@ -1056,7 +1063,7 @@ function ChatPage() {
                 }}
                 className="w-full py-5 bg-red-600 text-white rounded-2xl hover:bg-red-700 transition-all duration-500 font-black uppercase tracking-[0.2em] shadow-lg shadow-red-600/20 active:scale-95"
               >
-                Confirm Expunge
+                Confirm Leave
               </button>
               <button
                 onClick={() => setShowDeleteConfirm(false)}
@@ -1072,7 +1079,7 @@ function ChatPage() {
       {/* ELITE CHAT BODY */}
       <div
         ref={scrollContainerRef}
-        className="flex-1 overflow-y-auto flex flex-col p-4 sm:p-8 relative transition-colors bg-[#f8fafc] dark:bg-gray-950"
+        className={`flex-1 overflow-y-auto flex flex-col p-4 sm:p-8 relative transition-opacity duration-100 bg-[#f8fafc] dark:bg-gray-950 ${isReady ? "opacity-100" : "opacity-0"}`}
       >
         {/* Pattern Overlays */}
         {chatBackground === "dots" && (

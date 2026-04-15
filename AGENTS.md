@@ -9,7 +9,25 @@ Scope: `/home/joanramon/Minima/metachain`
 
 The goal is that any learning, architectural change, new "fragility point" or design decision is recorded here for future agents. Do not use this file only for reading; it is your shared memory.
 
-**Latest Update (2026-04-14 — Bug 8 fix)**: 
+**Latest Update (2026-04-15 — Normalized Chat Exits)**:
+- Standardized Chat Exit Terminology: Replaced the overly technical "Expunge Registry" and "Expunge Connection" labels with clearer, standard terms across the application. 
+- DM Chat: "Expunge Registry" → **"Delete Chat"**.
+- Group Chat/Info: "Expunge Registry (Connection)" → **"Leave Group"**.
+- Channel Info: "Expunge Registry Connection" → **"Leave Channel"**.
+- Confirmation Dialogs: Normalized titles to "Delete Chat?", "Leave Group?", or "Leave Channel?" and button labels to "Delete" or "Leave". 
+- This change improves user intuition while maintaining the "Elite" (cyberpunk) system aesthetic in secondary labels (e.g., "Session Management").
+- Updated files: `src/routes/chat/$address.tsx`, `src/routes/groups.$groupId.lazy.tsx`, `src/routes/group-info.$groupId.lazy.tsx`, and `src/routes/channel-info.$channelId.lazy.tsx`.
+
+**Previous Update (2026-04-14 — UI Mobilization & Flash Fix)**: 
+- Standardized UI Action Visibility (Mobile-First): Removed `opacity-0 group-hover:opacity-100` patterns from all critical administrative and profile actions in Group and Channel settings. 
+- Fixed Channel UI Flash: Gated the "Read-Only" policy banner in `src/routes/channels.$channelId.lazy.tsx` with `isInitialized` to prevent it from flashing for administrators during the asynchronous admin-check phase on channel entry.
+- Fixed Build Errors: Resolved `TS2304` (scope issue with `finalMessages` in `$address.tsx`) and `TS6133` (unused `Globe` import in `discovery.lazy.tsx`) to restore production build capability.
+- Actions such as "Promote", "Demote", "Expel", "Edit Name/Description", and "Copy ID/Manifest" are now always visible, ensuring full accessibility on touch devices where hover interactions are unavailable.
+- Optimized Community Discovery: Changed the default view mode in `src/routes/discovery.lazy.tsx` from "Users" to "All" to provide a more comprehensive overview of the network (peers, groups, and channels) upon entry.
+- Standardized Action Ledger Layout: Converted the "Restriction List" and "Inbound Terminal" (Join Requests) grid in `src/routes/group-info.$groupId.lazy.tsx` from a 2-column grid to a single vertical column stack. This provides more horizontal space for subscriber/banned rows, preventing UI overlap between user addresses and administrative action buttons on both desktop and mobile views.
+- **New UI Standard (Avatar Interaction)**: Implemented click-to-profile functionality on user avatars across all chat interfaces (DM, Groups, and Channels). This provides a consistent navigation path to peer profiles directly from the message timeline. Standardized across `src/routes/chat/$address.tsx`, `src/routes/groups.$groupId.lazy.tsx`, and `src/routes/channels.$channelId.lazy.tsx`.
+
+**Previous Update (2026-04-14 — Bug 8 fix)**: 
 - Fixed Community "Join" button doing nothing for channels: `buildPublicListings` in `beacon.handler.js` was using `myPubkey`/`myAddress` as `admin_publickey`/`admin_address` for all channels, regardless of whether the local node is actually the channel admin. Subscribers advertising public channels in their beacons would point join requests to themselves instead of the real admin, which was then silently ignored in `handleChannelJoinRequest` (not admin/creator → early return). Fixed by doing a LEFT JOIN with DISCOVERED_PEERS in both the group and channel SQL queries: if the local node IS the admin, `myAddress` is used (most current); if it's a subscriber, the real admin's address is taken from `DISCOVERED_PEERS`. The same fix applies to groups (`creator_publickey`).
 
 **Previous Update (2026-04-14)**: 

@@ -402,7 +402,7 @@ function GroupInfoPage() {
       if (
         e.detail &&
         e.detail.groupId === groupId &&
-        e.detail.type === "group_update"
+        (e.detail.type === "group_update" || e.detail.type === "group_join_requests_update")
       ) {
         let hasDirectFieldUpdate = false;
         if (e.detail.name !== undefined) {
@@ -419,6 +419,10 @@ function GroupInfoPage() {
         }
         if (e.detail.auto_approve !== undefined) {
           setAutoApprove(parseBool(e.detail.auto_approve));
+          hasDirectFieldUpdate = true;
+        }
+        if (e.detail.is_public !== undefined) {
+          setIsPublic(parseBool(e.detail.is_public));
           hasDirectFieldUpdate = true;
         }
         // Re-fetch only for generic updates without explicit fields.
@@ -582,10 +586,10 @@ function GroupInfoPage() {
       const allContacts = [
         ...raw.map((c: any) => ({
           publickey: c.publickey,
-          name: c.extradata?.name || c.currentaddress || c.publickey,
+          name: c.extradata?.name || c.name || c.currentaddress || c.publickey,
           currentaddress: c.currentaddress || c.publickey,
           type: "contact" as const,
-          icon: decodeStoredAvatar(c.extradata?.icon),
+          icon: decodeStoredAvatar(c.extradata?.icon || c.icon),
         })),
         ...communityContacts,
       ];
@@ -748,7 +752,7 @@ function GroupInfoPage() {
                         setNewName(groupName);
                         setIsEditingName(true);
                       }}
-                      className="p-2 text-gray-300 hover:text-primary-500 transition-colors"
+                      className="p-2 text-gray-400 hover:text-primary-500 transition-colors"
                       title="Rename Group"
                     >
                       <Edit2 size={16} strokeWidth={3} />
@@ -798,7 +802,7 @@ function GroupInfoPage() {
                             setNewDesc(description);
                             setIsEditingDesc(true);
                           }}
-                          className="absolute -right-8 top-0 p-2 text-gray-300 hover:text-primary-500 opacity-0 group-hover/desc:opacity-100 transition-all"
+                          className="absolute -right-8 top-0 p-2 text-gray-400 hover:text-primary-500 transition-all"
                         >
                           <Edit2 size={14} strokeWidth={3} />
                         </button>
@@ -831,7 +835,7 @@ function GroupInfoPage() {
           <div className="space-y-12 animate-in fade-in slide-in-from-bottom-6 duration-700">
 
             {/* ELITE ANALYTICS CARDS */}
-            <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[3rem] p-10 border border-white/20 dark:border-white/5 shadow-xl shadow-black/5">
+            <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[3rem] p-6 sm:p-10 border border-white/20 dark:border-white/5 shadow-xl shadow-black/5">
               <div className="flex items-center gap-4 mb-8">
                 <div className="w-12 h-12 bg-primary-500/10 rounded-2xl flex items-center justify-center text-primary-500">
                   <Activity size={22} strokeWidth={3} />
@@ -898,7 +902,7 @@ function GroupInfoPage() {
             </div>
 
             {/* TECHNICAL DATA */}
-            <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[3rem] p-10 border border-white/20 dark:border-white/5 shadow-xl shadow-black/5">
+            <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[3rem] p-6 sm:p-10 border border-white/20 dark:border-white/5 shadow-xl shadow-black/5">
               <div className="flex items-center gap-4 mb-8">
                 <div className="w-12 h-12 bg-primary-500/10 rounded-2xl flex items-center justify-center text-primary-500">
                   <Database size={22} strokeWidth={3} />
@@ -920,7 +924,7 @@ function GroupInfoPage() {
                     </p>
                     <button
                       onClick={() => copyToClipboard(groupId || "", "groupid")}
-                      className="absolute right-6 top-1/2 -translate-y-1/2 p-3 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-2xl text-gray-400 hover:text-primary-500 opacity-0 group-hover:opacity-100 transition-all shadow-lg"
+                      className="absolute right-6 top-1/2 -translate-y-1/2 p-3 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-2xl text-gray-400 hover:text-primary-500 transition-all shadow-lg"
                     >
                       {copiedField === "groupid" ? (
                         <Check size={16} className="text-green-500" />
@@ -950,18 +954,18 @@ function GroupInfoPage() {
         {activeTab === "settings" && (
           <div className="space-y-6">
             {/* VERIFIED REGISTRY: MEMBERS */}
-            <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[3rem] p-10 border border-white/20 dark:border-white/5 shadow-xl shadow-black/5">
-              <div className="flex items-center justify-between mb-8">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-primary-500/10 rounded-2xl flex items-center justify-center text-primary-500">
+            <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[3rem] p-6 sm:p-10 border border-white/20 dark:border-white/5 shadow-xl shadow-black/5">
+              <div className="flex items-center justify-between gap-4 mb-8">
+                <div className="flex items-center gap-4 flex-1 min-w-0">
+                  <div className="w-12 h-12 bg-primary-500/10 rounded-2xl flex items-center justify-center text-primary-500 flex-shrink-0">
                     <Users size={22} strokeWidth={3} />
                   </div>
-                  <div className="flex flex-col">
-                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.4em] mb-0.5">Verified Registry</span>
-                    <h3 className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-tight">Active Members</h3>
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.4em] mb-0.5 truncate">Verified Registry</span>
+                    <h3 className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-tight truncate">Active Members</h3>
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-shrink-0">
                   {(isCreator || myRole === "admin") && (
                     <button
                       onClick={openAddMember}
@@ -1016,13 +1020,13 @@ function GroupInfoPage() {
                         </p>
                       </div>
 
-                      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center gap-2 transition-opacity">
                         {!member.isMe && member.role !== "creator" && (myRole === "creator" || myRole === "admin") && (
                           <>
                             {member.role === "member" && (isCreator || myRole === "admin") && (
                               <button
                                 onClick={() => handleRoleChange(member.publickey, "admin")}
-                                className="w-9 h-9 bg-blue-500/10 text-blue-500 rounded-xl flex items-center justify-center hover:bg-blue-500 hover:text-white transition-all"
+                                className="w-9 h-9 bg-blue-500/10 text-blue-500 rounded-xl flex items-center justify-center hover:bg-blue-500 hover:text-white transition-all shadow-sm"
                                 title="Promote"
                               >
                                 <ShieldCheck size={16} strokeWidth={3} />
@@ -1031,7 +1035,7 @@ function GroupInfoPage() {
                             {member.role === "admin" && isCreator && (
                               <button
                                 onClick={() => handleRoleChange(member.publickey, "member")}
-                                className="w-9 h-9 bg-amber-500/10 text-amber-500 rounded-xl flex items-center justify-center hover:bg-amber-500 hover:text-white transition-all"
+                                className="w-9 h-9 bg-amber-500/10 text-amber-500 rounded-xl flex items-center justify-center hover:bg-amber-500 hover:text-white transition-all shadow-sm"
                                 title="Demote"
                               >
                                 <ShieldAlert size={16} strokeWidth={3} />
@@ -1040,7 +1044,7 @@ function GroupInfoPage() {
                             {(isCreator || (myRole === "admin" && member.role === "member")) && (
                               <button
                                 onClick={() => handleRemoveMember(member.publickey)}
-                                className="w-9 h-9 bg-red-500/10 text-red-500 rounded-xl flex items-center justify-center hover:bg-red-500 hover:text-white transition-all"
+                                className="w-9 h-9 bg-red-500/10 text-red-500 rounded-xl flex items-center justify-center hover:bg-red-500 hover:text-white transition-all shadow-sm"
                                 title="Expel"
                               >
                                 <UserX size={16} strokeWidth={3} />
@@ -1051,7 +1055,7 @@ function GroupInfoPage() {
                         {!member.isMe && (
                           <button
                             onClick={() => navigate({ to: `/contact-info/${member.publickey}`, search: { returnTo: `/group-info/${groupId}` } })}
-                            className="w-9 h-9 bg-gray-500/10 text-gray-500 rounded-xl flex items-center justify-center hover:bg-gray-500 hover:text-white transition-all"
+                            className="w-9 h-9 bg-gray-500/10 text-gray-500 rounded-xl flex items-center justify-center hover:bg-gray-500 hover:text-white transition-all shadow-sm"
                           >
                             <ChevronRight size={16} strokeWidth={3} />
                           </button>
@@ -1065,20 +1069,20 @@ function GroupInfoPage() {
 
             {/* ACTION LEDGER: BANNED & REQUESTS */}
             {(isCreator || myRole === "admin") && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="flex flex-col gap-6">
               {/* BANNED MEMBERS */}
-              <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[3rem] p-10 border border-red-500/20 dark:border-red-500/10 shadow-xl shadow-red-500/5">
-                <div className="flex items-center justify-between mb-8">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-red-500/10 rounded-2xl flex items-center justify-center text-red-500 font-black">
+              <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[3rem] p-6 sm:p-10 border border-red-500/20 dark:border-red-500/10 shadow-xl shadow-red-500/5">
+                <div className="flex items-center justify-between gap-4 mb-8">
+                  <div className="flex items-center gap-4 flex-1 min-w-0">
+                    <div className="w-12 h-12 bg-red-500/10 rounded-2xl flex items-center justify-center text-red-500 font-black flex-shrink-0">
                       <ShieldOff size={22} strokeWidth={3} />
                     </div>
-                    <div className="flex flex-col">
-                      <span className="text-[10px] font-black text-red-400 uppercase tracking-[0.4em] mb-0.5">Restriction List</span>
-                      <h3 className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-tight">Expelled Users</h3>
+                    <div className="flex flex-col min-w-0">
+                      <span className="text-[10px] font-black text-red-400 uppercase tracking-[0.4em] mb-0.5 truncate">Restriction List</span>
+                      <h3 className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-tight truncate">Expelled Users</h3>
                     </div>
                   </div>
-                  <span className="h-10 px-4 bg-red-500/10 rounded-xl flex items-center justify-center text-xs font-black text-red-500 border border-red-500/10">
+                  <span className="h-10 px-4 bg-red-500/10 rounded-xl flex items-center justify-center text-xs font-black text-red-500 border border-red-500/10 flex-shrink-0">
                     {bannedMembers.length}
                   </span>
                 </div>
@@ -1112,18 +1116,18 @@ function GroupInfoPage() {
               </div>
 
               {/* JOIN REQUESTS */}
-              <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[3rem] p-10 border border-blue-500/20 dark:border-blue-500/10 shadow-xl shadow-blue-500/5">
-                <div className="flex items-center justify-between mb-8">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-blue-500/10 rounded-2xl flex items-center justify-center text-blue-500">
+              <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[3rem] p-6 sm:p-10 border border-blue-500/20 dark:border-blue-500/10 shadow-xl shadow-blue-500/5">
+                <div className="flex items-center justify-between gap-4 mb-8">
+                  <div className="flex items-center gap-4 flex-1 min-w-0">
+                    <div className="w-12 h-12 bg-blue-500/10 rounded-2xl flex items-center justify-center text-blue-500 flex-shrink-0">
                       <UserPlus size={22} strokeWidth={3} />
                     </div>
-                    <div className="flex flex-col">
-                      <span className="text-[10px] font-black text-blue-400 uppercase tracking-[0.4em] mb-0.5">Inbound Terminal</span>
-                      <h3 className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-tight">Pending Access</h3>
+                    <div className="flex flex-col min-w-0">
+                      <span className="text-[10px] font-black text-blue-400 uppercase tracking-[0.4em] mb-0.5 truncate">Inbound Terminal</span>
+                      <h3 className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-tight truncate">Pending Access</h3>
                     </div>
                   </div>
-                  <span className="h-10 px-4 bg-blue-500/10 rounded-xl flex items-center justify-center text-xs font-black text-blue-500 border border-blue-500/10">
+                  <span className="h-10 px-4 bg-blue-500/10 rounded-xl flex items-center justify-center text-xs font-black text-blue-500 border border-blue-500/10 flex-shrink-0">
                     {joinRequests.length}
                   </span>
                 </div>
@@ -1170,7 +1174,7 @@ function GroupInfoPage() {
 
             {/* ACCESS PROTOCOLS: INVITE & PERMISSIONS */}
             {(isCreator || myRole === "admin") && (
-              <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[3rem] p-10 border border-white/20 dark:border-white/5 shadow-xl shadow-black/5">
+              <div className="bg-white/70 dark:bg-gray-900/40 backdrop-blur-md rounded-[3rem] p-6 sm:p-10 border border-white/20 dark:border-white/5 shadow-xl shadow-black/5">
                 <div className="flex items-center gap-4 mb-10">
                   <div className="w-12 h-12 bg-primary-500/10 rounded-2xl flex items-center justify-center text-primary-500">
                     <ShieldCheck size={22} strokeWidth={3} />
@@ -1259,7 +1263,7 @@ function GroupInfoPage() {
                   </div>
                   <div className="flex flex-col text-left">
                     <span className="text-[10px] font-black uppercase tracking-[0.4em] opacity-60">Session Management</span>
-                    <span className="text-sm font-black uppercase tracking-tight">Expunge Registry Connection</span>
+                    <span className="text-sm font-black uppercase tracking-tight">Leave Group</span>
                   </div>
                 </div>
                 <ChevronRight size={24} strokeWidth={3} className="opacity-0 group-hover:opacity-100 -translate-x-4 group-hover:translate-x-0 transition-all font-black" />
@@ -1271,11 +1275,11 @@ function GroupInfoPage() {
         {/* ELITE EXIT CONFIRMATION */}
         {showDeleteConfirm && (
           <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[100] p-6 animate-in fade-in duration-300">
-            <div className="bg-white dark:bg-gray-900 rounded-[3rem] shadow-2xl p-10 border border-white/20 dark:border-white/10 max-w-sm w-full animate-in zoom-in-95 duration-300">
+            <div className="bg-white dark:bg-gray-900 rounded-[3rem] shadow-2xl p-6 sm:p-10 border border-white/20 dark:border-white/10 max-w-sm w-full animate-in zoom-in-95 duration-300">
               <div className="w-16 h-16 bg-red-500/10 rounded-2xl flex items-center justify-center text-red-500 mb-6 mx-auto">
                 <Trash2 size={32} strokeWidth={3} />
               </div>
-              <h3 className="text-lg font-black text-gray-900 dark:text-white mb-2 text-center uppercase tracking-tight">Expunge Connection?</h3>
+              <h3 className="text-lg font-black text-gray-900 dark:text-white mb-2 text-center uppercase tracking-tight">Leave Group?</h3>
               <p className="text-xs font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest text-center mb-8 leading-relaxed">Incoming data streams will be terminated. This action is recorded and permanent.</p>
               <div className="grid grid-cols-2 gap-4">
                 <button
@@ -1291,7 +1295,7 @@ function GroupInfoPage() {
                   }}
                   className="py-4 bg-red-500 text-white text-[10px] font-black uppercase tracking-widest rounded-2xl hover:bg-red-600 transition-all shadow-lg shadow-red-500/20"
                 >
-                  Expunge
+                  Leave
                 </button>
               </div>
             </div>
@@ -1303,7 +1307,7 @@ function GroupInfoPage() {
           <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center z-[100] p-6 animate-in fade-in duration-300">
             <div className="bg-white dark:bg-gray-900 rounded-t-[3rem] sm:rounded-[4rem] shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col border border-white/20 dark:border-white/10 animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-500">
               {/* Modal header */}
-              <div className="p-10 pb-6 flex items-center justify-between">
+              <div className="p-6 sm:p-10 pb-6 flex items-center justify-between">
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 bg-primary-500/10 rounded-2xl flex items-center justify-center text-primary-500">
                     <UserPlus size={22} strokeWidth={3} />

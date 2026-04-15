@@ -186,29 +186,32 @@ function RouteComponent() {
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        setAvatarUrl(reader.result as string);
+        const base64 = reader.result as string;
+        setAvatarUrl(base64);
+        handleSaveAvatar(base64);
       };
       reader.readAsDataURL(file);
     }
   };
 
-  const handleSaveAvatar = async () => {
-    if (!avatarUrl) {
+  const handleSaveAvatar = async (forcedAvatar?: string) => {
+    const avatarToSave = forcedAvatar || avatarUrl;
+    if (!avatarToSave) {
       return;
     }
 
     setIsSaving(true);
     try {
       console.log("💾 [Profile] Saving avatar...");
-      const encodedIcon = encodeURIComponent(avatarUrl);
+      const encodedIcon = encodeURIComponent(avatarToSave);
       await MDS.cmd.maxima({ params: { action: 'seticon', icon: encodedIcon } } as any);
 
-      const updateSql = `UPDATE MY_PROFILE SET AVATAR = '${avatarUrl.replace(/'/g, "''")}', LAST_UPDATED = ${Date.now()} WHERE id = 1`;
+      const updateSql = `UPDATE MY_PROFILE SET AVATAR = '${avatarToSave.replace(/'/g, "''")}', LAST_UPDATED = ${Date.now()} WHERE id = 1`;
       // @ts-ignore
       MDS.sql(updateSql);
 
       await refreshProfile();
-      setAvatar(avatarUrl);
+      setAvatar(avatarToSave);
       invalidateMessagingCache(); // Invalidate session cache so next message uses fresh avatar
       console.log("✅ [Profile] Avatar saved");
     } catch (error) {
@@ -532,14 +535,6 @@ function RouteComponent() {
                           <Loader2 className="text-primary-500 animate-spin" size={32} />
                        </div>
                     )}
-                    {avatarUrl && avatarUrl !== avatar && !isSaving && (
-                       <button 
-                         onClick={handleSaveAvatar}
-                         className="absolute -bottom-2 left-1/2 -translate-x-1/2 px-6 py-2 bg-emerald-500 text-white text-[10px] font-black uppercase tracking-widest rounded-full shadow-lg shadow-emerald-500/20 animate-in zoom-in"
-                       >
-                         Apply Changes
-                       </button>
-                    )}
                  </div>
 
                  <div className="flex-1 space-y-4 text-center  min-w-0">
@@ -690,6 +685,7 @@ function RouteComponent() {
                 </div>
              </div>
           </section>
+
 
       {/* Level 2: Semi-Private + Level 3: Private Column */}
       <div className={`space-y-12 ${['level2', 'level3'].includes(activeDropdown!) ? 'relative z-[1000]' : 'z-auto'}`}>
@@ -856,84 +852,94 @@ function RouteComponent() {
                 className="w-full bg-transparent text-sm font-black text-gray-900 dark:text-white outline-none placeholder:text-gray-300 dark:placeholder:text-gray-700"
                 placeholder="+1 234 567 8900"
               />
-               {/* Addresses Accordions */}
-        <div className="space-y-4">
-           {/* Public Key */}
-           <div className={`bg-white/70 dark:bg-gray-900/40 backdrop-blur-md border border-white/20 dark:border-white/5 rounded-[2.5rem] transition-all overflow-hidden shadow-lg shadow-black/5 ${expandedAddress === 'pubkey' ? 'ring-2 ring-primary-500/20' : ''}`}>
-              <button onClick={() => toggleAddress('pubkey')} className="w-full flex items-center justify-between p-6 hover:bg-black/5 transition-colors text-left">
-                 <div className="flex items-center gap-3">
-                    <Shield size={18} className="text-primary-500" />
-                    <span className="text-xs font-black uppercase tracking-widest text-gray-700 dark:text-gray-300">Public Key</span>
-                 </div>
-                 {expandedAddress === 'pubkey' ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-              </button>
-              {expandedAddress === 'pubkey' && (
-                 <div className="px-6 pb-6 animate-in slide-in-from-top-2">
-                    <div className="bg-black/5 dark:bg-white/5 p-4 rounded-2xl border border-black/5 mb-4 group/addr">
-                       <p className="text-[10px] font-mono text-gray-500 break-all leading-relaxed group-hover/addr:text-primary-500 transition-colors">
-                          {myPublicKey || "Unresolved"}
-                       </p>
-                    </div>
-                    <button onClick={() => copyToClipboard(myPublicKey, 'pubkey')} className={`w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${copiedField === 'pubkey' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'bg-primary-500/10 text-primary-600 hover:bg-primary-500 hover:text-white shadow-lg shadow-primary-500/10'}`}>
-                       {copiedField === 'pubkey' ? <Check size={16} /> : <Copy size={16} />}
-                       {copiedField === 'pubkey' ? 'Copied' : 'Copy Public Key'}
-                    </button>
-                 </div>
-              )}
-           </div>
-
-           {/* Maxima */}
-           <div className={`bg-white/70 dark:bg-gray-900/40 backdrop-blur-md border border-white/20 dark:border-white/5 rounded-[2.5rem] transition-all overflow-hidden shadow-lg shadow-black/5 ${expandedAddress === 'maxima' ? 'ring-2 ring-indigo-500/20' : ''}`}>
-              <button onClick={() => toggleAddress('maxima')} className="w-full flex items-center justify-between p-6 hover:bg-black/5 transition-colors text-left">
-                 <div className="flex items-center gap-3">
-                    <Zap size={18} className="text-indigo-500" />
-                    <span className="text-xs font-black uppercase tracking-widest text-gray-700 dark:text-gray-300">Maxima Address</span>
-                 </div>
-                 {expandedAddress === 'maxima' ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-              </button>
-              {expandedAddress === 'maxima' && (
-                 <div className="px-6 pb-6 animate-in slide-in-from-top-2">
-                    <div className="bg-black/5 dark:bg-white/5 p-4 rounded-2xl border border-black/5 mb-4 group/addr">
-                       <p className="text-[10px] font-mono text-gray-500 break-all leading-relaxed group-hover/addr:text-indigo-500 transition-colors">
-                          {myAddress || "Unresolved"}
-                       </p>
-                    </div>
-                    <button onClick={() => copyToClipboard(myAddress, 'maxima')} className={`w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${copiedField === 'maxima' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'bg-indigo-500/10 text-indigo-600 hover:bg-indigo-500 hover:text-white shadow-lg shadow-indigo-500/10'}`}>
-                       {copiedField === 'maxima' ? <Check size={16} /> : <Copy size={16} />}
-                       {copiedField === 'maxima' ? 'Copied' : 'Copy Maxima Address'}
-                    </button>
-                 </div>
-              )}
-           </div>
-
-           {/* Minima */}
-           <div className={`bg-white/70 dark:bg-gray-900/40 backdrop-blur-md border border-white/20 dark:border-white/5 rounded-[2.5rem] transition-all overflow-hidden shadow-lg shadow-black/5 ${expandedAddress === 'minima' ? 'ring-2 ring-amber-500/20' : ''}`}>
-              <button onClick={() => toggleAddress('minima')} className="w-full flex items-center justify-between p-6 hover:bg-black/5 transition-colors text-left">
-                 <div className="flex items-center gap-3">
-                    <Network size={18} className="text-amber-500" />
-                    <span className="text-xs font-black uppercase tracking-widest text-gray-700 dark:text-gray-300">Minima L3 Address</span>
-                 </div>
-                 {expandedAddress === 'minima' ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-              </button>
-              {expandedAddress === 'minima' && (
-                 <div className="px-6 pb-6 animate-in slide-in-from-top-2">
-                    <div className="bg-black/5 dark:bg-white/5 p-4 rounded-2xl border border-black/5 mb-4 group/addr">
-                       <p className="text-[10px] font-mono text-gray-500 break-all leading-relaxed group-hover/addr:text-amber-500 transition-colors">
-                          {minimaAddress || "Unresolved"}
-                       </p>
-                    </div>
-                    <button onClick={() => copyToClipboard(minimaAddress, 'minima')} className={`w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${copiedField === 'minima' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'bg-amber-500/10 text-amber-600 hover:bg-amber-500 hover:text-white shadow-lg shadow-amber-500/10'}`}>
-                       {copiedField === 'minima' ? <Check size={16} /> : <Copy size={16} />}
-                       {copiedField === 'minima' ? 'Copied' : 'Copy Address'}
-                    </button>
-                 </div>
-              )}
-           </div>
-        </div>
-    </div>
+            </div>
          </div>
        </section>
       </div>
+
+    {/* Network Identifiers Section */}
+    <section className="mt-12 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="flex items-center gap-3 px-2">
+         <div className="w-8 h-8 rounded-xl bg-primary-500/10 flex items-center justify-center text-primary-500 shadow-sm shadow-primary-500/10">
+            <Zap size={16} />
+         </div>
+         <h3 className="text-xs font-black text-gray-400 dark:text-gray-500 uppercase tracking-[0.3em]">Network Identifiers</h3>
+      </div>
+
+      <div className="space-y-4">
+         {/* Public Key */}
+         <div className={`bg-white/70 dark:bg-gray-900/40 backdrop-blur-md border border-white/20 dark:border-white/5 rounded-[2.5rem] transition-all overflow-hidden shadow-lg shadow-black/5 ${expandedAddress === 'pubkey' ? 'ring-2 ring-primary-500/20' : ''}`}>
+            <button onClick={() => toggleAddress('pubkey')} className="w-full flex items-center justify-between p-6 hover:bg-black/5 transition-colors text-left">
+               <div className="flex items-center gap-3">
+                  <Shield size={18} className="text-primary-500" />
+                  <span className="text-xs font-black uppercase tracking-widest text-gray-700 dark:text-gray-300">Public Key</span>
+               </div>
+               {expandedAddress === 'pubkey' ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+            </button>
+            {expandedAddress === 'pubkey' && (
+               <div className="px-6 pb-6 animate-in slide-in-from-top-2 text-left">
+                  <div className="bg-black/5 dark:bg-white/5 p-4 rounded-2xl border border-black/5 mb-4 group/addr">
+                     <p className="text-[10px] font-mono text-gray-500 break-all leading-relaxed group-hover/addr:text-primary-500 transition-colors">
+                        {myPublicKey || "Unresolved"}
+                     </p>
+                  </div>
+                  <button onClick={() => copyToClipboard(myPublicKey, 'pubkey')} className={`w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${copiedField === 'pubkey' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'bg-primary-500/10 text-primary-600 hover:bg-primary-500 hover:text-white shadow-lg shadow-primary-500/10'}`}>
+                     {copiedField === 'pubkey' ? <Check size={16} /> : <Copy size={16} />}
+                     {copiedField === 'pubkey' ? 'Copied' : 'Copy Public Key'}
+                  </button>
+               </div>
+            )}
+         </div>
+
+         {/* Maxima */}
+         <div className={`bg-white/70 dark:bg-gray-900/40 backdrop-blur-md border border-white/20 dark:border-white/5 rounded-[2.5rem] transition-all overflow-hidden shadow-lg shadow-black/5 ${expandedAddress === 'maxima' ? 'ring-2 ring-indigo-500/20' : ''}`}>
+            <button onClick={() => toggleAddress('maxima')} className="w-full flex items-center justify-between p-6 hover:bg-black/5 transition-colors text-left">
+               <div className="flex items-center gap-3">
+                  <Zap size={18} className="text-indigo-500" />
+                  <span className="text-xs font-black uppercase tracking-widest text-gray-700 dark:text-gray-300">Maxima Address</span>
+               </div>
+               {expandedAddress === 'maxima' ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+            </button>
+            {expandedAddress === 'maxima' && (
+               <div className="px-6 pb-6 animate-in slide-in-from-top-2 text-left">
+                  <div className="bg-black/5 dark:bg-white/5 p-4 rounded-2xl border border-black/5 mb-4 group/addr">
+                     <p className="text-[10px] font-mono text-gray-500 break-all leading-relaxed group-hover/addr:text-indigo-500 transition-colors">
+                        {myAddress || "Unresolved"}
+                     </p>
+                  </div>
+                  <button onClick={() => copyToClipboard(myAddress, 'maxima')} className={`w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${copiedField === 'maxima' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'bg-indigo-500/10 text-indigo-600 hover:bg-indigo-500 hover:text-white shadow-lg shadow-indigo-500/10'}`}>
+                     {copiedField === 'maxima' ? <Check size={16} /> : <Copy size={16} />}
+                     {copiedField === 'maxima' ? 'Copied' : 'Copy Maxima Address'}
+                  </button>
+               </div>
+            )}
+         </div>
+
+         {/* Minima */}
+         <div className={`bg-white/70 dark:bg-gray-900/40 backdrop-blur-md border border-white/20 dark:border-white/5 rounded-[2.5rem] transition-all overflow-hidden shadow-lg shadow-black/5 ${expandedAddress === 'minima' ? 'ring-2 ring-amber-500/20' : ''}`}>
+            <button onClick={() => toggleAddress('minima')} className="w-full flex items-center justify-between p-6 hover:bg-black/5 transition-colors text-left">
+               <div className="flex items-center gap-3">
+                  <Network size={18} className="text-amber-500" />
+                  <span className="text-xs font-black uppercase tracking-widest text-gray-700 dark:text-gray-300">Minima L3 Address</span>
+               </div>
+               {expandedAddress === 'minima' ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+            </button>
+            {expandedAddress === 'minima' && (
+               <div className="px-6 pb-6 animate-in slide-in-from-top-2 text-left">
+                  <div className="bg-black/5 dark:bg-white/5 p-4 rounded-2xl border border-black/5 mb-4 group/addr">
+                     <p className="text-[10px] font-mono text-gray-500 break-all leading-relaxed group-hover/addr:text-amber-500 transition-colors">
+                        {minimaAddress || "Unresolved"}
+                     </p>
+                  </div>
+                  <button onClick={() => copyToClipboard(minimaAddress, 'minima')} className={`w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${copiedField === 'minima' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'bg-amber-500/10 text-amber-600 hover:bg-amber-500 hover:text-white shadow-lg shadow-amber-500/10'}`}>
+                     {copiedField === 'minima' ? <Check size={16} /> : <Copy size={16} />}
+                     {copiedField === 'minima' ? 'Copied' : 'Copy Address'}
+                  </button>
+               </div>
+            )}
+         </div>
+      </div>
+    </section>
     </div>
 
       <div className="flex flex-col items-center justify-center gap-4 pt-10 border-t border-black/5 dark:border-white/5">
