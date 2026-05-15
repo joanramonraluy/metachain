@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, useEffect, useRef, useState } from "react";
 import SideMenu from "./SideMenu";
 import Header from "./Header";
 import BottomNav from "./BottomNav";
@@ -12,6 +12,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const router = useRouterState();
   const currentPath = router.location.pathname;
+  const adsSlotRef = useRef<HTMLDivElement>(null);
 
   // Pages that handle their own header
   const customHeaderRoutes = [
@@ -32,6 +33,32 @@ export default function AppLayout({ children }: AppLayoutProps) {
     return () => window.removeEventListener("open-sidebar", handleOpenSidebar);
   }, []);
 
+  // Track the ad banner height and expose it as a CSS variable on :root so
+  // that all fixed elements (FABs, BottomNav) can shift up automatically
+  // without overlapping the ad space.
+  useEffect(() => {
+    const slot = adsSlotRef.current;
+    if (!slot) return;
+
+    const updateHeight = () => {
+      const h = slot.getBoundingClientRect().height;
+      document.documentElement.style.setProperty("--ads-banner-height", `${h}px`);
+    };
+
+    // Initial read
+    updateHeight();
+
+    // Watch for size changes (e.g. when MinimaAds injects / removes the banner)
+    const ro = new ResizeObserver(updateHeight);
+    ro.observe(slot);
+
+    return () => {
+      ro.disconnect();
+      // Reset when unmounted (safety)
+      document.documentElement.style.setProperty("--ads-banner-height", "0px");
+    };
+  }, []);
+
   return (
     <div className="flex bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 h-full w-full overflow-hidden transition-colors">
       <SideMenu isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
@@ -47,7 +74,11 @@ export default function AppLayout({ children }: AppLayoutProps) {
           {children}
         </main>
 
+        {!hasCustomHeader && (
+          <div id="minimaads-slot" ref={adsSlotRef} className="empty:hidden px-3 pt-2 pb-1" />
+        )}
         {!hasCustomHeader && <BottomNav />}
+
       </div>
     </div>
   );

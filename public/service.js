@@ -202,13 +202,13 @@ function smartSend(pubkey, application, hexData, logTag, usePoll, forcedAddress)
         var cleanAddr = cleanMaximaAddress(forcedAddress);
         if (cleanAddr && (cleanAddr.startsWith("Mx") || cleanAddr.startsWith("MX"))) {
             var sendCmd = "maxima action:send to:" + cleanAddr + " application:" + application + " data:" + hexData + pollStr;
-            MDS.log("🔍 [" + logTag + "] Sending via FORCED address: " + cleanAddr.substring(0, 15) + "...");
+            if (SW_DEBUG) MDS.log("🔍 [" + logTag + "] Sending via FORCED address: " + cleanAddr.substring(0, 15) + "...");
             MDS.cmd(sendCmd, function(res) {
                 if (res.status) {
-                    MDS.log("✅ [" + logTag + "] Sent to " + pubkey.substring(0, 10));
+                    if (SW_DEBUG) MDS.log("✅ [" + logTag + "] Sent to " + pubkey.substring(0, 10));
                 } else {
                     // If forced address fails, we could fallback to publickey, but usually if forced it fails for good reasons
-                    MDS.log("⚠️ [" + logTag + "] Forced send failed, trying publickey: " + res.error);
+                    if (SW_DEBUG) MDS.log("⚠️ [" + logTag + "] Forced send failed, trying publickey: " + res.error);
                     MDS.cmd("maxima action:send publickey:" + pubkey + " application:" + application + " data:" + hexData + pollStr);
                 }
             });
@@ -227,7 +227,7 @@ function smartSend(pubkey, application, hexData, logTag, usePoll, forcedAddress)
 
             if (mxAddress && (mxAddress.startsWith("Mx") || mxAddress.startsWith("MX"))) {
                 sendCmd = "maxima action:send to:" + mxAddress + " application:" + application + " data:" + hexData + pollStr;
-                MDS.log("🔍 [" + logTag + "] Optimized send via address resolution: " + mxAddress.substring(0, 15) + "...");
+                if (SW_DEBUG) MDS.log("🔍 [" + logTag + "] Optimized send via address resolution: " + mxAddress.substring(0, 15) + "...");
             } else {
                 sendCmd = "maxima action:send publickey:" + pubkey + " application:" + application + " data:" + hexData + pollStr;
             }
@@ -237,9 +237,9 @@ function smartSend(pubkey, application, hexData, logTag, usePoll, forcedAddress)
 
         MDS.cmd(sendCmd, function (res) {
             if (res.status) {
-                MDS.log("✅ [" + logTag + "] Sent to " + pubkey.substring(0, 10));
+                if (SW_DEBUG) MDS.log("✅ [" + logTag + "] Sent to " + pubkey.substring(0, 10));
             } else {
-                MDS.log("⚠️ [" + logTag + "] Failed send to " + pubkey.substring(0, 10) + ": " + res.error);
+                if (SW_DEBUG) MDS.log("⚠️ [" + logTag + "] Failed send to " + pubkey.substring(0, 10) + ": " + res.error);
             }
         });
     });
@@ -550,7 +550,7 @@ function checkPendingUID(uid, callback) {
             }
 
             var exists = response.response && response.response.exists;
-            MDS.log("📋 [SW-TX-CHECK] UID " + uid + " pending status: " + exists);
+            if (SW_DEBUG) MDS.log("📋 [SW-TX-CHECK] UID " + uid + " pending status: " + exists);
             callback(null, exists || false);
         });
     } catch (err) {
@@ -602,12 +602,12 @@ function findInBlockchainOrMempool(messageTimestamp, callback) {
             }
 
             var myAddress = addressRes.response.miniaddress;
-            MDS.log("🔍 [SW-TX-FIND] Searching for timestamp " + tsStr + " at address " + myAddress);
+            if (SW_DEBUG) MDS.log("🔍 [SW-TX-FIND] Searching for timestamp " + tsStr + " at address " + myAddress);
 
             // Search recent txpows for this address
             MDS.cmd("txpow address:" + myAddress + " max:50", function (txpowRes) {
                 if (!txpowRes.status || !txpowRes.response) {
-                    MDS.log("⚠️ [SW-TX-FIND] No txpows found");
+                    if (SW_DEBUG) MDS.log("⚠️ [SW-TX-FIND] No txpows found");
                     callback(null, null);
                     return;
                 }
@@ -632,7 +632,7 @@ function findInBlockchainOrMempool(messageTimestamp, callback) {
                     }
                 }
 
-                MDS.log("⚠️ [SW-TX-FIND] Transaction not found for timestamp " + tsStr);
+                if (SW_DEBUG) MDS.log("⚠️ [SW-TX-FIND] Transaction not found for timestamp " + tsStr);
                 callback(null, null);
             });
         });
@@ -710,7 +710,7 @@ function verifyIncomingTransaction(messageTimestamp, senderPublicKey, txpowid, c
                         return;
                     }
                 }
-                MDS.log("⚠️ [SW-TX-VERIFY] Tx not found for ts=" + tsStr);
+                if (SW_DEBUG) MDS.log("⚠️ [SW-TX-VERIFY] Tx not found for ts=" + tsStr);
                 callback(null, false);
             });
         });
@@ -745,7 +745,7 @@ function getAllPendingActions(callback) {
             }
 
             var pending = response.response.pending || [];
-            MDS.log("📋 [SW-TX-CHECK] Found " + pending.length + " pending actions in Minima");
+            if (SW_DEBUG) MDS.log("📋 [SW-TX-CHECK] Found " + pending.length + " pending actions in Minima");
             callback(null, pending);
         });
     } catch (err) {
@@ -799,7 +799,7 @@ function check3BlockConfirmation(txpowid, callback) {
 
                 // Calculate confirmations
                 var blockDifference = parseInt(currentBlock) - parseInt(txBlock);
-                MDS.log("🔍 [SW-TX-CONFIRM] Transaction " + txpowid + ": block " + txBlock + ", current " + currentBlock + ", confirmations: " + blockDifference);
+                if (SW_DEBUG) MDS.log("🔍 [SW-TX-CONFIRM] Transaction " + txpowid + ": block " + txBlock + ", current " + currentBlock + ", confirmations: " + blockDifference);
 
                 callback(null, blockDifference >= 3 ? 'confirmed' : 'pending');
             });
@@ -6907,13 +6907,13 @@ function handleProfileResponse(pubkey, maxjson) {
 // Check for zombie pending transactions (cancelled while DApp was closed)
 // AND detect accepted transactions to send Maxima messages
 function checkPendingTransactions() {
-    MDS.log("🔍 [SW-TX] Checking pending transactions...");
+    if (SW_DEBUG) MDS.log("🔍 [SW-TX] Checking pending transactions...");
 
     // Get all local pending transactions
     MDS.sql("SELECT * FROM TRANSACTIONS WHERE status = 'pending'", function (res) {
         if (res.status && res.rows.length > 0) {
             var localPending = res.rows;
-            MDS.log("📋 [SW-TX] Found " + localPending.length + " pending transactions in DB");
+            if (SW_DEBUG) MDS.log("📋 [SW-TX] Found " + localPending.length + " pending transactions in DB");
 
             // Check each pending transaction directly against blockchain/mempool
             // We don't use 'mds action:pending' because it creates phantom pending commands in Read Mode
@@ -6927,7 +6927,7 @@ function checkPendingTransactions() {
                     continue;
                 }
 
-                MDS.log("🔍 [SW-TX] Checking zombie status for transaction: " + txUid);
+                if (SW_DEBUG) MDS.log("🔍 [SW-TX] Checking zombie status for transaction: " + txUid);
 
                 // Search for it in blockchain/mempool
                 findInBlockchainOrMempool(messageTimestamp, function (err, foundTxpowid) {
@@ -6957,7 +6957,7 @@ function checkPendingTransactions() {
                 });
             }
         } else {
-            MDS.log("✅ [SW-TX] No pending transactions in DB");
+            if (SW_DEBUG) MDS.log("✅ [SW-TX] No pending transactions in DB");
         }
     });
 }
@@ -6967,12 +6967,12 @@ function checkPendingTransactions() {
  * This was missing! Causing transactions to remain 'sent' forever.
  */
 function checkSentTransactions() {
-    MDS.log("🔍 [SW-TX-CONFIRM] Checking SENT transactions...");
+    if (SW_DEBUG) MDS.log("🔍 [SW-TX-CONFIRM] Checking SENT transactions...");
 
     MDS.sql("SELECT * FROM TRANSACTIONS WHERE status = 'sent'", function (res) {
         if (res.status && res.rows.length > 0) {
             var sentTxs = res.rows;
-            MDS.log("📋 [SW-TX-CONFIRM] Found " + sentTxs.length + " sent transactions waiting for confirmation");
+            if (SW_DEBUG) MDS.log("📋 [SW-TX-CONFIRM] Found " + sentTxs.length + " sent transactions waiting for confirmation");
 
             for (var i = 0; i < sentTxs.length; i++) {
                 var tx = sentTxs[i];
@@ -7174,15 +7174,15 @@ function handleDeniedTransaction(tx) {
  * exact block it was mined in — no txpowid needed for the confirmation check.
  */
 function checkIncomingTransactions() {
-    MDS.log("🔍 [SW-TX-INCOMING] Checking incoming unconfirmed token/charm messages...");
+    if (SW_DEBUG) MDS.log("🔍 [SW-TX-INCOMING] Checking incoming unconfirmed token/charm messages...");
 
     MDS.sql("SELECT * FROM CHAT_MESSAGES WHERE state IN ('received','read') AND username!='Me' AND (type='token' OR type='charm')", function (res) {
         if (!res.status || res.rows.length === 0) {
-            MDS.log("✅ [SW-TX-INCOMING] No incoming unconfirmed token messages");
+            if (SW_DEBUG) MDS.log("✅ [SW-TX-INCOMING] No incoming unconfirmed token messages");
             return;
         }
 
-        MDS.log("📋 [SW-TX-INCOMING] Found " + res.rows.length + " incoming unconfirmed message(s)");
+        if (SW_DEBUG) MDS.log("📋 [SW-TX-INCOMING] Found " + res.rows.length + " incoming unconfirmed message(s)");
 
         // Get current block once for all messages
         MDS.cmd("status", function(statusRes) {
@@ -7304,7 +7304,7 @@ function promoteUnverifiedByCoin(coinData) {
  * - If not verified but recent → keep as 'unverified' and retry next cycle.
  */
 function checkUnverifiedIncomingMessages() {
-    MDS.log("🔍 [SW-TX-VERIFY] Checking unverified incoming token/charm messages...");
+    if (SW_DEBUG) MDS.log("🔍 [SW-TX-VERIFY] Checking unverified incoming token/charm messages...");
 
     var TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
     var now = Date.now();
@@ -7313,11 +7313,11 @@ function checkUnverifiedIncomingMessages() {
         "SELECT * FROM CHAT_MESSAGES WHERE state='unverified' AND username!='Me' AND (type='token' OR type='charm')",
         function(res) {
             if (!res.status || !res.rows || res.rows.length === 0) {
-                MDS.log("✅ [SW-TX-VERIFY] No unverified token/charm messages.");
+                if (SW_DEBUG) MDS.log("✅ [SW-TX-VERIFY] No unverified token/charm messages.");
                 return;
             }
 
-            MDS.log("📋 [SW-TX-VERIFY] Found " + res.rows.length + " unverified message(s)");
+            if (SW_DEBUG) MDS.log("📋 [SW-TX-VERIFY] Found " + res.rows.length + " unverified message(s)");
 
             for (var i = 0; i < res.rows.length; i++) {
                 (function(msg) {
@@ -7588,7 +7588,7 @@ function saveBeaconListings(beacon, now) {
         ")";
       MDS.sql(upsertSql, function (saveRes) {
         if (saveRes.status) {
-          MDS.log("✅ [LISTINGS] Updated listings for " + pk.substring(0, 10));
+          if (SW_DEBUG) MDS.log("✅ [LISTINGS] Updated listings for " + pk.substring(0, 10));
         } else {
           MDS.log(
             "❌ [LISTINGS] Failed to save listings: " + JSON.stringify(saveRes),
@@ -7635,7 +7635,7 @@ function handleBeacon(beacon, source) {
 
     // Check if this is our own beacon (allow SELF to persist)
     if (MY_MAXIMA_PK && beacon.pubkey === MY_MAXIMA_PK && source !== "SELF") {
-      MDS.log("⏭️ [BEACON-SELF] Ignoring own beacon from " + source);
+      if (SW_DEBUG) MDS.log("⏭️ [BEACON-SELF] Ignoring own beacon from " + source);
       return;
     }
 
@@ -7655,7 +7655,7 @@ function handleBeacon(beacon, source) {
       1,
     );
 
-    if (source !== "GOSSIP") MDS.log("📡 [BEACON] " + beacon.alias + " from " + source);
+    if (source !== "GOSSIP" && SW_DEBUG) MDS.log("📡 [BEACON] " + beacon.alias + " from " + source);
 
     saveBeaconListings(beacon, now);
 
@@ -7745,11 +7745,13 @@ function saveBeaconWithBio(
 
       // If incoming beacon has no timestamp and we already have a profile, only touch last_seen
       if (incomingTimestamp <= 0 && hasExisting) {
-        MDS.log(
-          "⏭️ [BEACON] Missing timestamp for " +
-            beacon.alias +
-            " — preserving existing profile. Touching last_seen only.",
-        );
+        if (SW_DEBUG) {
+          MDS.log(
+            "⏭️ [BEACON] Missing timestamp for " +
+              beacon.alias +
+              " — preserving existing profile. Touching last_seen only.",
+          );
+        }
         MDS.sql(
           "UPDATE DISCOVERED_PEERS SET last_seen=" +
             now +
@@ -7766,15 +7768,17 @@ function saveBeaconWithBio(
 
       // If the incoming beacon is older than what we have stored, only touch last_seen
       if (incomingTimestamp > 0 && storedTimestamp > incomingTimestamp) {
-        MDS.log(
-          "⏭️ [BEACON] Skipping profile overwrite for " +
-            beacon.alias +
-            " — stored beacon is newer (" +
-            storedTimestamp +
-            " > " +
-            incomingTimestamp +
-            "). Touching last_seen only.",
-        );
+        if (SW_DEBUG) {
+          MDS.log(
+            "⏭️ [BEACON] Skipping profile overwrite for " +
+              beacon.alias +
+              " — stored beacon is newer (" +
+              storedTimestamp +
+              " > " +
+              incomingTimestamp +
+              "). Touching last_seen only.",
+          );
+        }
         MDS.sql(
           "UPDATE DISCOVERED_PEERS SET last_seen=" +
             now +
@@ -7839,13 +7843,15 @@ function saveBeaconWithBio(
         MDS.sql(deleteOldSql, function () {
           MDS.sql(discoverySql, function (res) {
             if (res.status) {
-              MDS.log(
-                "✅ [BEACON-DIRECT] Validated IP & Saved: " +
-                  beacon.alias +
-                  " (" +
-                  cleanAddress +
-                  ")",
-              );
+              if (SW_DEBUG) {
+                MDS.log(
+                  "✅ [BEACON-DIRECT] Validated IP & Saved: " +
+                    beacon.alias +
+                    " (" +
+                    cleanAddress +
+                    ")",
+                );
+              }
               promoteToUserRegistry(beacon, now);
 
               // Reactive gossip
@@ -7916,7 +7922,7 @@ function promoteToUserRegistry(beacon, now) {
 }
 
 function sendBackgroundBeacon() {
-  MDS.log("📡 [BG-BEACON] Preparing beacon...");
+  if (SW_DEBUG) MDS.log("📡 [BG-BEACON] Preparing beacon...");
 
   MDS.cmd("maxima action:info", function (maxInfo) {
     if (!maxInfo.status) {
@@ -8026,7 +8032,7 @@ function sendBackgroundBeacon() {
 
                     // P2P broadcast
                     MDS.cmd("message data:" + hexData, function (res) {
-                      MDS.log("📡 [BG-BEACON] P2P broadcast sent");
+                      if (SW_DEBUG) MDS.log("📡 [BG-BEACON] P2P broadcast sent");
                     });
 
                     // MLS unicast (Maxima) to make MLS a discovery hub
@@ -8102,7 +8108,7 @@ function sendBeaconToMLS(maxInfoResponse, hexData) {
       " poll:false",
     function (res) {
       if (res.status) {
-        MDS.log("✅ [BEACON-MLS] Beacon sent to MLS");
+        if (SW_DEBUG) MDS.log("✅ [BEACON-MLS] Beacon sent to MLS");
       } else {
         MDS.log(
           "⚠️ [BEACON-MLS] Failed to send beacon to MLS: " +
@@ -8123,7 +8129,7 @@ function startCleanupTimer() {
     " AND source != 'SELF'";
   MDS.sql(cleanupSql, function (res) {
     if (res.status && res.count > 0) {
-      MDS.log("🧹 [CLEANUP] Removed " + res.count + " stale peers");
+      if (SW_DEBUG) MDS.log("🧹 [CLEANUP] Removed " + res.count + " stale peers");
     }
   });
 }
@@ -8357,9 +8363,9 @@ function handleGetPeers(pubkey, maxjson) {
             var sendCmd = "maxima action:send to:" + targetAddress + " application:metachain data:" + replyHex + " poll:false";
             MDS.cmd(sendCmd, function (sendRes) {
                 if (sendRes && sendRes.status === false) {
-                    MDS.log("⚠️ [GOSSIP] Failed to send peers to address: " + sendRes.error);
+                    if (SW_DEBUG) MDS.log("⚠️ [GOSSIP] Failed to send peers to address: " + sendRes.error);
                 } else {
-                    MDS.log("✅ [GOSSIP] Sent " + peers.length + " peers to " + targetAddress);
+                    if (SW_DEBUG) MDS.log("✅ [GOSSIP] Sent " + peers.length + " peers to " + targetAddress);
                 }
                 // Always also send via smartSend (publickey fallback with resolution)
                 smartSend(pubkey, "metachain", replyHex, "GOSSIP-REPLY", false);
@@ -8389,21 +8395,23 @@ function handlePeersResponse(pubkey, maxjson) {
         handleBeacon(peer, "GOSSIP");
         processedCount++;
       } else {
-        MDS.log(
-          "⚠️ [GOSSIP-PEER] Skipping incomplete peer - pubkey:" +
-            !!peer.pubkey +
-            " address:" +
-            !!peer.address +
-            " alias:" +
-            !!peer.alias,
-        );
+        if (SW_DEBUG) {
+          MDS.log(
+            "⚠️ [GOSSIP-PEER] Skipping incomplete peer - pubkey:" +
+              !!peer.pubkey +
+              " address:" +
+              !!peer.address +
+              " alias:" +
+              !!peer.alias,
+          );
+        }
         skippedCount++;
       }
     }
 
-    if (skippedCount > 0) MDS.log("⚠️ [GOSSIP] Skipped " + skippedCount + " incomplete peers");
+    if (skippedCount > 0 && SW_DEBUG) MDS.log("⚠️ [GOSSIP] Skipped " + skippedCount + " incomplete peers");
   } else {
-    MDS.log("⚠️ [GOSSIP] No valid peers array in response");
+    if (SW_DEBUG) MDS.log("⚠️ [GOSSIP] No valid peers array in response");
   }
 }
 
@@ -8425,9 +8433,11 @@ function startGossip() {
         if (validPubkeys.length > 0) {
           askPeers(validPubkeys);
         } else {
-          MDS.log(
-            "⚠️ [GOSSIP] Only self found in discovery — triggering MLS bootstrap fallback.",
-          );
+          if (SW_DEBUG) {
+            MDS.log(
+              "⚠️ [GOSSIP] Only self found in discovery — triggering MLS bootstrap fallback.",
+            );
+          }
           if (typeof bootstrapFromMLS === "function") {
             bootstrapFromMLS();
           }
@@ -8450,9 +8460,11 @@ function startGossip() {
             }
             askPeers(targets);
           } else {
-            MDS.log(
-              "⚠️ [GOSSIP] No peers or contacts — triggering MLS bootstrap fallback.",
-            );
+            if (SW_DEBUG) {
+              MDS.log(
+                "⚠️ [GOSSIP] No peers or contacts — triggering MLS bootstrap fallback.",
+              );
+            }
             if (typeof bootstrapFromMLS === "function") {
               bootstrapFromMLS();
             }
@@ -8492,7 +8504,7 @@ function askPeers(pubkeys) {
 function sendWelcomePackage(targetPubkey, targetAlias, targetAddress) {
   if (MY_MAXIMA_PK && targetPubkey === MY_MAXIMA_PK) return;
 
-  MDS.log("🎁 [GOSSIP] Sending Welcome Package to " + targetAlias);
+  if (SW_DEBUG) MDS.log("🎁 [GOSSIP] Sending Welcome Package to " + targetAlias);
 
   loadListingsMap(function (listingsMap) {
     var peerSql =
@@ -8557,9 +8569,9 @@ function sendWelcomePackage(targetPubkey, targetAlias, targetAddress) {
             var sendCmd = "maxima action:send to:" + targetAddress + " application:metachain data:" + hexData + " poll:false";
             MDS.cmd(sendCmd, function (sendRes) {
                 if (sendRes && sendRes.status === false) {
-                    MDS.log("⚠️ [GOSSIP] Failed to send Welcome Package to " + targetAddress + ": " + sendRes.error);
+                    if (SW_DEBUG) MDS.log("⚠️ [GOSSIP] Failed to send Welcome Package to " + targetAddress + ": " + sendRes.error);
                 } else {
-                    MDS.log("✅ [GOSSIP] Welcome Package sent to " + targetAddress);
+                    if (SW_DEBUG) MDS.log("✅ [GOSSIP] Welcome Package sent to " + targetAddress);
                 }
                 // Always also send via smartSend (publickey fallback with resolution)
                 smartSend(targetPubkey, "metachain", hexData, "GOSSIP-WELCOME", false);

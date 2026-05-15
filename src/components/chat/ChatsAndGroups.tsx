@@ -1646,7 +1646,7 @@ export default function ChatsAndGroups() {
 
       {/* FAB Menu Actions */}
       {fabMenuOpen && (activeTab === "all" || activeTab === "favorites") && (
-        <div className="fixed bottom-52 md:bottom-30 right-6 flex flex-col items-end gap-3 z-50 animate-in slide-in-from-bottom-5 fade-in duration-300">
+        <div className="fixed fab-menu right-6 flex flex-col items-end gap-3 z-50 animate-in slide-in-from-bottom-5 fade-in duration-300">
           <button
             onClick={() => {
               setFabMenuOpen(false);
@@ -1698,7 +1698,7 @@ export default function ChatsAndGroups() {
         </div>
       )}
 
-      <div className="fixed bottom-32 md:bottom-10 right-6 z-50">
+      <div className="fixed fab-main right-6 z-50">
         <button
           onClick={() => {
             if (activeTab === "groups") navigate({ to: "/create-group" });

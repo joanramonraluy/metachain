@@ -191,7 +191,7 @@ const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
           // Dispatch event to window so MaximaDiscoveryService can pick it up
           window.dispatchEvent(
             new CustomEvent("MDS_MAXIMA_EVENT", {
-              detail: msg.data, // Pass the inner data object { application, data, from, ... }
+              detail: msg.data,
             }),
           );
         }

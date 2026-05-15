@@ -121,3 +121,34 @@
   from { opacity: 0; transform: translateY(-1rem); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* ─── Ads-aware fixed positioning ────────────────────────────────────────────
+   --ads-banner-height is set dynamically by AppLayout's ResizeObserver on
+   #minimaads-slot. All fixed elements that sit above the ad banner use these
+   classes so they never overlap the ad space.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+/* Mobile-only bottom nav pill: bottom-6 (1.5rem) + banner */
+.bottom-nav-mobile {
+  bottom: calc(var(--ads-banner-height, 0px) + 1.5rem);
+}
+
+/* FAB main button: mobile bottom-32 (8rem), desktop bottom-10 (2.5rem) */
+.fab-main {
+  bottom: calc(var(--ads-banner-height, 0px) + 8rem);
+}
+@media (min-width: 768px) {
+  .fab-main {
+    bottom: calc(var(--ads-banner-height, 0px) + 2.5rem);
+  }
+}
+
+/* FAB expanded menu: mobile bottom-52 (13rem), desktop bottom-30 (7.5rem) */
+.fab-menu {
+  bottom: calc(var(--ads-banner-height, 0px) + 13rem);
+}
+@media (min-width: 768px) {
+  .fab-menu {
+    bottom: calc(var(--ads-banner-height, 0px) + 7.5rem);
+  }
+}

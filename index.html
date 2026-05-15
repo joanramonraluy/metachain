@@ -8,6 +8,20 @@
   <meta name="viewport"
     content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
   <title>MetaChain</title>
+  <script>
+    (function() {
+      var s = localStorage.getItem('minimaads_snippet');
+      var active = sessionStorage.getItem('minimaads_run');
+      if (!s || active !== 'true') return;
+      var el = document.createElement('script');
+      el.textContent = s;
+      document.head.appendChild(el);
+    })();
+  </script>
+  <script type="module">
+    import { MDS } from '@minima-global/mds';
+    window.MDS = MDS;
+  </script>
 </head>
 
 <body>

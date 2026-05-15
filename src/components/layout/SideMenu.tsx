@@ -207,6 +207,7 @@ export default function SideMenu({ isOpen, setIsOpen }: SideMenuProps) {
 
         {/* Premium Footer */}
         <div className="p-8 border-t border-gray-100 dark:border-white/5">
+          <p className="text-center text-[10px] text-gray-600 font-black mb-6 uppercase tracking-[0.4em] opacity-30">Powered by Minima</p>
           <div className="flex items-center justify-between p-5 bg-gray-50 dark:bg-white/5 rounded-3xl border border-gray-100 dark:border-white/5 group hover:border-gray-200 dark:hover:border-white/10 transition-all cursor-default">
              <div className="flex flex-col">
                <span className="text-[10px] font-black text-gray-400 dark:text-gray-600 uppercase tracking-[0.3em] mb-1">Application</span>
@@ -216,7 +217,6 @@ export default function SideMenu({ isOpen, setIsOpen }: SideMenuProps) {
                 <Zap size={18} strokeWidth={2.5} />
              </div>
           </div>
-          <p className="text-center text-[10px] text-gray-600 font-black mt-6 uppercase tracking-[0.4em] opacity-30">Powered by Minima</p>
         </div>
       </div>
     </>

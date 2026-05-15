@@ -13,7 +13,7 @@ export default function BottomNav() {
   ];
 
   return (
-    <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[90%] max-w-sm md:hidden">
+    <nav className="fixed bottom-nav-mobile left-1/2 -translate-x-1/2 z-50 w-[90%] max-w-sm md:hidden">
       <div className="bg-white/40 dark:bg-gray-950/40 backdrop-blur-2xl border border-white/20 dark:border-white/5 rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.3)] p-2 flex items-center justify-between">
         {navItems.map((item) => {
           const isActive = currentPath === item.to || (item.to !== "/" && currentPath.startsWith(item.to));

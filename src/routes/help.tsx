@@ -16,11 +16,85 @@ import {
   Activity,
   ArrowRight,
   Database,
+  Code2,
 } from "lucide-react"
+
+const MA_SNIPPET_KEY = "minimaads_snippet"
+
+function extractJs(snippet: string): string {
+  const match = snippet.match(/<script[^>]*>([\s\S]*?)<\/script>/i)
+  return match ? match[1].trim() : snippet.trim()
+}
 
 export const Route = createFileRoute("/help")({
   component: Help,
 })
+
+function MinimaAdsTestPanel() {
+  const [snippet, setSnippet] = useState(() => localStorage.getItem(MA_SNIPPET_KEY) || "")
+  const isActive = sessionStorage.getItem('minimaads_run') === 'true'
+  const hasSaved = Boolean(localStorage.getItem(MA_SNIPPET_KEY))
+
+  const run = () => {
+    const trimmed = snippet.trim()
+    if (!trimmed) return
+    localStorage.setItem(MA_SNIPPET_KEY, extractJs(trimmed))
+    sessionStorage.setItem('minimaads_run', 'true')
+    window.location.reload()
+  }
+
+  const clear = () => {
+    localStorage.removeItem(MA_SNIPPET_KEY)
+    sessionStorage.removeItem('minimaads_run')
+    setSnippet("")
+    const slot = document.getElementById('minimaads-slot')
+    if (slot) slot.innerHTML = ''
+  }
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">
+        Paste the snippet from <strong>MinimaAds → Frames → Snippet</strong>. The snippet is
+        saved for convenience but <strong>never runs automatically</strong> on a new session —
+        you control when it activates.
+      </p>
+      <textarea
+        value={snippet}
+        onChange={(e) => setSnippet(e.target.value)}
+        rows={6}
+        placeholder="Paste MinimaAds snippet here…"
+        className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 font-mono text-xs outline-none focus:border-cyan-500 dark:border-gray-800 dark:bg-gray-950 dark:text-cyan-100"
+      />
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={run}
+          disabled={!snippet.trim()}
+          className="px-5 py-3 rounded-2xl bg-cyan-500 text-white text-xs font-black uppercase tracking-widest hover:bg-cyan-600 disabled:opacity-40 transition-colors"
+        >
+          Run
+        </button>
+        <button
+          type="button"
+          onClick={clear}
+          className="px-5 py-3 rounded-2xl border border-gray-200 dark:border-gray-800 text-xs font-black uppercase tracking-widest hover:bg-gray-100 dark:hover:bg-gray-900 transition-colors"
+        >
+          Clear
+        </button>
+      </div>
+      {isActive && (
+        <p className="text-xs font-black uppercase tracking-widest text-cyan-700 dark:text-cyan-300">
+          ● Banner active this session
+        </p>
+      )}
+      {!isActive && hasSaved && (
+        <p className="text-xs font-black uppercase tracking-widest text-gray-400">
+          Snippet saved — not running this session
+        </p>
+      )}
+    </div>
+  )
+}
 
 function Help() {
   const [openSection, setOpenSection] = useState<string | null>("getting-started")
@@ -66,6 +140,13 @@ function Help() {
           </div>
         </div>
       ),
+    },
+    {
+      id: "minimaads",
+      title: "MinimaAds",
+      icon: Code2,
+      color: "cyan",
+      content: <MinimaAdsTestPanel />,
     },
     {
       id: "discovery-mechanics",

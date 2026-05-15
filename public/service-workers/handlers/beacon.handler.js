@@ -208,7 +208,7 @@ function saveBeaconListings(beacon, now) {
         ")";
       MDS.sql(upsertSql, function (saveRes) {
         if (saveRes.status) {
-          MDS.log("✅ [LISTINGS] Updated listings for " + pk.substring(0, 10));
+          if (SW_DEBUG) MDS.log("✅ [LISTINGS] Updated listings for " + pk.substring(0, 10));
         } else {
           MDS.log(
             "❌ [LISTINGS] Failed to save listings: " + JSON.stringify(saveRes),
@@ -255,7 +255,7 @@ function handleBeacon(beacon, source) {
 
     // Check if this is our own beacon (allow SELF to persist)
     if (MY_MAXIMA_PK && beacon.pubkey === MY_MAXIMA_PK && source !== "SELF") {
-      MDS.log("⏭️ [BEACON-SELF] Ignoring own beacon from " + source);
+      if (SW_DEBUG) MDS.log("⏭️ [BEACON-SELF] Ignoring own beacon from " + source);
       return;
     }
 
@@ -275,7 +275,7 @@ function handleBeacon(beacon, source) {
       1,
     );
 
-    if (source !== "GOSSIP") MDS.log("📡 [BEACON] " + beacon.alias + " from " + source);
+    if (source !== "GOSSIP" && SW_DEBUG) MDS.log("📡 [BEACON] " + beacon.alias + " from " + source);
 
     saveBeaconListings(beacon, now);
 
@@ -365,11 +365,13 @@ function saveBeaconWithBio(
 
       // If incoming beacon has no timestamp and we already have a profile, only touch last_seen
       if (incomingTimestamp <= 0 && hasExisting) {
-        MDS.log(
-          "⏭️ [BEACON] Missing timestamp for " +
-            beacon.alias +
-            " — preserving existing profile. Touching last_seen only.",
-        );
+        if (SW_DEBUG) {
+          MDS.log(
+            "⏭️ [BEACON] Missing timestamp for " +
+              beacon.alias +
+              " — preserving existing profile. Touching last_seen only.",
+          );
+        }
         MDS.sql(
           "UPDATE DISCOVERED_PEERS SET last_seen=" +
             now +
@@ -386,15 +388,17 @@ function saveBeaconWithBio(
 
       // If the incoming beacon is older than what we have stored, only touch last_seen
       if (incomingTimestamp > 0 && storedTimestamp > incomingTimestamp) {
-        MDS.log(
-          "⏭️ [BEACON] Skipping profile overwrite for " +
-            beacon.alias +
-            " — stored beacon is newer (" +
-            storedTimestamp +
-            " > " +
-            incomingTimestamp +
-            "). Touching last_seen only.",
-        );
+        if (SW_DEBUG) {
+          MDS.log(
+            "⏭️ [BEACON] Skipping profile overwrite for " +
+              beacon.alias +
+              " — stored beacon is newer (" +
+              storedTimestamp +
+              " > " +
+              incomingTimestamp +
+              "). Touching last_seen only.",
+          );
+        }
         MDS.sql(
           "UPDATE DISCOVERED_PEERS SET last_seen=" +
             now +
@@ -459,13 +463,15 @@ function saveBeaconWithBio(
         MDS.sql(deleteOldSql, function () {
           MDS.sql(discoverySql, function (res) {
             if (res.status) {
-              MDS.log(
-                "✅ [BEACON-DIRECT] Validated IP & Saved: " +
-                  beacon.alias +
-                  " (" +
-                  cleanAddress +
-                  ")",
-              );
+              if (SW_DEBUG) {
+                MDS.log(
+                  "✅ [BEACON-DIRECT] Validated IP & Saved: " +
+                    beacon.alias +
+                    " (" +
+                    cleanAddress +
+                    ")",
+                );
+              }
               promoteToUserRegistry(beacon, now);
 
               // Reactive gossip
@@ -536,7 +542,7 @@ function promoteToUserRegistry(beacon, now) {
 }
 
 function sendBackgroundBeacon() {
-  MDS.log("📡 [BG-BEACON] Preparing beacon...");
+  if (SW_DEBUG) MDS.log("📡 [BG-BEACON] Preparing beacon...");
 
   MDS.cmd("maxima action:info", function (maxInfo) {
     if (!maxInfo.status) {
@@ -646,7 +652,7 @@ function sendBackgroundBeacon() {
 
                     // P2P broadcast
                     MDS.cmd("message data:" + hexData, function (res) {
-                      MDS.log("📡 [BG-BEACON] P2P broadcast sent");
+                      if (SW_DEBUG) MDS.log("📡 [BG-BEACON] P2P broadcast sent");
                     });
 
                     // MLS unicast (Maxima) to make MLS a discovery hub
@@ -722,7 +728,7 @@ function sendBeaconToMLS(maxInfoResponse, hexData) {
       " poll:false",
     function (res) {
       if (res.status) {
-        MDS.log("✅ [BEACON-MLS] Beacon sent to MLS");
+        if (SW_DEBUG) MDS.log("✅ [BEACON-MLS] Beacon sent to MLS");
       } else {
         MDS.log(
           "⚠️ [BEACON-MLS] Failed to send beacon to MLS: " +
@@ -743,7 +749,7 @@ function startCleanupTimer() {
     " AND source != 'SELF'";
   MDS.sql(cleanupSql, function (res) {
     if (res.status && res.count > 0) {
-      MDS.log("🧹 [CLEANUP] Removed " + res.count + " stale peers");
+      if (SW_DEBUG) MDS.log("🧹 [CLEANUP] Removed " + res.count + " stale peers");
     }
   });
 }

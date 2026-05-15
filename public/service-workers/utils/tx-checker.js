@@ -21,7 +21,7 @@ function checkPendingUID(uid, callback) {
             }
 
             var exists = response.response && response.response.exists;
-            MDS.log("📋 [SW-TX-CHECK] UID " + uid + " pending status: " + exists);
+            if (SW_DEBUG) MDS.log("📋 [SW-TX-CHECK] UID " + uid + " pending status: " + exists);
             callback(null, exists || false);
         });
     } catch (err) {
@@ -73,12 +73,12 @@ function findInBlockchainOrMempool(messageTimestamp, callback) {
             }
 
             var myAddress = addressRes.response.miniaddress;
-            MDS.log("🔍 [SW-TX-FIND] Searching for timestamp " + tsStr + " at address " + myAddress);
+            if (SW_DEBUG) MDS.log("🔍 [SW-TX-FIND] Searching for timestamp " + tsStr + " at address " + myAddress);
 
             // Search recent txpows for this address
             MDS.cmd("txpow address:" + myAddress + " max:50", function (txpowRes) {
                 if (!txpowRes.status || !txpowRes.response) {
-                    MDS.log("⚠️ [SW-TX-FIND] No txpows found");
+                    if (SW_DEBUG) MDS.log("⚠️ [SW-TX-FIND] No txpows found");
                     callback(null, null);
                     return;
                 }
@@ -103,7 +103,7 @@ function findInBlockchainOrMempool(messageTimestamp, callback) {
                     }
                 }
 
-                MDS.log("⚠️ [SW-TX-FIND] Transaction not found for timestamp " + tsStr);
+                if (SW_DEBUG) MDS.log("⚠️ [SW-TX-FIND] Transaction not found for timestamp " + tsStr);
                 callback(null, null);
             });
         });
@@ -181,7 +181,7 @@ function verifyIncomingTransaction(messageTimestamp, senderPublicKey, txpowid, c
                         return;
                     }
                 }
-                MDS.log("⚠️ [SW-TX-VERIFY] Tx not found for ts=" + tsStr);
+                if (SW_DEBUG) MDS.log("⚠️ [SW-TX-VERIFY] Tx not found for ts=" + tsStr);
                 callback(null, false);
             });
         });
@@ -216,7 +216,7 @@ function getAllPendingActions(callback) {
             }
 
             var pending = response.response.pending || [];
-            MDS.log("📋 [SW-TX-CHECK] Found " + pending.length + " pending actions in Minima");
+            if (SW_DEBUG) MDS.log("📋 [SW-TX-CHECK] Found " + pending.length + " pending actions in Minima");
             callback(null, pending);
         });
     } catch (err) {
@@ -270,7 +270,7 @@ function check3BlockConfirmation(txpowid, callback) {
 
                 // Calculate confirmations
                 var blockDifference = parseInt(currentBlock) - parseInt(txBlock);
-                MDS.log("🔍 [SW-TX-CONFIRM] Transaction " + txpowid + ": block " + txBlock + ", current " + currentBlock + ", confirmations: " + blockDifference);
+                if (SW_DEBUG) MDS.log("🔍 [SW-TX-CONFIRM] Transaction " + txpowid + ": block " + txBlock + ", current " + currentBlock + ", confirmations: " + blockDifference);
 
                 callback(null, blockDifference >= 3 ? 'confirmed' : 'pending');
             });

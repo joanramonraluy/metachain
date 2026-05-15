@@ -202,13 +202,13 @@ function smartSend(pubkey, application, hexData, logTag, usePoll, forcedAddress)
         var cleanAddr = cleanMaximaAddress(forcedAddress);
         if (cleanAddr && (cleanAddr.startsWith("Mx") || cleanAddr.startsWith("MX"))) {
             var sendCmd = "maxima action:send to:" + cleanAddr + " application:" + application + " data:" + hexData + pollStr;
-            MDS.log("🔍 [" + logTag + "] Sending via FORCED address: " + cleanAddr.substring(0, 15) + "...");
+            if (SW_DEBUG) MDS.log("🔍 [" + logTag + "] Sending via FORCED address: " + cleanAddr.substring(0, 15) + "...");
             MDS.cmd(sendCmd, function(res) {
                 if (res.status) {
-                    MDS.log("✅ [" + logTag + "] Sent to " + pubkey.substring(0, 10));
+                    if (SW_DEBUG) MDS.log("✅ [" + logTag + "] Sent to " + pubkey.substring(0, 10));
                 } else {
                     // If forced address fails, we could fallback to publickey, but usually if forced it fails for good reasons
-                    MDS.log("⚠️ [" + logTag + "] Forced send failed, trying publickey: " + res.error);
+                    if (SW_DEBUG) MDS.log("⚠️ [" + logTag + "] Forced send failed, trying publickey: " + res.error);
                     MDS.cmd("maxima action:send publickey:" + pubkey + " application:" + application + " data:" + hexData + pollStr);
                 }
             });
@@ -227,7 +227,7 @@ function smartSend(pubkey, application, hexData, logTag, usePoll, forcedAddress)
 
             if (mxAddress && (mxAddress.startsWith("Mx") || mxAddress.startsWith("MX"))) {
                 sendCmd = "maxima action:send to:" + mxAddress + " application:" + application + " data:" + hexData + pollStr;
-                MDS.log("🔍 [" + logTag + "] Optimized send via address resolution: " + mxAddress.substring(0, 15) + "...");
+                if (SW_DEBUG) MDS.log("🔍 [" + logTag + "] Optimized send via address resolution: " + mxAddress.substring(0, 15) + "...");
             } else {
                 sendCmd = "maxima action:send publickey:" + pubkey + " application:" + application + " data:" + hexData + pollStr;
             }
@@ -237,9 +237,9 @@ function smartSend(pubkey, application, hexData, logTag, usePoll, forcedAddress)
 
         MDS.cmd(sendCmd, function (res) {
             if (res.status) {
-                MDS.log("✅ [" + logTag + "] Sent to " + pubkey.substring(0, 10));
+                if (SW_DEBUG) MDS.log("✅ [" + logTag + "] Sent to " + pubkey.substring(0, 10));
             } else {
-                MDS.log("⚠️ [" + logTag + "] Failed send to " + pubkey.substring(0, 10) + ": " + res.error);
+                if (SW_DEBUG) MDS.log("⚠️ [" + logTag + "] Failed send to " + pubkey.substring(0, 10) + ": " + res.error);
             }
         });
     });

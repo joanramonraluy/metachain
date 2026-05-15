@@ -9,7 +9,15 @@ Scope: `/home/joanramon/Minima/metachain`
 
 The goal is that any learning, architectural change, new "fragility point" or design decision is recorded here for future agents. Do not use this file only for reading; it is your shared memory.
 
-**Latest Update (2026-04-15 — Normalized Chat Exits)**:
+te**Latest Update (2026-05-10 — Ads-Aware Fixed Positioning)**:
+- Fixed overlap between the MinimaAds advertising banner and three fixed/positioned UI elements: the FAB `+` button (Chats tab), the Users/People FAB (Contacts tab), and the BottomNav pill (mobile only).
+- **Solution (CSS Variable — Option A)**: `AppLayout.tsx` now attaches a `ResizeObserver` to the `#minimaads-slot` `<div>`. On any size change it writes `--ads-banner-height` (in px) to `document.documentElement.style`. All three affected elements consume this variable via `calc()` in `src/index.css`.
+- New CSS utility classes in `src/index.css`: `.bottom-nav-mobile` (BottomNav pill), `.fab-main` (FAB button), `.fab-menu` (FAB expanded action list). Each class has a responsive `@media (min-width: 768px)` override to preserve the existing desktop `bottom-10` / `bottom-30` positions.
+- Tailwind hardcoded `bottom-6 / bottom-32 md:bottom-10 / bottom-52 md:bottom-30` classes removed from `BottomNav.tsx` and `ChatsAndGroups.tsx` in favour of the new CSS classes.
+- When no banner is present, `--ads-banner-height` defaults to `0px` — zero visual change.
+- Updated files: `src/components/layout/AppLayout.tsx`, `src/components/layout/BottomNav.tsx`, `src/components/chat/ChatsAndGroups.tsx`, `src/index.css`.
+
+**Previous Update (2026-04-15 — Normalized Chat Exits)**:
 - Standardized Chat Exit Terminology: Replaced the overly technical "Expunge Registry" and "Expunge Connection" labels with clearer, standard terms across the application. 
 - DM Chat: "Expunge Registry" → **"Delete Chat"**.
 - Group Chat/Info: "Expunge Registry (Connection)" → **"Leave Group"**.

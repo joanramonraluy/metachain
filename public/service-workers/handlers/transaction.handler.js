@@ -6,13 +6,13 @@
 // Check for zombie pending transactions (cancelled while DApp was closed)
 // AND detect accepted transactions to send Maxima messages
 function checkPendingTransactions() {
-    MDS.log("🔍 [SW-TX] Checking pending transactions...");
+    if (SW_DEBUG) MDS.log("🔍 [SW-TX] Checking pending transactions...");
 
     // Get all local pending transactions
     MDS.sql("SELECT * FROM TRANSACTIONS WHERE status = 'pending'", function (res) {
         if (res.status && res.rows.length > 0) {
             var localPending = res.rows;
-            MDS.log("📋 [SW-TX] Found " + localPending.length + " pending transactions in DB");
+            if (SW_DEBUG) MDS.log("📋 [SW-TX] Found " + localPending.length + " pending transactions in DB");
 
             // Check each pending transaction directly against blockchain/mempool
             // We don't use 'mds action:pending' because it creates phantom pending commands in Read Mode
@@ -26,7 +26,7 @@ function checkPendingTransactions() {
                     continue;
                 }
 
-                MDS.log("🔍 [SW-TX] Checking zombie status for transaction: " + txUid);
+                if (SW_DEBUG) MDS.log("🔍 [SW-TX] Checking zombie status for transaction: " + txUid);
 
                 // Search for it in blockchain/mempool
                 findInBlockchainOrMempool(messageTimestamp, function (err, foundTxpowid) {
@@ -56,7 +56,7 @@ function checkPendingTransactions() {
                 });
             }
         } else {
-            MDS.log("✅ [SW-TX] No pending transactions in DB");
+            if (SW_DEBUG) MDS.log("✅ [SW-TX] No pending transactions in DB");
         }
     });
 }
@@ -66,12 +66,12 @@ function checkPendingTransactions() {
  * This was missing! Causing transactions to remain 'sent' forever.
  */
 function checkSentTransactions() {
-    MDS.log("🔍 [SW-TX-CONFIRM] Checking SENT transactions...");
+    if (SW_DEBUG) MDS.log("🔍 [SW-TX-CONFIRM] Checking SENT transactions...");
 
     MDS.sql("SELECT * FROM TRANSACTIONS WHERE status = 'sent'", function (res) {
         if (res.status && res.rows.length > 0) {
             var sentTxs = res.rows;
-            MDS.log("📋 [SW-TX-CONFIRM] Found " + sentTxs.length + " sent transactions waiting for confirmation");
+            if (SW_DEBUG) MDS.log("📋 [SW-TX-CONFIRM] Found " + sentTxs.length + " sent transactions waiting for confirmation");
 
             for (var i = 0; i < sentTxs.length; i++) {
                 var tx = sentTxs[i];
@@ -273,15 +273,15 @@ function handleDeniedTransaction(tx) {
  * exact block it was mined in — no txpowid needed for the confirmation check.
  */
 function checkIncomingTransactions() {
-    MDS.log("🔍 [SW-TX-INCOMING] Checking incoming unconfirmed token/charm messages...");
+    if (SW_DEBUG) MDS.log("🔍 [SW-TX-INCOMING] Checking incoming unconfirmed token/charm messages...");
 
     MDS.sql("SELECT * FROM CHAT_MESSAGES WHERE state IN ('received','read') AND username!='Me' AND (type='token' OR type='charm')", function (res) {
         if (!res.status || res.rows.length === 0) {
-            MDS.log("✅ [SW-TX-INCOMING] No incoming unconfirmed token messages");
+            if (SW_DEBUG) MDS.log("✅ [SW-TX-INCOMING] No incoming unconfirmed token messages");
             return;
         }
 
-        MDS.log("📋 [SW-TX-INCOMING] Found " + res.rows.length + " incoming unconfirmed message(s)");
+        if (SW_DEBUG) MDS.log("📋 [SW-TX-INCOMING] Found " + res.rows.length + " incoming unconfirmed message(s)");
 
         // Get current block once for all messages
         MDS.cmd("status", function(statusRes) {
@@ -403,7 +403,7 @@ function promoteUnverifiedByCoin(coinData) {
  * - If not verified but recent → keep as 'unverified' and retry next cycle.
  */
 function checkUnverifiedIncomingMessages() {
-    MDS.log("🔍 [SW-TX-VERIFY] Checking unverified incoming token/charm messages...");
+    if (SW_DEBUG) MDS.log("🔍 [SW-TX-VERIFY] Checking unverified incoming token/charm messages...");
 
     var TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
     var now = Date.now();
@@ -412,11 +412,11 @@ function checkUnverifiedIncomingMessages() {
         "SELECT * FROM CHAT_MESSAGES WHERE state='unverified' AND username!='Me' AND (type='token' OR type='charm')",
         function(res) {
             if (!res.status || !res.rows || res.rows.length === 0) {
-                MDS.log("✅ [SW-TX-VERIFY] No unverified token/charm messages.");
+                if (SW_DEBUG) MDS.log("✅ [SW-TX-VERIFY] No unverified token/charm messages.");
                 return;
             }
 
-            MDS.log("📋 [SW-TX-VERIFY] Found " + res.rows.length + " unverified message(s)");
+            if (SW_DEBUG) MDS.log("📋 [SW-TX-VERIFY] Found " + res.rows.length + " unverified message(s)");
 
             for (var i = 0; i < res.rows.length; i++) {
                 (function(msg) {
