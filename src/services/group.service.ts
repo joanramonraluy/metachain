@@ -1567,7 +1567,7 @@ class GroupService {
 
     // Delegate to Service Worker — single source of truth for sync
     // Use window.MDS (global) because the imported MDS SDK doesn't expose generic .cmd()
-    (window as any).MDS?.cmd("service:GROUP_SYNC:" + groupId, function () {});
+    MDS.executeRaw("service:GROUP_SYNC:" + groupId, function () {});
   }
 
   /* ----------------------------------------------------------------------------

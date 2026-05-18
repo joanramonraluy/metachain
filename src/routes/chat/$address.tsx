@@ -853,7 +853,7 @@ function ChatPage() {
 
       // Trigger coin discovery to check for offline tokens
       // This runs once per chat open to catch any tokens that arrived while offline
-      (window as any).MDS?.cmd("service:COINDISC", (res: any) => {
+      MDS.executeRaw("service:COINDISC", (res: any) => {
         if (res.status) {
           console.log("📦 [CHAT] Coin discovery triggered");
         }
@@ -1583,9 +1583,9 @@ function ChatPage() {
             syncTimeoutRef.current = null;
           }, 15000);
 
-          (window as any).MDS?.cmd(
+          MDS.executeRaw(
             "service:CHAT_SYNC:" + normPk,
-            function () {},
+            function () {}
           );
         }
       }
@@ -1653,9 +1653,9 @@ function ChatPage() {
           syncTimeoutRef.current = null;
         }, 15000);
 
-        (window as any).MDS?.cmd(
+        MDS.executeRaw(
           "service:CHAT_SYNC:" + normPkForSync,
-          function () {},
+          function () {}
         );
 
         // SMART SYNC: Trigger Status Check (Phase 1/2)
@@ -1844,9 +1844,9 @@ function ChatPage() {
           syncTimeoutRef.current = null;
         }, 15000);
 
-        (window as any).MDS?.cmd(
+        MDS.executeRaw(
           "service:CHAT_SYNC:" + contact.publickey.toUpperCase(),
-          function () {},
+          function () {}
         );
         return;
       }

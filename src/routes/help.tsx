@@ -141,13 +141,7 @@ function Help() {
         </div>
       ),
     },
-    {
-      id: "minimaads",
-      title: "MinimaAds",
-      icon: Code2,
-      color: "cyan",
-      content: <MinimaAdsTestPanel />,
-    },
+
     {
       id: "discovery-mechanics",
       title: "Discovery Mechanics",
@@ -309,6 +303,13 @@ function Help() {
           </div>
         </div>
       ),
+    },
+    {
+      id: "minimaads",
+      title: "MinimaAds",
+      icon: Code2,
+      color: "cyan",
+      content: <MinimaAdsTestPanel />,
     },
   ];
 

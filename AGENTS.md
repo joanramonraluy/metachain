@@ -9,7 +9,12 @@ Scope: `/home/joanramon/Minima/metachain`
 
 The goal is that any learning, architectural change, new "fragility point" or design decision is recorded here for future agents. Do not use this file only for reading; it is your shared memory.
 
-te**Latest Update (2026-05-10 — Ads-Aware Fixed Positioning)**:
+**Latest Update (2026-05-18 — MDS.cmd TypeError Fix)**:
+- Fixed a `TypeError: I.cmd is not a function` crash that occurred when opening a chat or syncing groups.
+- The root cause was that `(window as any).MDS?.cmd(...)` was being used to send `service:` commands to the Service Worker from the React frontend. In the `@minima-global/mds` package, `MDS.cmd` is a namespace object, not a function, causing minified builds to crash when attempting to call it.
+- Replaced all instances of `(window as any).MDS?.cmd("service:...")` with the correctly typed `MDS.executeRaw("service:...")` in `src/routes/chat/$address.tsx` and `src/services/group.service.ts`.
+
+**Previous Update (2026-05-10 — Ads-Aware Fixed Positioning)**:
 - Fixed overlap between the MinimaAds advertising banner and three fixed/positioned UI elements: the FAB `+` button (Chats tab), the Users/People FAB (Contacts tab), and the BottomNav pill (mobile only).
 - **Solution (CSS Variable — Option A)**: `AppLayout.tsx` now attaches a `ResizeObserver` to the `#minimaads-slot` `<div>`. On any size change it writes `--ads-banner-height` (in px) to `document.documentElement.style`. All three affected elements consume this variable via `calc()` in `src/index.css`.
 - New CSS utility classes in `src/index.css`: `.bottom-nav-mobile` (BottomNav pill), `.fab-main` (FAB button), `.fab-menu` (FAB expanded action list). Each class has a responsive `@media (min-width: 768px)` override to preserve the existing desktop `bottom-10` / `bottom-30` positions.
