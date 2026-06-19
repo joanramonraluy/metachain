@@ -9,7 +9,12 @@ Scope: `/home/joanramon/Minima/metachain`
 
 The goal is that any learning, architectural change, new "fragility point" or design decision is recorded here for future agents. Do not use this file only for reading; it is your shared memory.
 
-**Latest Update (2026-05-18 — MDS.cmd TypeError Fix)**:
+**Latest Update (2026-06-19 — Route-Restricted MinimaAds Banner)**:
+- Restricted the MinimaAds banner to only display on specific routes: Home (`/`), Contacts (`/contacts`), and Discovery (`/discovery`).
+- Added diagnostic logs `MA-DEBUG:` to monitor banner visibility per route.
+- Updated files: `src/components/layout/AppLayout.tsx`.
+
+**Previous Update (2026-05-18 — MDS.cmd TypeError Fix)**:
 - Fixed a `TypeError: I.cmd is not a function` crash that occurred when opening a chat or syncing groups.
 - The root cause was that `(window as any).MDS?.cmd(...)` was being used to send `service:` commands to the Service Worker from the React frontend. In the `@minima-global/mds` package, `MDS.cmd` is a namespace object, not a function, causing minified builds to crash when attempting to call it.
 - Replaced all instances of `(window as any).MDS?.cmd("service:...")` with the correctly typed `MDS.executeRaw("service:...")` in `src/routes/chat/$address.tsx` and `src/services/group.service.ts`.

@@ -59,6 +59,10 @@ export default function AppLayout({ children }: AppLayoutProps) {
     };
   }, []);
 
+  const showAdsRoutes = ["/", "/contacts", "/discovery"];
+  const shouldShowAd = showAdsRoutes.includes(currentPath);
+  console.log("MA-DEBUG:", { currentPath, shouldShowAd });
+
   return (
     <div className="flex bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 h-full w-full overflow-hidden transition-colors">
       <SideMenu isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
@@ -74,9 +78,11 @@ export default function AppLayout({ children }: AppLayoutProps) {
           {children}
         </main>
 
-        {!hasCustomHeader && (
-          <div id="minimaads-slot" ref={adsSlotRef} className="empty:hidden px-3 pt-2 pb-1" />
-        )}
+        <div
+          id="minimaads-slot"
+          ref={adsSlotRef}
+          className={shouldShowAd ? "empty:hidden px-3 pt-2 pb-1" : "hidden"}
+        />
         {!hasCustomHeader && <BottomNav />}
 
       </div>
